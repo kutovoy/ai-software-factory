@@ -142,7 +142,10 @@ inference credentials never enter the runner (Warp's four-boundary model).
 - `FactoryWorkflow` — one per work item (Phase 3); child workflows per stage.
 - Activities wrap runner RPC and model calls; all Activities idempotent, retried with backoff.
 - Gates are Temporal **Updates** (synchronous decision) + **Signals** (async steer); `awaitGate` is a
-  durable wait with an escalation timer — days-long waits cost nothing.
+  durable wait with an escalation timer — days-long waits cost nothing. **Permission requests use the
+  same shape (ADR-013): `pumpEvents` returns at `permission.requested`, the workflow waits on
+  `condition()` for the Update/Signal, and the run resumes from the last `seq`. A blocked run holds
+  no activity slot, so blocked runs cannot starve the queue.**
 - Temporal event history is the execution truth; we mirror a canonical `FactoryEvent` JSONL + Postgres
   read model for the UI (SSE fan-out). Temporal visibility gives per-run search and replay.
 

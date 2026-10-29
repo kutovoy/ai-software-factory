@@ -10,21 +10,31 @@ import { loadConfig, type OrchestrationConfig } from './config';
  * service). It is safe to kill and restart mid-run: Temporal re-delivers the in-flight
  * activity, the adapter session is recreated, and event writes are deduplicated by
  * `(runId, seq)`.
+ *
+ * Concurrency (ADR-013): a streaming run holds one activity slot for as long as it
+ * streams; a run waiting for a human permission holds **none** (the wait lives in workflow
+ * state). Slots are therefore only consumed by work that is actually doing something, so
+ * the defaults are Temporal's (100/100) and can be tuned with
+ * `WORKER_MAX_CONCURRENT_ACTIVITY_TASKS` / `WORKER_MAX_CONCURRENT_WORKFLOW_TASKS`.
  */
-export async function runWorker(config: OrchestrationConfig = loadConfig()): Promise<Worker> {
+export async function createWorker(config: OrchestrationConfig = loadConfig()): Promise<Worker> {
   const connection = await NativeConnection.connect({ address: config.temporalAddress });
 
   const workflowsPath = fileURLToPath(new URL('./workflows/index.ts', import.meta.url));
 
-  const worker = await Worker.create({
+  return Worker.create({
     connection,
     namespace: config.temporalNamespace,
     taskQueue: config.taskQueue,
     workflowsPath,
     activities,
-    maxConcurrentActivityTaskExecutions: 8,
-    maxConcurrentWorkflowTaskExecutions: 8,
+    maxConcurrentActivityTaskExecutions: config.maxConcurrentActivityTaskExecutions,
+    maxConcurrentWorkflowTaskExecutions: config.maxConcurrentWorkflowTaskExecutions,
   });
+}
+
+export async function runWorker(config: OrchestrationConfig = loadConfig()): Promise<Worker> {
+  const worker = await createWorker(config);
 
   const shutdown = (signal: string): void => {
     log('worker_shutdown', { signal });
@@ -39,6 +49,8 @@ export async function runWorker(config: OrchestrationConfig = loadConfig()): Pro
     address: config.temporalAddress,
     namespace: config.temporalNamespace,
     taskQueue: config.taskQueue,
+    maxConcurrentActivityTaskExecutions: config.maxConcurrentActivityTaskExecutions,
+    maxConcurrentWorkflowTaskExecutions: config.maxConcurrentWorkflowTaskExecutions,
   });
 
   await worker.run();

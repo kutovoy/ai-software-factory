@@ -160,6 +160,8 @@ export interface ResourceSummary {
   path: string;
   format: 'yaml' | 'markdown';
   summary: string;
+  /** Normalised document as declared in git (schema defaults applied). */
+  doc: unknown;
 }
 
 export interface FactoryResources {

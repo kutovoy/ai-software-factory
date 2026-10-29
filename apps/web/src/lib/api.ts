@@ -76,3 +76,25 @@ export async function safeGet<T>(path: string, fallback: T): Promise<T> {
     return fallback;
   }
 }
+
+export interface GetResult<T> {
+  data: T | null;
+  error: ApiClientError | null;
+}
+
+/**
+ * Same degraded-mode read as `safeGet`, but keeps the error so a page can say *why* a
+ * projection is missing (e.g. a factory directory that is not versioned) instead of
+ * pretending the data is empty.
+ */
+export async function getOrError<T>(path: string): Promise<GetResult<T>> {
+  try {
+    return { data: await apiGet<T>(path), error: null };
+  } catch (error) {
+    if (error instanceof ApiClientError) return { data: null, error };
+    return {
+      data: null,
+      error: new ApiClientError('network_error', 0, error instanceof Error ? error.message : String(error)),
+    };
+  }
+}

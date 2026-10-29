@@ -72,6 +72,11 @@ export interface ResourceSummary {
   path: string;
   format: 'yaml' | 'markdown';
   summary: string;
+  /**
+   * Normalised document (schema defaults applied). Read-only projection of what git
+   * declares; secret *names* only, never values (there are none in a definition).
+   */
+  doc: unknown;
 }
 
 export interface FactoryResources {
@@ -267,6 +272,7 @@ export function getFactoryResources(config: ApiConfig, factory: string): Factory
       path: resource.path,
       format: resource.format,
       summary: summarizeResource(resource),
+      doc: resource.doc,
     };
   });
 

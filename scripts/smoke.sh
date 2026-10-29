@@ -15,6 +15,8 @@
 #   7. Last-Event-ID replay returns only seq > header value
 #   8. the inference proxy works with a per-run token against the stub upstream,
 #      rejects a disallowed model, and the run detail never leaks the provider key
+#   10. permission-blocked runs hold no activity slot: eight waiting runs do not stop a
+#      ninth run from completing (delegated to scripts/smoke-permissions.sh, ADR-013)
 #
 # Re-runnable: every invocation creates a fresh run; migrations and the proxy stub are
 # idempotent. Exits non-zero on any failure.
@@ -213,5 +215,10 @@ status_code="$(curl -sS -o "$TMP_DIR/revoked.json" -w '%{http_code}' -X POST "$A
 [ "$status_code" = "401" ] || fail "expected 401 after run end, got $status_code"
 [ "$(jget code < "$TMP_DIR/revoked.json")" = "token_revoked" ] || fail "wrong error code after run end"
 pass "proxy token revoked at run end"
+
+# ------------------------------------- 10. permission waits do not block the queue
+log "checking that permission-blocked runs do not starve the queue (ADR-013)"
+API_URL="$API_URL" bash scripts/smoke-permissions.sh \
+  || fail "permission non-blocking smoke failed"
 
 log "SMOKE PASSED"

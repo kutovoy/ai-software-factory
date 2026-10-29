@@ -154,3 +154,53 @@ attempt, and revokes the token at run end. The runner only ever sees `OPENAI_BAS
 **Consequences:** adds one hop of latency; the proxy becomes a security-critical component (must not log
 prompts by default, must enforce allowlists, must fail closed). Enables per-run cost attribution and makes
 provider swaps invisible to harnesses.
+
+---
+
+## ADR-012 — The web console consumes the API only; one event renderer for chat and runs
+
+**Status:** accepted (2026-10-29, Phase 2b)
+**Context:** The console could read Postgres, the definition files or a harness directly — all of which
+would duplicate domain logic and create a second source of truth. It also has two surfaces that show
+the same thing: New Chat and run detail.
+**Decision:** `apps/web` is a pure projection of `apps/api`. Server components fetch `API_BASE_URL`
+over HTTP; browser-side code only talks to same-origin `/api/*` route handlers, which proxy the API
+(SSE included, un-buffered). No DB client, filesystem, harness or runner import exists in the web app.
+One `EventStream` renderer + `useRunStream` hook draws both New Chat and run detail, so "chat is a run"
+(ADR-002) is true in the code, not just in the docs. Factory pages are read-only: definitions are
+edited in git and never written by the UI.
+**Consequences:** the API is the only integration seam — no CORS, no duplicated schema knowledge, one
+place to enforce auth. Every web feature needs an API projection, and a projection is not a place to
+invent defaults: missing data renders as an explicit empty state naming its phase. When a page needs
+more definition detail, extend a read-only projection (e.g. `doc` on `/factories/:name/resources`)
+rather than reading files in the web process. Adding a second renderer would immediately violate
+ADR-002's parity claim and double the streaming test surface.
+
+---
+
+## ADR-013 — Human gates are workflow-level durable waits, never activity-blocking
+
+**Status:** accepted (2026-10-29, Phase 2b fix)
+**Context:** Phase 2b E2E runs exposed a scalability defect: `pumpEvents` blocked inside the
+activity while it polled Postgres for a permission decision. The worker ran 8 concurrent
+activities, so eight abandoned permission-blocked runs consumed every slot and no new run could
+start. ADR-001/ADR-004 and `openspec/specs/run-lifecycle` promise that human gates are durable
+waits that cost nothing; an activity slot is a cost, and it is the wrong place for a human.
+**Options:** keep polling inside the activity (status quo) · make the wait a Temporal Update/Signal
+with `condition()` in the workflow · move the decision to a dedicated poller workflow/queue.
+**Decision:** `pumpEvents` is a **segment**: it returns as soon as a `permission.requested` event is
+emitted (persisted exactly once, in the same activity). The workflow registers a **Update**
+(`submitPermissionDecision`, synchronous ack; **Signal** `permissionDecision` as fallback) at
+workflow start, then `await condition(...)` on workflow state with no fixed timeout — only a
+configurable SLA timer (`PERMISSION_TIMEOUT_MS`, auto-deny + `error`) and a slow cancellation probe
+touch the DB. After the decision it runs `respondPermission` and resumes pumping from the last
+`seq` against the cached adapter iterator. `POST /runs/:id/permissions/:requestId` keeps its exact
+response shape; it records the decision in the read model (UI) and delivers the Update/Signal.
+Worker concurrency is env-tunable (`WORKER_MAX_CONCURRENT_ACTIVITY_TASKS`,
+`WORKER_MAX_CONCURRENT_WORKFLOW_TASKS`; code default 100/100).
+**Consequences:** a permission-blocked run holds no activity slot, so blocked runs cannot starve
+the queue; cancellation while waiting is immediate (Signal wakes `condition`, the run ends
+`cancelled`, the sandbox is killed). Every future gate (Phase 3 `awaitGate`, child workflows) must
+follow this shape. Cost: the decision path depends on Temporal being reachable (a failed delivery
+leaves the run to the SLA timer), and a worker restart recreates the adapter session — the pump
+re-forwards durable decisions best-effort and deduplicates events by `(runId, seq)`.

@@ -11,12 +11,12 @@ export default function McpsPage() {
       </header>
       <ComingSoon
         title="MCPs and apps"
-        phase="Phase 6 — team & cloud"
-        description="MCP servers and app integrations declared in factory.yaml, with their auth source and which agents may use them."
+        phase="Phase 3 — the factory loop + gates"
+        description="MCP servers and app integrations declared in factory.yaml, with which agents may use them and where their credentials are resolved."
         bullets={[
+          'Per-agent MCP allowlists, absent in the reference product',
           'Server names only — credentials are resolved outside the sandbox (ADR-011)',
-          'Per-agent allow/deny lists, absent in the reference product',
-          'Requires the secrets store, which ships in Phase 6',
+          'The secrets store that backs them ships in Phase 6',
         ]}
       />
     </div>

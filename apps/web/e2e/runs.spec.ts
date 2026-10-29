@@ -38,16 +38,13 @@ test.describe('Runs', () => {
       await expect(first.getByTestId('run-row-commit')).toContainText(/[0-9a-f]{8}/);
       await expect(first.getByTestId('run-row-cost')).toBeVisible();
 
-      // Newest first: run ids embed a base36 timestamp (`run_<ts>_<hex>`).
-      const ids = await page.getByTestId('run-row-link').evaluateAll((nodes) =>
-        nodes.slice(0, 5).map((node) => node.getAttribute('data-run-id') ?? ''),
+      // Newest first: assert on the server-provided `startedAt`, not on id format —
+      // integration fixtures create runs whose ids do not embed a timestamp.
+      const started = await page.getByTestId('run-row-link').evaluateAll((nodes) =>
+        nodes.slice(0, 5).map((node) => Date.parse(node.getAttribute('data-started-at') ?? '')),
       );
-      const stamps = ids
-        .map((id) => /^run_([0-9a-z]+)_/.exec(id)?.[1])
-        .filter((stamp): stamp is string => Boolean(stamp))
-        .map((stamp) => Number.parseInt(stamp, 36));
-      for (let index = 1; index < stamps.length; index += 1) {
-        expect(stamps[index - 1]!).toBeGreaterThanOrEqual(stamps[index]!);
+      for (let index = 1; index < started.length; index += 1) {
+        expect(started[index - 1]!).toBeGreaterThanOrEqual(started[index]!);
       }
 
       // Filtering by status narrows the list server-side.

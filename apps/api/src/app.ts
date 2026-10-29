@@ -9,6 +9,7 @@ import {
   pingDb,
   requestRunCancel,
   setPermissionDecision,
+  submitPermissionDecision,
   temporalHealthy,
   type HarnessId,
 } from '@factory/orchestration';
@@ -294,7 +295,25 @@ export function createApp(config: ApiConfig): Hono {
     const updated = await setPermissionDecision({ runId, requestId, decision: body.decision });
     if (!updated) throw permissionNotFound(runId, requestId);
 
-    log('info', 'permission_decided', { runId, requestId, decision: body.decision });
+    // The read model records the decision (UI/inbox), then the workflow receives it as a
+    // Temporal Update (Signal fallback) — ADR-013: permission waits are workflow-level
+    // durable waits, not activity-blocking polls. The response shape is unchanged.
+    let delivery: 'update' | 'signal' | 'failed' = 'failed';
+    try {
+      const result = await submitPermissionDecision(
+        { runId, requestId, decision: body.decision },
+        toOrchestrationConfig(config),
+      );
+      delivery = result.delivered;
+    } catch (error) {
+      log('error', 'permission_delivery_failed', {
+        runId,
+        requestId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    log('info', 'permission_decided', { runId, requestId, decision: body.decision, delivery });
     return c.json({ runId, requestId, decision: body.decision });
   });
 

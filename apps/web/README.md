@@ -23,19 +23,29 @@ src/app
   runs/page.tsx                    list (filters, newest-first)
   runs/[id]/page.tsx               detail: pinned commit, harness/model, steps, artifacts, stream
   factories/[name]/dashboard       run counts, status split, spend
-  factories/[name]/{agents,automations,scorers,self-improvement,benchmarks,definition,gates,settings}
-  mcps|secrets|users               phase stubs (ComingSoon)
+  factories/[name]/definition      resource tree by kind, resolved gates, version + semantic diff (from/to)
+  factories/[name]/gates           per-stage gate, resolution source, merge policy, autonomy warning
+  factories/[name]/agents          role, harness/model, runner, tools allow/deny, secret names, spawnableBy
+  factories/[name]/automations     triggers, agent, gate overrides (dispatch is Phase 3)
+  factories/[name]/scorers         labels, passingScore, samplingRate, judge model (scoring is Phase 4)
+  factories/[name]/benchmarks      suites, configurations, pinned tasks (replay is Phase 4)
+  factories/[name]/self-improvement threshold, reviewer type, benchmark win (loop is Phase 5)
+  factories/[name]/settings        manifest, repositories, agent defaults, secret/integration/MCP names
+  mcps|secrets|users               phase stubs (ComingSoon) — MCPs Phase 3, Secrets/Users Phase 6
   api/chat                         POST proxy → /chat
   api/runs/[id]/events             SSE proxy (forwards Last-Event-ID / lastEventId)
   api/runs/[id]/permissions/[requestId]
   api/runs/[id]/cancel
 src/components
   nav/Sidebar.tsx                  client: active state + factory switcher
+  factory/ReadOnlyNotice.tsx       "definitions are edited in git" banner
+  factory/FactoryStubPage.tsx      shared shell for pages that ship later
   stream/EventStream.tsx           the ONE renderer (chat + run detail)
   stream/useRunStream.ts           EventSource + replay + gap detection + terminal close
   stream/RunLive.tsx               run detail's live half
 src/lib
-  api.ts                           typed client (`ApiClientError`), `safeGet` for degraded shell
+  api.ts                           typed client (`ApiClientError`), `safeGet`/`getOrError` for degraded shell
+  definition.ts                    typed read-only views over resource `doc`s (agents/automations/scorers/benchmarks)
   events.ts                        FactoryEvent → StreamBlock reducer (pure)
   nav.ts                           nav map + `factoryHref`
 ```

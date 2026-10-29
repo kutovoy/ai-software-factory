@@ -72,6 +72,42 @@ export async function cancelRun(
   await handle.signal('cancel', reason ?? 'cancelled');
 }
 
+export interface PermissionDecisionDelivery {
+  /** `update` when the workflow accepted the decision synchronously; `signal` on fallback. */
+  delivered: 'update' | 'signal';
+  accepted: boolean;
+}
+
+/**
+ * Delivers a human permission decision to the run workflow (ADR-013).
+ *
+ * Preferred channel is a Temporal **Update** (`submitPermissionDecision`): it is
+ * synchronous, so the API can confirm the decision was recorded in durable workflow
+ * state. If the Update is rejected (e.g. an older workflow definition, or the handler is
+ * momentarily unavailable) we fall back to the equivalent **Signal**
+ * (`permissionDecision`). Both handlers are registered at workflow start, so a decision
+ * posted immediately after `permission.requested` cannot race handler registration.
+ */
+export async function submitPermissionDecision(
+  input: { runId: string; requestId: string; decision: 'allow' | 'deny' | 'always' },
+  config: OrchestrationConfig = loadConfig(),
+): Promise<PermissionDecisionDelivery> {
+  const client = await getClient(config);
+  const handle = client.workflow.getHandle(workflowIdFor(input.runId));
+  const payload = { requestId: input.requestId, decision: input.decision };
+
+  try {
+    const ack = await handle.executeUpdate<
+      { accepted?: boolean },
+      [{ requestId: string; decision: 'allow' | 'deny' | 'always' }]
+    >('submitPermissionDecision', { args: [payload] });
+    return { delivered: 'update', accepted: ack?.accepted !== false };
+  } catch {
+    await handle.signal('permissionDecision', payload);
+    return { delivered: 'signal', accepted: true };
+  }
+}
+
 /** Best-effort description for diagnostics; Postgres remains the read model for the UI. */
 export async function describeRun(
   runId: string,

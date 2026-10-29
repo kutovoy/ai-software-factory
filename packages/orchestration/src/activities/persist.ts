@@ -5,6 +5,7 @@ import {
   finishRun,
   getSql,
   hasTerminalEvent,
+  isCancelRequested,
   listEvents,
   markRunRunning,
   upsertPermissionRequest,
@@ -190,4 +191,13 @@ export async function recordPermissionRequest(args: {
   detail: unknown;
 }): Promise<void> {
   await upsertPermissionRequest(args);
+}
+
+/**
+ * Read-model cancellation probe for the workflow's durable permission wait (ADR-013).
+ * The cancel Signal is the fast path; this catches a cancellation that was recorded in
+ * Postgres but whose Signal could not be delivered (e.g. a Temporal outage).
+ */
+export async function isRunCancelled(args: { runId: string }): Promise<boolean> {
+  return await isCancelRequested(args.runId);
 }

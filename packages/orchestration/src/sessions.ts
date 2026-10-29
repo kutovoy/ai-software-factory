@@ -2,6 +2,7 @@ import {
   FakeAdapter,
   OpencodeAdapter,
   type AdapterCapabilities,
+  type FactoryEvent,
   type HarnessAdapter,
   type SessionHandle,
 } from '@factory/adapters';
@@ -23,6 +24,23 @@ interface SessionEntry {
  * the spec allows that and the workflow records it).
  */
 const sessions = new Map<string, SessionEntry>();
+
+/**
+ * Per-run adapter event stream.
+ *
+ * A pump activity now returns as soon as a permission is requested (ADR-013), so the
+ * iterator must outlive one activity invocation: it is cached here and the next segment
+ * continues from the same generator. That keeps in-flight events intact (no SSE
+ * re-subscription gap, no scripted-adapter replay) and makes the persisted `seq` stream
+ * strictly monotonic. After a worker restart the registry is empty and a fresh stream is
+ * created — exactly the previous behaviour, deduplicated by `(runId, seq)`.
+ */
+interface StreamEntry {
+  iterator: AsyncIterator<FactoryEvent>;
+  controller: AbortController;
+}
+
+const streams = new Map<string, StreamEntry>();
 
 export interface EnsureSessionOptions {
   harnessUrl?: string;
@@ -49,6 +67,35 @@ export function createAdapter(harness: HarnessId, options: EnsureSessionOptions 
 
 export function getSession(runId: string): SessionEntry | undefined {
   return sessions.get(runId);
+}
+
+/** Returns the cached event stream for a run, creating one from the session if absent. */
+export function getOrCreateStream(entry: SessionEntry, runId: string): StreamEntry {
+  const existing = streams.get(runId);
+  if (existing) return existing;
+  const controller = new AbortController();
+  const created: StreamEntry = {
+    iterator: entry.adapter.streamEvents(entry.handle, controller.signal)[Symbol.asyncIterator](),
+    controller,
+  };
+  streams.set(runId, created);
+  return created;
+}
+
+export function getStream(runId: string): StreamEntry | undefined {
+  return streams.get(runId);
+}
+
+/** Aborts and forgets the cached stream (terminal state, cancellation, or adapter failure). */
+export function dropStream(runId: string): void {
+  const entry = streams.get(runId);
+  if (!entry) return;
+  streams.delete(runId);
+  try {
+    entry.controller.abort();
+  } catch {
+    // aborting an already-closed stream is a no-op
+  }
 }
 
 export async function ensureSession(
@@ -84,6 +131,7 @@ export async function ensureSession(
 }
 
 export async function dropSession(runId: string): Promise<void> {
+  dropStream(runId);
   const entry = sessions.get(runId);
   sessions.delete(runId);
   if (entry) {
@@ -101,5 +149,6 @@ export function capabilitiesOf(adapter: HarnessAdapter): AdapterCapabilities {
 
 /** Test hook: clear the registry between cases. */
 export function clearSessions(): void {
+  for (const runId of streams.keys()) dropStream(runId);
   sessions.clear();
 }

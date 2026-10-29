@@ -60,6 +60,8 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-provider-secret}
       PROXY_STUB_UPSTREAM: ${PROXY_STUB_UPSTREAM:-1}
       EXPOSE_RUN_TOKEN: ${EXPOSE_RUN_TOKEN:-1}
+      # SLA for a human permission wait before it is auto-denied (ADR-013).
+      PERMISSION_TIMEOUT_MS: ${PERMISSION_TIMEOUT_MS:-1800000}
     ports:
       - '8080:8080'
     volumes:
@@ -131,6 +133,12 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-provider-secret}
       RUNNER_BACKEND: ${RUNNER_BACKEND:-docker}
       WORKER_HEARTBEAT_FILE: /app/runs/.worker-heartbeat
+      PERMISSION_TIMEOUT_MS: ${PERMISSION_TIMEOUT_MS:-1800000}
+      # ADR-013: permission waits hold no activity slot, so 8 slots (the old hardcoded
+      # value that used to starve the queue) is enough for eight blocked runs plus new work.
+      # Raise for more concurrent streaming runs; the code default is Temporal's 100.
+      WORKER_MAX_CONCURRENT_ACTIVITY_TASKS: ${WORKER_MAX_CONCURRENT_ACTIVITY_TASKS:-8}
+      WORKER_MAX_CONCURRENT_WORKFLOW_TASKS: ${WORKER_MAX_CONCURRENT_WORKFLOW_TASKS:-8}
     volumes:
       - ./:/repo:ro
       - ./runs:/app/runs

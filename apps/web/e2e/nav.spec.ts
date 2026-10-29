@@ -14,19 +14,20 @@ const FACTORY_LEVEL = [
   'nav-settings',
 ];
 
-const STUBS = new Set([
-  'nav-mcps',
-  'nav-secrets',
-  'nav-users',
-  'nav-agents',
-  'nav-automations',
-  'nav-scorers',
-  'nav-self-improvement',
-  'nav-benchmarks',
-  'nav-definition',
-  'nav-gates',
-  'nav-settings',
-]);
+const STUBS = new Set(['nav-mcps', 'nav-secrets', 'nav-users']);
+
+/** Factory pages ship in Phase 2b; each must render real data, not a stub. */
+const FACTORY_PAGE_MARKERS: Record<string, string[]> = {
+  'nav-dashboard': ['dashboard-counts', 'dashboard-empty'],
+  'nav-agents': ['agent-card'],
+  'nav-automations': ['automations-table'],
+  'nav-scorers': ['scorer-card'],
+  'nav-self-improvement': ['self-improvement-settings'],
+  'nav-benchmarks': ['benchmark-suite'],
+  'nav-definition': ['definition-readonly-banner'],
+  'nav-gates': ['gates-table'],
+  'nav-settings': ['settings-manifest'],
+};
 
 /** Every nav item renders; stubs name their phase; no console errors anywhere. */
 test('every nav item renders and stubs name their phase', async ({ page }) => {
@@ -60,6 +61,14 @@ test('every nav item renders and stubs name their phase', async ({ page }) => {
       const phase = page.getByTestId('coming-soon-phase');
       await expect(phase).toBeVisible();
       await expect(phase).toContainText(/Phase \d/);
+    } else {
+      const markers = FACTORY_PAGE_MARKERS[testId];
+      if (markers) {
+        await expect(page.getByTestId('coming-soon')).toHaveCount(0);
+        let marker = page.getByTestId(markers[0]!);
+        for (const extra of markers.slice(1)) marker = marker.or(page.getByTestId(extra));
+        await expect(marker.first()).toBeVisible();
+      }
     }
   }
 

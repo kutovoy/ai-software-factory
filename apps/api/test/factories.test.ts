@@ -108,6 +108,18 @@ describe('GET /factories/:name/resources', () => {
     expect(foreman.path).toBe('agents/foreman/agent.md');
     expect(foreman.format).toBe('markdown');
     expect(foreman.summary.length).toBeGreaterThan(0);
+    // The normalised doc is projected too, so the Agents page can render role/tools
+    // without a second route. Secret *names* only; a definition holds no values.
+    expect(foreman.doc.role).toBe('foreman');
+    expect(foreman.doc.tools.allow).toContain('read');
+    expect(foreman.doc.spawnableBy).toEqual([]);
+
+    const implement = body.resources.find(
+      (resource: { kind: string; name: string }) =>
+        resource.kind === 'agent' && resource.name === 'implement',
+    );
+    expect(implement.doc.harness.auth.secretName).toBe('OPENCODE_API_KEY');
+    expect(implement.doc.tools.deny).toContain('git_push_force');
   });
 
   test('unknown factory is a 404 factory_not_found', async () => {

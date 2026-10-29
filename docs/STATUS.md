@@ -1,11 +1,49 @@
 # Project status
 
-Last updated: 2026-10-28
+Last updated: 2026-10-29
 
 ## Phase
 
-**Phase 2a — headless runtime: complete** (2026-10-28). Temporal runs, harness adapters, runner
-protocol, API + SSE, inference proxy, compose + smoke. Next: Phase 2b (Next.js UI + Playwright).
+**Phase 2b — web console: complete** (2026-10-29). Navigation parity, New Chat streaming, Inbox,
+Runs, and read-only factory pages (Definition, Gates, Agents, Automations, Scorers, Benchmarks,
+Self-improvement, Settings) consuming `apps/api` only; Playwright covers the core loop.
+Next: **Phase 3** (factory stages/foreman/gates as child workflows, `awaitGate` updates + escalation).
+
+### Phase 2b fix — human permission waits are workflow-level durable waits (ADR-013, 2026-10-29)
+
+Defect found in Phase 2b E2E: the worker ran 8 concurrent activities and `pumpEvents` blocked
+*inside* the activity while polling `run_permissions`, so eight abandoned permission-blocked runs
+consumed every slot and no new run started — contradicting the run-lifecycle promise that human
+gates are durable waits that cost nothing.
+
+Fix: `pumpEvents` is now a **segment** that returns as soon as `permission.requested` is emitted
+(canonical event persisted exactly once). `RunWorkflow` registers a Temporal **Update**
+(`submitPermissionDecision`; Signal `permissionDecision` as fallback) at workflow start, waits on
+workflow state with `condition()` (no activity slot, no fixed timeout), forwards the decision via
+`respondPermission`, and resumes the cached adapter stream from `lastSeq`. A configurable SLA
+(`PERMISSION_TIMEOUT_MS`, default 30 min) auto-denies and ends `error`; a 15s cancellation probe
+catches a cancel recorded in Postgres when the Signal is lost. `POST /runs/:id/permissions/:requestId`
+keeps its response shape and now delivers the Update/Signal after recording the read-model decision.
+Worker concurrency is env-tunable (`WORKER_MAX_CONCURRENT_ACTIVITY_TASKS`,
+`WORKER_MAX_CONCURRENT_WORKFLOW_TASKS`; code default 100/100, compose dev keeps 8 so the smoke test
+is a genuine regression check).
+
+Verification (2026-10-29):
+
+```
+bun run ci                     → typecheck clean; 158 pass / 6 skip / 0 fail
+integration (Temporal + PG)    → 3 pass: blocked run does not block a second (concurrency 2),
+                                 8 blocked runs + a ninth run completes, cancel-while-waiting → cancelled
+docker compose up -d --build   → api, worker, web, postgres, temporal healthy
+bash scripts/smoke.sh          → SMOKE PASSED incl. scripts/smoke-permissions.sh
+                                 (8 blocked runs parked, 9th reached ok, cancel → cancelled, deny → ok,
+                                  exactly one permission.requested + one terminal event)
+worker restart mid-permission  → decision delivered, run resumed, 14 unique seqs 1..14, status ok
+```
+
+Caveat: the decision path needs Temporal reachable; a failed delivery leaves the run to the SLA
+timer. After a worker restart the adapter session is recreated — durable decisions are re-forwarded
+best-effort and events stay deduplicated by `(runId, seq)`.
 
 ### Phase 2a verification
 
@@ -61,6 +99,54 @@ isolation yet.
       allowlist, streaming, revocation) → SSE ≥3 events + one terminal → approve permission →
       replay from `Last-Event-ID` → run dir assertions
 - [x] `scripts/ci.sh` + root `typecheck` extended to `packages/orchestration` and `apps/api`
+- [x] **Phase 2b fix (ADR-013)**: permission waits moved out of activities into workflow-level
+      durable waits — `pump.ts` segment loop, per-run stream cache, Update/Signal decision channel,
+      env-tunable worker concurrency, `scripts/smoke-permissions.sh`, pump + integration tests
+
+### Phase 2b — web console (2026-10-29)
+
+- [x] `apps/web` shell: sidebar (top-level + per-factory nav), factory switcher, account/usage footer;
+      primitives (`Card`, `Badge`, `Table`, `EmptyState`, `Spinner`, `ComingSoon`)
+- [x] New Chat → `POST /chat`, one `EventStream` renderer + `useRunStream` (replay by `Last-Event-ID`,
+      gap detection, terminal close, auto-scroll only when pinned); inline permission prompts
+- [x] Inbox (pending permissions + failed runs, deep links), Runs list (factory/status filters) and
+      run detail (pinned commit, harness/model, steps, artifacts, live tail, cancel)
+- [x] Dashboard: run counts, status split, spend (from `/runs`), honest empty state
+- [x] Factory pages (read-only projections, no writes): Definition (resource tree by kind, resolved
+      gates, version commit/tag/content hash/dirty, semantic diff with from/to selector), Gates
+      (per-stage gate + source + merge policy, autonomy warning + benchmark-gate requirement),
+      Agents (role, harness/model, runner, tool allow/deny, secret names, `spawnableBy`),
+      Automations (triggers, agent, gate overrides), Scorers (labels, passingScore, samplingRate,
+      judge model), Benchmarks (suites, configurations, pinned tasks), Self-improvement (threshold,
+      reviewer type, benchmark win, opting-in scorers), Settings (manifest, repos, agent defaults)
+- [x] `/factories/:name/resources` now also projects the normalised `doc` per resource (read-only,
+      secret names only) so Agents/Automations/Scorers/Benchmarks render without a second route
+- [x] Phase stubs name their phase: MCPs & apps (Phase 3), Secrets and Users (Phase 6)
+- [x] Playwright: `chat`, `inbox`, `nav`, `runs`, `definition` (gates table, version, diff, autonomy
+      warning); stubs asserted to name a phase; no CSS-class selectors, no console errors
+- [x] `scripts/e2e.sh` (compose up → smoke → Playwright) + `.github/workflows/ci.yml`
+      (`unit` = `bun install` + `bun run ci`, Docker-free; `e2e` = compose up + smoke + chromium)
+
+## Phase 2b verification (2026-10-29)
+
+```
+bun run ci                     → typecheck clean; 158 pass / 6 skip / 0 fail; both factories validate,
+                                 export --check canonical (15 files each)
+docker compose up -d --build   → postgres, temporal, api, web, worker healthy
+bash scripts/smoke.sh          → SMOKE PASSED (14 SSE events, 1 terminal, permission approved,
+                                 replay from seq 3 → 4, proxy stub + allowlist + revocation)
+cd apps/web && bunx playwright test → 14 passed (chat, inbox, nav, runs, definition + gates)
+```
+
+Implementation notes:
+- The console reads `apps/api` only (ADR-012): server components fetch the API; browser code talks to
+  same-origin `/api/*` route handlers. No DB, filesystem, harness or runner import in `apps/web`.
+- The Definition page defaults its diff `to` to the factory's pinned version commit (not `HEAD`), so a
+  later commit that does not touch the factory directory cannot make the comparison look unrelated.
+- With a single recorded version the diff card states that explicitly (`definition-diff-single-version`)
+  instead of inventing changes; Phase 4/5 pages show declared configuration plus a "runs in Phase N" note.
+- `runs.spec.ts` asserts newest-first on the row's `data-started-at` rather than parsing run ids, because
+  integration fixtures create runs whose ids do not embed a timestamp.
 
 ## Phase 2a verification (2026-10-28)
 
@@ -114,10 +200,10 @@ both accepted; `benchmarkGateRequired` is true exactly when `fullyAutonomous`; k
 
 ## Next
 
-1. Phase 2b: `apps/web` (Next.js) — New Chat streaming, Inbox approval, Runs detail, Definition diff;
-   Playwright E2E asserting streamed events land in the DOM.
-2. Phase 3: factory stages/foreman/gates as child workflows, `awaitGate` updates + escalation timers.
-3. Rebuild tool for the read model (replay JSONL → Postgres) before benchmarks rely on it.
+1. Phase 3: factory stages/foreman/gates as child workflows, `awaitGate` updates + escalation timers;
+   MCPs & apps page (per-agent MCP wiring).
+2. Rebuild tool for the read model (replay JSONL → Postgres) before benchmarks rely on it.
+3. Phase 4: scorers on real runs + benchmark replay; then Phase 5 self-improvement observer loop.
 4. Real runner path: build `factory-runner:local`, verify `opencode serve` readiness + proxy env inside
    the container against a live model endpoint.
 

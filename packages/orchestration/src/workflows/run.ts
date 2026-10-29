@@ -1,6 +1,8 @@
 import {
   CancellationScope,
+  condition,
   defineSignal,
+  defineUpdate,
   isCancellation,
   proxyActivities,
   setHandler,
@@ -9,6 +11,9 @@ import {
 import type * as activities from '../activities';
 import type {
   LeaseInfo,
+  PermissionDecisionAck,
+  PermissionDecisionInput,
+  PermissionDecisionValue,
   ProxyCredentials,
   PumpResult,
   RunArtifact,
@@ -34,6 +39,15 @@ import type {
  *   - proxy token activities: 1 min, 5 attempts (revocation is idempotent).
  * A transient failure is retried with backoff; after the limit the run ends `status: error`
  * with the failure recorded on the run row.
+ *
+ * Human gates (ADR-013): `pumpEvents` returns as soon as the harness asks for a permission
+ * decision. The workflow then waits on workflow state (`condition`) — no activity slot is
+ * held while a human thinks, so abandoned permission-blocked runs cannot starve the queue.
+ * The decision arrives as a Temporal **Update** (`submitPermissionDecision`, preferred) or
+ * a **Signal** (`permissionDecision`, fallback); both handlers are registered at workflow
+ * start so a decision posted immediately after `permission.requested` cannot race the
+ * handler registration. The wait has no fixed cost: only the SLA timer (auto-deny + error)
+ * and a slow cancellation probe touch the DB.
  */
 
 const persistence = proxyActivities<typeof activities>({
@@ -85,13 +99,50 @@ const proxy = proxyActivities<typeof activities>({
 /** Graceful cancellation. The API sends this instead of force-terminating the workflow. */
 export const cancelSignal = defineSignal<[string?]>('cancel');
 
+/** Preferred decision channel: a Temporal Update with a synchronous acknowledgement. */
+export const permissionDecisionUpdate = defineUpdate<
+  PermissionDecisionAck,
+  [PermissionDecisionInput]
+>('submitPermissionDecision');
+
+/** Fallback decision channel for clients/workers that cannot use Updates. */
+export const permissionDecisionSignal = defineSignal<[PermissionDecisionInput]>(
+  'permissionDecision',
+);
+
+/** Default SLA when the run input does not carry one. */
+const DEFAULT_PERMISSION_TIMEOUT_MS = 30 * 60 * 1000;
+/** How often a permission wait re-checks the read model for a cancellation. */
+const CANCEL_PROBE_MS = 15 * 1000;
+
 export async function RunWorkflow(input: RunInput): Promise<RunOutcome> {
   let cancelRequested = false;
   let cancelReason: string | undefined;
 
+  /** Decisions delivered while the workflow was running (durable workflow state). */
+  const decisions = new Map<string, PermissionDecisionValue>();
+
+  const recordDecision = (payload: PermissionDecisionInput): PermissionDecisionAck => {
+    decisions.set(payload.requestId, payload.decision);
+    return {
+      accepted: true,
+      requestId: payload.requestId,
+      decision: payload.decision,
+    };
+  };
+
+  // Registered before the first await: the API may post a decision the instant the
+  // `permission.requested` event is visible in the read model.
+  setHandler(permissionDecisionUpdate, recordDecision);
+  // A Signal handler must return void; the same decision is recorded either way.
+  setHandler(permissionDecisionSignal, (payload: PermissionDecisionInput) => {
+    recordDecision(payload);
+  });
+
   // Cancellation is cooperative (see `pumpEvents`): the API writes
   // `runs.cancel_requested_at`, the pump polls it, aborts the adapter, and the run ends
-  // `cancelled`. The signal is recorded here for the summary and as an audit breadcrumb.
+  // `cancelled`. The signal is recorded here for the summary and as an audit breadcrumb;
+  // it also wakes a permission wait immediately.
   setHandler(cancelSignal, (reason?: string) => {
     cancelRequested = true;
     cancelReason = reason ?? 'cancelled';
@@ -99,6 +150,7 @@ export async function RunWorkflow(input: RunInput): Promise<RunOutcome> {
 
   const workflowId = workflowInfo().workflowId;
   const runId = input.runId;
+  const permissionTimeoutMs = input.permissionTimeoutMs ?? DEFAULT_PERMISSION_TIMEOUT_MS;
 
   await persistence.persistRun({ input, workflowId });
 
@@ -119,6 +171,9 @@ export async function RunWorkflow(input: RunInput): Promise<RunOutcome> {
   let pump: PumpResult | null = null;
   let failure: string | undefined;
   let cancelled = false;
+  /** Decisions already forwarded to the harness (also sent to a recreated session). */
+  const decided: Record<string, PermissionDecisionValue> = {};
+  let lastSeq = 0;
 
   try {
     lease = await runner.leaseRunner({ input, harnessEnv });
@@ -157,11 +212,72 @@ export async function RunWorkflow(input: RunInput): Promise<RunOutcome> {
       if (cancelRequested) {
         cancelled = true;
       } else {
-        pump = await harness.pumpEvents({
-          input,
-          lease: lease as LeaseInfo,
-          sessionRef: started.sessionRef ?? null,
-        });
+        // Pump in segments: each segment ends at a permission request (ADR-013), so the
+        // human wait below happens in workflow state, not in an activity slot.
+        for (;;) {
+          pump = await harness.pumpEvents({
+            input,
+            lease: lease as LeaseInfo,
+            sessionRef: started.sessionRef ?? null,
+            fromSeq: lastSeq,
+            decided,
+          });
+          lastSeq = pump.lastSeq;
+
+          if (pump.stopReason !== 'permission') break;
+
+          const requestId = pump.permissionRequestId;
+          if (!requestId) break; // defensive: never wait without an id
+          const action = pump.permissionAction ?? 'permission';
+
+          // Durable wait. `condition` resolves on the Update/Signal handler, or after a
+          // slice, in which case we re-check cancellation recorded in the read model.
+          let remaining = permissionTimeoutMs;
+          while (
+            !cancelRequested &&
+            !decisions.has(requestId) &&
+            remaining > 0
+          ) {
+            const slice = Math.min(remaining, CANCEL_PROBE_MS);
+            await condition(
+              () => cancelRequested || decisions.has(requestId),
+              slice,
+            );
+            remaining -= slice;
+            if (!cancelRequested && !decisions.has(requestId)) {
+              if (await persistence.isRunCancelled({ runId })) {
+                cancelRequested = true;
+              }
+            }
+          }
+
+          if (cancelRequested) {
+            cancelled = true;
+            break;
+          }
+
+          const decision = decisions.get(requestId);
+          if (!decision) {
+            // SLA exceeded: auto-deny so the harness unblocks, then fail the run.
+            failure = `permission ${action} timed out`;
+            try {
+              await harness.respondPermission({ input, requestId, decision: 'deny' });
+            } catch {
+              // the harness may already be gone; the run still ends as error
+            }
+            await persistence.appendTerminalEvent({
+              runId,
+              stepId: `permission-timeout-${requestId}`,
+              status: 'error',
+              summary: failure,
+            });
+            break;
+          }
+
+          decisions.delete(requestId);
+          decided[requestId] = decision;
+          await harness.respondPermission({ input, requestId, decision });
+        }
       }
     }
   } catch (error) {
@@ -255,7 +371,7 @@ export async function RunWorkflow(input: RunInput): Promise<RunOutcome> {
   return {
     runId,
     status,
-    lastSeq: terminal.lastSeq || pump?.lastSeq || 0,
+    lastSeq: terminal.lastSeq || lastSeq || pump?.lastSeq || 0,
     summary,
   };
 }

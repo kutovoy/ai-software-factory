@@ -20,8 +20,15 @@ export interface OrchestrationConfig {
   providerKey?: string;
   /** Default runner backend when the definition does not name one. */
   defaultRunner: 'docker' | 'local';
-  /** How long a `permission.requested` may block before it is auto-denied. */
+  /** How long a `permission.requested` may wait before it is auto-denied. */
   permissionTimeoutMs: number;
+  /**
+   * Worker concurrency (ADR-013). Each *streaming* run holds one activity slot; a run
+   * waiting for a human decision holds none. Defaults are Temporal's own defaults, raised
+   * from the old hardcoded 8 that starved the queue.
+   */
+  maxConcurrentActivityTaskExecutions: number;
+  maxConcurrentWorkflowTaskExecutions: number;
 }
 
 function intFromEnv(value: string | undefined, fallback: number): number {
@@ -43,5 +50,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): OrchestrationC
     providerKey: env.OPENAI_API_KEY,
     defaultRunner: env.RUNNER_BACKEND === 'local' ? 'local' : 'docker',
     permissionTimeoutMs: intFromEnv(env.PERMISSION_TIMEOUT_MS, 30 * 60 * 1000),
+    // Activities are I/O-bound (harness streams, DB writes), so the Temporal default of
+    // 100 is a sane ceiling; workflow tasks are cheap and short.
+    maxConcurrentActivityTaskExecutions: intFromEnv(env.WORKER_MAX_CONCURRENT_ACTIVITY_TASKS, 100),
+    maxConcurrentWorkflowTaskExecutions: intFromEnv(env.WORKER_MAX_CONCURRENT_WORKFLOW_TASKS, 100),
   };
 }

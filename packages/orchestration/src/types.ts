@@ -46,6 +46,11 @@ export interface RunInput {
   workspace?: string;
   /** Setup commands from the definition's runner resource (executed inside the sandbox). */
   setupCommands?: string[];
+  /**
+   * SLA for a `permission.requested` wait (ADR-013). The wait itself is a workflow-level
+   * durable wait with no activity cost; this timer only escalates (auto-deny + error).
+   */
+  permissionTimeoutMs?: number;
 }
 
 export interface LeaseInfo {
@@ -81,6 +86,14 @@ export interface HarnessStartInfo {
   resumed: boolean;
 }
 
+/**
+ * Why a pump segment returned. A segment always ends quickly: it stops at the first
+ * `permission.requested` instead of blocking the activity on a human decision (ADR-013).
+ */
+export type PumpStopReason = 'permission' | 'terminal' | 'cancelled' | 'closed';
+
+export type PermissionDecisionValue = 'allow' | 'deny' | 'always';
+
 export interface PumpResult {
   /** Status reported by the adapter's terminal event, if it emitted one. */
   terminalStatus: TerminalStatus | null;
@@ -92,6 +105,24 @@ export interface PumpResult {
   appended: number;
   /** Number of adapter payloads dropped (unmappable). */
   droppedEvents: number;
+  /** Why the segment returned; `permission` means "wait for a human decision". */
+  stopReason: PumpStopReason;
+  /** Set when `stopReason === 'permission'`. */
+  permissionRequestId?: string;
+  /** Action the harness asked permission for (e.g. `bash`). */
+  permissionAction?: string;
+}
+
+/** Payload of the permission decision Update/Signal (ADR-013). */
+export interface PermissionDecisionInput {
+  requestId: string;
+  decision: PermissionDecisionValue;
+}
+
+export interface PermissionDecisionAck {
+  accepted: boolean;
+  requestId: string;
+  decision: PermissionDecisionValue;
 }
 
 export interface RunArtifact {

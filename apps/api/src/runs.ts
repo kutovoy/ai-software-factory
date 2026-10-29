@@ -156,6 +156,8 @@ export async function createRun(
     proxyModels: model ? [model] : [],
     fakeDelayMs: body.fakeDelayMs,
     setupCommands,
+    // The workflow owns the permission SLA (ADR-013); pin it into the run input.
+    permissionTimeoutMs: config.permissionTimeoutMs,
   };
 
   await insertRun({

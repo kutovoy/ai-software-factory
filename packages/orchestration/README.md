@@ -8,14 +8,20 @@ runner (ADR-009) and reaches models only through the API's inference proxy (ADR-
 apps/api ──startRun──▶ Temporal ──▶ worker (this package) ──▶ @factory/runners lease
                                               │                └─ harness (opencode | fake)
                                               ├─ @factory/adapters stream ──▶ events.jsonl + events table
-                                              └─ permissions ◀── run_permissions ◀── POST /runs/:id/permissions/:id
+                                              └─ permissions ◀── Update/Signal ◀── POST /runs/:id/permissions/:id
 ```
 
 ## Workflow shape
 
-`persistRun → issueProxyToken → leaseRunner → startHarness → pumpEvents → appendTerminalEvent
-→ collectArtifacts → finishRun → revokeProxyToken → killRunner`
+`persistRun → issueProxyToken → leaseRunner → startHarness → pumpEvents (segments, one per
+permission) → appendTerminalEvent → collectArtifacts → finishRun → revokeProxyToken → killRunner`
 
+- **Human permissions (ADR-013)**: `pumpEvents` returns as soon as the harness emits
+  `permission.requested` (the canonical event is persisted exactly once). The wait lives in
+  workflow state: a Temporal **Update** `submitPermissionDecision` (preferred) or the **Signal**
+  `permissionDecision` resolves `condition()`; the workflow then runs `respondPermission` and
+  resumes the cached adapter stream from `lastSeq`. A blocked run holds **no activity slot**.
+  `PERMISSION_TIMEOUT_MS` is the SLA that auto-denies and ends the run `error`.
 - **Cancel**: `POST /runs/:id/cancel` sends the `cancel` signal; the workflow cancels the
   pump activity, the adapter aborts, a `run.completed(cancelled)` event is appended (unless
   the adapter already emitted one) and the sandbox is killed.
@@ -48,7 +54,9 @@ docker compose up -d && bash scripts/smoke.sh # full stack smoke test
 
 Env: `TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE`, `TEMPORAL_TASK_QUEUE`, `DATABASE_URL`,
 `FACTORY_ROOT`, `RUNS_DIR`, `PROXY_PUBLIC_URL`, `OPENAI_BASE_URL`, `OPENAI_API_KEY`,
-`RUNNER_BACKEND` (`docker` | `local`), `PERMISSION_TIMEOUT_MS`.
+`RUNNER_BACKEND` (`docker` | `local`), `PERMISSION_TIMEOUT_MS`,
+`WORKER_MAX_CONCURRENT_ACTIVITY_TASKS` (default 100), `WORKER_MAX_CONCURRENT_WORKFLOW_TASKS`
+(default 100). Only *streaming* runs consume activity slots; permission waits consume none.
 
 ## Setup commands
 

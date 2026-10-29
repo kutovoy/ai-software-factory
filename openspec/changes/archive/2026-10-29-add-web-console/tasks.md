@@ -31,11 +31,11 @@
 - [x] 4.3 Run detail — pinned commit, harness/model, steps, artifacts, event stream, cancel button
 - [x] 4.4 Inbox — pending permissions + failed runs, age, deep links, empty state
 - [x] 4.5 Dashboard — run counts, terminal status split, cost total (from `/runs`), empty state
-- [ ] 4.6 Definition — resource tree, resolved gates, version (commit/tag/hash), diff vs previous
-- [ ] 4.7 Gates — per-stage resolved gate + source + merge policy + autonomy flag
-- [ ] 4.8 Agents — role, harness/model, runner, tools, secret names
-- [ ] 4.9 Automations / Scorers / Benchmarks / Self-improvement / Settings — read-only lists or phase stubs
-- [ ] 4.10 MCPs and apps / Secrets / Users — phase stubs
+- [x] 4.6 Definition — resource tree, resolved gates, version (commit/tag/hash), diff vs previous
+- [x] 4.7 Gates — per-stage resolved gate + source + merge policy + autonomy flag
+- [x] 4.8 Agents — role, harness/model, runner, tools, secret names
+- [x] 4.9 Automations / Scorers / Benchmarks / Self-improvement / Settings — read-only lists or phase stubs
+- [x] 4.10 MCPs and apps / Secrets / Users — phase stubs
 
 ## 5. Deployment & smoke
 
@@ -50,12 +50,12 @@
 - [x] 6.3 `runs.spec.ts` — list renders, detail shows pinned commit, replay after reload
 - [x] 6.4 `nav.spec.ts` — every nav item renders, stubs name their phase, no console errors
 - [x] 6.5 `inbox.spec.ts` — pending permission appears and deep-links to the run
-- [ ] 6.6 `definition.spec.ts` — gates table + version + diff render
-- [ ] 6.7 CI: `bunx playwright install --with-deps chromium` + `playwright test` against compose
+- [x] 6.6 `definition.spec.ts` — gates table + version + diff render
+- [x] 6.7 CI: `bunx playwright install --with-deps chromium` + `playwright test` against compose
 
 ## 7. Wrap-up
 
 - [x] 7.1 `apps/web/README.md` — dev workflow, testids, SSE notes
-- [ ] 7.2 `docs/STATUS.md` updated (2b complete, Phase 3 next)
-- [ ] 7.3 ADR-012 (web consumes API only; one event renderer)
-- [ ] 7.4 `openspec validate add-web-console` passes
+- [x] 7.2 `docs/STATUS.md` updated (2b complete, Phase 3 next)
+- [x] 7.3 ADR-012 (web consumes API only; one event renderer)
+- [x] 7.4 `openspec validate add-web-console` passes

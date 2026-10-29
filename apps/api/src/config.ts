@@ -31,6 +31,8 @@ export interface ApiConfig {
   stubUpstream: boolean;
   /** Max wall-clock for the SSE poll loop (ms) before the stream closes. */
   sseMaxLifetimeMs: number;
+  /** SLA for a run's human permission wait before it is auto-denied (ADR-013). */
+  permissionTimeoutMs: number;
 }
 
 function boolFromEnv(value: string | undefined, fallback: boolean): boolean {
@@ -61,6 +63,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     exposeRunToken: boolFromEnv(env.EXPOSE_RUN_TOKEN, false),
     stubUpstream: boolFromEnv(env.PROXY_STUB_UPSTREAM, false),
     sseMaxLifetimeMs: intFromEnv(env.SSE_MAX_LIFETIME_MS, 30 * 60 * 1000),
+    permissionTimeoutMs: intFromEnv(env.PERMISSION_TIMEOUT_MS, 30 * 60 * 1000),
   };
 }
 
@@ -77,6 +80,14 @@ export function toOrchestrationConfig(config: ApiConfig): OrchestrationConfig {
     providerBaseUrl: config.providerBaseUrl,
     providerKey: config.providerKey,
     defaultRunner: process.env.RUNNER_BACKEND === 'local' ? 'local' : 'docker',
-    permissionTimeoutMs: 30 * 60 * 1000,
+    permissionTimeoutMs: config.permissionTimeoutMs,
+    maxConcurrentActivityTaskExecutions: intFromEnv(
+      process.env.WORKER_MAX_CONCURRENT_ACTIVITY_TASKS,
+      100,
+    ),
+    maxConcurrentWorkflowTaskExecutions: intFromEnv(
+      process.env.WORKER_MAX_CONCURRENT_WORKFLOW_TASKS,
+      100,
+    ),
   };
 }
