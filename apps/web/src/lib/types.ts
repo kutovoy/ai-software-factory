@@ -981,3 +981,137 @@ export interface AuthorityChangeWire {
   prUrl?: string | null;
   prNumber?: number | null;
 }
+
+/* ------------------------------------------------ integrations (Phase 3b) */
+
+export interface IntegrationRepoWire {
+  owner: string;
+  name: string;
+}
+
+export interface GithubIntegrationWire {
+  configured: boolean;
+  provider: 'github';
+  factory: string;
+  /** Secret names only — values never leave the API. */
+  secretRef: string | null;
+  webhookSecretRef: string | null;
+  secretConfigured: boolean;
+  webhookSecretConfigured: boolean;
+  repos: IntegrationRepoWire[];
+  dryRun: boolean;
+  mergeQueue: boolean;
+  events: string[];
+  labels: string[];
+  branch: string | null;
+  skipBots: 'all' | 'none';
+  enabled: boolean;
+  webhookUrl: string;
+  updatedAt: string | null;
+}
+
+export interface IntegrationsResponseWire {
+  factory: string;
+  github: GithubIntegrationWire;
+  others: unknown[];
+}
+
+/* -------------------------------------------------- merge queue (Phase 3b) */
+
+export interface MergeBatchItemWire {
+  id: string;
+  batchId: string | null;
+  factory: string;
+  prNumber: number;
+  workItemId: string | null;
+  head: string;
+  status: 'queued' | 'batched' | 'merged' | 'reverted' | 'needs_human' | 'failed';
+  commitSha: string | null;
+  evidence: Record<string, unknown>;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface MergeBatchWire {
+  id: string;
+  factory: string;
+  repo: string;
+  status:
+    | 'queued'
+    | 'merging'
+    | 'verifying'
+    | 'merged'
+    | 'bisected'
+    | 'reverted'
+    | 'checks_timeout'
+    | 'failed';
+  batchSize: number;
+  baseSha: string | null;
+  mergeSha: string | null;
+  checks: { name: string; conclusion: string; url?: string }[];
+  evidence: Record<string, unknown>;
+  actor: string | null;
+  reason: string | null;
+  workflowId: string | null;
+  createdAt: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+}
+
+export interface MergeEventWire {
+  id: number;
+  batchId: string;
+  factory: string;
+  type: string;
+  subject: string;
+  payload: Record<string, unknown>;
+  createdAt: string | null;
+}
+
+export interface MergeQueueResponseWire {
+  factory: string;
+  batchSize: number;
+  checksTimeoutMs: number;
+  inFlight: MergeBatchWire | null;
+  queued: MergeBatchItemWire[];
+  batches: (MergeBatchWire & { items: MergeBatchItemWire[]; events: MergeEventWire[] })[];
+  workflow: { status: string; workflowId: string } | null;
+}
+
+/* ------------------------------------------------- automations (Phase 3b) */
+
+export interface AutomationScheduleWire {
+  status: string;
+  temporalScheduleId: string | null;
+  cron: string | null;
+  lastFireAt: string | null;
+  lastWorkItemId: string | null;
+  fireCount: number;
+  lastError: string | null;
+}
+
+export interface AutomationWebhookWire {
+  deliveries: number;
+  accepted: number;
+  ignored: number;
+  lastDeliveryAt: string | null;
+  lastWorkItemId: string | null;
+}
+
+export interface AutomationViewWire {
+  name: string;
+  displayName: string;
+  enabled: boolean;
+  agent: string | null;
+  cron: string | null;
+  webhookEvents: string[];
+  schedule: AutomationScheduleWire | null;
+  webhook: AutomationWebhookWire;
+}
+
+export interface AutomationsResponseWire {
+  factory: string;
+  automations: AutomationViewWire[];
+  webhook: { url: string; secretRef: string | null };
+  schedules: unknown[];
+}

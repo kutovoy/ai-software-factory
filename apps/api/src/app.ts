@@ -14,6 +14,12 @@ import {
   type HarnessId,
 } from '@factory/orchestration';
 import {
+  automationPauseBodySchema,
+  pauseAutomationForApi,
+  syncAutomationsForApi,
+  type AutomationPauseBody,
+} from './automations';
+import {
   benchmarkGateStatus,
   benchmarkRunBodySchema,
   getBenchmarkRunForApi,
@@ -71,7 +77,20 @@ import {
   type ProposalApplyBody,
   type ProposalDecisionBody,
 } from './improvement';
+import {
+  configureGithubForApi,
+  getIntegrationsForApi,
+  githubIntegrationBodySchema,
+  type GithubIntegrationBody,
+} from './integrations';
 import { log } from './logger';
+import {
+  getAutomationsForApi,
+  getMergeQueueForApi,
+  mergeRevertBodySchema,
+  revertMergeBatchForApi,
+  type MergeRevertBody,
+} from './merge-queue';
 import { registerProxy } from './proxy';
 import {
   createRun,
@@ -94,6 +113,7 @@ import {
   type CalibrationBody,
   type ScoringBody,
 } from './scoring';
+import { registerWebhooks } from './webhooks';
 import { getSql } from '@factory/orchestration';
 import {
   autonomyBodySchema,
@@ -402,6 +422,42 @@ export function createApp(config: ApiConfig): Hono {
     return c.json(await promoteCanaryForApi(config, body));
   });
 
+  /* ------------------------------------------------------- integrations */
+  app.get('/factories/:name/integrations', async (c) =>
+    c.json(await getIntegrationsForApi(config, c.req.param('name'))),
+  );
+
+  app.post('/integrations/github', async (c) => {
+    const body = await json<GithubIntegrationBody>(c, githubIntegrationBodySchema);
+    return c.json(await configureGithubForApi(config, body));
+  });
+
+  /* --------------------------------------------------------- merge queue */
+  app.get('/factories/:name/merge-queue', async (c) =>
+    c.json(await getMergeQueueForApi(config, c.req.param('name'))),
+  );
+
+  app.post('/merge-queue/revert', async (c) => {
+    const body = await json<MergeRevertBody>(c, mergeRevertBodySchema);
+    return c.json(await revertMergeBatchForApi(config, body), 202);
+  });
+
+  /* --------------------------------------------------------- automations */
+  app.get('/factories/:name/automations', async (c) =>
+    c.json(await getAutomationsForApi(config, c.req.param('name'))),
+  );
+
+  app.post('/factories/:name/automations/sync', async (c) =>
+    c.json(await syncAutomationsForApi(config, c.req.param('name'))),
+  );
+
+  app.post('/factories/:name/automations/:automation/pause', async (c) => {
+    const body = await json<AutomationPauseBody>(c, automationPauseBodySchema);
+    return c.json(
+      await pauseAutomationForApi(config, c.req.param('name'), c.req.param('automation'), body),
+    );
+  });
+
   /* ----------------------------------------------------------------- runs */
 
   app.post('/runs', async (c) => {
@@ -629,6 +685,7 @@ export function createApp(config: ApiConfig): Hono {
   }
 
   registerProxy(app, config);
+  registerWebhooks(app, config);
 
   return app;
 }

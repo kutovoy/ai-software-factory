@@ -267,6 +267,57 @@ export async function getWorkItem(sql: SQL, workItemId: string): Promise<WorkIte
   return rows[0] ? mapWorkItem(rows[0]) : null;
 }
 
+/**
+ * Idempotent creation for a *derived* id (scheduled automation fires, webhook deliveries).
+ * The caller derives the id from its idempotency key, so a replayed activity returns the
+ * existing row instead of failing on the primary key.
+ */
+export async function createWorkItemIdempotent(
+  sql: SQL,
+  args: CreateWorkItemArgs,
+): Promise<{ item: WorkItem; created: boolean }> {
+  const inserted = await sql.begin(async (tx) => {
+    const rows = (await tx`
+      insert into work_items (
+        id, factory, type, source, source_ref, title, stage, status, parent_id,
+        definition_commit, definition_dirty, canary_rollout_id, definition_version,
+        workflow_id, input
+      ) values (
+        ${args.id}, ${args.factory}, ${args.type}, ${args.source},
+        ${JSON.stringify(args.sourceRef ?? {})}::jsonb, ${args.title}, ${args.stage}, 'active',
+        ${args.parentId ?? null}, ${args.definitionCommit}, ${args.definitionDirty ?? false},
+        ${args.canaryRolloutId ?? null}, ${args.definitionVersion ?? 'stable'},
+        ${args.workflowId ?? null}, ${JSON.stringify(args.input ?? {})}::jsonb
+      )
+      on conflict (id) do nothing
+      returning *
+    `) as WorkItemRow[];
+
+    if (!rows[0]) return null;
+
+    await tx`
+      insert into work_item_events (work_item_id, type, stage, actor, payload)
+      values (${args.id}, 'work_item.created', ${args.stage}, ${args.source},
+              ${JSON.stringify({
+                type: args.type,
+                source: args.source,
+                sourceRef: args.sourceRef ?? {},
+                parentId: args.parentId ?? null,
+                definitionCommit: args.definitionCommit,
+                definitionVersion: args.definitionVersion ?? 'stable',
+                canaryRolloutId: args.canaryRolloutId ?? null,
+              })}::jsonb)
+    `;
+
+    return mapWorkItem(rows[0] as WorkItemRow);
+  });
+
+  if (inserted) return { item: inserted, created: true };
+  const existing = await getWorkItem(sql, args.id);
+  if (!existing) throw new Error(`work item ${args.id} could not be created or read`);
+  return { item: existing, created: false };
+}
+
 export interface ListWorkItemsFilters {
   factory?: string;
   stage?: string;

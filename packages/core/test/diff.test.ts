@@ -76,8 +76,10 @@ describe('semantic diff', () => {
 
   it('reports gates, mergePolicy and improvement authority between the two reference factories', () => {
     const diff = diffDefinitions(loadOrThrow(EXAMPLE), loadOrThrow(LIGHTS_OFF));
+    // `example` also declares the nightly schedule automation, which `example-lights-off`
+    // does not; everything else is a factory-level change.
     expect(diff.added).toEqual([]);
-    expect(diff.removed).toEqual([]);
+    expect(diff.removed).toEqual([{ kind: 'automation', name: 'nightly' }]);
     expect(diff.changed).toHaveLength(1);
     expect(diff.changed[0].kind).toBe('factory');
 

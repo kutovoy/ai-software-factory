@@ -13,6 +13,10 @@ export const FORGE_ERROR_CODES = [
   'checks_not_green',
   /** Merge refused because the branch has no commits ahead of the base. */
   'no_commits',
+  /** The credential is missing, expired or lacks the scope the call needs. */
+  'auth_failed',
+  /** The provider rate limit is exhausted; retry after the reset time. */
+  'rate_limited',
 ] as const;
 
 export type ForgeErrorCode = (typeof FORGE_ERROR_CODES)[number];

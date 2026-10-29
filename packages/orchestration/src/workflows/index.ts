@@ -5,3 +5,6 @@ export * from './scoring';
 export * from './benchmark';
 export * from './improvement';
 export * from './canary';
+export * from './merge';
+export * from './automation';
+export * from './merge-revert';

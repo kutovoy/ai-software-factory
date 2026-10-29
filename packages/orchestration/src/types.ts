@@ -278,6 +278,12 @@ export interface FactoryWorkflowInput {
   defaultRunner: RunnerKindName;
   autoAllowPermissions: boolean;
   permissionTimeoutMs?: number;
+  /**
+   * ADR-022: when true the `ship` stage enqueues the pull request instead of merging it —
+   * the merge queue owns merges. Absent/false keeps the Phase-3a behaviour (the loop merges
+   * on a green gate).
+   */
+  mergeQueue?: boolean;
   resume?: FactoryWorkflowResume;
 }
 
@@ -291,6 +297,8 @@ export interface FactoryWorkflowOutcome {
   loopCount: number;
   prUrl?: string;
   merged?: boolean;
+  /** True when the pull request was handed to the merge queue instead of merged here. */
+  queued?: boolean;
   reviewVerdict?: ReviewVerdict;
   reason?: string;
 }
@@ -766,4 +774,109 @@ export interface CanaryDecisionSignal {
 /** One canary workflow per rollout; id derived from the rollout id. */
 export function canaryWorkflowId(rolloutId: string): string {
   return `canary-${rolloutId}`;
+}
+
+/* ==================================================================== */
+/* Merge queue (Phase 3b)                                               */
+/*                                                                      */
+/* Workflow-safe types only: no Node APIs, no Temporal worker imports.  */
+/* ==================================================================== */
+
+export interface MergeQueueWorkflowInput {
+  factory: string;
+  /** `owner/name` of the repository the queue merges into. */
+  repo: string;
+  /** Pull requests merged per batch (spec: configurable, default 2). */
+  batchSize: number;
+  /** How long the merged stack may stay pending before `checks_timeout`. */
+  checksTimeoutMs: number;
+  pollIntervalMs: number;
+  /** Stop after this many batches (a long-lived queue is re-started by the next enqueue). */
+  maxBatches: number;
+  /** When the queue is empty, wait this long for new work before completing. */
+  idleIntervalMs?: number;
+  /** How many empty waits are allowed before the workflow completes. */
+  maxIdleCycles?: number;
+  /** Who owns the queue run (recorded on events). */
+  actor?: string;
+}
+
+export interface MergeQueueBatchOutcome {
+  batchId: string;
+  status: string;
+  merged: number[];
+  needsHuman: number[];
+  reverted: boolean;
+  reason?: string;
+}
+
+export interface MergeQueueWorkflowOutcome {
+  factory: string;
+  batches: MergeQueueBatchOutcome[];
+  completed: boolean;
+  error?: string;
+}
+
+/** One merge queue per factory; the id is derived from the factory name. */
+export function mergeQueueWorkflowId(factory: string): string {
+  return `merge-queue-${factory}`;
+}
+
+/* ==================================================================== */
+/* Scheduled automations (Phase 3b)                                     */
+/*                                                                      */
+/* Workflow-safe types only: no Node APIs, no Temporal worker imports.  */
+/* ==================================================================== */
+
+export interface AutomationWorkflowInput {
+  factory: string;
+  factoryRoot: string;
+  /** Automation resource name (`automations/<name>/automation.md`). */
+  automation: string;
+  /** `automation_schedules.id` — `<factory>:<automation>`. */
+  scheduleId: string;
+  cron: string;
+  /** Idempotency key: the fire timestamp (schedule id + timestamp). */
+  fireAt?: string;
+  title?: string;
+  prompt?: string;
+  harness?: HarnessId;
+  model?: string;
+  runner?: RunnerKindName;
+}
+
+export interface AutomationWorkflowOutcome {
+  factory: string;
+  automation: string;
+  fireAt: string;
+  workItemId: string | null;
+  created: boolean;
+  skipped: boolean;
+  reason?: string;
+}
+
+/** One workflow per schedule fire; the id includes the fire timestamp. */
+export function automationWorkflowId(scheduleId: string, fireAt: string): string {
+  return `automation-${scheduleId}-${fireAt.replace(/[^0-9]/g, '')}`;
+}
+
+export interface MergeRevertWorkflowInput {
+  factory: string;
+  batchId: string;
+  actor: string;
+  reason: string;
+}
+
+export interface MergeRevertWorkflowOutcome {
+  factory: string;
+  batchId: string;
+  status: string;
+  sha: string | null;
+  prs: number[];
+  error?: string;
+}
+
+/** One workflow per revert; the id includes a timestamp so repeated reverts are distinct. */
+export function mergeRevertWorkflowId(batchId: string, at: string): string {
+  return `merge-revert-${batchId}-${at.replace(/[^0-9]/g, '')}`;
 }

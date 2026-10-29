@@ -4,7 +4,106 @@ Last updated: 2026-10-29
 
 ## Phase
 
-**Phase 5b — canary rollout + rollback: complete** (2026-10-29). A `canary` authority now starts a real
+**Phase 3b — GitHub forge, merge queue and webhook automations: complete** (2026-10-29). The loop can now
+run against a real repository backend (`GitHubForge`, credential by reference, ETag cache, backoff, dry run),
+land several PRs safely (`packages/merge` + `MergeQueueWorkflow`: serialized batches, merge-train gating,
+bisect-to-offender, revert on red), and take work in from verified GitHub webhooks and cron automations
+(Temporal schedules). CI stays credential-free: the GitHub contract runs against a recorded `fetch` stub.
+
+Next: **Phase 6** (multi-tenant/ops, auth/users, MCP wiring).
+
+### Phase 3b — GitHub forge + merge queue + automations (ADR-022/ADR-023, 2026-10-29)
+
+Forge (`packages/forge`): `github.ts` implements the full `CodeForge` contract over REST with an injected
+`fetch`. The token is resolved by **secret reference** at call time (`GITHUB_TOKEN` by default; the value
+never appears in definitions, events or logs), GETs are ETag-cached, 5xx/network errors back off
+exponentially, and a rate-limit response retries within a budget before surfacing `rate_limited` with the
+reset time. `401/403` map to `auth_failed` (with the missing scope when GitHub reports it), `404` to
+`not_found`, `405/409` to `checks_not_green` or `invalid_state`. `GITHUB_DRY_RUN=1` makes every mutation a
+no-op that returns a synthetic result and emits `github.intended_action`; nothing leaves the process. The
+shared contract suite runs against `FakeForge` and `GitHubForge` wired to a stateful stub seeded from
+`test/fixtures/github/seed.json` (recorded responses); `RUN_GITHUB=1` opts into the real network. The
+interface gained an optional `revert()` (a revert commit, never a force-push) — additive, so existing
+backends are unaffected. `FakeForge.merge` now applies the branch diff since its creation base (a real
+merge, not a tree replacement), and has deterministic stack-check hooks (`.ci-fail` marker, `setStackPending`).
+
+Merge queue (`packages/merge` + orchestration): `ship` enqueues instead of merging when the factory's GitHub
+integration sets `mergeQueue` (ADR-022); the engine is a deterministic **merge train** — merge, gate the
+merged stack at the new head, keep it if green, otherwise revert just that merge (one commit) and mark the
+PR `needs_human` with its failing checks while the rest of the batch lands. A stack that never reports
+within `MERGE_CHECKS_TIMEOUT_MS` fails `checks_timeout` and the whole batch is reverted (nothing merges).
+`MergeQueueWorkflow` is one durable workflow per factory (`USE_EXISTING`), and a unique partial index allows
+at most one batch in flight. A human revert is a one-shot `MergeRevertWorkflow` (the forge lives in the
+worker) audited with actor + reason. The queue key is the branch (`factory/<workItemId>`), so a reset forge
+cannot dedupe a fresh PR against a stale row.
+
+Persistence: `009_merge_and_webhooks.sql` (`integrations`, `merge_batches`, `merge_batch_items`,
+`merge_events`, `webhook_deliveries`, `automation_schedules`, `automation_fires`) + repositories (idempotent
+upserts; events deduped by `(batch, type, subject)`); `010_merge_queue_head_key.sql` moves the queue
+idempotency key from the PR number to the branch. *(Task 4.1 named the file `008_…`; `008_canary.sql` already
+existed, so it landed as `009`.)*
+
+Webhooks (`apps/api`): `POST /webhooks/:provider` verifies `X-Hub-Signature-256` **before parsing**, caps the
+body (`payload_too_large`), dedupes by `X-GitHub-Delivery`, skips bot senders by default (`skip_bots: all`),
+applies repository/event/label/branch filters, frames payload text as untrusted data (`sourceRef.untrusted`)
+and records every delivery (`accepted`/`ignored`/`rejected` + reason). Cron automations sync from the
+definition into Temporal schedules (`POST /factories/:name/automations/sync`), pause when disabled, and fire
+idempotently by `(scheduleId, fireAt)` into a derived work item id.
+
+API: `GET /factories/:name/merge-queue`, `POST /merge-queue/revert`, `GET /factories/:name/integrations`,
+`POST /integrations/github` (secret refs, repos, filters, dry-run, merge ownership, harness override),
+`GET /factories/:name/automations`, `POST /factories/:name/automations/sync`,
+`POST /factories/:name/automations/:automation/pause`, `GET /webhook-deliveries[/:id]`.
+
+UI: Settings › GitHub connection (status, repos, webhook URL + secret refs, dry-run and merge-ownership
+toggles, save form), a new **Merge queue** page (batch size, checks timeout, in-flight batch, waiting queue,
+batches with PRs/checks/bisect evidence/events and a revert control), and Automations showing webhook URL +
+secret ref, cron schedule status/last fire and webhook delivery counts with a sync button.
+
+Verification (2026-10-29):
+
+```
+bun run ci                     → typecheck clean; 395 pass / 86 skip / 0 fail; both factories validate,
+                                 export --check canonical (16 / 15 files)
+forge contract (fake + github)  → 32 pass: same suite against the recorded-fetch stub; credential by
+                                 reference, auth/rate-limit/protected-branch mapping, ETag 304s, dry run
+                                 (no fetch, intended actions), revert restores the tree
+merge engine (fake forge)      → 10 pass: green batch, bisect (clean subset + offender needs_human),
+                                 checks_timeout (revert, nothing merged), manual revert, idempotent retry
+merge queue integration (Temporal + PG, fake forge)
+                               → 4 pass: green batch merged, red stack bisected (offender escalated),
+                                 timeout reverted, manual revert workflow (audited, PR reverted)
+automation integration         → 4 pass: schedule created/active, fire → derived work item, replay of the
+                                 same fire is idempotent, disable pauses the schedule, operator pause
+webhook API integration        → 9 pass: unsigned/forged rejected (no item), signed issue → forge item with
+                                 sourceRef.untrusted, duplicate delivery ignored, bot skipped, non-matching
+                                 ignored with reason, payload_too_large, integration + automations projections,
+                                 token value refused as a secret ref
+full chain integration         → 2 pass: signed webhook → work item → loop (fake harness) → PR → enqueued →
+                                 merge queue merged → item done + merge.merged + PR merged in the forge
+docker compose up -d --build   → api, worker, web, postgres, temporal healthy
+bash scripts/smoke.sh          → SMOKE PASSED incl. §15 (integration by secret reference, unsigned webhook
+                                 rejected, signed webhook creates a forge item, duplicate ignored) and §16
+                                 (merge queue projection, nightly cron schedule active, automations webhook)
+cd apps/web && bunx playwright test → 23 passed (20 existing + merge-queue: settings/integrations, queued PR
+                                 merged by the queue and shown on the page, automations cron status + pause)
+```
+
+Caveats: the compose stack runs the fake forge, so a "merge commit" is a content-hash SHA and the webhook
+integration sets `harness: fake`/`runner: fake` (a real GitHub connection needs a PAT in `GITHUB_TOKEN`, a
+`GITHUB_WEBHOOK_SECRET`, and the factory's own harness/model). The GitHub REST path is wired but only
+exercised offline (`RUN_GITHUB=1` opts in). A merged PR cannot be merged twice, so bisect is a merge train
+rather than "revert the batch and re-merge"; a requeued PR would need a new PR. Cron automation work items
+fall back to human gates (the automation path does not consult the benchmark attestation — deferred).
+`source_ref`/`input` jsonb values are double-encoded by the Bun SQL driver (pre-existing); the API reads
+them through `parseJsonb`, so only ad-hoc `->>` SQL is affected.
+
+**Observed flake (tracked):** one intermittent test failure was seen once during Phase 5b (a canary
+integration assertion) and three reruns were green; it has not reproduced since (including the Phase 3b
+runs). Root cause not identified — treat a single failure in the canary/improvement suites as suspect
+first, and re-run before investigating.
+
+### Phase 5b — canary rollout (ADR-021, 2026-10-29) A `canary` authority now starts a real
 rollout: `CanaryWorkflow` publishes the composed candidate as a candidate version (materialised tree +
 branch + draft PR on the definition repo), new work items are assigned stable or candidate exactly once
 by `sha256(workItemId) % 100 < canaryPercent`, the observation window compares pass rate and
@@ -12,8 +111,6 @@ incident/failure rate per pinned commit, and the rollout is promoted (PR merged)
 automatically beyond `rollbackThreshold`. Manual promote/rollback work regardless of the window and are
 audited (`canary.started` / `canary.promoted` / `canary.rolled_back` with reason + evidence). The
 `canary_not_available` refusal is gone from the apply path (ADR-021 implemented).
-Next: **Phase 3b** (GitHub forge + merge queue) and Phase 6 (multi-tenant/ops).
-
 ### Phase 5b — canary rollout (ADR-021, 2026-10-29)
 
 Routing: `packages/core/src/improvement/canary.ts` — `canaryBucket()` (sha256 → 0..99) and
@@ -342,6 +439,25 @@ isolation yet.
       durable waits — `pump.ts` segment loop, per-run stream cache, Update/Signal decision channel,
       env-tunable worker concurrency, `scripts/smoke-permissions.sh`, pump + integration tests
 
+### Phase 3b — GitHub forge, merge queue, webhooks (2026-10-29)
+
+- [x] `packages/forge/src/github.ts`: REST `CodeForge` (injected `fetch`, secret by reference, ETag cache,
+      backoff, `auth_failed`/`rate_limited`/`not_found`/`protected_branch`), dry run with intended actions,
+      optional `revert()`; contract suite vs `FakeForge` + a recorded-fetch stub (`RUN_GITHUB=1` opt-in)
+- [x] `packages/merge`: deterministic merge-train engine (batch, gate the merged stack, bisect to the
+      offender, revert on red, manual revert) + unit tests
+- [x] `packages/orchestration`: `MergeQueueWorkflow` (one per factory, `USE_EXISTING`), merge activities,
+      `MergeRevertWorkflow`, `AutomationWorkflow` + schedule sync/pause client; loop `ship` enqueues when
+      `mergeQueue` is set
+- [x] `packages/core`: `009_merge_and_webhooks.sql` + `010_merge_queue_head_key.sql` and repositories
+      (integrations, merge batches/items/events, webhook deliveries, automation schedules/fires)
+- [x] `apps/api`: `POST /webhooks/:provider` (HMAC before parsing, size cap, dedupe, bot skip, filters,
+      untrusted framing), integration/merge-queue/automation routes, webhook delivery log
+- [x] `apps/web`: Settings GitHub connection form, Merge queue page (+ nav), Automations webhook/cron status
+      with a schedule sync button
+- [x] Tests: forge contract (offline), merge engine, merge-queue/automation/webhook integrations, the full
+      webhook → loop → PR → merge queue chain, smoke §15/§16, Playwright merge-queue spec
+
 ### Phase 2b — web console (2026-10-29)
 
 - [x] `apps/web` shell: sidebar (top-level + per-factory nav), factory switcher, account/usage footer;
@@ -547,10 +663,9 @@ both accepted; `benchmarkGateRequired` is true exactly when `fullyAutonomous`; k
 
 ## Next
 
-1. Phase 3b: GitHub `CodeForge` backend (must pass the shared contract suite) + merge queue, and the
-   MCPs & apps page (per-agent MCP wiring). Also: an autonomy read endpoint (`GET /autonomy`) and a
-   work-item cancel route, so the console no longer derives state from the event log or cleans up
-   by rejecting a gate.
+1. Phase 6: multi-tenant/ops, auth/users, and the MCPs & apps page (per-agent MCP wiring). Also: an
+   autonomy read endpoint (`GET /autonomy`) and a work-item cancel route, so the console no longer
+   derives state from the event log or cleans up by rejecting a gate.
 2. Canary follow-ups: garbage-collect `runs/canary/<rolloutId>` trees, expose rollout metrics as a
    time series (not just the window aggregate), and wire promotion to the local checkout/deploy.
 3. Rebuild tool for the read model (replay JSONL → Postgres) before benchmarks rely on it.

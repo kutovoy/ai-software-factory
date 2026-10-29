@@ -29,6 +29,10 @@
       "content": "---\nagent: foreman\nenabled: true\ngates:\n  spec: agent\ntriggers:\n  - event: issue_labeled\n    filter:\n      labels:\n        - factory-ready\n      repos:\n        - acme/api-service\n    provider: github\n---\n\nA maintainer labeled an issue `factory-ready`. Read the issue, restate the\ndeliverable, and drive it to a pull request. Post progress as comments on the\nissue and stop at any gate that resolves to `human`.\n"
     },
     {
+      "path": "automations/nightly/automation.md",
+      "content": "---\nagent: foreman\ndisplayName: Nightly maintenance\nenabled: true\ntriggers:\n  - provider: schedule\n    schedule: 0 3 * * *\n---\n\nRun the nightly maintenance pass: read the previous day's scored runs, cluster the\nfailures by root cause, and open one work item per cluster that still needs a human\ndecision. Keep the item scoped to a single deliverable and stop at any gate that\nresolves to `human`.\n"
+    },
+    {
       "path": "benchmarks/review/suite.yaml",
       "content": "agent: review\nconfigurations:\n  - agents:\n      - agent: review\n        model: anthropic/claude-sonnet-4-5\n    name: Baseline\n  - agents:\n      - agent: review\n        model: anthropic/claude-haiku-4-5\n    name: Candidate\ndescription: Compare review-agent configurations on scope and correctness.\nname: Pull request review\ntasks:\n  - broken-doc-link\n  - flaky-test\n"
     },

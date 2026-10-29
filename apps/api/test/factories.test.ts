@@ -97,7 +97,7 @@ describe('GET /factories/:name/resources', () => {
 
     expect(body.factory).toBe('example');
     expect(body.counts.agent).toBe(6);
-    expect(body.counts.automation).toBe(1);
+    expect(body.counts.automation).toBe(2);
     expect(body.counts.scorer).toBe(1);
     expect(body.counts.runner).toBe(1);
 

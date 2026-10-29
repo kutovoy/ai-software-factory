@@ -82,6 +82,17 @@ services:
       IMPROVEMENT_WINDOW_DAYS: ${IMPROVEMENT_WINDOW_DAYS:-30}
       IMPROVEMENT_MAX_PROPOSALS: ${IMPROVEMENT_MAX_PROPOSALS:-5}
       DEFINITION_REPO_OWNER: ${DEFINITION_REPO_OWNER:-factory}
+      # Phase 3b: webhook HMAC (by secret reference), payload cap and the merge queue.
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-smoke-webhook-secret}
+      WEBHOOK_PUBLIC_URL: ${WEBHOOK_PUBLIC_URL:-http://localhost:8080}
+      WEBHOOK_MAX_BYTES: ${WEBHOOK_MAX_BYTES:-1000000}
+      MERGE_BATCH_SIZE: ${MERGE_BATCH_SIZE:-2}
+      MERGE_CHECKS_TIMEOUT_MS: ${MERGE_CHECKS_TIMEOUT_MS:-600000}
+      MERGE_CHECKS_POLL_MS: ${MERGE_CHECKS_POLL_MS:-2000}
+      MERGE_MAX_BATCHES: ${MERGE_MAX_BATCHES:-25}
+      MERGE_IDLE_INTERVAL_MS: ${MERGE_IDLE_INTERVAL_MS:-30000}
+      MERGE_IDLE_CYCLES: ${MERGE_IDLE_CYCLES:-2}
+      GITHUB_DRY_RUN: ${GITHUB_DRY_RUN:-0}
     ports:
       - '8080:8080'
     volumes:
@@ -171,6 +182,13 @@ services:
       IMPROVEMENT_WINDOW_DAYS: ${IMPROVEMENT_WINDOW_DAYS:-30}
       IMPROVEMENT_MAX_PROPOSALS: ${IMPROVEMENT_MAX_PROPOSALS:-5}
       DEFINITION_REPO_OWNER: ${DEFINITION_REPO_OWNER:-factory}
+      # Phase 3b: merge queue (ADR-022). The queue workflow runs in this worker.
+      MERGE_BATCH_SIZE: ${MERGE_BATCH_SIZE:-2}
+      MERGE_CHECKS_TIMEOUT_MS: ${MERGE_CHECKS_TIMEOUT_MS:-600000}
+      MERGE_CHECKS_POLL_MS: ${MERGE_CHECKS_POLL_MS:-2000}
+      MERGE_MAX_BATCHES: ${MERGE_MAX_BATCHES:-25}
+      MERGE_IDLE_INTERVAL_MS: ${MERGE_IDLE_INTERVAL_MS:-30000}
+      MERGE_IDLE_CYCLES: ${MERGE_IDLE_CYCLES:-2}
       # ADR-013: permission waits hold no activity slot, so 8 slots (the old hardcoded
       # value that used to starve the queue) is enough for eight blocked runs plus new work.
       # Raise for more concurrent streaming runs; the code default is Temporal's 100.

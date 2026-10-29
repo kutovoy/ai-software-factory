@@ -30,3 +30,7 @@ export * from './improvement/index';
 export * from './metrics/index';
 export * from './diff/diff';
 export * from './version/version';
+export * from './integrations/index';
+export * from './merge/index';
+export * from './webhooks/index';
+export * from './automations/index';

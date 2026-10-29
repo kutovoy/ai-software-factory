@@ -410,3 +410,65 @@ versions. Cost: the assignment must be stored and honoured by every dispatch pat
 must be materialised for every rollout, and promotion merges the definition repo but does not rewrite
 the local checkout — the next checkout/deploy picks up the merged version. A rollout that cannot
 publish is recorded `unavailable` and never routes work.
+
+---
+
+## ADR-022 — The merge queue owns merges; no stage writes the default branch
+
+**Status:** accepted, implemented (2026-10-29, Phase 3b)
+**Context:** Phase 3a let the `ship` stage merge a pull request as soon as its own checks were
+green. A PR can be green alone and red in combination (semantic conflict), and concurrent
+merges race each other. The proposal requires that agents never push to `main` and that
+multiple PRs land safely, with bisect and revert.
+**Options:** keep the stage-level merge + rely on branch protection · GitHub auto-merge ·
+a queue owned by our orchestration.
+**Decision:** when a factory's GitHub integration declares `mergeQueue` (or a work item is
+created with `mergeQueue: true`), the `ship` stage opens the PR and **enqueues** it; nothing in
+the loop merges. `MergeQueueWorkflow` is one durable workflow per factory
+(`merge-queue-<factory>`, `USE_EXISTING` on a second start), so at most one batch is in flight
+(a unique partial index enforces it in Postgres too). A batch takes the oldest `batchSize`
+(2) queued PRs and runs as a **merge train**: each PR is squash-merged, then the merged stack
+is gated at the new head against required checks. Green keeps the merge; red reverts *just
+that merge* (one revert commit) and marks the PR `needs_human` with the failing checks; the
+rest of the batch still lands. A stack that never reports within `MERGE_CHECKS_TIMEOUT_MS`
+fails `checks_timeout` and the whole batch is reverted (nothing merges). A human revert runs
+as a one-shot `MergeRevertWorkflow` in the worker (the forge lives there) and is audited with
+actor + reason (`merge.reverted`). The queue idempotency key is the branch
+(`factory/<workItemId>`), not the PR number, so a reset forge cannot dedupe a fresh PR against
+a stale merged row.
+**Consequences:** merging is slower (serialized, gated) but safe; agents cannot push to the
+default branch, and every merge/revert/bisect is an append-only `merge_events` row. Cost: a
+merged PR cannot be merged twice, which is why bisect is a merge train rather than
+"revert the batch and re-merge" — a requeued PR would need a new PR. The loop's Phase-3a
+behaviour stays the default for factories that do not opt in, so existing flows and tests are
+unchanged.
+
+---
+
+## ADR-023 — Webhooks are untrusted input by default
+
+**Status:** accepted, implemented (2026-10-29, Phase 3b)
+**Context:** Work now enters the factory from GitHub events. A webhook endpoint is
+internet-facing: anyone can POST, redeliver, spoof a sender or embed instructions in an issue
+body that an agent might follow. The payload is data, never a command.
+**Options:** trust the network (GitHub only) · verify a shared secret · a GitHub App with
+per-installation verification.
+**Decision:** `POST /webhooks/:provider` verifies `X-Hub-Signature-256` (HMAC-SHA256, constant
+time) against the secret referenced by the integration (`webhookSecretRef`, resolved from the
+environment at request time; values never stored or logged) **before parsing**. A missing or
+mismatched signature is rejected with `invalid_signature` (401) and no work item is created;
+the rejection is recorded. Bodies above `WEBHOOK_MAX_BYTES` are rejected with
+`payload_too_large` (413) before parsing. `X-GitHub-Delivery` is the idempotency key: a
+redelivery is acknowledged and ignored (`duplicate_delivery`). Bot senders (`type: Bot` or
+`[bot]` logins) are skipped by default (`skip_bots: all`), and the skip is recorded. Repository,
+event, label and branch filters decide whether work is created; a non-matching event is
+recorded with its reason (`repo_not_configured`, `event_not_configured`, `label_mismatch`,
+`branch_mismatch`, `action_not_configured`, `no_matching_filter`) and ignored. Payload text
+reaches an agent only inside an `[UNTRUSTED WEBHOOK DATA …]` frame, and `sourceRef.untrusted`
+is `true` on the work item. When several factories watch the same repository the lowest
+factory name wins, deterministically.
+**Consequences:** spoofed and replayed deliveries are cheap to reject and fully audited
+(`webhook_deliveries`). Cost: every integration must reference a webhook secret, and the
+console has to show a secret *name* plus `configured: true/false` rather than the value. A
+GitHub App installation flow (short-lived tokens, per-installation signatures) can replace the
+PAT/secret pair behind the same interface.

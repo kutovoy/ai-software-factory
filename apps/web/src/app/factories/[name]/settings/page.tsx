@@ -1,10 +1,11 @@
+import { GithubIntegrationForm } from '@/components/integrations/GithubIntegrationForm';
 import { ReadOnlyNotice } from '@/components/factory/ReadOnlyNotice';
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Table } from '@/components/ui/Table';
-import { safeGet } from '@/lib/api';
-import type { FactoryDetail } from '@/lib/types';
+import { getOrError, safeGet } from '@/lib/api';
+import type { FactoryDetail, IntegrationsResponseWire } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,9 +14,13 @@ export default async function SettingsPage({ params }: { params: Promise<{ name:
   const factory = decodeURIComponent(name);
   const encoded = encodeURIComponent(factory);
 
-  const detail = await safeGet<{ factory: FactoryDetail } | null>(`/factories/${encoded}`, null);
+  const [detail, integrations] = await Promise.all([
+    safeGet<{ factory: FactoryDetail } | null>(`/factories/${encoded}`, null),
+    getOrError<IntegrationsResponseWire>(`/factories/${encoded}/integrations`),
+  ]);
   const manifest = detail?.factory.manifest ?? null;
   const version = detail?.factory.version ?? null;
+  const github = integrations.data?.github ?? null;
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 px-6 py-6">
@@ -126,6 +131,94 @@ export default async function SettingsPage({ params }: { params: Promise<{ name:
               </CardBody>
             </Card>
           </div>
+
+      <Card testId="settings-github-integration">
+        <CardHeader
+          title="GitHub connection"
+          hint="A token secret reference, the repositories it may act on, the webhook URL and the dry-run switch."
+          action={
+            github ? (
+              <Badge
+                tone={github.configured && github.secretConfigured ? 'success' : 'warning'}
+                testId="settings-github-status"
+              >
+                {github.configured
+                  ? github.secretConfigured
+                    ? github.dryRun
+                      ? 'dry run'
+                      : 'connected'
+                    : 'secret missing'
+                  : 'not configured'}
+              </Badge>
+            ) : null
+          }
+        />
+        <CardBody className="space-y-4 text-sm">
+          {integrations.error ? (
+            <p data-testid="settings-github-error" className="text-xs text-red-700">
+              {integrations.error.message}
+            </p>
+          ) : null}
+          {github ? (
+            <>
+              <dl className="grid gap-2 text-sm sm:grid-cols-[11rem,1fr]">
+                <dt className="text-slate-500">Token secret ref</dt>
+                <dd data-testid="settings-github-secret-ref" className="font-mono text-xs text-slate-800">
+                  {github.secretRef ?? '—'} {github.secretConfigured ? '· resolved' : '· not in the environment'}
+                </dd>
+                <dt className="text-slate-500">Webhook secret ref</dt>
+                <dd data-testid="settings-github-webhook-secret-ref" className="font-mono text-xs text-slate-800">
+                  {github.webhookSecretRef ?? '—'} {github.webhookSecretConfigured ? '· resolved' : '· not in the environment'}
+                </dd>
+                <dt className="text-slate-500">Webhook URL</dt>
+                <dd data-testid="settings-github-webhook-url" className="break-all font-mono text-xs text-slate-800">
+                  {github.webhookUrl}
+                </dd>
+                <dt className="text-slate-500">Filters</dt>
+                <dd data-testid="settings-github-filters" className="text-xs text-slate-700">
+                  events {github.events.join(', ')} · labels {github.labels.join(', ') || 'any'} · branch{' '}
+                  {github.branch ?? 'any'} · bots {github.skipBots}
+                </dd>
+                <dt className="text-slate-500">Merge ownership</dt>
+                <dd data-testid="settings-github-merge-queue" className="text-xs text-slate-700">
+                  {github.mergeQueue ? 'the merge queue owns merges' : 'the loop merges on a green ship gate'}
+                </dd>
+              </dl>
+
+              {github.repos.length === 0 ? (
+                <p data-testid="settings-github-repos-empty" className="text-xs text-slate-500">
+                  No repositories configured: the webhook route ignores every delivery until one is added.
+                </p>
+              ) : (
+                <Table
+                  testId="settings-github-repos-table"
+                  rowTestId="settings-github-repo-row"
+                  rows={github.repos}
+                  rowKey={(row) => `${row.owner}/${row.name}`}
+                  columns={[
+                    {
+                      header: 'Repository',
+                      cell: (row) => (
+                        <span className="font-mono text-xs text-slate-800">
+                          {row.owner}/{row.name}
+                        </span>
+                      ),
+                    },
+                  ]}
+                />
+              )}
+
+              <GithubIntegrationForm factory={factory} integration={github} />
+            </>
+          ) : (
+            <EmptyState
+              testId="settings-github-unavailable"
+              title="Integration settings unavailable"
+              description="The API did not return this factory's integration settings."
+            />
+          )}
+        </CardBody>
+      </Card>
 
           <Card testId="settings-mcps">
             <CardHeader title="MCP servers" hint="Names declared in factory.yaml; credentials are resolved elsewhere." />

@@ -51,7 +51,7 @@ export function getForge(id = process.env.CODE_FORGE ?? 'fake'): CodeForge {
   return defaultForge;
 }
 
-function factoryRepo(factoryRoot: string, factory: string): RepoRef {
+export function factoryRepo(factoryRoot: string, factory: string): RepoRef {
   const { definition, errors } = loadDefinition(factoryRoot);
   if (!definition) {
     throw ApplicationFailure.create({

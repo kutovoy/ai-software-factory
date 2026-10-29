@@ -152,6 +152,27 @@ export interface MergeResult {
   pullRequest: PullRequest;
 }
 
+/**
+ * A revert is the *only* way anything other than a merge lands on the default branch: it
+ * restores a previously-known tree as a new commit (never a force-push). The merge queue
+ * uses it to undo a batch whose merged stack went red (spec `merge-queue` › revert on red).
+ */
+export interface RevertInput {
+  repo: RepoRef;
+  /** Commit whose file tree is restored (usually the pre-batch default-branch head). */
+  toSha: string;
+  message?: string;
+  author?: { name: string; email: string };
+}
+
+export interface RevertResult {
+  repo: RepoRef;
+  /** The new revert commit on the default branch. */
+  sha: string;
+  branch: string;
+  revertedTo: string;
+}
+
 export interface CodeForge {
   readonly id: string;
   checkout(input: CheckoutInput): Promise<CheckoutResult>;
@@ -161,4 +182,6 @@ export interface CodeForge {
   comment(input: CommentInput): Promise<Comment>;
   getChecks(input: GetChecksInput): Promise<ChecksResult>;
   merge(input: MergeInput): Promise<MergeResult>;
+  /** Optional: backends that cannot rewrite the default branch (read-only mirrors) omit it. */
+  revert?(input: RevertInput): Promise<RevertResult>;
 }

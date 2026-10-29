@@ -19,6 +19,8 @@ import {
   type OpenPullRequestInput,
   type PullRequest,
   type RepoRef,
+  type RevertInput,
+  type RevertResult,
 } from './types';
 
 /**
@@ -40,6 +42,12 @@ type StoredCommit = CommitRef;
 interface RepoState {
   defaultBranch: string;
   branches: Map<string, string>;
+  /**
+   * Commit each branch was created from. A merge applies the branch's *diff* since this
+   * base onto the target, like a real forge — so merging two branches in sequence keeps
+   * both changes (a batch merge must not lose the first PR's files).
+   */
+  branchBases: Map<string, string>;
   commits: Map<string, StoredCommit>;
   pulls: PullRequest[];
   comments: Comment[];
@@ -54,6 +62,11 @@ export interface FakeForgeOptions {
   redCheckMarker?: string;
   /** Author recorded on commits when the caller does not provide one. */
   author?: { name: string; email: string };
+  /**
+   * Stack-check hook for the merge queue: a default-branch tree containing this path is
+   * "red" (a semantic conflict: every PR is green alone, the merged stack is not).
+   */
+  stackRedMarker?: string;
 }
 
 const DEFAULT_AUTHOR = { name: 'factory-agent', email: 'agent@factory.local' };
@@ -64,6 +77,8 @@ export class FakeForge implements CodeForge {
   private readonly defaultBranch: string;
   private readonly redCheckMarker: string;
   private readonly author: { name: string; email: string };
+  private readonly stackRedMarker: string;
+  private stackPending = false;
   private readonly repos = new Map<string, RepoState>();
   private clock = 1;
 
@@ -71,6 +86,7 @@ export class FakeForge implements CodeForge {
     this.defaultBranch = options.defaultBranch ?? 'main';
     this.redCheckMarker = options.redCheckMarker ?? '[red]';
     this.author = options.author ?? DEFAULT_AUTHOR;
+    this.stackRedMarker = options.stackRedMarker ?? '.ci-fail';
   }
 
   /* -------------------------------------------------------------- lifecycle */
@@ -83,6 +99,7 @@ export class FakeForge implements CodeForge {
     const state: RepoState = {
       defaultBranch: this.defaultBranch,
       branches: new Map([[this.defaultBranch, rootSha]]),
+      branchBases: new Map([[this.defaultBranch, rootSha]]),
       commits: new Map([
         [
           rootSha,
@@ -138,6 +155,7 @@ export class FakeForge implements CodeForge {
     }
     const from = this.resolve(state, input.repo, input.from ?? state.defaultBranch);
     state.branches.set(input.name, from);
+    state.branchBases.set(input.name, from);
     return { repo: input.repo, name: input.name, commit: from };
   }
 
@@ -280,7 +298,7 @@ export class FakeForge implements CodeForge {
       checks = state.checksByPull.get(pull.number) ?? this.defaultChecks(pull);
     } else {
       ref = input.ref ?? state.defaultBranch;
-      checks = state.checksByRef.get(ref) ?? [{ name: 'ci', conclusion: 'success' }];
+      checks = this.refChecks(state, ref);
     }
 
     return {
@@ -324,11 +342,25 @@ export class FakeForge implements CodeForge {
 
     const headSha = state.branches.get(pull.head);
     const baseSha = state.branches.get(pull.base);
-    if (!headSha || headSha === baseSha) {
+    if (!headSha || !baseSha || headSha === baseSha) {
       throw new ForgeError('no_commits', 'merge refused: the branch has no commits ahead of base', {
         repo: repoKey(input.repo),
         pullRequestNumber: pull.number,
       });
+    }
+
+    // Apply the branch diff since its creation base onto the target (a real merge, not a
+    // tree replacement): sequential merges keep every earlier change.
+    const headFiles = this.commitOf(state, input.repo, headSha).files;
+    const branchBase = state.branchBases.get(pull.head);
+    const baseFiles: Record<string, string> =
+      branchBase === undefined ? {} : this.commitOf(state, input.repo, branchBase).files;
+    const files: Record<string, string> = { ...this.commitOf(state, input.repo, baseSha).files };
+    for (const path of new Set([...Object.keys(baseFiles), ...Object.keys(headFiles)])) {
+      if (baseFiles[path] === headFiles[path]) continue;
+      const content = headFiles[path];
+      if (content === undefined) delete files[path];
+      else files[path] = content;
     }
 
     const mergeSha = this.sha(
@@ -336,13 +368,14 @@ export class FakeForge implements CodeForge {
       pull.base,
       `merge #${pull.number} (${input.method ?? 'merge'})`,
       headSha,
+      JSON.stringify(files),
     );
     state.commits.set(mergeSha, {
       repo: input.repo,
       sha: mergeSha,
       branch: pull.base,
       message: `Merge pull request #${pull.number} from ${pull.head}`,
-      files: { ...this.commitOf(state, input.repo, headSha).files },
+      files,
       author: this.author,
       at: this.now(),
     });
@@ -350,6 +383,31 @@ export class FakeForge implements CodeForge {
     pull.state = 'merged';
 
     return { merged: true, sha: mergeSha, pullRequest: pull };
+  }
+
+  /**
+   * Reverts the default branch to a previous tree as a **new commit** (never a force-push).
+   * This is the only write to the default branch other than a merge, and the merge queue
+   * owns it (spec `merge-queue` › revert on red).
+   */
+  async revert(input: RevertInput): Promise<RevertResult> {
+    const state = this.state(input.repo);
+    const target = this.commitOf(state, input.repo, input.toSha);
+    const message = input.message ?? `Revert to ${input.toSha}`;
+    const sha = this.sha(repoKey(input.repo), state.defaultBranch, message, JSON.stringify(target.files));
+
+    state.commits.set(sha, {
+      repo: input.repo,
+      sha,
+      branch: state.defaultBranch,
+      message,
+      files: { ...target.files },
+      author: input.author ?? this.author,
+      at: this.now(),
+    });
+    state.branches.set(state.defaultBranch, sha);
+
+    return { repo: input.repo, sha, branch: state.defaultBranch, revertedTo: input.toSha };
   }
 
   /* ---------------------------------------------------------- test helpers */
@@ -369,6 +427,14 @@ export class FakeForge implements CodeForge {
   /** Deterministic check simulation for any ref (branch or commit). */
   simulateChecksForRef(repo: RepoRef, ref: string, checks: CheckRun[]): void {
     this.state(repo).checksByRef.set(ref, checks);
+  }
+
+  /**
+   * Merge-queue hook: report `pending` for every default-branch ref so a stack gate can be
+   * driven into `checks_timeout` deterministically.
+   */
+  setStackPending(pending: boolean): void {
+    this.stackPending = pending;
   }
 
   listPullRequests(repo: RepoRef): PullRequest[] {
@@ -417,6 +483,25 @@ export class FakeForge implements CodeForge {
       if (head === sha) return name;
     }
     return undefined;
+  }
+
+  /**
+   * Checks for a branch/commit ref. Explicit simulations win; otherwise the tree decides:
+   * a `.ci-fail` marker (semantic conflict) is red, `setStackPending` is pending, else green.
+   */
+  private refChecks(state: RepoState, ref: string): CheckRun[] {
+    const explicit = state.checksByRef.get(ref);
+    if (explicit) return explicit;
+    if (this.stackPending) return [{ name: 'ci', conclusion: 'pending' }];
+    const sha = state.branches.get(ref) ?? (state.commits.has(ref) ? ref : null);
+    const files = sha ? state.commits.get(sha)?.files : undefined;
+    if (files && this.stackRedMarker in files) {
+      return [
+        { name: 'ci', conclusion: 'failure' },
+        { name: 'lint', conclusion: 'success' },
+      ];
+    }
+    return [{ name: 'ci', conclusion: 'success' }];
   }
 
   private defaultChecks(pull: PullRequest): CheckRun[] {

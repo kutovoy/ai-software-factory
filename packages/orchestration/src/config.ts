@@ -63,6 +63,18 @@ export interface OrchestrationConfig {
   improvementMaxProposals: number;
   /** Owner of the git repo that hosts factory definitions (fake forge in CI). */
   definitionRepoOwner: string;
+  /** Merge queue (ADR-022): pull requests merged per batch. */
+  mergeBatchSize: number;
+  /** How long the merged stack may stay pending before `checks_timeout`. */
+  mergeChecksTimeoutMs: number;
+  /** Poll interval while gating the merged stack. */
+  mergeChecksPollMs: number;
+  /** Batches one queue workflow run processes before completing. */
+  mergeMaxBatches: number;
+  /** Durable wait between batches when the queue is empty. */
+  mergeIdleIntervalMs: number;
+  /** Empty waits allowed before the queue workflow completes. */
+  mergeIdleCycles: number;
 }
 
 function intFromEnv(value: string | undefined, fallback: number): number {
@@ -111,5 +123,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): OrchestrationC
     improvementWindowDays: intFromEnv(env.IMPROVEMENT_WINDOW_DAYS, 30),
     improvementMaxProposals: intFromEnv(env.IMPROVEMENT_MAX_PROPOSALS, 5),
     definitionRepoOwner: env.DEFINITION_REPO_OWNER ?? 'factory',
+    mergeBatchSize: intFromEnv(env.MERGE_BATCH_SIZE, 2),
+    mergeChecksTimeoutMs: intFromEnv(env.MERGE_CHECKS_TIMEOUT_MS, 10 * 60 * 1000),
+    mergeChecksPollMs: intFromEnv(env.MERGE_CHECKS_POLL_MS, 2_000),
+    mergeMaxBatches: intFromEnv(env.MERGE_MAX_BATCHES, 25),
+    mergeIdleIntervalMs: intFromEnv(env.MERGE_IDLE_INTERVAL_MS, 30_000),
+    mergeIdleCycles: intFromEnv(env.MERGE_IDLE_CYCLES, 2),
   };
 }

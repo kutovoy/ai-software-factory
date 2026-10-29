@@ -11,6 +11,7 @@ const FACTORY_LEVEL = [
   'nav-benchmarks',
   'nav-definition',
   'nav-gates',
+  'nav-merge-queue',
   'nav-settings',
 ];
 
@@ -26,6 +27,7 @@ const FACTORY_PAGE_MARKERS: Record<string, string[]> = {
   'nav-benchmarks': ['benchmark-suite'],
   'nav-definition': ['definition-readonly-banner'],
   'nav-gates': ['gates-table'],
+  'nav-merge-queue': ['merge-queue-batches'],
   'nav-settings': ['settings-manifest'],
 };
 

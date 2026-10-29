@@ -59,6 +59,27 @@ export interface ApiConfig {
   improvementMaxProposals: number;
   /** Owner of the git repo that hosts definitions (fake forge in CI). */
   definitionRepoOwner: string;
+  /** Merge queue (ADR-022): pull requests merged per batch. */
+  mergeBatchSize: number;
+  /** How long the merged stack may stay pending before `checks_timeout`. */
+  mergeChecksTimeoutMs: number;
+  mergeChecksPollMs: number;
+  mergeMaxBatches: number;
+  mergeIdleIntervalMs: number;
+  mergeIdleCycles: number;
+  /**
+   * Webhooks (ADR-023): hard cap on a delivery body. Anything larger is rejected with
+   * `payload_too_large` before parsing.
+   */
+  webhookMaxBytes: number;
+  /** Secret *name* holding the GitHub webhook HMAC key when an integration has none. */
+  webhookSecretRef: string;
+  /** GitHub API base URL (a stub/fake endpoint in tests and dry-run demos). */
+  githubBaseUrl: string;
+  /** `GITHUB_DRY_RUN=1`: no repository mutation, synthetic results + intended actions. */
+  githubDryRun: boolean;
+  /** Public base URL of this API, used to render the webhook URL in the console. */
+  webhookPublicUrl: string;
 }
 
 function boolFromEnv(value: string | undefined, fallback: boolean): boolean {
@@ -122,6 +143,17 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     improvementWindowDays: intFromEnv(env.IMPROVEMENT_WINDOW_DAYS, 30),
     improvementMaxProposals: intFromEnv(env.IMPROVEMENT_MAX_PROPOSALS, 5),
     definitionRepoOwner: env.DEFINITION_REPO_OWNER ?? 'factory',
+    mergeBatchSize: intFromEnv(env.MERGE_BATCH_SIZE, 2),
+    mergeChecksTimeoutMs: intFromEnv(env.MERGE_CHECKS_TIMEOUT_MS, 10 * 60 * 1000),
+    mergeChecksPollMs: intFromEnv(env.MERGE_CHECKS_POLL_MS, 2_000),
+    mergeMaxBatches: intFromEnv(env.MERGE_MAX_BATCHES, 25),
+    mergeIdleIntervalMs: intFromEnv(env.MERGE_IDLE_INTERVAL_MS, 30_000),
+    mergeIdleCycles: intFromEnv(env.MERGE_IDLE_CYCLES, 2),
+    webhookMaxBytes: intFromEnv(env.WEBHOOK_MAX_BYTES, 1_000_000),
+    webhookSecretRef: env.GITHUB_WEBHOOK_SECRET_REF ?? 'GITHUB_WEBHOOK_SECRET',
+    githubBaseUrl: env.GITHUB_API_BASE_URL ?? 'https://api.github.com',
+    githubDryRun: boolFromEnv(env.GITHUB_DRY_RUN, false),
+    webhookPublicUrl: env.WEBHOOK_PUBLIC_URL ?? 'http://localhost:8080',
   };
 }
 
@@ -164,5 +196,11 @@ export function toOrchestrationConfig(config: ApiConfig): OrchestrationConfig {
     improvementWindowDays: config.improvementWindowDays,
     improvementMaxProposals: config.improvementMaxProposals,
     definitionRepoOwner: config.definitionRepoOwner,
+    mergeBatchSize: config.mergeBatchSize,
+    mergeChecksTimeoutMs: config.mergeChecksTimeoutMs,
+    mergeChecksPollMs: config.mergeChecksPollMs,
+    mergeMaxBatches: config.mergeMaxBatches,
+    mergeIdleIntervalMs: config.mergeIdleIntervalMs,
+    mergeIdleCycles: config.mergeIdleCycles,
   };
 }

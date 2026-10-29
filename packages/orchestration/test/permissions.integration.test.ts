@@ -59,9 +59,21 @@ let runsDir: string;
 async function migrate(databaseUrl: string): Promise<void> {
   const sql = new SQL(databaseUrl, { max: 1 });
   try {
+    // Mirrors `scripts/migrate.ts`: apply each file once (recorded in schema_migrations).
+    // Re-running every file against a dirty database would recreate indexes over data
+    // that violates them (the compose database is shared across suites).
+    await sql`create table if not exists schema_migrations (
+      name text primary key,
+      applied_at timestamptz not null default now()
+    )`;
+    const applied = new Set(
+      ((await sql`select name from schema_migrations`) as { name: string }[]).map((row) => row.name),
+    );
     const files = (await readdir(MIGRATIONS)).filter((file) => file.endsWith('.sql')).sort();
     for (const file of files) {
+      if (applied.has(file)) continue;
       await sql.unsafe(await readFile(join(MIGRATIONS, file), 'utf8'));
+      await sql`insert into schema_migrations (name) values (${file}) on conflict do nothing`;
     }
   } finally {
     await sql.close();

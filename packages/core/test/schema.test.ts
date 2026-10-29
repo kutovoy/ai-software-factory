@@ -163,6 +163,7 @@ describe('loader', () => {
         'agent:triage',
         'agent:verify',
         'automation:intake',
+        'automation:nightly',
         'benchmark:review',
         'benchmark-task:review/broken-doc-link',
         'benchmark-task:review/flaky-test',

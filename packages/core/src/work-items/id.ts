@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
 function encodeTime(timeMs: number): string {
@@ -33,4 +35,21 @@ export function newUlid(nowMs: number = Date.now(), bytes: Uint8Array = randomBy
 /** Stable work item id: `wi_<ulid>` (design decision 1). */
 export function newWorkItemId(nowMs: number = Date.now()): string {
   return `wi_${newUlid(nowMs)}`;
+}
+
+/**
+ * Deterministic work item id for a derived trigger (scheduled automation fire, webhook
+ * delivery). The caller passes its idempotency key (`scheduleId@fireAt`,
+ * `github:deliveryId`), so a replayed activity targets the same row.
+ */
+export function derivedWorkItemId(key: string): string {
+  const bytes = createHash('sha256').update(key).digest().subarray(0, 16);
+  let bits = 0n;
+  for (const byte of bytes) bits = (bits << 8n) | BigInt(byte);
+  let out = '';
+  for (let index = 0; index < 26; index += 1) {
+    out = CROCKFORD[Number(bits & 31n)] + out;
+    bits >>= 5n;
+  }
+  return `wi_${out}`;
 }

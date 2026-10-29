@@ -79,6 +79,13 @@
       "name": "@factory/forge",
       "version": "0.0.0",
     },
+    "packages/merge": {
+      "name": "@factory/merge",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/forge": "workspace:*",
+      },
+    },
     "packages/orchestration": {
       "name": "@factory/orchestration",
       "version": "0.0.0",
@@ -87,6 +94,7 @@
         "@factory/core": "workspace:*",
         "@factory/evals": "workspace:*",
         "@factory/forge": "workspace:*",
+        "@factory/merge": "workspace:*",
         "@factory/runners": "workspace:*",
         "@temporalio/activity": "^1.11.7",
         "@temporalio/client": "^1.11.7",
@@ -115,6 +123,8 @@
     "@factory/evals": ["@factory/evals@workspace:packages/evals"],
 
     "@factory/forge": ["@factory/forge@workspace:packages/forge"],
+
+    "@factory/merge": ["@factory/merge@workspace:packages/merge"],
 
     "@factory/orchestration": ["@factory/orchestration@workspace:packages/orchestration"],
 

@@ -594,6 +594,56 @@ export async function FactoryWorkflow(
       // A review verdict is advisory: a human decision at the ship gate supersedes it.
       // Nothing merges on the verdict alone, and nothing here posts an approval.
 
+      // ADR-022: the merge queue owns merges. The stage opens a PR and enqueues it; the
+      // queue batches, gates the merged stack and merges (or bisects/reverts). Nothing in
+      // the loop writes the default branch.
+      if (input.mergeQueue) {
+        let enqueued: Awaited<ReturnType<typeof forge.enqueueMergeRequestActivity>>;
+        try {
+          enqueued = await forge.enqueueMergeRequestActivity({
+            factory: input.factory,
+            factoryRoot: input.factoryRoot,
+            pullRequestNumber: prNumber,
+            workItemId: input.workItemId,
+            head: `factory/${input.workItemId}`,
+          });
+        } catch (error) {
+          if (isCancellation(error)) throw error;
+          await workItems.recordWorkItemEvent({
+            workItemId: input.workItemId,
+            type: 'merge.enqueue_failed',
+            stage,
+            actor: 'foreman',
+            payload: { prNumber, reason: error instanceof Error ? error.message : String(error) },
+          });
+          await workItems.setWorkItemStatusActivity({
+            workItemId: input.workItemId,
+            status: 'escalated',
+            actor: 'foreman',
+            reason: 'the pull request could not be enqueued for merge',
+          });
+          return finish('escalated', stage, 'merge queue enqueue failed');
+        }
+        await workItems.recordWorkItemEvent({
+          workItemId: input.workItemId,
+          type: 'merge.queued',
+          stage,
+          actor: 'foreman',
+          payload: {
+            prNumber,
+            queueItemId: enqueued.itemId,
+            mergeQueueWorkflowId: enqueued.workflowId,
+          },
+        });
+        await workItems.setWorkItemStatusActivity({
+          workItemId: input.workItemId,
+          status: 'done',
+          actor: 'foreman',
+          reason: 'pull request queued for merge',
+        });
+        return { ...finish('done', stage, 'pull request queued for merge', false), queued: true };
+      }
+
       const merged = await forge.forgeMergePullRequest({
         factory: input.factory,
         factoryRoot: input.factoryRoot,

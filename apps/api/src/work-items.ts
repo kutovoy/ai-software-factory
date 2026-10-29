@@ -10,6 +10,7 @@ import {
   foremanAgentName,
   getActiveCanaryRollout,
   getAutonomyState,
+  getIntegration,
   getPendingGate,
   getWorkItem,
   listGateDecisions,
@@ -85,6 +86,11 @@ export const createWorkItemBodySchema = z
     harness: z.enum(['opencode', 'claude-code', 'codex', 'gemini', 'generic-cli', 'fake']).optional(),
     model: z.string().min(1).optional(),
     runner: z.enum(['local-docker', 'local-process', 'fake']).optional(),
+    /**
+     * ADR-022: hand the pull request to the merge queue instead of merging it in `ship`.
+     * Defaults to the factory's GitHub integration setting.
+     */
+    mergeQueue: z.boolean().optional(),
   })
   .strict();
 
@@ -285,6 +291,8 @@ export async function createWorkItemForApi(
   });
 
   const state = await getAutonomyState(sql, factory);
+  const integration = await getIntegration(sql, factory, 'github');
+  const mergeQueue = body.mergeQueue ?? integration?.config.mergeQueue === true;
   const gate = await benchmarkGateStatus(config, factory);
   const benchmarkGateSatisfied =
     gate.satisfied || Boolean(state?.overrideActor && state?.overrideReason);
@@ -333,6 +341,7 @@ export async function createWorkItemForApi(
     defaultRunner: defaults.runner,
     autoAllowPermissions: true,
     permissionTimeoutMs: config.permissionTimeoutMs,
+    ...(mergeQueue ? { mergeQueue: true } : {}),
   };
 
   const item = await createWorkItemRow(sql, {
@@ -355,6 +364,7 @@ export async function createWorkItemForApi(
       mergePolicy: manifest.mergePolicy,
       definitionVersion,
       canaryRolloutId: canary?.rolloutId ?? null,
+      mergeQueue,
     },
   });
 
@@ -393,6 +403,7 @@ export async function createWorkItemForApi(
     definitionCommit: commit,
     definitionVersion,
     canaryRolloutId: canary?.rolloutId ?? null,
+    mergeQueue,
     workflowId,
   });
 

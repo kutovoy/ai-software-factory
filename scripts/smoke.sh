@@ -719,4 +719,104 @@ for item_id in "$canary_item_id" "$canary_stable_item_id"; do
 done
 pass "canary work items cleaned up"
 
+# ------------------------------- 15. webhooks (Phase 3b, ADR-023)
+WEBHOOK_SECRET="${GITHUB_WEBHOOK_SECRET:-smoke-webhook-secret}"
+log "configuring the GitHub integration and delivering a signed webhook"
+integration="$(api -X POST "$API_URL/integrations/github" \
+  -H 'content-type: application/json' \
+  -d '{"factory":"example","secretRef":"GITHUB_TOKEN","webhookSecretRef":"GITHUB_WEBHOOK_SECRET","repos":[{"owner":"acme","name":"api-service"}],"events":["issues"],"labels":["factory-ready"],"dryRun":true,"mergeQueue":false,"harness":"fake","runner":"fake"}')"
+[ "$(printf '%s' "$integration" | jget github.configured)" = "true" ] \
+  || fail "github integration was not configured: $integration"
+[ "$(printf '%s' "$integration" | jget github.webhookSecretConfigured)" = "true" ] \
+  || fail "the webhook secret reference was not resolved"
+pass "github integration configured by secret reference"
+
+webhook_payload="$(cat <<JSON
+{"action":"labeled","repository":{"full_name":"acme/api-service"},"sender":{"login":"smoke","type":"User"},"label":{"name":"factory-ready"},"issue":{"number":9001,"title":"smoke: webhook intake","html_url":"https://github.com/acme/api-service/issues/9001","labels":[{"name":"factory-ready"}]}}
+JSON
+)"
+
+# Unsigned → 401 invalid_signature, no work item.
+unsigned_code="$(curl -sS -o "$TMP_DIR/webhook-unsigned.json" -w '%{http_code}' -X POST "$API_URL/webhooks/github" \
+  -H 'content-type: application/json' -H 'x-github-event: issues' \
+  -H "x-github-delivery: smoke-unsigned-$(date +%s)" -d "$webhook_payload")"
+[ "$unsigned_code" = "401" ] || fail "expected 401 for an unsigned webhook, got $unsigned_code"
+[ "$(jget code < "$TMP_DIR/webhook-unsigned.json")" = "invalid_signature" ] \
+  || fail "wrong error code for an unsigned webhook"
+pass "unsigned webhook rejected with invalid_signature"
+
+signature="$(SECRET="$WEBHOOK_SECRET" BODY="$webhook_payload" bun -e '
+  const { createHmac } = require("node:crypto");
+  process.stdout.write("sha256=" + createHmac("sha256", process.env.SECRET).update(process.env.BODY, "utf8").digest("hex"));
+')"
+delivery_id="smoke-signed-$(date +%s)"
+webhook_resp="$(api -X POST "$API_URL/webhooks/github" \
+  -H 'content-type: application/json' -H 'x-github-event: issues' \
+  -H "x-github-delivery: $delivery_id" -H "x-hub-signature-256: $signature" \
+  -d "$webhook_payload")"
+[ "$(printf '%s' "$webhook_resp" | jget status)" = "accepted" ] \
+  || fail "signed webhook was not accepted: $webhook_resp"
+webhook_item="$(printf '%s' "$webhook_resp" | jget workItemId)"
+[ -n "$webhook_item" ] || fail "signed webhook created no work item: $webhook_resp"
+
+webhook_detail="$(api "$API_URL/work-items/$webhook_item")"
+[ "$(printf '%s' "$webhook_detail" | jget workItem.source)" = "forge" ] \
+  || fail "webhook work item source is not forge"
+printf '%s' "$webhook_detail" | bun -e '
+  const d = JSON.parse(await Bun.stdin.text());
+  const ref = d.workItem?.sourceRef ?? {};
+  if (ref.untrusted !== true) { console.error("sourceRef is not framed as untrusted"); process.exit(1); }
+  if (ref.kind !== "issue" || ref.repo !== "acme/api-service") {
+    console.error(`unexpected sourceRef ${JSON.stringify(ref)}`); process.exit(1);
+  }
+' || fail "webhook work item sourceRef assertions failed"
+pass "signed webhook created work item $webhook_item (source forge, sourceRef untrusted)"
+
+# Redelivery of the same delivery id is acknowledged and ignored.
+duplicate="$(api -X POST "$API_URL/webhooks/github" \
+  -H 'content-type: application/json' -H 'x-github-event: issues' \
+  -H "x-github-delivery: $delivery_id" -H "x-hub-signature-256: $signature" \
+  -d "$webhook_payload")"
+[ "$(printf '%s' "$duplicate" | jget status)" = "ignored" ] \
+  || fail "redelivered webhook was not ignored: $duplicate"
+[ "$(printf '%s' "$duplicate" | jget reason)" = "duplicate_delivery" ] \
+  || fail "redelivered webhook reason is not duplicate_delivery"
+pass "duplicate delivery acknowledged and ignored"
+
+# Cleanup: the webhook item parks on the triage gate; reject it so nothing is left waiting.
+webhook_gate=""
+for _ in $(seq 1 120); do
+  webhook_gate="$(api "$API_URL/work-items/$webhook_item" | jget pendingGate.stage)"
+  [ -n "$webhook_gate" ] && break
+  sleep 0.5
+done
+if [ -n "$webhook_gate" ]; then
+  api -X POST "$API_URL/work-items/$webhook_item/gates/$webhook_gate" \
+    -H 'content-type: application/json' \
+    -d '{"decision":"reject","actor":"smoke","reason":"smoke: webhook cleanup"}' >/dev/null
+fi
+
+# ------------------------------- 16. merge queue + automations (Phase 3b)
+log "checking the merge queue and automation projections"
+merge_queue="$(api "$API_URL/factories/example/merge-queue")"
+[ "$(printf '%s' "$merge_queue" | jget batchSize)" = "2" ] \
+  || fail "merge queue batch size is not 2: $merge_queue"
+pass "merge queue projection returns batch size + batches"
+
+sync_resp="$(api -X POST "$API_URL/factories/example/automations/sync" \
+  -H 'content-type: application/json' -d '{"factory":"example"}')"
+printf '%s' "$sync_resp" | bun -e '
+  const d = JSON.parse(await Bun.stdin.text());
+  const nightly = (d.schedules ?? []).find((row) => row.automation === "nightly");
+  if (!nightly) { console.error("no nightly schedule row"); process.exit(1); }
+  if (nightly.status !== "active") { console.error(`nightly status ${nightly.status}`); process.exit(1); }
+  if (nightly.cron !== "0 3 * * *") { console.error(`nightly cron ${nightly.cron}`); process.exit(1); }
+' || fail "automation schedule sync assertions failed"
+pass "nightly cron automation synced to a Temporal schedule (active)"
+
+automations="$(api "$API_URL/factories/example/automations")"
+[ "$(printf '%s' "$automations" | jget webhook.url)" != "" ] || fail "automations has no webhook url"
+pass "automations projection exposes webhook url + cron status"
+
 log "SMOKE PASSED"
+

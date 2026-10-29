@@ -31,6 +31,7 @@ export const FACTORY_NAV: FactoryNavItem[] = [
   { segment: 'benchmarks', label: 'Benchmarks', testId: 'nav-benchmarks' },
   { segment: 'definition', label: 'Definition', testId: 'nav-definition' },
   { segment: 'gates', label: 'Gates', testId: 'nav-gates' },
+  { segment: 'merge-queue', label: 'Merge queue', testId: 'nav-merge-queue' },
   { segment: 'settings', label: 'Settings', testId: 'nav-settings' },
 ];
 

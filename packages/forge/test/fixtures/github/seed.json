@@ -1,0 +1,17 @@
+{
+  "$comment": "Recorded GitHub responses used to seed the offline stub (spec `code-forge` › offline contract test). Captured from a fixture repository; the stub serves this state and records every response it produces, so the contract suite never touches the network.",
+  "recordedAt": "2026-10-29T00:00:00.000Z",
+  "repos": {
+    "acme/api-service": {
+      "defaultBranch": "main",
+      "files": {
+        "README.md": "# api-service\n",
+        "src/index.ts": "export {};\n"
+      },
+      "checks": [
+        { "name": "ci", "conclusion": "success", "url": "https://ci.local/acme/api-service/1" },
+        { "name": "lint", "conclusion": "success", "url": "https://ci.local/acme/api-service/lint/1" }
+      ]
+    }
+  }
+}
