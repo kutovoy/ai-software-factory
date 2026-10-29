@@ -11,23 +11,23 @@
 
 ## 2. Adapters (`packages/adapters`)
 
-- [ ] 2.1 `events.ts` — canonical `FactoryEvent` union + Zod schemas + `seq` assignment
-- [ ] 2.2 `adapter.ts` — `HarnessAdapter` interface + `AdapterCapabilities`
-- [ ] 2.3 `fake.ts` — deterministic scripted adapter (message deltas, tool calls, permission request, patch, usage)
-- [ ] 2.4 `opencode.ts` — connect to `opencode serve`: `POST /session`, `prompt_async`, `/event` SSE, `/abort`,
+- [x] 2.1 `events.ts` — canonical `FactoryEvent` union + Zod schemas + `seq` assignment
+- [x] 2.2 `adapter.ts` — `HarnessAdapter` interface + `AdapterCapabilities`
+- [x] 2.3 `fake.ts` — deterministic scripted adapter (message deltas, tool calls, permission request, patch, usage)
+- [x] 2.4 `opencode.ts` — connect to `opencode serve`: `POST /session`, `prompt_async`, `/event` SSE, `/abort`,
   `/session/:id/permissions/:id`, `/session/:id/diff`, `/agent`
-- [ ] 2.5 Readiness probe + `harness_unreachable` error mapping
-- [ ] 2.6 Contract tests: same scripted scenario runs through fake + recorded opencode fixtures, producing identical canonical event shapes
+- [x] 2.5 Readiness probe + `harness_unreachable` error mapping
+- [x] 2.6 Contract tests: same scripted scenario runs through fake + recorded opencode fixtures, producing identical canonical event shapes
 
 ## 3. Runners (`packages/runners`)
 
-- [ ] 3.1 `protocol.ts` — `RunnerBackend` interface (`lease|exec|heartbeat|artifacts|kill`)
-- [ ] 3.2 `docker.ts` — container per run: checkout at pinned commit, mount workspace, start `opencode serve`,
+- [x] 3.1 `protocol.ts` — `RunnerBackend` interface (`lease|exec|heartbeat|artifacts|kill`)
+- [x] 3.2 `docker.ts` — container per run: checkout at pinned commit, mount workspace, start `opencode serve`,
   map port, return `harnessUrl`; stop/remove on kill
-- [ ] 3.3 `docker.ts` — `exec` streams stdout/stderr/exit code; timeout + kill on cancel
-- [ ] 3.4 Secret injection: allowlist only, never inference creds; scrub from logs
-- [ ] 3.5 `local.ts` — process-based fallback (no Docker) for fast tests, same interface
-- [ ] 3.6 Integration test tagged `slow`: lease → exec `echo` → artifacts → kill
+- [x] 3.3 `docker.ts` — `exec` streams stdout/stderr/exit code; timeout + kill on cancel
+- [x] 3.4 Secret injection: allowlist only, never inference creds; scrub from logs
+- [x] 3.5 `local.ts` — process-based fallback (no Docker) for fast tests, same interface
+- [x] 3.6 Integration test tagged `slow`: lease → exec `echo` → artifacts → kill
 
 ## 4. API (`apps/api`)
 
@@ -38,6 +38,9 @@
 - [ ] 4.5 `POST /runs/:id/cancel`, `POST /runs/:id/permissions/:requestId`
 - [ ] 4.6 `POST /chat` — sugar over `POST /runs` for a human-initiated prompt (same code path)
 - [ ] 4.7 Error envelope `{code, message, details?}` consistent with Phase 1 codes
+- [ ] 4.8 **Inference proxy** — OpenAI-compatible passthrough at `/v1/*`: per-run bearer token, injects the
+  real provider credential, model allowlist per run, streaming passthrough, records attempts, token revoked
+  at run end. Runner receives `OPENAI_BASE_URL=<proxy>/v1` + `OPENAI_API_KEY=<runToken>` only.
 
 ## 5. Persistence
 
@@ -51,6 +54,7 @@
 - [ ] 6.2 `.env.example` — `DATABASE_URL`, `TEMPORAL_ADDRESS`, `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `FACTORY_ROOT`
 - [ ] 6.3 `scripts/smoke.sh` — wait for health → create fake-harness run → assert ≥3 SSE events incl. terminal → approve permission
 - [ ] 6.4 `scripts/ci.sh` extended: typecheck + unit + adapter contract tests (no docker), `slow` tests opt-in
+- [ ] 6.5 Smoke asserts the proxy path: run's env has no provider key; a stub model call through the proxy succeeds
 
 ## 7. Docs & wrap-up
 

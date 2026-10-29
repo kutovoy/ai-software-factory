@@ -117,3 +117,40 @@ frontmatter key order; `import → export` must be byte-identical (enforced by t
 documents and reports added/removed/changed with JSON pointers, plus a human unified rendering.
 **Consequences:** agents can rewrite files without churn; `export --check` works as a CI lint; content
 hashes are order-independent, so a factory version is stable regardless of filesystem order.
+
+---
+
+## ADR-009 — The harness runs inside the runner
+
+**Status:** accepted (2026-10-28, Phase 2a)
+**Context:** ADR-002 says chat always goes adapter → runner, and tools must execute in the sandbox.
+**Decision:** `opencode serve` (and any future harness) starts **inside** the run container; the adapter
+connects over HTTP+SSE to a mapped port. The API never spawns processes on the host.
+**Consequences:** tool isolation is structural, not policy-based. Costs a readiness probe + port mapping
+per run; the runner must expose the harness endpoint in its lease handle.
+
+---
+
+## ADR-010 — Postgres is a derived read model
+
+**Status:** accepted (2026-10-28, Phase 2a)
+**Context:** The UI needs fast list/detail queries; Temporal is the execution truth.
+**Decision:** `runs`, `run_steps`, `events` are written by activities from workflow state and are safe to
+rebuild. Losing Postgres loses no run. Blobs never go in Postgres — artifacts are referenced by path+hash.
+**Consequences:** every persistence write must be idempotent (`runId+stepId`); a rebuild tool is needed
+before we rely on the read model for benchmarks.
+
+---
+
+## ADR-011 — Inference proxy, not credentials in the sandbox
+
+**Status:** accepted (2026-10-28, Phase 2a)
+**Context:** The harness inside the runner needs to call models, but inference credentials must never enter
+the sandbox (ADR-002/009 and the four-boundary model).
+**Decision:** the API hosts an OpenAI-compatible proxy (`/v1/*`). Each run gets a scoped bearer token and a
+model allowlist; the proxy injects the real provider credential, streams responses through, records every
+attempt, and revokes the token at run end. The runner only ever sees `OPENAI_BASE_URL=<proxy>/v1` and
+`OPENAI_API_KEY=<runToken>`.
+**Consequences:** adds one hop of latency; the proxy becomes a security-critical component (must not log
+prompts by default, must enforce allowlists, must fail closed). Enables per-run cost attribution and makes
+provider swaps invisible to harnesses.

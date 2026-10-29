@@ -52,6 +52,26 @@ secrets SHALL be injected, by reference.
 - **THEN** only that secret is injected for the duration of the run
 - **AND** it is never written to the event log
 
+### Requirement: Inference access without credentials
+
+Runners SHALL reach models only through an inference proxy that injects credentials outside the sandbox,
+authenticates per run, and enforces an allowlist of models.
+
+#### Scenario: Harness calls a model
+- **WHEN** the harness inside the sandbox calls the OpenAI-compatible base URL
+- **THEN** the request carries a per-run token, not a provider key
+- **AND** the proxy injects the real credential and forwards the request
+- **AND** the response streams back unchanged
+
+#### Scenario: Model not allowed
+- **WHEN** the harness requests a model outside the run's allowlist
+- **THEN** the proxy returns 403 with code `model_not_allowed`
+- **AND** the attempt is recorded in the event log
+
+#### Scenario: Token expiry
+- **WHEN** the run ends
+- **THEN** its proxy token stops working immediately
+
 ### Requirement: Artifacts by reference
 
 Artifacts SHALL be collected into the run directory and referenced by path and hash; blobs SHALL NOT be

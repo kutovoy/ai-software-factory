@@ -9,6 +9,13 @@
         "typescript": "^5.7.2",
       },
     },
+    "packages/adapters": {
+      "name": "@factory/adapters",
+      "version": "0.0.0",
+      "dependencies": {
+        "zod": "^3.23.8",
+      },
+    },
     "packages/cli": {
       "name": "@factory/cli",
       "version": "0.0.0",
@@ -29,6 +36,8 @@
     },
   },
   "packages": {
+    "@factory/adapters": ["@factory/adapters@workspace:packages/adapters"],
+
     "@factory/cli": ["@factory/cli@workspace:packages/cli"],
 
     "@factory/core": ["@factory/core@workspace:packages/core"],

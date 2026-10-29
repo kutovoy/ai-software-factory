@@ -8,7 +8,7 @@
     "apps/*"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/cli",
+    "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/cli && tsc --noEmit -p packages/adapters && tsc --noEmit -p packages/runners",
     "test": "bun test",
     "lint": "bun run typecheck",
     "factory": "bun packages/cli/src/index.ts",
