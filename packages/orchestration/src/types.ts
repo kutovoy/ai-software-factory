@@ -438,3 +438,69 @@ export function stageRunId(
 ): string {
   return `run_${workItemId.slice(3)}_${stage}_${attempt}${reviewerIndex ? `_r${reviewerIndex}` : ''}`;
 }
+
+/* ==================================================================== */
+/* Scoring (Phase 4a)                                                   */
+/*                                                                      */
+/* Workflow-safe types only: no Node APIs, no Temporal worker imports.  */
+/* ==================================================================== */
+
+export type ScoringTrigger = 'scheduled' | 'on_demand';
+export type ScoringJudgeMode = 'stub' | 'openai';
+
+export interface ScoringWorkflowInput {
+  /** Factory name as declared in `factory.yaml`. */
+  factory: string;
+  /** Absolute path of the factory definition directory on the worker host. */
+  factoryRoot: string;
+  trigger: ScoringTrigger;
+  /** On-demand: score exactly these runs (bypasses sampling, not the budget). */
+  runIds?: string[];
+  workItemId?: string;
+  stage?: string;
+  /** Scheduled window: terminal runs started within the last N days. */
+  windowDays?: number;
+  /** Explicit human request: bypass the sampling draw and cadence. */
+  force?: boolean;
+  maxScoresPerDay?: number;
+  cadenceMs?: number;
+  judgeMode?: ScoringJudgeMode;
+}
+
+export interface ScorableRunSummary {
+  runId: string;
+  workItemId: string | null;
+  stage: string | null;
+  status: string;
+}
+
+export type ScoringSkipReason = 'sampled_out' | 'budget_exhausted' | 'cadence';
+
+export interface ScoringPlanItem {
+  runId: string;
+  workItemId: string | null;
+  stage: string | null;
+  scorer: string;
+  scorerClass: 'deterministic' | 'judge';
+  rubricHash: string;
+  selected: boolean;
+  reason: ScoringSkipReason | null;
+}
+
+export interface ScoringPlan {
+  items: ScoringPlanItem[];
+  /** At least one judge item was skipped because the daily cap was reached. */
+  budgetExhausted: boolean;
+}
+
+export interface ScoringWorkflowOutcome {
+  factory: string;
+  scoreRunId: string;
+  runs: number;
+  scorers: number;
+  scored: number;
+  errored: number;
+  skipped: number;
+  budgetExhausted: boolean;
+  error?: string;
+}

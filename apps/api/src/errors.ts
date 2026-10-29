@@ -44,6 +44,9 @@ export const factoryNotFound = (factory: string): ApiError =>
 export const runNotFound = (runId: string): ApiError =>
   new ApiError('run_not_found', 404, `run "${runId}" does not exist`, { runId });
 
+export const scoreNotFound = (scoreId: string): ApiError =>
+  new ApiError('score_not_found', 404, `score "${scoreId}" does not exist`, { scoreId });
+
 export const definitionInvalid = (factory: string, errors: unknown): ApiError =>
   new ApiError('definition_invalid', 422, `factory "${factory}" does not validate`, {
     factory,

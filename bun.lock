@@ -15,6 +15,7 @@
       "dependencies": {
         "@factory/adapters": "workspace:*",
         "@factory/core": "workspace:*",
+        "@factory/evals": "workspace:*",
         "@factory/orchestration": "workspace:*",
         "@factory/runners": "workspace:*",
         "hono": "^4.6.14",
@@ -66,6 +67,13 @@
         "zod": "^3.23.8",
       },
     },
+    "packages/evals": {
+      "name": "@factory/evals",
+      "version": "0.0.0",
+      "dependencies": {
+        "@factory/core": "workspace:*",
+      },
+    },
     "packages/forge": {
       "name": "@factory/forge",
       "version": "0.0.0",
@@ -76,6 +84,7 @@
       "dependencies": {
         "@factory/adapters": "workspace:*",
         "@factory/core": "workspace:*",
+        "@factory/evals": "workspace:*",
         "@factory/forge": "workspace:*",
         "@factory/runners": "workspace:*",
         "@temporalio/activity": "^1.11.7",
@@ -101,6 +110,8 @@
     "@factory/cli": ["@factory/cli@workspace:packages/cli"],
 
     "@factory/core": ["@factory/core@workspace:packages/core"],
+
+    "@factory/evals": ["@factory/evals@workspace:packages/evals"],
 
     "@factory/forge": ["@factory/forge@workspace:packages/forge"],
 

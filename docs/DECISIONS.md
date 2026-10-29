@@ -252,3 +252,58 @@ no approval is posted to the forge: the **ship gate + merge policy** is the only
 **Consequences:** review costs more (≥2 runs + a judge per review stage) and is slower; verdicts are
 audit evidence, not permission. The judge is deterministic today (injectable), so calibration against
 real reviewers is a Phase 4 benchmark concern, not a Phase 3a claim.
+
+---
+
+## ADR-016 — Score provenance is mandatory; an uncalibrated judge cannot satisfy the benchmark gate
+
+**Status:** accepted (2026-10-29, Phase 4a)
+**Context:** Scores are only useful if they are comparable across time and trustworthy. Judge models
+drift, rubrics change, and an LLM judge can silently map an output to a nearby label. Without
+provenance a score cannot be re-derived; without calibration a judge is an unvalidated opinion. The
+loop also needs a hard cost bound: judge calls are the expensive part of measurement.
+**Options:** store only `{label, score}` · store model + version + rubric hash + prompt hash + usage ·
+add a human-labelled golden set with an agreement threshold and refuse to certify below N.
+**Decision:** every score stores `rubricHash` = sha256(rubric body + label set), `judgeModel`,
+`judgeModelVersion`, `promptHash` = sha256(system + user prompt), token usage and cost. The rubric
+hash is content-addressed: a body or label change produces a new hash and a new score row, while old
+scores keep the hash they were produced with. Deterministic scorers run always and cost nothing; judge
+scorers are sampled deterministically by `sha256(runId)` (stable across re-runs), gated by cadence, and
+bounded by a per-factory daily cap — reaching the cap yields `skipped` with `budget_exhausted` while
+deterministic scoring continues. Calibration is a first-class table: a golden set of hand-labelled
+runs is re-judged, and the result reports exact agreement, within-tolerance agreement, a per-label
+confusion matrix and a pass/fail verdict. Below the configured minimum size the result is
+`insufficient_data`, never a lucky pass. A judge score with no passing calibration for its current
+rubric hash + model is marked `uncalibrated: true` and is not benchmark-eligible; the scorers and
+metrics responses expose the gate state. The `JudgeClient` boundary has a deterministic `stub` (CI,
+tests, smoke) and an `openai` implementation for any OpenAI-compatible endpoint; the real path exists
+but is unexercised in CI.
+**Consequences:** scores are auditable and re-scorable; a rubric change is detectable instead of
+silently mixing incomparable numbers. Calibration becomes a prerequisite for benchmark/autonomy
+claims (Phase 4b), and the daily cap bounds spend. Cost: judge scoring needs a golden set before it
+can be trusted; judge calls are a network dependency outside CI; calibration sets are small, so
+verdicts are only as good as the examples.
+
+---
+
+## ADR-017 — Metrics are derived queries over the read model, not event-sourced counters
+
+**Status:** accepted (2026-10-29, Phase 4a)
+**Context:** The console needs throughput, cost per PR, cycle time, time to first human review,
+touchpoints per PR, automation % and defect rate. Event-sourced counters drift under retries,
+replays and backfills, and a counter is impossible to explain when a number looks wrong. The existing
+read model (`runs`, `work_items`, `gate_decisions`, `work_item_events`, `run_permissions`) already
+holds the raw facts.
+**Options:** increment counters on every event · maintain materialized views · compute at read time
+from the read model.
+**Decision:** metrics are **derived SQL queries computed at read time**, with an explicit window
+(`?window=7d|30d|90d`) echoed in the response. Every metric returns `{value, unit, sampleSize,
+definition}`; a metric with no data returns `value: null` plus a `reason`, never zero. Cost is
+attributed per stage by the stage-run id convention (`run_<workItemUlid>_<stage>_<attempt>`), and
+unattributed cost (chat/ad-hoc runs) is reported separately rather than hidden. Defect rate counts
+forge-recorded red checks per PR; human PR comments are only counted when the forge backend persists
+them (the fake forge does not). No "savings vs human" estimate is produced. If read-time queries get
+slow, materialized views are an implementation detail behind the same response shape.
+**Consequences:** numbers are explainable and rebuildable from the read model; replaying or backfilling
+cannot corrupt them. Cost: queries scan tables per request, so indexes and later materialization
+matter at scale; metric definitions are part of the API/UI contract and must change deliberately.

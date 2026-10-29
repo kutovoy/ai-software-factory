@@ -167,9 +167,51 @@ grep -q '^event: run.completed' "$TMP_DIR/sse.log" || fail "no terminal event in
 pass "SSE streamed $event_count events, exactly one terminal"
 
 # ------------------------------------------------------------ 6. run state
-detail="$(api "$API_URL/runs/$run_id")"
-[ "$(printf '%s' "$detail" | jget run.status)" = "ok" ] || fail "run did not end ok: $(printf '%s' "$detail" | jget run.status)"
+# The SSE stream closes as soon as the terminal event is appended; the run row flips to its
+# terminal status a moment later in `finishRunActivity`. Poll instead of racing that write.
+detail=""
+run_status=""
+for _ in $(seq 1 120); do
+  detail="$(api "$API_URL/runs/$run_id")"
+  run_status="$(printf '%s' "$detail" | jget run.status)"
+  case "$run_status" in
+    ok|error|cancelled) break ;;
+  esac
+  sleep 0.5
+done
+[ "$run_status" = "ok" ] || fail "run did not end ok: $run_status"
 pass "run reached status ok"
+
+# ------------------------------------------------------- 6b. scoring (4a)
+log "scoring the completed run (deterministic registry + stub judge)"
+scoring_resp="$(api -X POST "$API_URL/scoring" \
+  -H 'content-type: application/json' \
+  -d "{\"factory\":\"example\",\"runId\":\"$run_id\",\"force\":true}")"
+score_workflow="$(printf '%s' "$scoring_resp" | jget workflow.workflowId)"
+[ -n "$score_workflow" ] || fail "scoring workflow did not start: $scoring_resp"
+
+score_id=""
+score_status=""
+for _ in $(seq 1 120); do
+  scores_resp="$(api "$API_URL/scores?run=$run_id")"
+  score_id="$(printf '%s' "$scores_resp" | jget scores.0.id)"
+  score_status="$(printf '%s' "$scores_resp" | jget scores.0.status)"
+  [ -n "$score_id" ] && break
+  sleep 0.5
+done
+[ -n "$score_id" ] || fail "no score row appeared for run $run_id"
+[ "$score_status" = "ok" ] || fail "score status is $score_status, expected ok"
+score_label="$(printf '%s' "$scores_resp" | jget scores.0.label)"
+[ -n "$score_label" ] || fail "score has no label"
+score_uncalibrated="$(printf '%s' "$scores_resp" | jget scores.0.uncalibrated)"
+[ "$score_uncalibrated" = "true" ] || fail "judge score is not flagged uncalibrated (got $score_uncalibrated)"
+
+score_detail="$(api "$API_URL/scores/$score_id")"
+[ "$(printf '%s' "$score_detail" | jget events.0.type)" = "score.completed" ] \
+  || fail "score detail has no score.completed event"
+[ "$(printf '%s' "$score_detail" | jget score.rubricHash)" != "" ] \
+  || fail "score provenance has no rubric hash"
+pass "run $run_id scored ($score_label) with score.completed + provenance"
 
 if printf '%s' "$detail" | grep -q "$PROVIDER_KEY"; then
   fail "run detail leaked the provider key"

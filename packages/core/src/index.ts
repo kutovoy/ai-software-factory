@@ -23,5 +23,7 @@ export * from './autonomy/policy';
 export * from './work-items/types';
 export * from './work-items/id';
 export * from './work-items/repository';
+export * from './scoring/index';
+export * from './metrics/index';
 export * from './diff/diff';
 export * from './version/version';

@@ -7,6 +7,7 @@
   "dependencies": {
     "@factory/adapters": "workspace:*",
     "@factory/core": "workspace:*",
+    "@factory/evals": "workspace:*",
     "@factory/orchestration": "workspace:*",
     "@factory/runners": "workspace:*",
     "hono": "^4.6.14",

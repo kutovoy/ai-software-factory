@@ -35,6 +35,14 @@ export interface ApiConfig {
   permissionTimeoutMs: number;
   /** SLA for an undecided stage gate before the configured fallback applies. */
   gateSlaMs: number;
+  /** Judge backend: `stub` (credential-free) or `openai` (OpenAI-compatible endpoint). */
+  scoringJudgeMode: 'stub' | 'openai';
+  /** Hard daily cap on judge scores per factory. */
+  scoringMaxScoresPerDay: number;
+  /** Minimum time between judge scores for one scorer; 0 disables cadence. */
+  scoringCadenceMs: number;
+  scoringCron: string;
+  scoringWindowDays: number;
 }
 
 function boolFromEnv(value: string | undefined, fallback: boolean): boolean {
@@ -67,6 +75,11 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     sseMaxLifetimeMs: intFromEnv(env.SSE_MAX_LIFETIME_MS, 30 * 60 * 1000),
     permissionTimeoutMs: intFromEnv(env.PERMISSION_TIMEOUT_MS, 30 * 60 * 1000),
     gateSlaMs: intFromEnv(env.GATE_SLA_MS, 24 * 60 * 60 * 1000),
+    scoringJudgeMode: env.SCORING_JUDGE_MODE === 'openai' ? 'openai' : 'stub',
+    scoringMaxScoresPerDay: intFromEnv(env.SCORING_MAX_SCORES_PER_DAY, 200),
+    scoringCadenceMs: intFromEnv(env.SCORING_CADENCE_MS, 0),
+    scoringCron: env.SCORING_CRON ?? '0 3 * * *',
+    scoringWindowDays: intFromEnv(env.SCORING_WINDOW_DAYS, 1),
   };
 }
 
@@ -95,5 +108,10 @@ export function toOrchestrationConfig(config: ApiConfig): OrchestrationConfig {
       process.env.WORKER_MAX_CONCURRENT_WORKFLOW_TASKS,
       100,
     ),
+    scoringJudgeMode: config.scoringJudgeMode,
+    scoringMaxScoresPerDay: config.scoringMaxScoresPerDay,
+    scoringCadenceMs: config.scoringCadenceMs,
+    scoringCron: config.scoringCron,
+    scoringWindowDays: config.scoringWindowDays,
   };
 }

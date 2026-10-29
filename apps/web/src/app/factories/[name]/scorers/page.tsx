@@ -1,26 +1,178 @@
+import Link from 'next/link';
 import { ReadOnlyNotice } from '@/components/factory/ReadOnlyNotice';
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { safeGet } from '@/lib/api';
-import { docOf, type ScorerDoc } from '@/lib/definition';
-import type { FactoryDetail, FactoryResources } from '@/lib/types';
+import { formatCost, formatRelative } from '@/lib/format';
+import type {
+  CalibrationResultWire,
+  FactoryDetail,
+  ScoreAggregateWire,
+  ScorersResponse,
+  ScoresResponse,
+} from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
+
+function calibrationBadge(result: CalibrationResultWire | null, required: boolean) {
+  if (!required) {
+    return (
+      <Badge tone="neutral" testId="scorer-calibration">
+        not required
+      </Badge>
+    );
+  }
+  if (!result) {
+    return (
+      <Badge tone="warning" testId="scorer-calibration">
+        uncalibrated
+      </Badge>
+    );
+  }
+  if (result.verdict === 'pass') {
+    return (
+      <Badge tone="success" testId="scorer-calibration">
+        calibrated
+      </Badge>
+    );
+  }
+  if (result.verdict === 'insufficient_data') {
+    return (
+      <Badge tone="info" testId="scorer-calibration">
+        insufficient data
+      </Badge>
+    );
+  }
+  return (
+    <Badge tone="danger" testId="scorer-calibration">
+      calibration failed
+    </Badge>
+  );
+}
+
+function ConfusionTable({ result }: { result: CalibrationResultWire }) {
+  const humans = Object.keys(result.confusion).sort();
+  const judges = [...new Set(humans.flatMap((human) => Object.keys(result.confusion[human] ?? {})))].sort();
+  if (humans.length === 0) {
+    return <p className="text-xs text-slate-500">No observations recorded.</p>;
+  }
+  return (
+    <div className="overflow-x-auto">
+      <table data-testid="calibration-confusion" className="min-w-full text-xs">
+        <thead>
+          <tr>
+            <th className="px-2 py-1 text-left font-semibold text-slate-500">human \ judge</th>
+            {judges.map((judge) => (
+              <th key={judge} className="px-2 py-1 text-left font-mono font-medium text-slate-600">
+                {judge}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {humans.map((human) => (
+            <tr key={human} className="border-t border-slate-100">
+              <td className="px-2 py-1 font-mono text-slate-800">{human}</td>
+              {judges.map((judge) => (
+                <td key={`${human}-${judge}`} className="px-2 py-1 text-slate-700">
+                  {result.confusion[human]?.[judge] ?? 0}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function CalibrationPanel({ scorer }: { scorer: ScorersResponse['scorers'][number] }) {
+  const latest = scorer.calibration.latest;
+  return (
+    <Card testId="calibration-panel" className="border-slate-200">
+      <CardHeader
+        title={`Calibration · ${scorer.name}`}
+        hint="Judge-vs-human agreement on a hand-labelled golden set for the current rubric hash."
+        action={calibrationBadge(latest, scorer.calibration.required)}
+      />
+      <CardBody className="space-y-3">
+        {!latest ? (
+          <div data-testid="calibration-insufficient" className="rounded-lg border border-dashed border-slate-300 px-3 py-3 text-sm text-slate-600">
+            No calibration has been run for this rubric hash. Scores are marked{' '}
+            <span className="font-mono">uncalibrated</span> and cannot satisfy the benchmark gate.
+          </div>
+        ) : latest.verdict === 'insufficient_data' ? (
+          <div data-testid="calibration-insufficient" className="rounded-lg border border-dashed border-slate-300 px-3 py-3 text-sm text-slate-600">
+            <p className="font-semibold text-slate-800">insufficient_data</p>
+            <p>
+              {latest.sampleSize} example(s); the golden set is below the configured minimum size,
+              so no verdict is issued.
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Judge model <span className="font-mono">{latest.judgeModel}</span> · rubric{' '}
+              <span className="font-mono">{latest.rubricHash.slice(0, 12)}…</span>
+            </p>
+          </div>
+        ) : (
+          <>
+            <dl className="grid gap-3 text-sm sm:grid-cols-4">
+              <div>
+                <dt className="text-xs text-slate-500">Verdict</dt>
+                <dd data-testid="calibration-verdict">
+                  <Badge tone={latest.verdict === 'pass' ? 'success' : 'danger'}>{latest.verdict}</Badge>
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">Exact agreement</dt>
+                <dd data-testid="calibration-agreement" className="font-mono text-slate-900">
+                  {latest.agreementExact === null ? '—' : latest.agreementExact.toFixed(3)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">Within tolerance</dt>
+                <dd className="font-mono text-slate-900">
+                  {latest.agreementWithinTolerance === null
+                    ? '—'
+                    : latest.agreementWithinTolerance.toFixed(3)}{' '}
+                  <span className="text-xs text-slate-400">(±{latest.tolerance})</span>
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">Samples / threshold</dt>
+                <dd className="font-mono text-slate-900">
+                  {latest.sampleSize} / {latest.threshold}
+                </dd>
+              </div>
+            </dl>
+            <ConfusionTable result={latest} />
+            <p className="text-xs text-slate-500">
+              Judge <span className="font-mono">{latest.judgeModel}</span>
+              {latest.judgeModelVersion ? ` (${latest.judgeModelVersion})` : ''} · rubric{' '}
+              <span className="font-mono">{latest.rubricHash.slice(0, 12)}…</span> ·{' '}
+              {formatRelative(latest.createdAt)}
+            </p>
+          </>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
 
 export default async function ScorersPage({ params }: { params: Promise<{ name: string }> }) {
   const { name } = await params;
   const factory = decodeURIComponent(name);
   const encoded = encodeURIComponent(factory);
 
-  const [detail, resources] = await Promise.all([
+  const [detail, registry, scores] = await Promise.all([
     safeGet<{ factory: FactoryDetail } | null>(`/factories/${encoded}`, null),
-    safeGet<FactoryResources | null>(`/factories/${encoded}/resources`, null),
+    safeGet<ScorersResponse | null>(`/factories/${encoded}/scorers`, null),
+    safeGet<ScoresResponse>(`/scores?factory=${encoded}&limit=1`, { scores: [], aggregate: [] }),
   ]);
 
-  const scorers = (resources?.resources ?? [])
-    .filter((resource) => resource.kind === 'scorer')
-    .map((resource) => ({ resource, doc: docOf<ScorerDoc>(resource) }));
+  const scorers = registry?.scorers ?? [];
+  const aggregates: ScoreAggregateWire[] = scores.aggregate;
+  const judgeScorers = scorers.filter((scorer) => scorer.class === 'judge');
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 px-6 py-6">
@@ -30,98 +182,155 @@ export default async function ScorersPage({ params }: { params: Promise<{ name: 
             {detail?.factory.alias ?? factory} <span className="text-slate-400">›</span> Scorers
           </h1>
           <p className="text-sm text-slate-500">
-            LLM-as-judge scorers over real runs: weighted classifications, pass threshold, sample rate and
-            the judge model.
+            Real scores over real runs: deterministic checks are free and always run; judges are
+            sampled, budget-capped and calibrated against a human-labelled golden set.
           </p>
         </div>
-        <Badge tone="neutral" testId="scorers-count">
-          {scorers.length} scorers
-        </Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          {registry ? (
+            <>
+              <Badge tone="neutral" testId="scorers-count">
+                {scorers.length} scorers
+              </Badge>
+              <Badge tone="info" testId="scorers-budget">
+                judge budget {registry.budget.usedToday}/{registry.budget.maxPerDay} today
+              </Badge>
+              <Badge
+                tone={
+                  registry.benchmarkGate.required
+                    ? registry.benchmarkGate.satisfied
+                      ? 'success'
+                      : 'warning'
+                    : 'neutral'
+                }
+                testId="scorers-benchmark-gate"
+              >
+                benchmark gate{' '}
+                {registry.benchmarkGate.required
+                  ? registry.benchmarkGate.satisfied
+                    ? 'satisfied'
+                    : 'blocked'
+                  : 'not required'}
+              </Badge>
+            </>
+          ) : null}
+        </div>
       </header>
 
       <ReadOnlyNotice path={`factories/${factory}`} testId="scorers-readonly-banner" />
 
-      <div
-        data-testid="scorers-phase-note"
-        className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"
-      >
-        <span className="font-semibold">Scoring runs in Phase 4.</span> The configuration below is real and
-        comes from git; pass rates, counts and sparklines do not exist yet, so none are shown.
-      </div>
-
-      {scorers.length === 0 ? (
+      {!registry ? (
+        <EmptyState
+          testId="scorers-unavailable"
+          title="Scoring registry unavailable"
+          description="The API did not return the scorer registry. Definitions stay in git; nothing is fabricated here."
+        />
+      ) : scorers.length === 0 ? (
         <EmptyState
           testId="scorers-empty"
           title="No scorers declared"
           description="The definition has no resources under scorers/, so runs cannot be scored yet."
         />
       ) : (
-        <div className="space-y-4">
-          {scorers.map(({ resource, doc }) => (
-            <Card key={resource.path} testId="scorer-card">
-              <CardHeader
-                title={doc.description ?? resource.name}
-                hint={resource.path}
-                action={
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone="neutral" mono testId="scorer-judge-model">
-                      {doc.judgeModel ?? '—'}
-                    </Badge>
-                    {doc.selfImprovement ? (
-                      <Badge tone="info" testId="scorer-self-improvement">
-                        self-improvement
-                      </Badge>
-                    ) : null}
-                  </div>
-                }
-              />
-              <CardBody className="space-y-3">
-                <dl className="grid gap-3 text-sm sm:grid-cols-3">
-                  <div>
-                    <dt className="text-xs text-slate-500">Passing score</dt>
-                    <dd data-testid="scorer-passing-score" className="font-mono text-sm text-slate-900">
-                      {doc.passingScore ?? '—'}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-slate-500">Sample rate</dt>
-                    <dd data-testid="scorer-sampling-rate" className="font-mono text-sm text-slate-900">
-                      {doc.samplingRate === undefined ? '—' : `${doc.samplingRate}%`}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-slate-500">Agents</dt>
-                    <dd data-testid="scorer-agents" className="font-mono text-xs text-slate-700">
-                      {(doc.agents ?? []).join(', ') || '—'}
-                    </dd>
-                  </div>
-                </dl>
+        <>
+          {registry.benchmarkGate.reason ? (
+            <p data-testid="scorers-benchmark-reason" className="text-sm text-amber-700">
+              {registry.benchmarkGate.reason}
+            </p>
+          ) : null}
 
-                <div>
-                  <p className="text-xs font-medium text-slate-600">Classifications</p>
-                  <ul data-testid="scorer-labels" className="mt-1 divide-y divide-slate-100">
-                    {(doc.labels ?? []).map((label) => (
-                      <li
-                        key={label.value}
-                        data-testid="scorer-label-row"
-                        className="grid gap-1 py-1.5 text-xs sm:grid-cols-[5rem,10rem,1fr]"
-                      >
-                        <span className="font-mono font-medium text-slate-900">{label.score}</span>
-                        <span className="font-mono text-slate-700">{label.value}</span>
-                        <span className="text-slate-600">{label.description ?? ''}</span>
-                      </li>
+          <Card testId="scorers-registry">
+            <CardHeader
+              title="Registry"
+              hint="Loaded from the git-backed definition; the rubric hash changes when the body or labels change."
+            />
+            <div className="overflow-x-auto">
+              <table data-testid="scorers-table" className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    {['Scorer', 'Class', 'Labels', 'Passing', 'Sampling', 'Judge model', 'Calibration', 'Samples', 'Pass rate', 'Cost'].map((header) => (
+                      <th key={header} className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        {header}
+                      </th>
                     ))}
-                  </ul>
-                </div>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {scorers.map((scorer) => {
+                    const aggregate = aggregates.find((candidate) => candidate.scorer === scorer.name);
+                    return (
+                      <tr key={scorer.name} data-testid="scorer-row" data-scorer={scorer.name}>
+                        <td className="px-4 py-2 align-top">
+                          <p className="font-medium text-slate-900">{scorer.name}</p>
+                          <p className="font-mono text-[11px] text-slate-500">{scorer.path}</p>
+                          <p className="font-mono text-[11px] text-slate-400" data-testid="scorer-rubric-hash">
+                            {scorer.rubricHash.slice(0, 12)}…
+                          </p>
+                        </td>
+                        <td className="px-4 py-2 align-top">
+                          <Badge tone={scorer.class === 'deterministic' ? 'info' : 'neutral'} testId="scorer-class">
+                            {scorer.class}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-2 align-top">
+                          <ul data-testid="scorer-labels" className="space-y-0.5">
+                            {scorer.labels.map((label) => (
+                              <li key={label.value} className="font-mono text-xs text-slate-700">
+                                {label.value} <span className="text-slate-400">({label.score})</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </td>
+                        <td className="px-4 py-2 align-top font-mono text-xs" data-testid="scorer-passing-score">
+                          {scorer.passingScore}
+                        </td>
+                        <td className="px-4 py-2 align-top font-mono text-xs" data-testid="scorer-sampling-rate">
+                          {scorer.samplingRate}%
+                        </td>
+                        <td className="px-4 py-2 align-top font-mono text-xs text-slate-700" data-testid="scorer-judge-model">
+                          {scorer.judgeModel}
+                        </td>
+                        <td className="px-4 py-2 align-top">
+                          {calibrationBadge(scorer.calibration.latest, scorer.calibration.required)}
+                        </td>
+                        <td className="px-4 py-2 align-top font-mono text-xs" data-testid="scorer-samples">
+                          {aggregate ? aggregate.sampleCount : 0}
+                        </td>
+                        <td className="px-4 py-2 align-top font-mono text-xs" data-testid="scorer-pass-rate">
+                          {aggregate?.passRate === null || aggregate?.passRate === undefined
+                            ? '—'
+                            : `${(aggregate.passRate * 100).toFixed(0)}%`}
+                        </td>
+                        <td className="px-4 py-2 align-top font-mono text-xs" data-testid="scorer-cost">
+                          {formatCost(aggregate?.costUsd ?? 0)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
 
-                <p className="text-[11px] text-slate-400">
-                  Scorer name <span className="font-mono">{resource.name}</span> · output{' '}
-                  <span className="font-mono">{doc.output ?? 'classification'}</span>
-                </p>
-              </CardBody>
-            </Card>
-          ))}
-        </div>
+          {judgeScorers.length > 0 ? (
+            <div className="space-y-4">
+              {judgeScorers.map((scorer) => (
+                <CalibrationPanel key={scorer.name} scorer={scorer} />
+              ))}
+            </div>
+          ) : null}
+
+          <p className="text-xs text-slate-500">
+            Recent scores:{' '}
+            <Link
+              href={`/runs?factory=${encoded}`}
+              className="underline decoration-slate-300 underline-offset-2"
+            >
+              open a run
+            </Link>{' '}
+            to see scores attached to it.
+          </p>
+        </>
       )}
     </div>
   );

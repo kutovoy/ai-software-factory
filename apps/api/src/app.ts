@@ -40,6 +40,19 @@ import {
   type CreateRunBody,
 } from './runs';
 import { createEventStream, parseLastEventId } from './sse';
+import {
+  calibrationBodySchema,
+  getCalibrationForApi,
+  getMetricsForApi,
+  getScoreForApi,
+  getScorersForApi,
+  listScoresForApi,
+  scoringBodySchema,
+  startCalibrationForApi,
+  startScoringForApi,
+  type CalibrationBody,
+  type ScoringBody,
+} from './scoring';
 import { getSql } from '@factory/orchestration';
 import {
   autonomyBodySchema,
@@ -186,6 +199,61 @@ export function createApp(config: ApiConfig): Hono {
       ),
     ),
   );
+
+  /* -------------------------------------------------------------- scorers */
+
+  app.get('/factories/:name/scorers', async (c) =>
+    c.json(await getScorersForApi(config, c.req.param('name'))),
+  );
+
+  app.get('/factories/:name/metrics', async (c) =>
+    c.json(await getMetricsForApi(config, c.req.param('name'), c.req.query('window') ?? null)),
+  );
+
+  /* --------------------------------------------------------------- scores */
+
+  app.get('/scores', async (c) => {
+    const limit = Number(c.req.query('limit') ?? '100');
+    const offset = Number(c.req.query('offset') ?? '0');
+    return c.json(
+      await listScoresForApi({
+        ...(c.req.query('factory') ? { factory: c.req.query('factory') as string } : {}),
+        ...(c.req.query('run') ? { run: c.req.query('run') as string } : {}),
+        ...(c.req.query('workItem') ? { workItem: c.req.query('workItem') as string } : {}),
+        ...(c.req.query('stage') ? { stage: c.req.query('stage') as string } : {}),
+        ...(c.req.query('scorer') ? { scorer: c.req.query('scorer') as string } : {}),
+        ...(c.req.query('window') ? { window: c.req.query('window') as string } : {}),
+        limit: Number.isFinite(limit) ? limit : 100,
+        offset: Number.isFinite(offset) ? offset : 0,
+      }),
+    );
+  });
+
+  app.get('/scores/:id', async (c) => c.json(await getScoreForApi(c.req.param('id'))));
+
+  /* ---------------------------------------------------------- calibration */
+
+  app.post('/calibration', async (c) => {
+    const body = await json<CalibrationBody>(c, calibrationBodySchema);
+    return c.json(await startCalibrationForApi(config, body), 201);
+  });
+
+  app.get('/calibration/:scorer', async (c) =>
+    c.json(
+      await getCalibrationForApi(
+        config,
+        c.req.query('factory') ?? config.defaultFactory,
+        c.req.param('scorer'),
+      ),
+    ),
+  );
+
+  /* -------------------------------------------------------------- scoring */
+
+  app.post('/scoring', async (c) => {
+    const body = await json<ScoringBody>(c, scoringBodySchema);
+    return c.json(await startScoringForApi(config, body), 202);
+  });
 
   /* ----------------------------------------------------------------- runs */
 

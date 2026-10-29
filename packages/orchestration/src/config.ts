@@ -35,6 +35,16 @@ export interface OrchestrationConfig {
    */
   maxConcurrentActivityTaskExecutions: number;
   maxConcurrentWorkflowTaskExecutions: number;
+  /** Judge backend: `stub` (credential-free) or `openai` (OpenAI-compatible endpoint). */
+  scoringJudgeMode: 'stub' | 'openai';
+  /** Hard daily cap on judge scores per factory (deterministic scoring is free). */
+  scoringMaxScoresPerDay: number;
+  /** Minimum time between judge scores for one scorer; 0 disables cadence. */
+  scoringCadenceMs: number;
+  /** Cron for the per-factory scoring schedule. */
+  scoringCron: string;
+  /** Default window (days) for scheduled scoring. */
+  scoringWindowDays: number;
 }
 
 function intFromEnv(value: string | undefined, fallback: number): number {
@@ -64,5 +74,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): OrchestrationC
     // 100 is a sane ceiling; workflow tasks are cheap and short.
     maxConcurrentActivityTaskExecutions: intFromEnv(env.WORKER_MAX_CONCURRENT_ACTIVITY_TASKS, 100),
     maxConcurrentWorkflowTaskExecutions: intFromEnv(env.WORKER_MAX_CONCURRENT_WORKFLOW_TASKS, 100),
+    scoringJudgeMode: env.SCORING_JUDGE_MODE === 'openai' ? 'openai' : 'stub',
+    scoringMaxScoresPerDay: intFromEnv(env.SCORING_MAX_SCORES_PER_DAY, 200),
+    scoringCadenceMs: intFromEnv(env.SCORING_CADENCE_MS, 0),
+    scoringCron: env.SCORING_CRON ?? '0 3 * * *',
+    scoringWindowDays: intFromEnv(env.SCORING_WINDOW_DAYS, 1),
   };
 }

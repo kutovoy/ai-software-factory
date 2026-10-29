@@ -12,7 +12,64 @@ policy + kill switch — all exercised on the fake forge + fake harness. The Pha
 with it: a work-items board, gate approvals in the Inbox, a work-item detail page (timeline, gate
 decisions, reviewer findings, PR/checks) and a Gates page with the kill switch and the benchmark-gate
 guardrail. Phase 2b web console remains complete.
-Next: **Phase 3b** (GitHub forge + merge queue) and the MCPs & apps page (per-agent MCP wiring).
+Next: **Phase 4b** (benchmark replay + version comparison) and Phase 3b (GitHub forge + merge queue).
+
+### Phase 4a — scoring and metrics (ADR-016/ADR-017, 2026-10-29)
+
+`packages/evals` (new): scorer registry loaded from the git-backed definition, class inference
+(`deterministic` when the rubric body declares a `checks:` block, otherwise `judge`), content-addressed
+`rubricHash`, deterministic tests/build/lint scoring from `artifacts/checks.json` or tool-call events
+(`missing_artifact` → `error`, run untouched), LLM-judge scoring with strict label parsing and full
+provenance (`judgeModel`, `judgeModelVersion`, `rubricHash`, `promptHash`, tokens, cost), deterministic
+sampling by `sha256(runId)`, cadence, per-factory daily budget (`budget_exhausted`), and calibration
+(exact + within-tolerance agreement, per-label confusion, pass/fail verdict, `insufficient_data` below
+the minimum size). `JudgeClient` has a deterministic `stub` (used everywhere in CI) and an `openai`
+implementation for OpenAI-compatible endpoints (real path exists, not exercised in CI).
+
+Persistence: `packages/core/migrations/004_scoring.sql` (`scorer_definitions`, `score_runs`, `scores`,
+`score_evidence`, `score_events`, `calibration_sets`, `calibration_items`, `calibration_results`) +
+repository functions (upsert scorer, record score with evidence, query by run/item/stage/scorer/factory,
+aggregate pass rate, budget accounting, calibration CRUD) + derived metric queries (throughput,
+cost/PR total + per stage + unattributed, cycle time, time to first human review, touchpoints/PR,
+automation %, defect rate from forge check events; null + reason for missing data).
+
+Orchestration: `ScoringWorkflow` (on-demand via `POST /scoring`, scheduled via a Temporal Schedule per
+factory through `ensureScoringSchedule` / `scripts/scoring.ts`) + activities (`createScoreRun`,
+`listScorableRuns`, `planScoring`, `runDeterministic`, `runJudge`, `persistScore`, `finishScoreRun`),
+`score.completed`/`score.skipped` events deduped by `(score_id, type)`, and failure isolation (a scorer
+failure is an `error` score; a run is never failed by scoring).
+
+API: `GET /factories/:name/scorers`, `GET /scores?...`, `GET /scores/:id`, `POST /calibration`,
+`GET /calibration/:scorer`, `GET /factories/:name/metrics?window=`, `POST /scoring`.
+
+UI: real Scorers page (registry, class, labels, passing score, sampling, judge model, calibration
+badge + panel with agreement/confusion/verdict/insufficient-data), score detail (label/score/rationale/
+evidence links/provenance/cost/calibration), dashboard metric cards with definitions, window switch and
+per-stage cost breakdown, and scores attached to run detail. Missing data is `null` + reason; nothing is
+fabricated.
+
+Verification (2026-10-29):
+
+```
+bun run ci                     → typecheck clean; 274 pass / 33 skip / 0 fail
+scoring integration (Temporal + PG, stub judge)
+                               → 3 pass: deterministic + judge score on a fake-harness run with
+                                 provenance + score.completed; missing_artifact + failing judge are
+                                 error scores (run stays ok); budget=0 → judge skipped, deterministic ok
+calibration API integration (PG) → 2 pass: insufficient_data below the minimum size, then a passing
+                                 verdict with confusion + rubric hash + judge version; bad label → 400
+docker compose up -d --build   → api, worker, web, postgres, temporal healthy
+bash scripts/smoke.sh          → SMOKE PASSED incl. scoring a completed run (score row,
+                                 score.completed, provenance, uncalibrated flag)
+cd apps/web && bunx playwright test → 18 passed: scoring spec covers scorers page, score detail,
+                                 run scores, dashboard metric cards + per-stage cost
+```
+
+Caveat: the compose stack runs `SCORING_JUDGE_MODE=stub`; the OpenAI judge path needs
+`OPENAI_BASE_URL`/`OPENAI_API_KEY` and is not exercised in CI. Judge scores are `uncalibrated` until a
+golden-set calibration passes for the current rubric hash + model; the benchmark gate surfaces that
+state, and Phase 4b will consume it.
+
 
 ### Phase 2b fix — human permission waits are workflow-level durable waits (ADR-013, 2026-10-29)
 
@@ -313,13 +370,15 @@ both accepted; `benchmarkGateRequired` is true exactly when `fullyAutonomous`; k
 
 ## Next
 
-1. Phase 3b: GitHub `CodeForge` backend (must pass the shared contract suite) + merge queue, and the
+1. Phase 4b: benchmark replay at pinned SHAs + version comparison, consuming calibrated judge scores;
+   the benchmark gate then has real evidence (currently the scoring layer exposes its precondition).
+2. Phase 3b: GitHub `CodeForge` backend (must pass the shared contract suite) + merge queue, and the
    MCPs & apps page (per-agent MCP wiring). Also: an autonomy read endpoint (`GET /autonomy`) and a
    work-item cancel route, so the console no longer derives state from the event log or cleans up
    by rejecting a gate.
-2. Rebuild tool for the read model (replay JSONL → Postgres) before benchmarks rely on it.
-3. Phase 4: scorers on real runs + benchmark replay; then Phase 5 self-improvement observer loop.
-4. Real runner path: build `factory-runner:local`, verify `opencode serve` readiness + proxy env inside
+3. Rebuild tool for the read model (replay JSONL → Postgres) before benchmarks rely on it.
+4. Phase 5 self-improvement observer loop over scored runs.
+5. Real runner path: build `factory-runner:local`, verify `opencode serve` readiness + proxy env inside
    the container against a live model endpoint.
 
 ## Open questions

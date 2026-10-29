@@ -4,24 +4,122 @@ import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { safeGet } from '@/lib/api';
 import { formatCost, formatTokens, shortCommit } from '@/lib/format';
-import type { FactoryDetail, RunSummary } from '@/lib/types';
+import type {
+  FactoryDetail,
+  FactoryMetricsResponse,
+  MetricCardWire,
+  RunSummary,
+  StageCostWire,
+} from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
 const STATUS_ORDER = ['ok', 'error', 'cancelled', 'running', 'pending'] as const;
+const WINDOWS = ['7d', '30d', '90d'] as const;
 
-export default async function DashboardPage({ params }: { params: Promise<{ name: string }> }) {
+function formatMetricValue(metric: MetricCardWire): string {
+  if (metric.value === null) return '—';
+  if (metric.unit === 'USD/PR') return formatCost(metric.value);
+  if (metric.unit === '%') return `${metric.value}%`;
+  if (metric.unit === 'hours') return `${metric.value} h`;
+  return `${metric.value}`;
+}
+
+function MetricCard({ metric }: { metric: MetricCardWire }) {
+  return (
+    <Card testId="metric-card" className="h-full">
+      <CardHeader title={metric.label} hint={metric.unit} />
+      <CardBody className="space-y-1">
+        <p
+          data-testid="metric-value"
+          data-metric={metric.key}
+          data-null={metric.value === null ? 'true' : 'false'}
+          className="text-2xl font-semibold text-slate-900"
+        >
+          {formatMetricValue(metric)}
+        </p>
+        {metric.value === null ? (
+          <p data-testid="metric-reason" className="text-xs text-amber-700">
+            {metric.reason ?? 'no data in this window'}
+          </p>
+        ) : (
+          <p data-testid="metric-samples" className="text-xs text-slate-500">
+            {metric.sampleSize} sample(s)
+          </p>
+        )}
+        <p data-testid="metric-definition" className="text-[11px] leading-snug text-slate-500">
+          {metric.definition}
+        </p>
+      </CardBody>
+    </Card>
+  );
+}
+
+function CostByStage({ metrics }: { metrics: FactoryMetricsResponse }) {
+  const rows: StageCostWire[] = metrics.costByStage;
+  const unattributed = metrics.unattributedCost;
+  if (rows.length === 0 && unattributed.runCount === 0) {
+    return (
+      <EmptyState
+        testId="metrics-cost-empty"
+        title="No stage runs in this window"
+        description="Cost attribution appears once stage runs start."
+      />
+    );
+  }
+  return (
+    <table data-testid="metrics-cost-by-stage" className="min-w-full divide-y divide-slate-200 text-sm">
+      <thead className="bg-slate-50">
+        <tr>
+          <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Stage</th>
+          <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Cost</th>
+          <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Runs</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+        {rows.map((row) => (
+          <tr key={row.stage} data-testid="cost-stage-row" data-stage={row.stage}>
+            <td className="px-4 py-2 font-mono text-xs text-slate-800">{row.stage}</td>
+            <td className="px-4 py-2 font-mono text-xs text-slate-800" data-testid="cost-stage-value">
+              {formatCost(row.costUsd)}
+            </td>
+            <td className="px-4 py-2 text-xs text-slate-600">{row.runCount}</td>
+          </tr>
+        ))}
+        <tr data-testid="cost-unattributed-row">
+          <td className="px-4 py-2 font-mono text-xs text-slate-500">unattributed</td>
+          <td className="px-4 py-2 font-mono text-xs text-slate-700" data-testid="cost-unattributed-value">
+            {formatCost(unattributed.costUsd)}
+          </td>
+          <td className="px-4 py-2 text-xs text-slate-600">{unattributed.runCount}</td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+export default async function DashboardPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ name: string }>;
+  searchParams: Promise<{ window?: string }>;
+}) {
   const { name } = await params;
+  const { window } = await searchParams;
   const factoryName = decodeURIComponent(name);
+  const encoded = encodeURIComponent(factoryName);
+  const windowLabel = WINDOWS.includes((window ?? '30d') as (typeof WINDOWS)[number])
+    ? (window as string)
+    : '30d';
 
-  const [detail, runs] = await Promise.all([
-    safeGet<{ factory: FactoryDetail } | null>(
-      `/factories/${encodeURIComponent(factoryName)}`,
+  const [detail, runs, metrics] = await Promise.all([
+    safeGet<{ factory: FactoryDetail } | null>(`/factories/${encoded}`, null),
+    safeGet<{ runs: RunSummary[] }>(`/runs?factory=${encoded}&limit=100`, { runs: [] }),
+    safeGet<FactoryMetricsResponse | null>(
+      `/factories/${encoded}/metrics?window=${encodeURIComponent(windowLabel)}`,
       null,
     ),
-    safeGet<{ runs: RunSummary[] }>(`/runs?factory=${encodeURIComponent(factoryName)}&limit=100`, {
-      runs: [],
-    }),
   ]);
 
   const rows = runs.runs;
@@ -73,7 +171,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ name
           description="Dispatch work through New Chat; counts, status split and cost will appear here."
           action={
             <Link
-              href={`/chat?factory=${encodeURIComponent(factoryName)}`}
+              href={`/chat?factory=${encoded}`}
               className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-800"
             >
               Open New Chat
@@ -131,6 +229,84 @@ export default async function DashboardPage({ params }: { params: Promise<{ name
           </Card>
         </div>
       )}
+
+      <Card testId="dashboard-metrics">
+        <CardHeader
+          title="Factory metrics"
+          hint="Derived at read time from runs, work items, gates and forge checks (ADR-017). Null means no data, never zero."
+          action={
+            <div className="flex items-center gap-1" data-testid="metrics-window">
+              {WINDOWS.map((candidate) => (
+                <Link
+                  key={candidate}
+                  href={`/factories/${encoded}/dashboard?window=${candidate}`}
+                  data-testid={`metrics-window-${candidate}`}
+                  data-active={candidate === windowLabel ? 'true' : 'false'}
+                  className={`rounded px-2 py-1 text-xs font-medium ${
+                    candidate === windowLabel
+                      ? 'bg-slate-900 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {candidate}
+                </Link>
+              ))}
+            </div>
+          }
+        />
+        <CardBody className="space-y-4">
+          {!metrics ? (
+            <EmptyState
+              testId="metrics-unavailable"
+              title="Metrics unavailable"
+              description="The API did not return metrics. No numbers are fabricated."
+            />
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge tone="neutral" testId="metrics-window-label">
+                  window {metrics.window.label} · {metrics.window.days.toFixed(1)} days
+                </Badge>
+                <Badge
+                  tone={
+                    metrics.benchmarkGate.required
+                      ? metrics.benchmarkGate.satisfied
+                        ? 'success'
+                        : 'warning'
+                      : 'neutral'
+                  }
+                  testId="metrics-benchmark-gate"
+                >
+                  benchmark gate{' '}
+                  {metrics.benchmarkGate.required
+                    ? metrics.benchmarkGate.satisfied
+                      ? 'satisfied'
+                      : 'blocked'
+                    : 'not required'}
+                </Badge>
+                {metrics.benchmarkGate.reason ? (
+                  <span className="text-xs text-amber-700">{metrics.benchmarkGate.reason}</span>
+                ) : null}
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                {metrics.metrics.map((metric) => (
+                  <MetricCard key={metric.key} metric={metric} />
+                ))}
+              </div>
+
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-slate-900">Cost by stage</h3>
+                <p className="mb-2 text-xs text-slate-500">
+                  Attributed from the stage run id convention; unattributed cost (chat/ad-hoc runs)
+                  is reported separately rather than hidden.
+                </p>
+                <CostByStage metrics={metrics} />
+              </div>
+            </>
+          )}
+        </CardBody>
+      </Card>
     </div>
   );
 }

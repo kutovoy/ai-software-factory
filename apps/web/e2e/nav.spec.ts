@@ -21,7 +21,7 @@ const FACTORY_PAGE_MARKERS: Record<string, string[]> = {
   'nav-dashboard': ['dashboard-counts', 'dashboard-empty'],
   'nav-agents': ['agent-card'],
   'nav-automations': ['automations-table'],
-  'nav-scorers': ['scorer-card'],
+  'nav-scorers': ['scorers-registry'],
   'nav-self-improvement': ['self-improvement-settings'],
   'nav-benchmarks': ['benchmark-suite'],
   'nav-definition': ['definition-readonly-banner'],

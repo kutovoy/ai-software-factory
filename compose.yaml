@@ -62,6 +62,12 @@ services:
       EXPOSE_RUN_TOKEN: ${EXPOSE_RUN_TOKEN:-1}
       # SLA for a human permission wait before it is auto-denied (ADR-013).
       PERMISSION_TIMEOUT_MS: ${PERMISSION_TIMEOUT_MS:-1800000}
+      # Scoring: stub judge in compose (no credentials); daily cap bounds judge spend.
+      SCORING_JUDGE_MODE: ${SCORING_JUDGE_MODE:-stub}
+      SCORING_MAX_SCORES_PER_DAY: ${SCORING_MAX_SCORES_PER_DAY:-200}
+      SCORING_CADENCE_MS: ${SCORING_CADENCE_MS:-0}
+      SCORING_CRON: ${SCORING_CRON:-0 3 * * *}
+      SCORING_WINDOW_DAYS: ${SCORING_WINDOW_DAYS:-1}
     ports:
       - '8080:8080'
     volumes:
@@ -134,6 +140,12 @@ services:
       RUNNER_BACKEND: ${RUNNER_BACKEND:-docker}
       WORKER_HEARTBEAT_FILE: /app/runs/.worker-heartbeat
       PERMISSION_TIMEOUT_MS: ${PERMISSION_TIMEOUT_MS:-1800000}
+      # Scoring (Phase 4a): deterministic checks are free; judges are sampled and capped.
+      SCORING_JUDGE_MODE: ${SCORING_JUDGE_MODE:-stub}
+      SCORING_MAX_SCORES_PER_DAY: ${SCORING_MAX_SCORES_PER_DAY:-200}
+      SCORING_CADENCE_MS: ${SCORING_CADENCE_MS:-0}
+      SCORING_CRON: ${SCORING_CRON:-0 3 * * *}
+      SCORING_WINDOW_DAYS: ${SCORING_WINDOW_DAYS:-1}
       # ADR-013: permission waits hold no activity slot, so 8 slots (the old hardcoded
       # value that used to starve the queue) is enough for eight blocked runs plus new work.
       # Raise for more concurrent streaming runs; the code default is Temporal's 100.

@@ -277,3 +277,226 @@ export interface AutonomyState {
   benchmarkGateSatisfied: boolean;
   signaled: number;
 }
+
+/* -------------------------------------------------------------- scoring */
+
+export interface ScorerLabelWire {
+  value: string;
+  score: number;
+  description?: string;
+}
+
+export interface CalibrationResultWire {
+  id: number;
+  setId: string;
+  factory: string;
+  scorer: string;
+  rubricHash: string;
+  judgeModel: string;
+  judgeModelVersion: string | null;
+  sampleSize: number;
+  agreementExact: number | null;
+  agreementWithinTolerance: number | null;
+  tolerance: number;
+  threshold: number;
+  confusion: Record<string, Record<string, number>>;
+  verdict: 'pass' | 'fail' | 'insufficient_data';
+  createdAt: string | null;
+}
+
+export interface ScorerApiEntry {
+  name: string;
+  path: string;
+  description: string | null;
+  body: string;
+  scorerClass: 'deterministic' | 'judge';
+  /** Wire alias for `scorerClass`. */
+  class: 'deterministic' | 'judge';
+  labels: ScorerLabelWire[];
+  passingScore: number;
+  samplingRate: number;
+  judgeModel: string;
+  selfImprovement: boolean;
+  agents: string[];
+  checks: string[];
+  rubricHash: string;
+  calibration: {
+    required: boolean;
+    calibrated: boolean;
+    latest: CalibrationResultWire | null;
+  };
+}
+
+export interface ScorersResponse {
+  factory: string;
+  scorers: ScorerApiEntry[];
+  budget: { maxPerDay: number; usedToday: number; remaining: number };
+  benchmarkGate: { required: boolean; satisfied: boolean; reason: string | null };
+}
+
+export interface ScoreEvidenceWire {
+  kind: string;
+  ref: string;
+  detail: Record<string, unknown>;
+}
+
+export interface ScoreProvenanceWire {
+  judgeModel: string | null;
+  judgeModelVersion: string | null;
+  promptHash: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  costUsd: number | null;
+}
+
+export interface ScoreRecordWire {
+  id: string;
+  scoreRunId: string | null;
+  factory: string;
+  runId: string;
+  workItemId: string | null;
+  stage: string | null;
+  scorer: string;
+  scorerClass: 'deterministic' | 'judge';
+  rubricHash: string;
+  status: 'ok' | 'error' | 'skipped';
+  errorCode: string | null;
+  label: string | null;
+  score: number | null;
+  passing: boolean;
+  rationale: string | null;
+  evidenceRefs: string[];
+  uncalibrated: boolean;
+  provenance: ScoreProvenanceWire;
+  createdAt: string | null;
+  evidence?: ScoreEvidenceWire[];
+}
+
+export interface ScoreAggregateWire {
+  scorer: string;
+  scorerClass: 'deterministic' | 'judge';
+  sampleCount: number;
+  passingCount: number;
+  passRate: number | null;
+  weightedScore: number | null;
+  errorCount: number;
+  skippedCount: number;
+  uncalibratedCount: number;
+  costUsd: number;
+  benchmarkEligible: boolean;
+}
+
+export interface ScoresResponse {
+  scores: ScoreRecordWire[];
+  aggregate: ScoreAggregateWire[];
+}
+
+export interface ScoreEventWire {
+  id: number;
+  scoreId: string;
+  factory: string;
+  runId: string;
+  type: string;
+  payload: Record<string, unknown>;
+  createdAt: string | null;
+}
+
+export interface ScoreDetailResponse {
+  score: ScoreRecordWire;
+  evidence: ScoreEvidenceWire[];
+  events: ScoreEventWire[];
+  calibration: CalibrationResultWire | null;
+}
+
+export interface CalibrationItemWire {
+  id: number;
+  setId: string;
+  runId: string | null;
+  workItemId: string | null;
+  humanLabel: string;
+  humanScore: number;
+  notes: string | null;
+  createdAt: string | null;
+}
+
+export interface CalibrationSetWire {
+  id: string;
+  name: string;
+  minSize: number;
+  threshold: number;
+  tolerance: number;
+  itemCount: number;
+  items: CalibrationItemWire[];
+}
+
+export interface CalibrationStatusResponse {
+  factory: string;
+  scorer: string;
+  rubricHash: string;
+  judgeModel: string;
+  calibrated: boolean;
+  latest: CalibrationResultWire | null;
+  sets: CalibrationSetWire[];
+  results: CalibrationResultWire[];
+}
+
+export interface CalibrationResponse {
+  factory: string;
+  scorer: string;
+  setId: string;
+  setName: string;
+  rubricHash: string;
+  judgeModel: string;
+  judgeModelVersion: string | null;
+  calibration: {
+    status: 'ok' | 'insufficient_data';
+    verdict: 'pass' | 'fail' | 'insufficient_data';
+    sampleSize: number;
+    minSize: number;
+    agreementExact: number | null;
+    agreementWithinTolerance: number | null;
+    tolerance: number;
+    threshold: number;
+    confusion: Record<string, Record<string, number>>;
+    reason?: string;
+  };
+  result: CalibrationResultWire;
+  items: {
+    item: CalibrationItemWire;
+    judgeLabel: string | null;
+    judgeScore: number | null;
+    error: string | null;
+  }[];
+}
+
+export interface MetricCardWire {
+  key: string;
+  label: string;
+  value: number | null;
+  unit: string;
+  sampleSize: number;
+  definition: string;
+  reason?: string;
+}
+
+export interface StageCostWire {
+  stage: string;
+  costUsd: number;
+  runCount: number;
+}
+
+export interface FactoryMetricsResponse {
+  factory: string;
+  window: { from: string; to: string; days: number; label: string };
+  metrics: MetricCardWire[];
+  costByStage: StageCostWire[];
+  unattributedCost: { costUsd: number; runCount: number };
+  benchmarkGate: { required: boolean; satisfied: boolean; reason: string | null };
+}
+
+export interface StartScoringResponse {
+  factory: string;
+  trigger: 'on_demand';
+  workflow: { workflowId: string; temporalRunId: string };
+  runs: string[];
+}
