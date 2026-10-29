@@ -76,6 +76,12 @@ services:
       BENCHMARK_CONFIRM_THRESHOLD_USD: ${BENCHMARK_CONFIRM_THRESHOLD_USD:-5}
       BENCHMARK_MAX_COST_USD: ${BENCHMARK_MAX_COST_USD:-25}
       BENCHMARK_PASS_THRESHOLD: ${BENCHMARK_PASS_THRESHOLD:-0.8}
+      # Self-improvement (Phase 5): compose lowers the eligibility floor so the smoke corpus
+      # (one scored run + benchmark trials) can produce a proposal deterministically.
+      IMPROVEMENT_MIN_SCORED_RUNS: ${IMPROVEMENT_MIN_SCORED_RUNS:-1}
+      IMPROVEMENT_WINDOW_DAYS: ${IMPROVEMENT_WINDOW_DAYS:-30}
+      IMPROVEMENT_MAX_PROPOSALS: ${IMPROVEMENT_MAX_PROPOSALS:-5}
+      DEFINITION_REPO_OWNER: ${DEFINITION_REPO_OWNER:-factory}
     ports:
       - '8080:8080'
     volumes:
@@ -160,6 +166,11 @@ services:
       BENCHMARK_CONFIRM_THRESHOLD_USD: ${BENCHMARK_CONFIRM_THRESHOLD_USD:-5}
       BENCHMARK_MAX_COST_USD: ${BENCHMARK_MAX_COST_USD:-25}
       BENCHMARK_PASS_THRESHOLD: ${BENCHMARK_PASS_THRESHOLD:-0.8}
+      # Self-improvement (Phase 5): eligibility floor + corpus window.
+      IMPROVEMENT_MIN_SCORED_RUNS: ${IMPROVEMENT_MIN_SCORED_RUNS:-1}
+      IMPROVEMENT_WINDOW_DAYS: ${IMPROVEMENT_WINDOW_DAYS:-30}
+      IMPROVEMENT_MAX_PROPOSALS: ${IMPROVEMENT_MAX_PROPOSALS:-5}
+      DEFINITION_REPO_OWNER: ${DEFINITION_REPO_OWNER:-factory}
       # ADR-013: permission waits hold no activity slot, so 8 slots (the old hardcoded
       # value that used to starve the queue) is enough for eight blocked runs plus new work.
       # Raise for more concurrent streaming runs; the code default is Temporal's 100.

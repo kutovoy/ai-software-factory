@@ -12,6 +12,12 @@ gates:
   pr_review: agent
   review: agent
   spec: agent
+improvement:
+  authority: canary
+  canaryPercent: 10
+  maxProbes: 3
+  observationWindowHours: 24
+  rollbackThreshold: 0.1
 integrations:
   - github
 mcpServers:

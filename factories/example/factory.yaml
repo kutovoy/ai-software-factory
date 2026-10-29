@@ -12,6 +12,10 @@ gates:
   pr_review: human
   review: agent
   spec: human
+improvement:
+  authority: propose_only
+  maxProbes: 3
+  observationWindowHours: 24
 integrations:
   - github
 mcpServers:

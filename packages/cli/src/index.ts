@@ -7,6 +7,7 @@ import {
   isCanonical,
   loadDefinition,
   renderDiffText,
+  resolveImprovement,
   serializeDefinition,
   writeFiles,
   type ValidationError,
@@ -97,11 +98,28 @@ function cmdValidate(positionals: string[], flags: Flags): void {
 
   if (json) {
     process.stdout.write(
-      `${JSON.stringify({ ok: true, factory: definition.manifest.name, resources: definition.resources.length }, null, 2)}\n`,
+      `${JSON.stringify(
+        {
+          ok: true,
+          factory: definition.manifest.name,
+          resources: definition.resources.length,
+          improvement: resolveImprovement(definition.manifest.improvement),
+        },
+        null,
+        2,
+      )}\n`,
     );
   } else {
+    const improvement = resolveImprovement(definition.manifest.improvement);
     process.stdout.write(
       `ok: ${definition.manifest.name} (${definition.resources.length} resources) in ${dir}\n`,
+    );
+    process.stdout.write(
+      `improvement: authority=${improvement.authority} (${improvement.source})${
+        improvement.authority === 'canary'
+          ? ` canaryPercent=${improvement.canaryPercent ?? 'unset'} rollbackThreshold=${improvement.rollbackThreshold ?? 'unset'} observationWindowHours=${improvement.observationWindowHours}`
+          : ''
+      } maxProbes=${improvement.maxProbes}\n`,
     );
   }
 }

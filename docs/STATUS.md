@@ -4,12 +4,64 @@ Last updated: 2026-10-29
 
 ## Phase
 
-**Phase 4b — benchmark replay + attestation: complete** (2026-10-29). Benchmarks load suites/tasks
-from the git-backed definition, pin every trial to full `startingRepoRefs` + `definitionCommit`,
-run hermetically on the fake harness + fresh fake-forge repo, aggregate pass rate / weighted score /
-cost per configuration, report a Pareto frontier, and write an attestation that binds
-`(factory, definitionCommit, configHash)` — which the autonomy gate now requires (ADR-018/ADR-019).
-Next: **Phase 3b** (GitHub forge + merge queue) and Phase 5 (self-improvement observer loop).
+**Phase 5a — self-improvement observer loop: complete** (2026-10-29). Factories now declare an
+`improvement` authority in `factory.yaml` (`propose_only` default, `auto_merge_on_benchmark`, `canary`);
+the observer turns a scored corpus into file-scoped edits, dedupes/ranks them, probes each against the
+same work item, composes the winners into a validated candidate, and lands it by authority (PR for
+`propose_only`, PR-or-merge on a calibrated benchmark attestation for `auto_merge_on_benchmark`).
+Canary rollout/rollback is deferred to **Phase 5b**: the config validates and the apply path returns
+`canary_not_available`, flagged `phase: "5b"` (ADR-020/ADR-021).
+Next: **Phase 5b** (canary rollout + deterministic-hash routing) and **Phase 3b** (GitHub forge + merge
+queue).
+
+### Phase 5a — self-improvement (ADR-020/ADR-021, 2026-10-29)
+
+Schema: `improvement` block in `factory.yaml` (`authority`, `canaryPercent`, `rollbackThreshold`,
+`observationWindowHours`, `maxProbes`), validated with `invalid_value` / `missing_field` (canary requires
+`canaryPercent` 1–100 and `rollbackThreshold`), defaulting to `propose_only`; `resolveImprovement()`
+reports the resolved config (including `source: declared|default`), `factory validate` prints it, and
+`factories/example` (propose_only) / `example-lights-off` (canary 10%, rollback 0.1) plus the canonical
+snapshot are updated.
+
+Engine (`packages/evals/src/improve`): eligibility (min scored runs + calibrated judges; any
+uncalibrated judge blocks), deterministic observer (invariant edit to `agents/*/agent.md` + domain edit to
+`scorers/*` or `skills/*`; evidence = run ids, failure counts, scorer rationales; impact = failed runs ×
+(1 + cost)), dedupe/cluster by files + failure signature with impact ranking, blast-radius guard
+(`edit_out_of_scope` for `factory.yaml`, `runners/*`, `benchmarks/*`, source and anything outside the
+allowed paths), contrastive probe (same work item + prompt hash + scorer + rubric hash; a positive delta
+wins; mismatched inputs throw `probe_input_mismatch`), compose (winning edits → canonical files + diff +
+`candidateHash`, validated by loading a scratch tree), authority routing, and the experience library
+(`INDEX.md` + `EXPERIENCE.md` `{cue, lesson, evidence, confidence}`, per-factory isolation, opt-in
+promotion).
+
+Persistence: `007_improvement.sql` (`improvement_runs`, `proposals`, `proposal_edits`, `probes`,
+`lessons`, `improvement_events`, `canary_rollouts`) + a repository (dedupe on `(run, cluster_key)`, edits
+on `(proposal, kind, path)`, probes on `(proposal, edit, work item)`, events on `(run, type, subject)`).
+
+Orchestration: `ImprovementWorkflow` (eligibility → observe → dedupe → probe → compose → decide) with
+activities for each step, deterministic probe hook (`setImprovementProbeRunner`), fake-forge PR/merge,
+and `improvement.started` / `proposal.created` / `probe.completed` / `candidate.published` events.
+Lessons are mirrored in `runs/experience/<factory>/` so the read-only definition mount is respected.
+
+API: `GET /factories/:name/improvement`, `POST /factories/:name/improvement/run`,
+`POST /factories/:name/improvement/authority` (diff + `confirm` → PR, never a worktree write),
+`GET /improvements/:id`, `GET /proposals`, `GET /proposals/:id`, `POST /proposals/:id/decision`,
+`POST /proposals/:id/apply` (`canary` → 409 `canary_not_available`, `phase: "5b"`), `GET /lessons`
+(factory-scoped by default), `POST /lessons/:id/promote`, `POST /canary/rollback` (5b refusal).
+
+UI: Self-improvement page with authority selector (preview diff → confirm → PR), eligibility card,
+ranked proposals (impact, evidence, probe results, before/after diff, accept/reject/apply), last-run
+summary, and the lessons library with promote-to-shared; honest empty states everywhere.
+
+Verification (2026-10-29):
+
+```
+bun run ci                     → typecheck clean; 337 pass / 52 skip / 0 fail
+bun run test packages/evals/test/improve.test.ts        → 25 pass (scope, observer, dedupe, probe, compose, authority, lessons)
+bun test apps/api/test/improvement.test.ts              → 14 pass (validation, scope rejection, authority routing, isolation)
+improvement integration (Temporal + PG, fake forge, stub corpus)
+                               → propose_only PR, auto-merge refusal without attestation, canary_not_available, ineligible skip
+```
 
 ### Phase 4b — benchmarks, Pareto and attestation (ADR-018/ADR-019, 2026-10-29)
 

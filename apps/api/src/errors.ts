@@ -118,6 +118,40 @@ export const benchmarkSuiteNotFound = (factory: string, suite: string): ApiError
     { factory, suite },
   );
 
+export const proposalNotFound = (proposalId: string): ApiError =>
+  new ApiError('proposal_not_found', 404, `proposal "${proposalId}" does not exist`, {
+    proposalId,
+  });
+
+export const proposalNotDecidable = (proposalId: string, status: string): ApiError =>
+  new ApiError(
+    'proposal_not_decidable',
+    409,
+    `proposal "${proposalId}" is ${status}; only an open proposal can be accepted or rejected`,
+    { proposalId, status },
+  );
+
+export const proposalNotAccepted = (proposalId: string, status: string): ApiError =>
+  new ApiError(
+    'proposal_not_accepted',
+    409,
+    `proposal "${proposalId}" is ${status}; accept it before applying`,
+    { proposalId, status },
+  );
+
+/** Phase 5b: the canary rollout workflow has not shipped; the configuration is validated. */
+export const canaryNotAvailable = (details?: unknown): ApiError =>
+  new ApiError(
+    'canary_not_available',
+    409,
+    'canary rollout (publish candidate, deterministic-hash routing, observation window, rollback) is Phase 5b; the candidate is ready but cannot be applied',
+    { phase: '5b', ...(details && typeof details === 'object' ? details : {}) },
+  );
+
+export const lessonNotFound = (lessonId: string): ApiError =>
+  new ApiError('lesson_not_found', 404, `lesson "${lessonId}" does not exist`, { lessonId });
+
+
 /** Above the confirmation threshold, a run must be explicitly confirmed. */
 export const costConfirmationRequired = (estimate: unknown): ApiError =>
   new ApiError(

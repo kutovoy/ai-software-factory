@@ -1,10 +1,17 @@
-import { ReadOnlyNotice } from '@/components/factory/ReadOnlyNotice';
+import { AuthoritySelector } from '@/components/improvement/AuthoritySelector';
+import { ImprovementRunButton } from '@/components/improvement/ImprovementRunButton';
+import { LessonList } from '@/components/improvement/LessonList';
+import { ProposalCard } from '@/components/improvement/ProposalCard';
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { safeGet } from '@/lib/api';
-import { docOf, type ScorerDoc } from '@/lib/definition';
-import type { FactoryDetail, FactoryResources } from '@/lib/types';
+import { ELIGIBILITY_REASONS, authorityTone, proposalStatusLabel } from '@/lib/improvement';
+import type {
+  ImprovementOverviewWire,
+  LessonWire,
+  ProposalWire,
+} from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,132 +20,238 @@ export default async function SelfImprovementPage({ params }: { params: Promise<
   const factory = decodeURIComponent(name);
   const encoded = encodeURIComponent(factory);
 
-  const [detail, resources] = await Promise.all([
-    safeGet<{ factory: FactoryDetail } | null>(`/factories/${encoded}`, null),
-    safeGet<FactoryResources | null>(`/factories/${encoded}/resources`, null),
+  const [overview, proposalsResponse, lessonsResponse] = await Promise.all([
+    safeGet<ImprovementOverviewWire | null>(`/factories/${encoded}/improvement`, null),
+    safeGet<{ proposals: ProposalWire[] }>(`/proposals?factory=${encoded}&limit=20`, { proposals: [] }),
+    safeGet<{ lessons: LessonWire[]; factory: string; includeShared: boolean }>(
+      `/lessons?factory=${encoded}&includeShared=true&limit=100`,
+      { lessons: [], factory, includeShared: true },
+    ),
   ]);
 
-  const settings = detail?.factory.manifest.selfImprovement ?? null;
-  const scorers = (resources?.resources ?? [])
-    .filter((resource) => resource.kind === 'scorer')
-    .map((resource) => ({ resource, doc: docOf<ScorerDoc>(resource) }))
-    .filter((entry) => entry.doc.selfImprovement === true);
+  const resolved = overview?.resolved ?? null;
+  const eligibility = overview?.eligibility ?? null;
+  const proposals = proposalsResponse.proposals;
+  const lessons = lessonsResponse.lessons;
+  const lastRun = overview?.lastRun ?? null;
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 px-6 py-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-slate-900">
-            {detail?.factory.alias ?? factory} <span className="text-slate-400">›</span> Self-improvement
+            {factory} <span className="text-slate-400">›</span> Self-improvement
           </h1>
           <p className="text-sm text-slate-500">
-            Observer agents read scored runs, propose definition edits, and gate them behind a benchmark
-            non-regression win.
+            Observer agents read the scored corpus, propose file-scoped edits, probe them against the
+            same work, compose the winners, and land the candidate according to the factory&apos;s
+            authority.
           </p>
         </div>
-        {settings ? (
-          <Badge tone={settings.enabled ? 'success' : 'neutral'} testId="self-improvement-enabled">
-            {settings.enabled ? 'enabled' : 'disabled'}
-          </Badge>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          {resolved ? (
+            <Badge tone={authorityTone(resolved.authority)} testId="improvement-authority-badge">
+              authority: {resolved.authority}
+            </Badge>
+          ) : null}
+          {eligibility ? (
+            <Badge
+              tone={eligibility.eligible ? 'success' : 'warning'}
+              testId="improvement-eligibility-badge"
+            >
+              {eligibility.eligible ? 'eligible' : 'ineligible'}
+            </Badge>
+          ) : null}
+          <ImprovementRunButton factory={factory} />
+        </div>
       </header>
 
-      <ReadOnlyNotice path={`factories/${factory}`} testId="self-improvement-readonly-banner" />
-
       <div
-        data-testid="self-improvement-phase-note"
-        className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"
+        data-testid="improvement-readonly-note"
+        className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600"
       >
-        <span className="font-semibold">The observer loop ships in Phase 5.</span> The settings and the
-        scorers that feed it are real and come from git. No proposal has been produced yet, so the inbox
-        below is empty rather than populated with examples.
+        <span className="font-semibold text-slate-800">Definitions stay in git.</span> The authority is a
+        definition field, so changing it computes a diff and opens a pull request with actor + reason; the
+        console never writes the worktree. Applying a proposal routes by the authority recorded when the
+        proposal was created.
       </div>
+
+      {!overview ? (
+        <EmptyState
+          testId="improvement-unavailable"
+          title="Self-improvement projection unavailable"
+          description="The API could not project this factory's improvement state. Check the definition and the API."
+        />
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card testId="self-improvement-settings">
-          <CardHeader title="Settings" hint="factory.yaml › selfImprovement" />
-          <CardBody>
-            {settings ? (
-              <dl className="grid grid-cols-[11rem,1fr] gap-y-2 text-sm">
-                <dt className="text-slate-500">Enabled</dt>
-                <dd>
-                  <Badge tone={settings.enabled ? 'success' : 'neutral'}>
-                    {settings.enabled ? 'yes' : 'no'}
-                  </Badge>
-                </dd>
-                <dt className="text-slate-500">Failed-run threshold</dt>
-                <dd data-testid="self-improvement-threshold" className="font-mono text-xs text-slate-800">
-                  {settings.failedRunThreshold} failed runs before a proposal
-                </dd>
-                <dt className="text-slate-500">Reviewer type</dt>
-                <dd data-testid="self-improvement-reviewer">
-                  <Badge tone={settings.reviewerType === 'none' ? 'warning' : 'info'} mono>
-                    {settings.reviewerType}
-                  </Badge>
-                  <span className="ml-2 text-xs text-slate-500">
-                    {settings.reviewerType === 'none'
-                      ? 'lights off — proposals are judged by the benchmark gate alone'
-                      : 'a human reviews every proposal before merge'}
-                  </span>
-                </dd>
-                <dt className="text-slate-500">Benchmark win</dt>
-                <dd data-testid="self-improvement-benchmark-win">
-                  <Badge tone={settings.requireBenchmarkWin ? 'success' : 'warning'}>
-                    {settings.requireBenchmarkWin ? 'required' : 'not required'}
-                  </Badge>
-                </dd>
-              </dl>
+          <CardHeader
+            title="Authority"
+            hint="factory.yaml › improvement.authority — changing it is a definition change (PR)"
+          />
+          <CardBody className="space-y-3">
+            {resolved ? (
+              <>
+                <AuthoritySelector factory={factory} resolved={resolved} />
+                <div data-testid="improvement-canary-note" className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+                  <p className="font-semibold">Canary rollout is Phase 5b.</p>
+                  <p className="mt-1">
+                    {resolved.authority === 'canary'
+                      ? `Configured: ${resolved.canaryPercent ?? 'unset'}% of new work, rollback above ${resolved.rollbackThreshold ?? 'unset'}, ${resolved.observationWindowHours}h window. Applying a canary proposal returns `
+                      : 'The configuration is validated, but routing a percentage of work to a candidate version and rolling back automatically is deferred to Phase 5b. Applying a canary proposal returns '}
+                    <span className="font-mono">canary_not_available</span>.
+                  </p>
+                </div>
+              </>
             ) : (
               <EmptyState
                 testId="self-improvement-settings-empty"
-                title="No self-improvement block"
-                description="factory.yaml does not declare a selfImprovement section, so the loop is off."
+                title="No improvement configuration"
+                description="factory.yaml does not declare an improvement block; the resolved authority defaults to propose_only."
               />
             )}
           </CardBody>
         </Card>
 
-        <Card testId="self-improvement-scorers">
-          <CardHeader title="Scorers feeding the loop" hint="scorer.md › selfImprovement: true" />
-          <CardBody>
-            {scorers.length === 0 ? (
-              <EmptyState
-                testId="self-improvement-scorers-empty"
-                title="No scorer opts in"
-                description="No scorer declares selfImprovement: true, so failing runs cannot be clustered into proposals."
-              />
+        <Card testId="improvement-eligibility">
+          <CardHeader
+            title="Eligibility"
+            hint="Enough scored runs + calibrated judges, both derived from the read model."
+          />
+          <CardBody className="space-y-2 text-xs text-slate-700">
+            {eligibility ? (
+              <>
+                <p data-testid="improvement-eligibility-status">
+                  <span className="font-semibold">
+                    {eligibility.eligible ? 'Eligible' : 'Not eligible'}:
+                  </span>{' '}
+                  {eligibility.scoredRuns} scored run(s) in the window (minimum{' '}
+                  {eligibility.minScoredRuns}).
+                </p>
+                <p data-testid="improvement-eligibility-judges">
+                  <span className="font-semibold">Judges:</span>{' '}
+                  {eligibility.calibratedJudges.length === 0
+                    ? 'none calibrated'
+                    : `${eligibility.calibratedJudges.join(', ')} calibrated`}
+                  {eligibility.uncalibratedJudges.length > 0
+                    ? `; ${eligibility.uncalibratedJudges.join(', ')} uncalibrated`
+                    : ''}
+                </p>
+                {eligibility.reasons.length > 0 ? (
+                  <ul data-testid="improvement-eligibility-reasons" className="list-disc space-y-0.5 pl-4 text-amber-800">
+                    {eligibility.reasons.map((reason) => (
+                      <li key={reason} className="font-mono text-[11px]">
+                        {reason} — {ELIGIBILITY_REASONS[reason] ?? 'blocked'}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-slate-500">
+                    The observer may propose; probes still decide whether anything is composed.
+                  </p>
+                )}
+              </>
             ) : (
-              <ul className="space-y-2 text-sm">
-                {scorers.map(({ resource, doc }) => (
-                  <li
-                    key={resource.path}
-                    data-testid="self-improvement-scorer-row"
-                    className="flex flex-wrap items-center gap-2"
-                  >
-                    <span className="font-mono text-xs font-medium text-slate-900">{resource.name}</span>
-                    <span className="text-xs text-slate-500">{doc.description ?? resource.summary}</span>
-                    <Badge tone="neutral" mono>
-                      pass {doc.passingScore ?? '—'}
-                    </Badge>
-                  </li>
-                ))}
-              </ul>
+              <p data-testid="improvement-eligibility-empty" className="text-slate-500">
+                Eligibility is unavailable because the factory projection could not be read.
+              </p>
             )}
           </CardBody>
         </Card>
       </div>
 
-      <Card testId="self-improvement-proposals">
+      <Card testId="improvement-last-run">
         <CardHeader
-          title="Proposals"
-          hint="Clustered by root cause and ranked by impact (failed runs × cost)."
+          title="Last improvement run"
+          hint="improvement.started → proposal.created → probe.completed → candidate.published"
+        />
+        <CardBody className="text-xs text-slate-700">
+          {lastRun ? (
+            <dl data-testid="improvement-last-run-detail" className="grid gap-x-6 gap-y-1 md:grid-cols-2">
+              <div>
+                <dt className="inline font-semibold">Run: </dt>
+                <dd className="inline font-mono">{lastRun.id}</dd>
+              </div>
+              <div>
+                <dt className="inline font-semibold">Status: </dt>
+                <dd className="inline">
+                  <Badge tone={lastRun.status === 'completed' ? 'success' : lastRun.status === 'error' ? 'danger' : 'neutral'}>
+                    {lastRun.status}
+                  </Badge>
+                </dd>
+              </div>
+              <div>
+                <dt className="inline font-semibold">Decision: </dt>
+                <dd className="inline font-mono">{lastRun.decision ?? 'pending'}</dd>
+              </div>
+              <div>
+                <dt className="inline font-semibold">Proposals / lessons: </dt>
+                <dd className="inline font-mono">
+                  {lastRun.proposals} / {lastRun.lessons}
+                </dd>
+              </div>
+              <div>
+                <dt className="inline font-semibold">Trigger: </dt>
+                <dd className="inline font-mono">{lastRun.trigger}</dd>
+              </div>
+              <div>
+                <dt className="inline font-semibold">Started: </dt>
+                <dd className="inline font-mono">{lastRun.startedAt ?? '—'}</dd>
+              </div>
+              {lastRun.error ? (
+                <div className="md:col-span-2 text-red-700">
+                  <dt className="inline font-semibold">Error: </dt>
+                  <dd className="inline font-mono">{lastRun.error}</dd>
+                </div>
+              ) : null}
+            </dl>
+          ) : (
+            <p data-testid="improvement-last-run-empty" className="text-slate-500">
+              No improvement run yet. Starting one observes the scored corpus; with no scored failures
+              (or an ineligible corpus) it completes without inventing a proposal.
+            </p>
+          )}
+        </CardBody>
+      </Card>
+
+      <Card testId="improvement-proposals">
+        <CardHeader
+          title="Ranked proposals"
+          hint="Clustered by files + failure signature, ranked by impact (failed runs × cost)."
+          action={
+            <Badge tone="neutral" testId="improvement-proposal-count">
+              {proposals.length} proposal{proposals.length === 1 ? '' : 's'}
+            </Badge>
+          }
+        />
+        <CardBody className="space-y-3">
+          {proposals.length === 0 ? (
+            <EmptyState
+              testId="improvement-proposals-empty"
+              title="No proposals"
+              description="Nothing has been observed yet, or the observer found no failure signal. Run an improvement pass to produce one from real scored runs."
+            />
+          ) : (
+            proposals.map((proposal) => <ProposalCard key={proposal.id} proposal={proposal} />)
+          )}
+          {proposals.length > 0 ? (
+            <p className="text-[11px] text-slate-500">
+              {proposals
+                .map((proposal) => `${proposal.id}: ${proposalStatusLabel(proposal.status)}`)
+                .join(' · ')}
+            </p>
+          ) : null}
+        </CardBody>
+      </Card>
+
+      <Card testId="improvement-lessons-card">
+        <CardHeader
+          title="Experience library"
+          hint="INDEX.md + EXPERIENCE.md per factory; promotion to the shared library is opt-in."
         />
         <CardBody>
-          <EmptyState
-            testId="self-improvement-proposals-empty"
-            title="No proposals yet"
-            description="Nothing has been scored and no observer run has executed. This inbox fills in Phase 5."
-          />
+          <LessonList factory={factory} lessons={lessons} />
         </CardBody>
       </Card>
     </div>

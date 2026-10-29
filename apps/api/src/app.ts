@@ -39,6 +39,31 @@ import {
   getFactoryVersions,
   listFactories,
 } from './factories';
+import {
+  authorityChangeBodySchema,
+  canaryRollbackBodySchema,
+  changeAuthorityForApi,
+  decideProposalForApi,
+  applyProposalForApi,
+  getImprovementForApi,
+  getImprovementRunForApi,
+  getProposalForApi,
+  improvementRunBodySchema,
+  listLessonsForApi,
+  listProposalsForApi,
+  promoteLessonBodySchema,
+  promoteLessonForApi,
+  proposalApplyBodySchema,
+  proposalDecisionBodySchema,
+  rollbackCanaryForApi,
+  startImprovementForApi,
+  type AuthorityChangeBody,
+  type CanaryRollbackBody,
+  type ImprovementRunBody,
+  type PromoteLessonBody,
+  type ProposalApplyBody,
+  type ProposalDecisionBody,
+} from './improvement';
 import { log } from './logger';
 import { registerProxy } from './proxy';
 import {
@@ -291,6 +316,71 @@ export function createApp(config: ApiConfig): Hono {
   app.get('/factories/:name/benchmark-gate', async (c) =>
     c.json(await benchmarkGateStatus(config, c.req.param('name'))),
   );
+
+  /* ------------------------------------------------------ self-improvement */
+
+  app.get('/factories/:name/improvement', async (c) =>
+    c.json(await getImprovementForApi(config, c.req.param('name'))),
+  );
+
+  app.post('/factories/:name/improvement/run', async (c) => {
+    const body = await json<ImprovementRunBody>(c, improvementRunBodySchema);
+    return c.json(await startImprovementForApi(config, c.req.param('name'), body), 202);
+  });
+
+  app.post('/factories/:name/improvement/authority', async (c) => {
+    const body = await json<AuthorityChangeBody>(c, authorityChangeBodySchema);
+    return c.json(await changeAuthorityForApi(config, c.req.param('name'), body));
+  });
+
+  app.get('/improvements/:id', async (c) => c.json(await getImprovementRunForApi(c.req.param('id'))));
+
+  app.get('/proposals', async (c) => {
+    const limit = Number(c.req.query('limit') ?? '50');
+    return c.json({
+      proposals: await listProposalsForApi({
+        ...(c.req.query('factory') ? { factory: c.req.query('factory') as string } : {}),
+        ...(c.req.query('status') ? { status: c.req.query('status') as never } : {}),
+        limit: Number.isFinite(limit) ? limit : 50,
+      }),
+    });
+  });
+
+  app.get('/proposals/:id', async (c) => c.json(await getProposalForApi(c.req.param('id'))));
+
+  app.post('/proposals/:id/decision', async (c) => {
+    const body = await json<ProposalDecisionBody>(c, proposalDecisionBodySchema);
+    return c.json(await decideProposalForApi(config, c.req.param('id'), body));
+  });
+
+  app.post('/proposals/:id/apply', async (c) => {
+    const body = await json<ProposalApplyBody>(c, proposalApplyBodySchema);
+    return c.json(await applyProposalForApi(config, c.req.param('id'), body));
+  });
+
+  app.get('/lessons', async (c) => {
+    const limit = Number(c.req.query('limit') ?? '100');
+    return c.json(
+      await listLessonsForApi(config, {
+        ...(c.req.query('factory') ? { factory: c.req.query('factory') as string } : {}),
+        ...(c.req.query('includeShared') !== undefined
+          ? { includeShared: c.req.query('includeShared') === 'true' }
+          : {}),
+        limit: Number.isFinite(limit) ? limit : 100,
+      }),
+    );
+  });
+
+  app.post('/lessons/:id/promote', async (c) => {
+    const body = await json<PromoteLessonBody>(c, promoteLessonBodySchema);
+    return c.json({ lesson: await promoteLessonForApi(c.req.param('id'), body) });
+  });
+
+  app.post('/canary/rollback', async (c) => {
+    const body = await json<CanaryRollbackBody>(c, canaryRollbackBodySchema);
+    rollbackCanaryForApi(body);
+    return c.json({ ok: false });
+  });
 
   /* ----------------------------------------------------------------- runs */
 

@@ -51,6 +51,14 @@ export interface ApiConfig {
   benchmarkConfirmThresholdUsd: number;
   benchmarkMaxCostUsd: number;
   benchmarkPassThreshold: number;
+  /** Minimum distinct scored runs before the improvement observer may propose. */
+  improvementMinScoredRuns: number;
+  /** Scored-corpus window for an improvement run, in days. */
+  improvementWindowDays: number;
+  /** Cap on proposals kept after dedupe, ranked by impact. */
+  improvementMaxProposals: number;
+  /** Owner of the git repo that hosts definitions (fake forge in CI). */
+  definitionRepoOwner: string;
 }
 
 function boolFromEnv(value: string | undefined, fallback: boolean): boolean {
@@ -110,6 +118,10 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     benchmarkConfirmThresholdUsd: numberFromEnv(env.BENCHMARK_CONFIRM_THRESHOLD_USD, 5),
     benchmarkMaxCostUsd: numberFromEnv(env.BENCHMARK_MAX_COST_USD, 25),
     benchmarkPassThreshold: numberFromEnv(env.BENCHMARK_PASS_THRESHOLD, 0.8),
+    improvementMinScoredRuns: intFromEnv(env.IMPROVEMENT_MIN_SCORED_RUNS, 3),
+    improvementWindowDays: intFromEnv(env.IMPROVEMENT_WINDOW_DAYS, 30),
+    improvementMaxProposals: intFromEnv(env.IMPROVEMENT_MAX_PROPOSALS, 5),
+    definitionRepoOwner: env.DEFINITION_REPO_OWNER ?? 'factory',
   };
 }
 
@@ -148,5 +160,9 @@ export function toOrchestrationConfig(config: ApiConfig): OrchestrationConfig {
     benchmarkConfirmThresholdUsd: config.benchmarkConfirmThresholdUsd,
     benchmarkMaxCostUsd: config.benchmarkMaxCostUsd,
     benchmarkPassThreshold: config.benchmarkPassThreshold,
+    improvementMinScoredRuns: config.improvementMinScoredRuns,
+    improvementWindowDays: config.improvementWindowDays,
+    improvementMaxProposals: config.improvementMaxProposals,
+    definitionRepoOwner: config.definitionRepoOwner,
   };
 }

@@ -354,3 +354,50 @@ skipped trials are always reported, and no configuration with zero samples gets 
 **Consequences:** the comparison is honest about trade-offs and small samples; the UI has to explain
 three labels instead of one winner. The frontier is recomputed from the persisted trial/result rows, so
 a re-run with more samples can move it without rewriting history.
+
+---
+
+## ADR-020 — Improvement authority is a definition field, not a runtime toggle
+
+**Status:** accepted (2026-10-29, Phase 5a)
+**Context:** The factory can measure itself (scores, calibration, benchmarks) but the authority to
+apply a self-proposed change must be explicit, auditable and changeable per factory. A runtime toggle
+stored only in the DB would let an operator widen the blast radius without a diff, and the factory's
+own source/gates must never be edited by the loop. The reference product's "self-improvement" panel
+implies a setting, but the definition is the source of truth (ADR-003).
+**Options:** a DB setting per factory · a global constant · a manifest field changed through the
+definition path.
+**Decision:** `improvement.authority` (`propose_only` default, `auto_merge_on_benchmark`, `canary`) is
+a `factory.yaml` field validated by the schema (canary requires `canaryPercent` 1–100 and
+`rollbackThreshold`; unknown fields fail). Changing it computes a diff, requires an actor + reason +
+`confirm: true`, and opens a PR against the definition repo — the console never writes the worktree
+(ADR-012). The authority recorded on a proposal at creation governs how *that* proposal lands, so a
+change takes effect for proposals created afterwards. Proposals are file-scoped to
+`agents/*/agent.md`, `skills/*`, `routing.yaml`, `scorers/*`, `automations/*`; anything else is
+rejected with `edit_out_of_scope` and recorded.
+**Consequences:** every autonomy widening is a reviewable git change with provenance; no hidden
+switch. Cost: changing authority is slower than a toggle (PR + merge), and the UI has to explain the
+diff. Canary is accepted as a level but its rollout is deferred (ADR-021); the apply path returns
+`canary_not_available` with `phase: "5b"` instead of pretending to route.
+
+---
+
+## ADR-021 — Canary routing uses a deterministic hash at work-item creation (Phase 5b)
+
+**Status:** accepted, implementation deferred to Phase 5b (2026-10-29)
+**Context:** A canary must route a configured percentage of *new* work to a candidate version and
+compare it with the stable version over an observation window, with automatic rollback on regression.
+Random assignment would make runs irreproducible and could split one work item's stages across
+versions; a shared mutable counter would drift under retries and replays.
+**Options:** random assignment per stage · a database counter · a deterministic hash of the work-item
+id at creation.
+**Decision:** when Phase 5b ships, a work item is assigned to stable or candidate exactly once, at
+creation, by `hash(workItemId) % 100 < canaryPercent`; the assignment is persisted with the work item
+so every stage of that item runs the same version. Both versions stay pinned (`factory-vN` +
+`definitionCommit`), the observation window is measured from the rollout start, and rollback
+(promote or manual) flips routing back to stable immediately while keeping the previous version
+addressable. Rollout, promotion and rollback emit `canary.*` events with the reason and evidence.
+**Consequences:** routing is reproducible and testable without randomness; a work item never straddles
+versions. Cost: the assignment must be stored and honoured by every dispatch path, and the rollout
+workflow is a separate, stateful piece of orchestration. Until it ships, `canary` validates as a
+configuration but cannot be applied.

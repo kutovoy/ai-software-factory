@@ -74,7 +74,7 @@ describe('semantic diff', () => {
     expect(renderDiffText(diff)).toBe('');
   });
 
-  it('reports only the gates and mergePolicy changes between the two reference factories', () => {
+  it('reports gates, mergePolicy and improvement authority between the two reference factories', () => {
     const diff = diffDefinitions(loadOrThrow(EXAMPLE), loadOrThrow(LIGHTS_OFF));
     expect(diff.added).toEqual([]);
     expect(diff.removed).toEqual([]);
@@ -82,9 +82,18 @@ describe('semantic diff', () => {
     expect(diff.changed[0].kind).toBe('factory');
 
     const pointers = diff.changed[0].changes.map((change) => change.pointer);
-    expect(pointers).toEqual(['/gates/plan', '/gates/pr_review', '/gates/spec', '/mergePolicy']);
+    expect(pointers).toEqual([
+      '/gates/plan',
+      '/gates/pr_review',
+      '/gates/spec',
+      '/improvement/authority',
+      '/improvement/canaryPercent',
+      '/improvement/rollbackThreshold',
+      '/mergePolicy',
+    ]);
 
     const text = renderDiffText(diff);
     expect(text).toContain('~ factory:example /mergePolicy: "human" -> "auto_on_green"');
+    expect(text).toContain('~ factory:example /improvement/authority: "propose_only" -> "canary"');
   });
 });

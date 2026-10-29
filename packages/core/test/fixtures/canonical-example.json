@@ -42,7 +42,7 @@
     },
     {
       "path": "factory.yaml",
-      "content": "agentDefaults:\n  harness:\n    model: openai/gpt-5\n    type: opencode\n  runner: local-docker\nalias: Example\ndescription: \"Reference factory exercising every resource type: a foreman routes work items through triage, spec, implement, review and verify agents.\"\ngates:\n  deploy: agent\n  implement: agent\n  plan: human\n  pr_review: human\n  review: agent\n  spec: human\nintegrations:\n  - github\nmcpServers:\n  github:\n    command: github-mcp\nmergePolicy: human\nname: example\nrepositories:\n  - name: api-service\n    owner: acme\nschemaVersion: v1alpha1\nsecrets:\n  - OPENCODE_API_KEY\nselfImprovement:\n  enabled: true\n  failedRunThreshold: 3\n  requireBenchmarkWin: true\n  reviewerType: humans\n"
+      "content": "agentDefaults:\n  harness:\n    model: openai/gpt-5\n    type: opencode\n  runner: local-docker\nalias: Example\ndescription: \"Reference factory exercising every resource type: a foreman routes work items through triage, spec, implement, review and verify agents.\"\ngates:\n  deploy: agent\n  implement: agent\n  plan: human\n  pr_review: human\n  review: agent\n  spec: human\nimprovement:\n  authority: propose_only\n  maxProbes: 3\n  observationWindowHours: 24\nintegrations:\n  - github\nmcpServers:\n  github:\n    command: github-mcp\nmergePolicy: human\nname: example\nrepositories:\n  - name: api-service\n    owner: acme\nschemaVersion: v1alpha1\nsecrets:\n  - OPENCODE_API_KEY\nselfImprovement:\n  enabled: true\n  failedRunThreshold: 3\n  requireBenchmarkWin: true\n  reviewerType: humans\n"
     },
     {
       "path": "routing.yaml",

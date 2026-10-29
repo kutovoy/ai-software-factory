@@ -9,6 +9,7 @@ import {
   secretNameSchema,
   withInference,
 } from './common';
+import { improvementSchema } from './improvement';
 import { stageDeclarationSchema } from './stage';
 
 export const agentDefaultsSchema = withInference(
@@ -61,6 +62,11 @@ export const factorySchema = z
     mcpServers: z.record(z.string(), z.unknown()).optional(),
     integrations: z.array(z.enum(INTEGRATIONS)).optional(),
     selfImprovement: selfImprovementSchema.optional(),
+    /**
+     * Phase 5 (ADR-020): how an improvement proposal may land. Optional; the resolved
+     * authority defaults to `propose_only` (see `resolveImprovement`).
+     */
+    improvement: improvementSchema.optional(),
   })
   .strict();
 

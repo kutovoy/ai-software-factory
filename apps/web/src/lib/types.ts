@@ -138,6 +138,13 @@ export interface FactoryManifest {
     reviewerType: string;
     requireBenchmarkWin: boolean;
   };
+  improvement?: {
+    authority: ImprovementAuthorityWire;
+    canaryPercent?: number;
+    rollbackThreshold?: number;
+    observationWindowHours?: number;
+    maxProbes?: number;
+  };
 }
 
 export interface FactoryDetail {
@@ -701,4 +708,172 @@ export interface AttestationsResponse {
   definitionCommit: string;
   attestations: BenchmarkAttestationWire[];
   benchmarkGate: BenchmarkGateStatusWire;
+}
+
+/* ------------------------------------------------------ self-improvement */
+
+export type ImprovementAuthorityWire =
+  | 'propose_only'
+  | 'auto_merge_on_benchmark'
+  | 'canary';
+
+export interface ImprovementResolvedWire {
+  authority: ImprovementAuthorityWire;
+  canaryPercent: number | null;
+  rollbackThreshold: number | null;
+  observationWindowHours: number;
+  maxProbes: number;
+  source: 'declared' | 'default';
+  canaryAvailable: false;
+}
+
+export interface ImprovementEligibilityWire {
+  eligible: boolean;
+  authority: ImprovementAuthorityWire;
+  minScoredRuns: number;
+  scoredRuns: number;
+  calibratedJudges: string[];
+  uncalibratedJudges: string[];
+  reasons: string[];
+}
+
+export interface ImprovementRunWire {
+  id: string;
+  factory: string;
+  definitionCommit: string;
+  trigger: 'scheduled' | 'on_demand';
+  status: 'queued' | 'running' | 'completed' | 'error' | 'skipped';
+  authority: string;
+  eligibility: Record<string, unknown>;
+  proposals: number;
+  lessons: number;
+  decision: string | null;
+  error: string | null;
+  workflowId: string | null;
+  temporalRunId: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+}
+
+export interface ProposalEditWire {
+  id: string;
+  proposalId: string;
+  kind: 'invariant' | 'domain';
+  path: string;
+  rationale: string;
+  content: string;
+  scope: 'in_scope' | 'out_of_scope';
+  rejected: boolean;
+  rejectionCode: string | null;
+  contrast: Record<string, unknown> | null;
+  createdAt: string | null;
+}
+
+export interface ProposalProbeWire {
+  id: string;
+  proposalId: string;
+  editId: string;
+  workItemId: string | null;
+  runId: string | null;
+  matchedInputs: Record<string, unknown>;
+  baselineScore: number | null;
+  candidateScore: number | null;
+  delta: number | null;
+  winner: boolean;
+  createdAt: string | null;
+}
+
+export type ProposalStatusWire =
+  | 'open'
+  | 'accepted'
+  | 'rejected'
+  | 'no_improvement'
+  | 'pr_open'
+  | 'merged'
+  | 'canary_not_available'
+  | 'failed';
+
+export interface ProposalWire {
+  id: string;
+  improvementRunId: string | null;
+  factory: string;
+  kind: 'improvement' | 'authority_change';
+  authority: string;
+  status: ProposalStatusWire;
+  title: string;
+  summary: string;
+  impact: number;
+  evidence: Record<string, unknown>;
+  failureSignature: string;
+  files: string[];
+  diff: { path: string; before: string; after: string }[];
+  candidateHash: string | null;
+  prUrl: string | null;
+  prNumber: number | null;
+  decisionActor: string | null;
+  decisionReason: string | null;
+  decidedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  edits?: ProposalEditWire[];
+  probes?: ProposalProbeWire[];
+}
+
+export interface LessonWire {
+  id: string;
+  factory: string;
+  cue: string;
+  lesson: string;
+  evidence: Record<string, unknown>;
+  confidence: number;
+  proposalId: string | null;
+  originFactory: string;
+  promoted: boolean;
+  promotedBy: string | null;
+  promotedAt: string | null;
+  createdAt: string | null;
+}
+
+export interface ImprovementOverviewWire {
+  factory: string;
+  definitionCommit: string;
+  definitionDirty: boolean;
+  authority: ImprovementAuthorityWire;
+  resolved: ImprovementResolvedWire;
+  eligibility: ImprovementEligibilityWire;
+  lastRun: ImprovementRunWire | null;
+  proposals: ProposalWire[];
+  lessonCount: number;
+  canary: {
+    available: false;
+    phase: '5b';
+    configuredPercent: number | null;
+    rollbackThreshold: number | null;
+    observationWindowHours: number;
+  };
+}
+
+export interface ProposalDetailWire {
+  proposal: ProposalWire;
+  edits: ProposalEditWire[];
+  probes: ProposalProbeWire[];
+  events: { type: string; subject: string; payload: Record<string, unknown>; createdAt: string | null }[];
+}
+
+export interface StartedImprovementWire {
+  factory: string;
+  improvement: ImprovementRunWire;
+  workflow: { workflowId: string; temporalRunId: string };
+}
+
+export interface AuthorityChangeWire {
+  confirmationRequired: boolean;
+  factory: string;
+  from: ImprovementResolvedWire;
+  to: ImprovementResolvedWire;
+  diff: { pointer: string; old: unknown; new: unknown }[];
+  text: string;
+  proposal?: ProposalWire;
+  prUrl?: string | null;
+  prNumber?: number | null;
 }

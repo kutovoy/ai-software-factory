@@ -605,3 +605,70 @@ export function benchmarkTrialRunId(
 ): string {
   return `run_bench_${benchmarkRunId.replace(/^bench_/, '')}_${configurationIndex}_${taskIndex}`;
 }
+
+/* ==================================================================== */
+/* Self-improvement (Phase 5)                                          */
+/*                                                                      */
+/* Workflow-safe types only: no Node APIs, no Temporal worker imports.  */
+/* ==================================================================== */
+
+export type ImprovementTriggerName = 'scheduled' | 'on_demand';
+export type ImprovementAuthorityName = 'propose_only' | 'auto_merge_on_benchmark' | 'canary';
+
+export interface ImprovementWorkflowInput {
+  improvementRunId: string;
+  factory: string;
+  factoryRoot: string;
+  definitionCommit: string;
+  definitionDirty: boolean;
+  trigger: ImprovementTriggerName;
+  /** Resolved from the definition (`improvement.authority`), never guessed. */
+  authority: ImprovementAuthorityName;
+  canaryPercent: number | null;
+  rollbackThreshold: number | null;
+  observationWindowHours: number;
+  maxProbes: number;
+  /** Minimum distinct scored runs before the observer may propose. */
+  minScoredRuns: number;
+  /** Scored-corpus window in days. */
+  windowDays: number;
+  /** Cap on proposals kept after dedupe (ranked by impact). */
+  maxProposals: number;
+  judgeMode?: ScoringJudgeMode;
+  /** On-demand filter: observe exactly these runs. */
+  runIds?: string[];
+  /** Definition repo (`owner/name`) that receives the proposal PR. */
+  definitionRepo: string;
+  baseBranch?: string;
+}
+
+export interface ImprovementProposalOutcome {
+  proposalId: string;
+  title: string;
+  failureSignature: string;
+  impact: number;
+  status: string;
+  candidateHash: string | null;
+  prUrl: string | null;
+  prNumber: number | null;
+  /** Per-edit probe results (winner + delta). */
+  probes: { editPath: string; kind: string; delta: number | null; winner: boolean }[];
+  /** Edits rejected by the blast-radius guard or by a losing probe. */
+  rejected: { path: string; code: string }[];
+}
+
+export interface ImprovementWorkflowOutcome {
+  improvementRunId: string;
+  status: 'completed' | 'error' | 'skipped';
+  /** Terminal decision summary (`ineligible`, `no_improvement`, `pr_opened`, `merged`, ...). */
+  decision: string;
+  proposals: ImprovementProposalOutcome[];
+  lessons: string[];
+  eligibility: Record<string, unknown>;
+  error?: string;
+}
+
+/** One improvement workflow per run; id derived from the run id (stable across retries). */
+export function improvementWorkflowId(improvementRunId: string): string {
+  return `improvement-${improvementRunId}`;
+}

@@ -427,4 +427,132 @@ printf '%s' "$attestations_resp" | bun -e '
 ' || fail "attestation lookup assertions failed"
 pass "attestation row is queryable by (factory, definitionCommit, configHash)"
 
+# ---------------------------------------- 13. self-improvement (Phase 5)
+log "creating a failed scored run for the improvement corpus"
+cancel_created="$(api -X POST "$API_URL/chat" \
+  -H 'content-type: application/json' \
+  -d '{"factory":"example","harness":"fake","fakeDelayMs":8000,"prompt":"smoke: improvement corpus failure"}')"
+cancel_run_id="$(printf '%s' "$cancel_created" | jget run.id)"
+[ -n "$cancel_run_id" ] || fail "no cancelled-corpus run id: $cancel_created"
+api -X POST "$API_URL/runs/$cancel_run_id/cancel" \
+  -H 'content-type: application/json' -d '{"reason":"smoke: improvement corpus failure"}' >/dev/null
+
+cancel_status=""
+for _ in $(seq 1 120); do
+  cancel_status="$(api "$API_URL/runs/$cancel_run_id" | jget run.status)"
+  case "$cancel_status" in
+    cancelled|error) break ;;
+    ok) fail "corpus run completed before it could be cancelled" ;;
+  esac
+  sleep 0.5
+done
+[ "$cancel_status" = "cancelled" ] || fail "corpus run did not reach cancelled (got ${cancel_status:-none})"
+pass "corpus run $cancel_run_id cancelled"
+
+api -X POST "$API_URL/scoring" \
+  -H 'content-type: application/json' \
+  -d "{\"factory\":\"example\",\"runId\":\"$cancel_run_id\",\"force\":true}" >/dev/null
+corpus_score_id=""
+for _ in $(seq 1 120); do
+  corpus_scores="$(api "$API_URL/scores?run=$cancel_run_id")"
+  corpus_score_id="$(printf '%s' "$corpus_scores" | jget scores.0.id)"
+  [ -n "$corpus_score_id" ] && break
+  sleep 0.5
+done
+[ -n "$corpus_score_id" ] || fail "the cancelled corpus run was not scored"
+pass "cancelled corpus run scored ($corpus_score_id)"
+
+log "checking the authority-change preview (diff, no write)"
+authority_preview="$(api -X POST "$API_URL/factories/example/improvement/authority" \
+  -H 'content-type: application/json' \
+  -d '{"authority":"auto_merge_on_benchmark","actor":"smoke","reason":"smoke: preview only"}')"
+[ "$(printf '%s' "$authority_preview" | jget confirmationRequired)" = "true" ] \
+  || fail "authority preview did not ask for confirmation: $authority_preview"
+printf '%s' "$authority_preview" | grep -q 'propose_only -> auto_merge_on_benchmark' \
+  || fail "authority preview has no diff: $authority_preview"
+pass "authority preview returns the diff and requires confirmation"
+
+log "running one improvement pass (eligibility → observe → probe → compose → decide)"
+improvement_resp="$(api -X POST "$API_URL/factories/example/improvement/run" \
+  -H 'content-type: application/json' -d '{"trigger":"on_demand"}')"
+improvement_id="$(printf '%s' "$improvement_resp" | jget improvement.id)"
+[ -n "$improvement_id" ] || fail "improvement run did not start: $improvement_resp"
+pass "improvement run $improvement_id started (authority $(printf '%s' "$improvement_resp" | jget improvement.authority))"
+
+improvement_detail=""
+improvement_status=""
+improvement_decision=""
+for _ in $(seq 1 240); do
+  improvement_detail="$(api "$API_URL/improvements/$improvement_id")"
+  improvement_status="$(printf '%s' "$improvement_detail" | jget improvement.status)"
+  improvement_decision="$(printf '%s' "$improvement_detail" | jget improvement.decision)"
+  case "$improvement_status" in
+    completed|skipped|error) break ;;
+  esac
+  sleep 0.5
+done
+[ "$improvement_status" = "completed" ] || fail "improvement run did not complete: ${improvement_status:-none} $(printf '%s' "$improvement_detail" | jget improvement.error)"
+[ "$improvement_decision" = "pr_opened" ] || fail "improvement decision is ${improvement_decision:-none}, expected pr_opened"
+
+printf '%s' "$improvement_detail" | bun -e '
+  const d = JSON.parse(await Bun.stdin.text());
+  const run = d.improvement ?? {};
+  const proposals = d.proposals ?? [];
+  if (run.eligibility?.eligible !== true) {
+    console.error(`improvement run was not eligible: ${JSON.stringify(run.eligibility)}`);
+    process.exit(1);
+  }
+  if (proposals.length < 1) { console.error("no proposal produced"); process.exit(1); }
+  const proposal = proposals[0];
+  if (proposal.status !== "pr_open") { console.error(`proposal status ${proposal.status}`); process.exit(1); }
+  if (!proposal.candidateHash || !/^[0-9a-f]{64}$/.test(proposal.candidateHash)) {
+    console.error("proposal has no candidate hash"); process.exit(1);
+  }
+  if (!Array.isArray(proposal.diff) || proposal.diff.length === 0) {
+    console.error("proposal has no diff"); process.exit(1);
+  }
+  if (!Array.isArray(proposal.files) || proposal.files.length === 0) {
+    console.error("proposal has no files"); process.exit(1);
+  }
+  if (typeof proposal.impact !== "number" || proposal.impact <= 0) {
+    console.error("proposal has no positive impact"); process.exit(1);
+  }
+  if (!proposal.prUrl) { console.error("proposal has no PR url"); process.exit(1); }
+  const probes = proposal.probes ?? [];
+  if (probes.length === 0) { console.error("proposal has no probes"); process.exit(1); }
+  if (!probes.some((probe) => probe.winner)) { console.error("no probe winner"); process.exit(1); }
+  const types = new Set((d.events ?? []).map((event) => event.type));
+  for (const type of ["improvement.started", "proposal.created", "probe.completed", "candidate.published"]) {
+    if (!types.has(type)) { console.error(`missing improvement event ${type}`); process.exit(1); }
+  }
+  const lessons = d.lessons ?? [];
+  if (lessons.length < 1) { console.error("no lesson recorded"); process.exit(1); }
+  if (!lessons.some((lesson) => lesson.cue && lesson.confidence > 0)) {
+    console.error("lesson has no cue/confidence"); process.exit(1);
+  }
+' || fail "improvement proposal / probe / candidate / PR / lesson assertions failed"
+pass "improvement $improvement_id: proposal + probes + candidate + PR + lesson recorded"
+
+lessons_resp="$(api "$API_URL/lessons?factory=example")"
+printf '%s' "$lessons_resp" | bun -e '
+  const d = JSON.parse(await Bun.stdin.text());
+  const lessons = d.lessons ?? [];
+  if (lessons.length === 0) { console.error("no lessons for the factory"); process.exit(1); }
+  if (!lessons.every((lesson) => lesson.factory === "example" || lesson.promoted)) {
+    console.error("lesson isolation violated"); process.exit(1);
+  }
+' || fail "lesson library assertions failed"
+pass "experience library lists per-factory lessons only (plus promoted)"
+
+log "checking the deferred canary apply path"
+canary_code="$(curl -sS -o "$TMP_DIR/canary.json" -w '%{http_code}' -X POST "$API_URL/canary/rollback" \
+  -H 'content-type: application/json' \
+  -d '{"factory":"example","actor":"smoke","reason":"smoke: canary is Phase 5b"}')"
+[ "$canary_code" = "409" ] || fail "expected 409 for canary rollback, got $canary_code"
+[ "$(jget code < "$TMP_DIR/canary.json")" = "canary_not_available" ] \
+  || fail "wrong canary error code: $(cat "$TMP_DIR/canary.json")"
+[ "$(jget details.phase < "$TMP_DIR/canary.json")" = "5b" ] \
+  || fail "canary refusal is not flagged Phase 5b"
+pass "canary apply/rollback returns canary_not_available (Phase 5b)"
+
 log "SMOKE PASSED"
