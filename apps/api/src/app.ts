@@ -41,6 +41,19 @@ import {
 } from './runs';
 import { createEventStream, parseLastEventId } from './sse';
 import { getSql } from '@factory/orchestration';
+import {
+  autonomyBodySchema,
+  createWorkItemBodySchema,
+  createWorkItemForApi,
+  gateDecisionBodySchema,
+  getWorkItemDetail,
+  listWorkItemsForApi,
+  setAutonomyForApi,
+  submitGateDecisionForApi,
+  type AutonomyBody,
+  type CreateWorkItemBody,
+} from './work-items';
+import type { GateDecisionRequest } from '@factory/core';
 
 const TERMINAL = new Set(['ok', 'error', 'cancelled']);
 
@@ -315,6 +328,47 @@ export function createApp(config: ApiConfig): Hono {
 
     log('info', 'permission_decided', { runId, requestId, decision: body.decision, delivery });
     return c.json({ runId, requestId, decision: body.decision });
+  });
+
+  /* ----------------------------------------------------------- work items */
+
+  app.post('/work-items', async (c) => {
+    const body = await json<CreateWorkItemBody>(c, createWorkItemBodySchema);
+    const created = await createWorkItemForApi(config, body);
+    return c.json(created, 201);
+  });
+
+  app.get('/work-items', async (c) => {
+    const limit = Number(c.req.query('limit') ?? '50');
+    const offset = Number(c.req.query('offset') ?? '0');
+    const workItems = await listWorkItemsForApi({
+      ...(c.req.query('factory') ? { factory: c.req.query('factory') as string } : {}),
+      ...(c.req.query('stage') ? { stage: c.req.query('stage') as string } : {}),
+      ...(c.req.query('status') ? { status: c.req.query('status') as string } : {}),
+      limit: Number.isFinite(limit) ? limit : 50,
+      offset: Number.isFinite(offset) ? offset : 0,
+    });
+    return c.json({ workItems });
+  });
+
+  app.get('/work-items/:id', async (c) => c.json(await getWorkItemDetail(c.req.param('id'))));
+
+  app.post('/work-items/:id/gates/:stage', async (c) => {
+    const body = await json<GateDecisionRequest>(c, gateDecisionBodySchema);
+    const result = await submitGateDecisionForApi(
+      config,
+      c.req.param('id'),
+      c.req.param('stage'),
+      body,
+    );
+    return c.json(result);
+  });
+
+  /* ------------------------------------------------------------- autonomy */
+
+  app.post('/autonomy', async (c) => {
+    const body = await json<AutonomyBody>(c, autonomyBodySchema);
+    return c.json({ autonomy: await setAutonomyForApi(config, body) });
   });
 
   /* ------------------------------------------------------------------ chat */

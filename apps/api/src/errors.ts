@@ -70,3 +70,34 @@ export const modelNotAllowed = (model: string, allowed: string[]): ApiError =>
     model,
     allowed,
   });
+
+export const workItemNotFound = (workItemId: string): ApiError =>
+  new ApiError('work_item_not_found', 404, `work item "${workItemId}" does not exist`, {
+    workItemId,
+  });
+
+export const gateNotFound = (workItemId: string, stage: string): ApiError =>
+  new ApiError(
+    'gate_not_found',
+    404,
+    `work item "${workItemId}" has no pending gate for stage "${stage}"`,
+    { workItemId, stage },
+  );
+
+export const invalidStageGraph = (node: string, message: string): ApiError =>
+  new ApiError('invalid_stage_graph', 422, message, { node });
+
+export const spawnNotAllowed = (
+  stage: string,
+  agent: string,
+  spawner: string | null,
+): ApiError =>
+  new ApiError(
+    'spawn_not_allowed',
+    409,
+    `agent "${agent}" cannot be spawned by ${spawner ?? 'the system'} for stage "${stage}"`,
+    { stage, agent, spawner },
+  );
+
+export const autonomyRefused = (message: string, details?: unknown): ApiError =>
+  new ApiError('autonomy_refused', 409, message, details);

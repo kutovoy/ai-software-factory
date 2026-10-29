@@ -9,6 +9,7 @@ import {
   secretNameSchema,
   withInference,
 } from './common';
+import { stageDeclarationSchema } from './stage';
 
 export const agentDefaultsSchema = withInference(
   {
@@ -51,6 +52,11 @@ export const factorySchema = z
     agentDefaults: agentDefaultsSchema,
     gates: gatesSchema,
     mergePolicy: z.enum(MERGE_POLICIES),
+    /**
+     * Ordered stage graph for the factory loop. Optional: when omitted the graph is
+     * derived from the agents' `role` fields (see `stageDeclarationsFromDefinition`).
+     */
+    stages: z.array(stageDeclarationSchema).min(1).optional(),
     secrets: z.array(secretNameSchema).default([]),
     mcpServers: z.record(z.string(), z.unknown()).optional(),
     integrations: z.array(z.enum(INTEGRATIONS)).optional(),

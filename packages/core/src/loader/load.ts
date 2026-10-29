@@ -23,6 +23,8 @@ import { routingSchema } from '../schema/routing';
 import { runnerSchema } from '../schema/runner';
 import { scorerFrontmatterSchema } from '../schema/scorer';
 import { skillFrontmatterSchema } from '../schema/skill';
+import { StageGraphError, compileStageGraph, isLoopStage, stageDeclarationsFromDefinition } from '../stage-graph/graph';
+import type { AgentDef } from '../schema/agent';
 import { normalizeBody, splitFrontmatter } from './frontmatter';
 import { ALLOWED_LOCATIONS, classify, walk, type ResourceKind } from './walk';
 
@@ -284,6 +286,33 @@ function crossValidate(manifest: FactoryManifest, resources: Resource[], push: P
     'MCP server',
   );
   checkHarnessSecret('factory.yaml', manifest.agentDefaults.harness);
+
+  // The optional `stages:` block is the loop's stage graph. Agent references are checked
+  // like every other reference; the graph itself is compiled so an unknown stage or a
+  // cycle fails validation with `invalid_stage_graph` naming the offending node.
+  const agentSources = resources
+    .filter((resource) => resource.kind === 'agent')
+    .map((resource) => ({ name: resource.name, doc: resource.doc as AgentDef }));
+
+  manifest.stages?.forEach((declaration, index) => {
+    checkOne('factory.yaml', `/stages/${index}/agent`, declaration.agent, agents, 'agent');
+  });
+
+  const declaresLoopStage =
+    Boolean(manifest.stages && manifest.stages.length > 0) ||
+    agentSources.some((agent) => agent.doc.role !== undefined && isLoopStage(agent.doc.role));
+
+  if (declaresLoopStage) {
+    try {
+      compileStageGraph(stageDeclarationsFromDefinition(manifest, agentSources));
+    } catch (error) {
+      if (error instanceof StageGraphError) {
+        push('invalid_stage_graph', 'factory.yaml', '/stages', error.message);
+      } else {
+        throw error;
+      }
+    }
+  }
 
   for (const resource of resources) {
     const doc = resource.doc as Record<string, unknown>;

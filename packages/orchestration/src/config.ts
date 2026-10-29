@@ -22,6 +22,12 @@ export interface OrchestrationConfig {
   defaultRunner: 'docker' | 'local';
   /** How long a `permission.requested` may wait before it is auto-denied. */
   permissionTimeoutMs: number;
+  /** SLA for an undecided stage gate before the configured fallback applies. */
+  gateSlaMs: number;
+  /** `request_changes` loop limit before the item escalates to a human. */
+  loopLimit: number;
+  /** `FactoryWorkflow` calls `continueAsNew` after this many completed stages. */
+  maxStagesPerRun: number;
   /**
    * Worker concurrency (ADR-013). Each *streaming* run holds one activity slot; a run
    * waiting for a human decision holds none. Defaults are Temporal's own defaults, raised
@@ -50,6 +56,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): OrchestrationC
     providerKey: env.OPENAI_API_KEY,
     defaultRunner: env.RUNNER_BACKEND === 'local' ? 'local' : 'docker',
     permissionTimeoutMs: intFromEnv(env.PERMISSION_TIMEOUT_MS, 30 * 60 * 1000),
+    // A gate may wait for days; the SLA only decides the fallback, not the wait.
+    gateSlaMs: intFromEnv(env.GATE_SLA_MS, 24 * 60 * 60 * 1000),
+    loopLimit: intFromEnv(env.FACTORY_LOOP_LIMIT, 3),
+    maxStagesPerRun: intFromEnv(env.FACTORY_CONTINUE_AFTER_STAGES, 10),
     // Activities are I/O-bound (harness streams, DB writes), so the Temporal default of
     // 100 is a sane ceiling; workflow tasks are cheap and short.
     maxConcurrentActivityTaskExecutions: intFromEnv(env.WORKER_MAX_CONCURRENT_ACTIVITY_TASKS, 100),

@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'bun:test';
-import { ApiError, toEnvelope } from '../src/errors';
-import { mapRunnerName } from '../src/runs';
+import {
+  autonomyRefused,
+  gateNotFound,
+  invalidStageGraph,
+  spawnNotAllowed,
+  workItemNotFound,
+  ApiError,
+  toEnvelope,
+} from '../src/errors';
+import { mapRunnerName, resolveRunDefaults } from '../src/runs';
+import { factorySchema } from '@factory/core';
 import { redact } from '../src/logger';
 
 describe('error envelope', () => {
@@ -44,5 +53,69 @@ describe('log redaction', () => {
     expect(fields.authorization).toBe('[redacted]');
     expect(fields.token).toBe('[redacted]');
     expect(fields.runId).toBe('run_1');
+  });
+});
+
+describe('factory loop error envelope', () => {
+  test('invalid_stage_graph is 422 and names the offending node', () => {
+    const envelope = toEnvelope(
+      invalidStageGraph('deploy', 'unknown stage "deploy" (allowed: triage, spec, ...)'),
+    );
+    expect(envelope.status).toBe(422);
+    expect(envelope.body.code).toBe('invalid_stage_graph');
+    expect(envelope.body.details).toEqual({ node: 'deploy' });
+  });
+
+  test('spawn_not_allowed is 409', () => {
+    const envelope = toEnvelope(spawnNotAllowed('spec', 'spec', 'foreman'));
+    expect(envelope.status).toBe(409);
+    expect(envelope.body.code).toBe('spawn_not_allowed');
+    expect(envelope.body.details).toMatchObject({ stage: 'spec', agent: 'spec', spawner: 'foreman' });
+  });
+
+  test('autonomy_refused is 409 and carries the benchmark-gate state', () => {
+    const envelope = toEnvelope(
+      autonomyRefused('benchmark gate required', {
+        benchmarkGateRequired: true,
+        benchmarkGateSatisfied: false,
+      }),
+    );
+    expect(envelope.status).toBe(409);
+    expect(envelope.body.code).toBe('autonomy_refused');
+    expect(envelope.body.details).toEqual({
+      benchmarkGateRequired: true,
+      benchmarkGateSatisfied: false,
+    });
+  });
+
+  test('work item and gate lookups are 404', () => {
+    expect(toEnvelope(workItemNotFound('wi_x')).status).toBe(404);
+    expect(toEnvelope(gateNotFound('wi_x', 'spec')).body.code).toBe('gate_not_found');
+  });
+});
+
+describe('run defaults', () => {
+  const manifest = factorySchema.parse({
+    schemaVersion: 'v1alpha1',
+    name: 'fixture',
+    repositories: [{ owner: 'acme', name: 'api' }],
+    agentDefaults: { harness: { type: 'opencode', model: 'openai/gpt-5' }, runner: 'local-docker' },
+    gates: { spec: 'human' },
+    mergePolicy: 'human',
+  });
+
+  test('the fake harness always runs on the fake runner', () => {
+    const defaults = resolveRunDefaults(manifest, { harness: 'fake' });
+    expect(defaults.harness).toBe('fake');
+    expect(defaults.runner).toBe('fake');
+    // The declared model is kept; the fake adapter ignores it.
+    expect(defaults.model).toBe('openai/gpt-5');
+  });
+
+  test('explicit values win over definition defaults', () => {
+    const defaults = resolveRunDefaults(manifest, { model: 'openai/gpt-5-mini', runner: 'local-process' });
+    expect(defaults.harness).toBe('opencode');
+    expect(defaults.model).toBe('openai/gpt-5-mini');
+    expect(defaults.runner).toBe('local-process');
   });
 });

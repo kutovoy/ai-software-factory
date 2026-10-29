@@ -1,0 +1,17 @@
+schemaVersion: v1alpha1
+name: cycle
+repositories:
+  - owner: acme
+    name: api
+agentDefaults:
+  model: test-model
+gates:
+  spec: human
+mergePolicy: human
+stages:
+  - name: spec
+    needs:
+      - implement
+  - name: implement
+    needs:
+      - spec

@@ -66,12 +66,17 @@
         "zod": "^3.23.8",
       },
     },
+    "packages/forge": {
+      "name": "@factory/forge",
+      "version": "0.0.0",
+    },
     "packages/orchestration": {
       "name": "@factory/orchestration",
       "version": "0.0.0",
       "dependencies": {
         "@factory/adapters": "workspace:*",
         "@factory/core": "workspace:*",
+        "@factory/forge": "workspace:*",
         "@factory/runners": "workspace:*",
         "@temporalio/activity": "^1.11.7",
         "@temporalio/client": "^1.11.7",
@@ -96,6 +101,8 @@
     "@factory/cli": ["@factory/cli@workspace:packages/cli"],
 
     "@factory/core": ["@factory/core@workspace:packages/core"],
+
+    "@factory/forge": ["@factory/forge@workspace:packages/forge"],
 
     "@factory/orchestration": ["@factory/orchestration@workspace:packages/orchestration"],
 

@@ -51,6 +51,12 @@ export interface RunInput {
    * durable wait with no activity cost; this timer only escalates (auto-deny + error).
    */
   permissionTimeoutMs?: number;
+  /**
+   * Factory stage runs are unattended agents: a harness permission request is answered
+   * `allow` immediately instead of parking on a human. Chat runs stay interactive, so the
+   * ADR-013 durable wait is unchanged for humans.
+   */
+  autoAllowPermissions?: boolean;
 }
 
 export interface LeaseInfo {
@@ -166,4 +172,269 @@ export interface StepRecord {
   status: 'running' | 'ok' | 'error' | 'cancelled';
   detail?: unknown;
   error?: string;
+}
+
+/* ==================================================================== */
+/* Factory loop (Phase 3a)                                              */
+/*                                                                      */
+/* Workflow-safe types only: no Node APIs, no Temporal worker imports.  */
+/* ==================================================================== */
+
+export type LoopStageName =
+  | 'triage'
+  | 'spec'
+  | 'plan'
+  | 'implement'
+  | 'review'
+  | 'verify'
+  | 'ship';
+
+/** Gate decision values accepted by `submitGateDecision`. */
+export type GateDecisionValue = 'approve' | 'reject' | 'request_changes';
+
+export type MergePolicyName =
+  | 'human'
+  | 'auto_on_green'
+  | 'auto_after_n_approvals'
+  | 'disabled';
+
+/** Resolved per-stage configuration, flattened for the workflow sandbox. */
+export interface StageNodeSummary {
+  name: string;
+  needs: string[];
+  agent: string | null;
+  reviewers: number;
+  gate: string;
+  gateSource: string;
+  gateStage: string;
+  harness: HarnessId | null;
+  model: string | null;
+  runner: RunnerKindName;
+  tools: { allow: string[]; deny: string[] } | null;
+}
+
+export interface StageGraphSummary {
+  /** Topological order. */
+  order: string[];
+  /** Parallel reviewer children per stage. */
+  fanOut: Record<string, number>;
+  nodes: StageNodeSummary[];
+}
+
+export interface AutonomySnapshot {
+  enabled: boolean;
+  paused: boolean;
+  /** True when autonomy may auto-decide a gate (benchmark gate satisfied or overridden). */
+  benchmarkGateSatisfied: boolean;
+  actor?: string | null;
+  reason?: string | null;
+}
+
+/** Carried across `continueAsNew` so a long loop keeps bounded history. */
+export interface FactoryWorkflowResume {
+  stageIndex: number;
+  loopCount: number;
+  stagesCompleted: number;
+  attempts: Record<string, number>;
+  currentStage: string;
+  prUrl?: string;
+  prNumber?: number;
+  reviewVerdict?: ReviewVerdict;
+}
+
+export interface FactoryWorkflowInput {
+  workItemId: string;
+  factory: string;
+  factoryRoot: string;
+  definitionCommit: string;
+  definitionDirty: boolean;
+  title: string;
+  /** Seed prompt for every stage run (work item title + source context). */
+  prompt: string;
+  sourceRef: Record<string, unknown>;
+  repo?: { path?: string };
+  stageGraph: StageGraphSummary;
+  /** Resolved gate per loop stage (after the kill switch was applied). */
+  gates: Record<string, string>;
+  mergePolicy: MergePolicyName;
+  autonomy: AutonomySnapshot;
+  loopLimit: number;
+  gateSlaMs: number;
+  /** `continueAsNew` after this many completed stages. */
+  maxStagesPerRun: number;
+  defaultHarness: HarnessId;
+  /**
+   * Explicit harness override for every stage (e.g. `harness: "fake"` on the API body).
+   * Wins over the harness declared by the stage agent.
+   */
+  harnessOverride?: HarnessId;
+  defaultModel?: string;
+  defaultRunner: RunnerKindName;
+  autoAllowPermissions: boolean;
+  permissionTimeoutMs?: number;
+  resume?: FactoryWorkflowResume;
+}
+
+export type FactoryOutcomeStatus = 'done' | 'escalated' | 'cancelled' | 'blocked';
+
+export interface FactoryWorkflowOutcome {
+  workItemId: string;
+  status: FactoryOutcomeStatus;
+  stage: string;
+  stagesCompleted: number;
+  loopCount: number;
+  prUrl?: string;
+  merged?: boolean;
+  reviewVerdict?: ReviewVerdict;
+  reason?: string;
+}
+
+/** Payload of the `submitGateDecision` Update / `gateDecision` Signal. */
+export interface GateDecisionInput {
+  stage: LoopStageName;
+  decision: GateDecisionValue;
+  actor: string;
+  reason?: string;
+  feedback?: string;
+  /** Attempt of the stage gate; the child accepts a decision only for its own attempt. */
+  attempt?: number;
+}
+
+export interface GateDecisionAck {
+  accepted: boolean;
+  stage: LoopStageName;
+  decision: GateDecisionValue;
+}
+
+/** Payload of the `autonomyPaused` kill-switch signal. */
+export interface AutonomyPausedSignal {
+  actor: string;
+  reason: string;
+}
+
+export type StagePhase = 'run' | 'review' | 'gate';
+
+export interface StageWorkflowInput {
+  workItemId: string;
+  factory: string;
+  factoryRoot: string;
+  definitionCommit: string;
+  definitionDirty: boolean;
+  stage: LoopStageName;
+  attempt: number;
+  phase: StagePhase;
+  reviewerIndex?: number;
+  agent: string | null;
+  harness: HarnessId;
+  model?: string;
+  runner: RunnerKindName;
+  tools?: { allow: string[]; deny: string[] } | null;
+  /** `human`, `agent`, `policy:<name>` or `none` (run-only children). */
+  gate: string;
+  gateSlaMs: number;
+  /** SLA fallback may auto-approve (autonomy policy + benchmark gate allow it). */
+  autoApproveAllowed: boolean;
+  title: string;
+  prompt: string;
+  repo?: { path?: string };
+  permissionTimeoutMs?: number;
+  /** Evidence attached to a gate-only child (review verdict / findings). */
+  verdict?: ReviewVerdict;
+  findings?: ReviewFinding[];
+}
+
+export interface StageGateOutcome {
+  decision: GateDecisionValue;
+  actor: string;
+  automatic: boolean;
+  reason?: string;
+  feedback?: string;
+}
+
+export interface StageWorkflowResult {
+  stage: LoopStageName;
+  runId: string | null;
+  status: 'ok' | 'failed' | 'cancelled';
+  gate: StageGateOutcome | null;
+  report?: ReviewerReport;
+  summary?: string;
+}
+
+/* ------------------------------------------------------------- judgement */
+
+export const JUDGEMENT_CLASSIFICATIONS = ['implement', 'spec', 'wait', 'reject'] as const;
+export type JudgementClassification = (typeof JUDGEMENT_CLASSIFICATIONS)[number];
+
+export interface JudgementResult {
+  classification: JudgementClassification;
+  confidence: number;
+  reason: string;
+  /** How many model attempts were needed (invalid output is retried). */
+  attempts: number;
+  model: string;
+}
+
+/* ---------------------------------------------------------------- review */
+
+export type ReviewFindingSeverity = 'info' | 'warning' | 'blocker';
+
+export interface ReviewFinding {
+  reviewer: string;
+  severity: ReviewFindingSeverity;
+  summary: string;
+  file?: string;
+}
+
+export interface ReviewerReport {
+  reviewer: string;
+  reviewerIndex: number;
+  runId: string | null;
+  verdict: 'approve' | 'reject';
+  findings: ReviewFinding[];
+  confidence: number;
+}
+
+export type ReviewVerdictValue = 'approve' | 'needs_human' | 'reject';
+
+export interface ReviewVerdict {
+  verdict: ReviewVerdictValue;
+  findings: ReviewFinding[];
+  confidence: number;
+  reviewers: number;
+  /** Always true: the committee never approves or merges; it only advises. */
+  advisory: true;
+  /** Set when fewer reports than configured reviewers arrived. */
+  incomplete?: boolean;
+}
+
+/* ------------------------------------------------------- workflow ids */
+
+/** One workflow per work item (design decision 1: id is derived from the item). */
+export function workItemWorkflowId(workItemId: string): string {
+  return `factory-${workItemId}`;
+}
+
+/** One child workflow per stage attempt / reviewer / gate. */
+export function stageWorkflowId(
+  workItemId: string,
+  stage: string,
+  attempt: number,
+  suffix?: string,
+): string {
+  return `stage-${workItemId}-${stage}-${attempt}${suffix ? `-${suffix}` : ''}`;
+}
+
+/** One child workflow per run. */
+export function runWorkflowIdFor(runId: string): string {
+  return `run-${runId}`;
+}
+
+/** Run id for a stage (reviewers get their own independent run). */
+export function stageRunId(
+  workItemId: string,
+  stage: string,
+  attempt: number,
+  reviewerIndex?: number,
+): string {
+  return `run_${workItemId.slice(3)}_${stage}_${attempt}${reviewerIndex ? `_r${reviewerIndex}` : ''}`;
 }

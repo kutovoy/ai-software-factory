@@ -1,0 +1,11 @@
+schemaVersion: v1alpha1
+name: spawn-denied
+repositories:
+  - owner: acme
+    name: api
+agentDefaults:
+  model: test-model
+gates:
+  spec: human
+  implement: human
+mergePolicy: human

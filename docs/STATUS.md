@@ -4,10 +4,13 @@ Last updated: 2026-10-29
 
 ## Phase
 
-**Phase 2b — web console: complete** (2026-10-29). Navigation parity, New Chat streaming, Inbox,
-Runs, and read-only factory pages (Definition, Gates, Agents, Automations, Scorers, Benchmarks,
-Self-improvement, Settings) consuming `apps/api` only; Playwright covers the core loop.
-Next: **Phase 3** (factory stages/foreman/gates as child workflows, `awaitGate` updates + escalation).
+**Phase 3a — factory loop: complete** (2026-10-29). Work items are durable workflows
+(`FactoryWorkflow` + child `StageWorkflow`), the stage graph is compiled from the definition, the
+foreman dispatches with `spawnableBy` enforcement, gates are workflow-level durable waits
+(Update/Signal + SLA), the review committee is advisory (≥2 reviewers + judge), and autonomy has a
+policy + kill switch — all exercised on the fake forge + fake harness. Phase 2b web console remains
+complete.
+Next: **Phase 3b** (GitHub forge + merge queue) and the Phase 3 UI (work-items board, gate approvals).
 
 ### Phase 2b fix — human permission waits are workflow-level durable waits (ADR-013, 2026-10-29)
 
@@ -127,6 +130,79 @@ isolation yet.
 - [x] `scripts/e2e.sh` (compose up → smoke → Playwright) + `.github/workflows/ci.yml`
       (`unit` = `bun install` + `bun run ci`, Docker-free; `e2e` = compose up + smoke + chromium)
 
+### Phase 3a — factory loop (2026-10-29)
+
+- [x] `packages/forge` (new): `CodeForge` (`checkout|createBranch|commit|openPullRequest|comment|getChecks|merge`),
+      in-memory `FakeForge` (deterministic red checks via `[red]` marker / `simulateChecks`,
+      `protected_branch` on writes to the default branch, idempotent PR creation, content-hash SHAs),
+      shared contract suite (`@factory/forge/contract`) used by the fake backend (GitHub in 3b)
+- [x] `packages/core`: `WorkItem` type + Zod schema + ULID ids; `003_work_items.sql`
+      (`work_items`, `work_item_events`, `gate_decisions`, `autonomy_state`); Bun-SQL repository
+      (create/transition/attach PR/list/events/gates/autonomy, retry-idempotent)
+- [x] `packages/core`: stage graph compiler (`stages:` in `factory.yaml` or derived from agent roles;
+      ordered `needs` edges; review fan-out; unknown stage/needs/cycle → `invalid_stage_graph` naming
+      the node), per-stage config resolution with `spawnableBy` (`spawn_not_allowed`), loop gate
+      aliasing onto the six-stage policy, autonomy policy (`autonomy_refused` while
+      `benchmarkGateRequired` and no override)
+- [x] `packages/orchestration`: `FactoryWorkflow` (one per work item, `continueAsNew` after N stages,
+      entry judgement call, deterministic foreman dispatch, implement → PR, verify → checks, ship →
+      merge policy) and child `StageWorkflow` (`run|review|gate` phases). Gate waits are Temporal
+      **Updates** (`submitGateDecision`) + **Signal** fallback + `condition()` + SLA timer (ADR-013);
+      no activity slot is held while waiting. Review fans out to ≥2 independent reviewer children and
+      a judge returns `{verdict, findings[], confidence}` — advisory only, never an approval or merge.
+      Kill switch (`autonomyPaused` signal + `autonomy_state` read before dispatch) cancels the
+      in-flight stage child and ends `blocked`. `request_changes` moves back one stage with feedback,
+      increments the loop count and escalates past the limit.
+- [x] `apps/api`: `POST /work-items`, `GET /work-items` (factory/stage/status filters),
+      `GET /work-items/:id` (item + events + gates), `POST /work-items/:id/gates/:stage` (records the
+      decision, then delivers the Update), `POST /autonomy` (enable/pause with actor + reason; refuses
+      lights-off without a benchmark-gate override; pause signals running work items)
+- [x] Tests: forge contract suite, stage graph (default/fan-out/cycle/unknown), `spawnableBy`,
+      autonomy policy, work-item schema, judge disagreement/incomplete; integration (Temporal + PG,
+      fake forge + fake harness): full loop triage→spec→implement→review(2)→verify→ship,
+      `request_changes` loop limit, SLA auto-reject and auto-approve, kill switch, disagreement →
+      `needs_human`; API integration: create/list/detail, gate delivery, autonomy refusal/override,
+      `invalid_stage_graph`, `spawn_not_allowed`
+
+## Phase 3a verification (2026-10-29)
+
+```
+bun run ci                     → typecheck clean; 221 pass / 23 skip / 0 fail; both factories validate,
+                                 export --check canonical (15 files each)
+docker compose up -d --build   → postgres, temporal, api, web, worker healthy
+bash scripts/smoke.sh          → SMOKE PASSED incl. scripts/smoke-permissions.sh
+integration (Temporal + PG)    → factory-loop: 6 pass (full loop with 2 reviewers + merge,
+                                 request_changes loop limit, SLA auto-reject, SLA auto-approve,
+                                 kill switch, disagreement → needs_human)
+apps/api integration           → 7 pass (create/list/detail, gate delivery, autonomy refusal +
+                                 override, pause, invalid_stage_graph, spawn_not_allowed)
+live compose E2E (curl)        → POST /work-items → triage/spec gates via Update → ship gate →
+                                 done, PR https://forge.local/acme/api-service/pull/1, 6 gate rows
+                                 (3 human, 3 automatic), advisory review.verdict with 2 reviewers
+```
+
+Repro:
+```
+DATABASE_URL=postgres://factory:factory@localhost:5433/factory TEMPORAL_ADDRESS=localhost:7233 \
+RUN_INTEGRATION=1 bun test packages/orchestration/test/factory-loop.integration.test.ts
+DATABASE_URL=postgres://factory:factory@localhost:5433/factory TEMPORAL_ADDRESS=localhost:7233 \
+RUN_INTEGRATION=1 bun test apps/api/test/work-items.integration.test.ts
+```
+
+Notes:
+- Loop stages (`triage, spec, plan, implement, review, verify, ship`) are compiled from an optional
+  `stages:` block in `factory.yaml`; when it is absent the graph is derived from agent `role`s (the
+  example factory yields triage→spec→implement→review→verify→ship; `ship` is a forge/merge stage with
+  no agent). A loop stage without its own gate inherits the nearest six-stage gate policy
+  (triage→spec, verify→implement, ship→pr_review).
+- Factory stage runs are unattended agents: the harness auto-allows tool permissions
+  (`RunInput.autoAllowPermissions`), while chat runs keep the ADR-013 human wait unchanged.
+- Review verdicts are advisory. A disagreement forces the human review gate; a human approval at the
+  ship gate is the authority that allows the merge, never the verdict.
+- Deferred to other tasks: ADR-014/ADR-015 (7.4), UI board/inbox (6.x), smoke one-stage loop (7.3),
+  GitHub forge backend (3b), real model for judgement/review (deterministic models behind injectable
+  hooks today).
+
 ## Phase 2b verification (2026-10-29)
 
 ```
@@ -200,7 +276,8 @@ both accepted; `benchmarkGateRequired` is true exactly when `fullyAutonomous`; k
 
 ## Next
 
-1. Phase 3: factory stages/foreman/gates as child workflows, `awaitGate` updates + escalation timers;
+1. Phase 3b: GitHub `CodeForge` backend (must pass the shared contract suite) + merge queue; then the
+   Phase 3 UI (work-items board, gate approvals in the Inbox, live autonomy state + kill switch) and
    MCPs & apps page (per-agent MCP wiring).
 2. Rebuild tool for the read model (replay JSONL → Postgres) before benchmarks rely on it.
 3. Phase 4: scorers on real runs + benchmark replay; then Phase 5 self-improvement observer loop.

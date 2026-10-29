@@ -230,6 +230,14 @@ export async function RunWorkflow(input: RunInput): Promise<RunOutcome> {
           if (!requestId) break; // defensive: never wait without an id
           const action = pump.permissionAction ?? 'permission';
 
+          // Factory stage runs are unattended agents: tool permissions are auto-allowed.
+          // Chat runs keep the ADR-013 durable wait.
+          if (input.autoAllowPermissions) {
+            decided[requestId] = 'allow';
+            await harness.respondPermission({ input, requestId, decision: 'allow' });
+            continue;
+          }
+
           // Durable wait. `condition` resolves on the Update/Signal handler, or after a
           // slice, in which case we re-check cancellation recorded in the read model.
           let remaining = permissionTimeoutMs;

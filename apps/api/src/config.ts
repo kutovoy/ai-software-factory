@@ -33,6 +33,8 @@ export interface ApiConfig {
   sseMaxLifetimeMs: number;
   /** SLA for a run's human permission wait before it is auto-denied (ADR-013). */
   permissionTimeoutMs: number;
+  /** SLA for an undecided stage gate before the configured fallback applies. */
+  gateSlaMs: number;
 }
 
 function boolFromEnv(value: string | undefined, fallback: boolean): boolean {
@@ -64,6 +66,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     stubUpstream: boolFromEnv(env.PROXY_STUB_UPSTREAM, false),
     sseMaxLifetimeMs: intFromEnv(env.SSE_MAX_LIFETIME_MS, 30 * 60 * 1000),
     permissionTimeoutMs: intFromEnv(env.PERMISSION_TIMEOUT_MS, 30 * 60 * 1000),
+    gateSlaMs: intFromEnv(env.GATE_SLA_MS, 24 * 60 * 60 * 1000),
   };
 }
 
@@ -81,6 +84,9 @@ export function toOrchestrationConfig(config: ApiConfig): OrchestrationConfig {
     providerKey: config.providerKey,
     defaultRunner: process.env.RUNNER_BACKEND === 'local' ? 'local' : 'docker',
     permissionTimeoutMs: config.permissionTimeoutMs,
+    gateSlaMs: config.gateSlaMs,
+    loopLimit: intFromEnv(process.env.FACTORY_LOOP_LIMIT, 3),
+    maxStagesPerRun: intFromEnv(process.env.FACTORY_CONTINUE_AFTER_STAGES, 10),
     maxConcurrentActivityTaskExecutions: intFromEnv(
       process.env.WORKER_MAX_CONCURRENT_ACTIVITY_TASKS,
       100,

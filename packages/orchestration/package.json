@@ -12,6 +12,7 @@
   "dependencies": {
     "@factory/adapters": "workspace:*",
     "@factory/core": "workspace:*",
+    "@factory/forge": "workspace:*",
     "@factory/runners": "workspace:*",
     "@temporalio/activity": "^1.11.7",
     "@temporalio/client": "^1.11.7",

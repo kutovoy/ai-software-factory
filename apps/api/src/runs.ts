@@ -6,6 +6,7 @@ import {
   createVersion,
   loadDefinition,
   type FactoryDefinition,
+  type FactoryManifest,
   type RunnerDef,
 } from '@factory/core';
 import {
@@ -68,8 +69,10 @@ function loadOrFail(dir: string, factory: string): FactoryDefinition {
   return definition;
 }
 
+export { loadOrFail };
+
 /** Pins the definition version. The DB is an index; the commit SHA is the identity. */
-function pinVersion(dir: string, factory: string): { commit: string; dirty: boolean } {
+export function pinVersion(dir: string, factory: string): { commit: string; dirty: boolean } {
   try {
     const version = createVersion(dir, { allowDirty: true });
     return { commit: version.commit, dirty: version.dirty };
@@ -94,6 +97,45 @@ export function mapRunnerName(name: string | undefined): RunInput['runner'] {
   return 'local-docker';
 }
 
+export interface RunDefaultsBody {
+  harness?: RunInput['harness'];
+  model?: string;
+  runner?: RunInput['runner'];
+}
+
+export interface RunDefaults {
+  harness: RunInput['harness'];
+  model?: string;
+  runner: RunInput['runner'];
+}
+
+/**
+ * Resolves harness/model/runner for a run: explicit body -> definition defaults.
+ * Shared by chat/runs and work items so the two paths cannot drift.
+ */
+export function resolveRunDefaults(
+  manifest: FactoryManifest,
+  body: RunDefaultsBody,
+): RunDefaults {
+  const harness = body.harness ?? manifest.agentDefaults.harness?.type ?? 'opencode';
+  const model =
+    body.model ??
+    manifest.agentDefaults.harness?.model ??
+    manifest.agentDefaults.model ??
+    (harness === 'fake' ? 'fake/fake-model' : undefined);
+
+  if (harness !== 'fake' && !model) {
+    throw invalidRequest(
+      'this factory declares no model and no harness model; pass `model` explicitly',
+      { factory: manifest.name },
+    );
+  }
+
+  const runner = harness === 'fake' ? 'fake' : (body.runner ?? mapRunnerName(manifest.agentDefaults.runner));
+
+  return { harness, model, runner };
+}
+
 export function newRunId(): string {
   return `run_${Date.now().toString(36)}_${randomBytes(4).toString('hex')}`;
 }
@@ -109,21 +151,10 @@ export async function createRun(
   const { commit, dirty } = pinVersion(dir, factory);
 
   const manifest = definition.manifest;
-  const harness = body.harness ?? manifest.agentDefaults.harness?.type ?? 'opencode';
-  const model =
-    body.model ??
-    manifest.agentDefaults.harness?.model ??
-    manifest.agentDefaults.model ??
-    (harness === 'fake' ? 'fake/fake-model' : undefined);
-
-  if (harness !== 'fake' && !model) {
-    throw invalidRequest(
-      'this factory declares no model and no harness model; pass `model` explicitly',
-      { factory },
-    );
-  }
-
-  const runner = harness === 'fake' ? 'fake' : (body.runner ?? mapRunnerName(manifest.agentDefaults.runner));
+  const defaults = resolveRunDefaults(manifest, body);
+  const harness = defaults.harness;
+  const model = defaults.model;
+  const runner = defaults.runner;
 
   // Setup commands live on the runner resource named in the definition.
   const runnerResource = definition.resources.find(
