@@ -35,8 +35,15 @@ start Phase 1 (definitions as code).
 
 ## Open questions
 
-- Orchestration: confirm Postgres-first vs `temporal server start-dev` from day one.
-- Chat-as-harness: does New Chat embed `opencode serve` directly, or always go through the adapter + runner?
+- Orchestration: **decided** — Temporal dev server from day one (ADR-001 accepted).
+- Chat-as-harness: **decided** — always adapter + runner (ADR-002 accepted).
+- Lights-off scope: **decided** — full autonomous loop; capability in Phase 3, benchmark guardrail in Phase 4.
 - Local sandbox on macOS: Docker vs `sandbox-exec` vs Lima for the default runner.
 - GitHub App vs PAT for repo identity in Phase 3.
 - Token budget: warn user at ~500k context.
+
+## Testing conventions (locked 2026-10-28)
+
+- Playwright E2E for every web UI flow (New Chat streaming, Inbox, gates, Runs, Definition diff, Benchmarks).
+- `docker compose up` + `scripts/smoke.sh` for initial deployment tests (web + api + worker + postgres + Temporal dev).
+

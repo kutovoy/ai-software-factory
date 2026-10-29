@@ -75,9 +75,24 @@ docs/               STATUS, DECISIONS, ARCHITECTURE, GLOSSARY
 - Keep `docs/STATUS.md` current after every work session.
 - Warn the user when the session approaches ~500k tokens.
 
+## Testing
+
+- **Unit/integration:** `bun test` (vitest-compatible) per package; schema + resolver + diff tests are mandatory.
+- **Web UI:** Playwright E2E for every user-visible flow — New Chat streaming, Inbox approval, gate
+  decision, Runs detail, Definition diff, benchmark compare. Use the `playwright` MCP tools for live
+  inspection while developing, and a checked-in `e2e/` suite (Playwright test runner) in CI.
+  Assert on streamed events landing in the DOM (tool call appears, diff renders, run reaches terminal state),
+  not just on page load.
+- **Deployment:** `docker compose up` must bring up the full stack (web + api + worker + postgres + temporal
+  dev server) and pass a smoke test (`scripts/smoke.sh`: health endpoints, create a run, receive one SSE
+  event, approve a gate). Keep a `compose.yaml` per environment (`dev`, `test`). If a component cannot be
+  containerised yet, stub it explicitly and record why in `docs/STATUS.md`.
+- **Agent-written tests:** a bug-fix test must fail against pre-patch code, or it proves nothing.
+
 ## Definition of done
 
 - `openspec validate <change>` passes.
 - Types compile (`bun run typecheck`), tests pass (`bun test`).
+- Web UI flows covered by Playwright; `docker compose up` smoke test passes when the phase ships a service.
 - A factory definition in `factories/` round-trips: export → diff → import → identical.
 - Status doc updated.
