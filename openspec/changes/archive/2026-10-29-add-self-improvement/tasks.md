@@ -27,9 +27,9 @@
 
 - [x] 4.1 `ImprovementWorkflow` (scheduled/on-demand): eligibility → observe → dedupe → probe → compose → decide
 - [x] 4.2 Decision by authority: `propose_only` (PR), `auto_merge_on_benchmark` (benchmark non-regression then merge, else PR)
-- [ ] 4.3 `CanaryWorkflow`: publish candidate, route by hash, observe window, promote/rollback, manual rollback
+- [x] 4.3 `CanaryWorkflow`: publish candidate, route by hash, observe window, promote/rollback, manual rollback
 - [x] 4.4 Events: `improvement.started/proposal.created/probe.completed/candidate.published/canary.rolled_back`
-- [ ] 4.5 Tests: propose-only PR, auto-merge refusal without benchmark, canary promote, canary auto-rollback, manual rollback
+- [x] 4.5 Tests: propose-only PR, auto-merge refusal without benchmark, canary promote, canary auto-rollback, manual rollback
 
 ## 5. API (`apps/api`)
 
@@ -45,12 +45,12 @@
 - [x] 6.1 Self-improvement page: authority selector (writes definition change with diff + confirm), eligibility
 - [x] 6.2 Ranked proposals: impact, evidence, diff viewer, probe results, accept/reject
 - [x] 6.3 Lessons library: per-factory list, confidence, promote-to-shared action
-- [ ] 6.4 Canary panel: candidate version, traffic split, observation window, rollback button, history
+- [x] 6.4 Canary panel: candidate version, traffic split, observation window, rollback button, history
 
 ## 7. Tests & wrap-up
 
 - [x] 7.1 Integration: scored corpus → proposal → probe → candidate → PR (fake forge)
-- [ ] 7.2 E2E: proposals page → accept → PR/merge per authority; canary rollback
+- [x] 7.2 E2E: proposals page → accept → PR/merge per authority; canary rollback
 - [x] 7.3 Smoke: one improvement run producing a proposal + lesson
 - [x] 7.4 STATUS, ADR-020 (authority is a definition field), ADR-021 (canary routing by deterministic hash)
 - [x] 7.5 `openspec validate add-self-improvement`

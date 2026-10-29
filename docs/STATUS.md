@@ -4,15 +4,74 @@ Last updated: 2026-10-29
 
 ## Phase
 
-**Phase 5a — self-improvement observer loop: complete** (2026-10-29). Factories now declare an
-`improvement` authority in `factory.yaml` (`propose_only` default, `auto_merge_on_benchmark`, `canary`);
-the observer turns a scored corpus into file-scoped edits, dedupes/ranks them, probes each against the
-same work item, composes the winners into a validated candidate, and lands it by authority (PR for
-`propose_only`, PR-or-merge on a calibrated benchmark attestation for `auto_merge_on_benchmark`).
-Canary rollout/rollback is deferred to **Phase 5b**: the config validates and the apply path returns
-`canary_not_available`, flagged `phase: "5b"` (ADR-020/ADR-021).
-Next: **Phase 5b** (canary rollout + deterministic-hash routing) and **Phase 3b** (GitHub forge + merge
-queue).
+**Phase 5b — canary rollout + rollback: complete** (2026-10-29). A `canary` authority now starts a real
+rollout: `CanaryWorkflow` publishes the composed candidate as a candidate version (materialised tree +
+branch + draft PR on the definition repo), new work items are assigned stable or candidate exactly once
+by `sha256(workItemId) % 100 < canaryPercent`, the observation window compares pass rate and
+incident/failure rate per pinned commit, and the rollout is promoted (PR merged) or rolled back
+automatically beyond `rollbackThreshold`. Manual promote/rollback work regardless of the window and are
+audited (`canary.started` / `canary.promoted` / `canary.rolled_back` with reason + evidence). The
+`canary_not_available` refusal is gone from the apply path (ADR-021 implemented).
+Next: **Phase 3b** (GitHub forge + merge queue) and Phase 6 (multi-tenant/ops).
+
+### Phase 5b — canary rollout (ADR-021, 2026-10-29)
+
+Routing: `packages/core/src/improvement/canary.ts` — `canaryBucket()` (sha256 → 0..99) and
+`assignCanaryVersion()`, a pure deterministic function; `evaluateCanaryObservation()` is the single
+definition of regression (pass-rate drop or incident/failure-rate rise beyond the threshold, plus an
+explicit `insufficientData` flag). `008_canary.sql` adds `work_items.canary_rollout_id` +
+`definition_version`, rollout evidence/commit/root/PR columns and an append-only `canary_events` log
+(deduped by `(rollout_id, type, subject)`); proposal statuses gain `canary`/`rolled_back`.
+
+Orchestration: `CanaryWorkflow` (publish → durable observation timer → promote/rollback, `condition()`
+for manual Signals) + activities (`publishCanaryCandidateActivity`, `observeCanaryActivity`,
+`promoteCanaryActivity`, `rollbackCanaryActivity`, `failCanaryActivity`). Publishing materialises the
+composed definition under `runs/canary/<rolloutId>/definition` (validated), commits it on a
+`canary/<rolloutId>` branch and opens a draft PR; candidate work items run from that tree and pin the
+candidate commit. Observation reads `scores` + `runs` grouped by `definition_commit` over the window.
+Promotion merges the candidate PR; rollback leaves it open with an audit comment. One rollout per
+factory may be in flight (`pending`/`active`); a second start is refused with `canary_active`, and the
+improvement workflow lets the highest-impact candidate own it (others stay `open`).
+
+API: `POST /proposals/:id/apply` starts a real rollout for `canary` (returns `decision.action: canary`
++ the pending rollout + workflow); `POST /factories/:name/canary` (explicit start with optional
+`canaryPercent`/`observationWindowHours` override), `GET /factories/:name/canary` (active rollout,
+split, window countdown, candidate-vs-stable metrics, history + events), `POST /canary/promote`,
+`POST /canary/rollback`. `POST /work-items` returns the assigned `definitionVersion` +
+`canaryRolloutId` and pins the candidate commit for candidate items. `POST
+/factories/:name/improvement/run` accepts a `canaryPercent` override for the rollout it starts.
+
+UI: Canary panel on Self-improvement (candidate vs stable, traffic split + counts, live window
+countdown, score comparison with deltas, promote/rollback with actor + reason, history with audit
+events) and a canary card on Gates reflecting the active/last rollout. The Phase-5b placeholder note
+is gone.
+
+Verification (2026-10-29):
+
+```
+bun run ci                     → typecheck clean; 347 pass / 63 skip / 0 fail
+bun test packages/core/test/canary.test.ts → 9 pass (hash determinism, split, clamp, regression rules)
+canary orchestration (Temporal + PG, fake forge)
+                               → 4 pass: publish → promote (PR merged, canary.started/promoted),
+                                 pass-rate regression → auto rollback (evidence -1.0 delta),
+                                 manual rollback (immediate + Signal + idempotent), second start
+                                 refused with canary_active
+canary API (PG, no worker)     → 3 pass: start → 8+ items routed by hash (candidate pins commit +
+                                 rollout) → promote → stable again + no_active_canary; manual rollback
+                                 → stable routing; apply starts a pending rollout (10%) instead of
+                                 canary_not_available, rollback cancels it
+docker compose up -d --build   → api, worker, web, postgres, temporal healthy
+bash scripts/smoke.sh          → SMOKE PASSED incl. §14: improvement pass on example-lights-off starts
+                                 a 100% canary, one item routed to the candidate commit, manual
+                                 rollback, canary.started + canary.rolled_back, stable routing after
+cd apps/web && bunx playwright test → 20 passed (19 existing + canary: panel → candidate routing →
+                                 manual rollback → gates state → stable routing)
+```
+
+Caveats: promotion merges the candidate PR in the definition repo but does not rewrite the local
+checkout (ADR-012: the console/API never write the worktree), so the on-disk definition updates on the
+next checkout/deploy. Candidate trees live under `runs/canary/` (not garbage-collected yet). The
+compose stack uses the fake forge, so a "candidate commit" is a content-hash SHA, not a git commit.
 
 ### Phase 5a — self-improvement (ADR-020/ADR-021, 2026-10-29)
 
@@ -46,8 +105,9 @@ Lessons are mirrored in `runs/experience/<factory>/` so the read-only definition
 API: `GET /factories/:name/improvement`, `POST /factories/:name/improvement/run`,
 `POST /factories/:name/improvement/authority` (diff + `confirm` → PR, never a worktree write),
 `GET /improvements/:id`, `GET /proposals`, `GET /proposals/:id`, `POST /proposals/:id/decision`,
-`POST /proposals/:id/apply` (`canary` → 409 `canary_not_available`, `phase: "5b"`), `GET /lessons`
-(factory-scoped by default), `POST /lessons/:id/promote`, `POST /canary/rollback` (5b refusal).
+`POST /proposals/:id/apply` (`canary` → 409 `canary_not_available` in Phase 5a; superseded by the
+Phase 5b rollout above), `GET /lessons`
+(factory-scoped by default), `POST /lessons/:id/promote`, `POST /canary/rollback` (5b refusal in 5a).
 
 UI: Self-improvement page with authority selector (preview diff → confirm → PR), eligibility card,
 ranked proposals (impact, evidence, probe results, before/after diff, accept/reject/apply), last-run
@@ -491,8 +551,8 @@ both accepted; `benchmarkGateRequired` is true exactly when `fullyAutonomous`; k
    MCPs & apps page (per-agent MCP wiring). Also: an autonomy read endpoint (`GET /autonomy`) and a
    work-item cancel route, so the console no longer derives state from the event log or cleans up
    by rejecting a gate.
-2. Phase 5 self-improvement observer loop over scored runs, gated by a benchmark non-regression win
-   (ADR-018 gives it a real attestation to compare against).
+2. Canary follow-ups: garbage-collect `runs/canary/<rolloutId>` trees, expose rollout metrics as a
+   time series (not just the window aggregate), and wire promotion to the local checkout/deploy.
 3. Rebuild tool for the read model (replay JSONL → Postgres) before benchmarks rely on it.
 4. Real runner path: build `factory-runner:local`, verify `opencode serve` readiness + proxy env inside
    the container against a live model endpoint. Run a real (non-fake) benchmark once calibration and a

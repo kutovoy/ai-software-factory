@@ -19,6 +19,9 @@
 #      ninth run from completing (delegated to scripts/smoke-permissions.sh, ADR-013)
 #   11. one-stage factory loop on the fake stack: create work item → triage gate →
 #      approve → assert `stage.changed` (triage→spec) + `gate.decided`, then clean up
+#   14. canary rollout (Phase 5b): an improvement pass on `example-lights-off` starts a
+#      100% canary, one work item routes to the candidate, a manual rollback returns
+#      routing to stable and records `canary.started` + `canary.rolled_back`
 #
 # Re-runnable: every invocation creates a fresh run; migrations and the proxy stub are
 # idempotent. Exits non-zero on any failure.
@@ -544,15 +547,176 @@ printf '%s' "$lessons_resp" | bun -e '
 ' || fail "lesson library assertions failed"
 pass "experience library lists per-factory lessons only (plus promoted)"
 
-log "checking the deferred canary apply path"
-canary_code="$(curl -sS -o "$TMP_DIR/canary.json" -w '%{http_code}' -X POST "$API_URL/canary/rollback" \
+# ------------------------------- 14. canary rollout + rollback (Phase 5b, ADR-021)
+CANARY_FACTORY="example-lights-off"
+log "creating a scored corpus for $CANARY_FACTORY"
+canary_created="$(api -X POST "$API_URL/chat" \
   -H 'content-type: application/json' \
-  -d '{"factory":"example","actor":"smoke","reason":"smoke: canary is Phase 5b"}')"
-[ "$canary_code" = "409" ] || fail "expected 409 for canary rollback, got $canary_code"
-[ "$(jget code < "$TMP_DIR/canary.json")" = "canary_not_available" ] \
-  || fail "wrong canary error code: $(cat "$TMP_DIR/canary.json")"
-[ "$(jget details.phase < "$TMP_DIR/canary.json")" = "5b" ] \
-  || fail "canary refusal is not flagged Phase 5b"
-pass "canary apply/rollback returns canary_not_available (Phase 5b)"
+  -d "{\"factory\":\"$CANARY_FACTORY\",\"harness\":\"fake\",\"fakeDelayMs\":8000,\"prompt\":\"smoke: canary corpus failure\"}")"
+canary_run_id="$(printf '%s' "$canary_created" | jget run.id)"
+[ -n "$canary_run_id" ] || fail "no canary corpus run id: $canary_created"
+api -X POST "$API_URL/runs/$canary_run_id/cancel" \
+  -H 'content-type: application/json' -d '{"reason":"smoke: canary corpus failure"}' >/dev/null
+
+canary_run_status=""
+for _ in $(seq 1 120); do
+  canary_run_status="$(api "$API_URL/runs/$canary_run_id" | jget run.status)"
+  case "$canary_run_status" in
+    cancelled|error) break ;;
+    ok) fail "canary corpus run completed before it could be cancelled" ;;
+  esac
+  sleep 0.5
+done
+[ "$canary_run_status" = "cancelled" ] || fail "canary corpus run did not reach cancelled (got ${canary_run_status:-none})"
+
+api -X POST "$API_URL/scoring" \
+  -H 'content-type: application/json' \
+  -d "{\"factory\":\"$CANARY_FACTORY\",\"runId\":\"$canary_run_id\",\"force\":true}" >/dev/null
+canary_score_id=""
+for _ in $(seq 1 120); do
+  canary_score_id="$(api "$API_URL/scores?run=$canary_run_id" | jget scores.0.id)"
+  [ -n "$canary_score_id" ] && break
+  sleep 0.5
+done
+[ -n "$canary_score_id" ] || fail "the canary corpus run was not scored"
+
+# Calibration is per factory: the canary factory needs its own passing judge calibration
+# before the observer is eligible.
+canary_calibration="$(api -X POST "$API_URL/calibration" \
+  -H 'content-type: application/json' \
+  -d "{\"factory\":\"$CANARY_FACTORY\",\"scorer\":\"scope\",\"name\":\"smoke canary calibration\",\"minSize\":1,\"threshold\":1,\"items\":[{\"runId\":\"$canary_run_id\",\"humanLabel\":\"compliant\"}]}")"
+[ "$(printf '%s' "$canary_calibration" | jget calibration.verdict)" = "pass" ] \
+  || fail "canary calibration did not pass: $canary_calibration"
+pass "canary corpus run scored and the judge calibrated for $CANARY_FACTORY"
+
+log "running an improvement pass that starts a 100% canary rollout"
+canary_improvement="$(api -X POST "$API_URL/factories/$CANARY_FACTORY/improvement/run" \
+  -H 'content-type: application/json' \
+  -d '{"trigger":"on_demand","canaryPercent":100}')"
+canary_improvement_id="$(printf '%s' "$canary_improvement" | jget improvement.id)"
+[ -n "$canary_improvement_id" ] || fail "canary improvement run did not start: $canary_improvement"
+
+canary_improvement_status=""
+canary_improvement_decision=""
+for _ in $(seq 1 240); do
+  canary_improvement_detail="$(api "$API_URL/improvements/$canary_improvement_id")"
+  canary_improvement_status="$(printf '%s' "$canary_improvement_detail" | jget improvement.status)"
+  canary_improvement_decision="$(printf '%s' "$canary_improvement_detail" | jget improvement.decision)"
+  case "$canary_improvement_status" in
+    completed|skipped|error) break ;;
+  esac
+  sleep 0.5
+done
+[ "$canary_improvement_status" = "completed" ] \
+  || fail "canary improvement run did not complete: ${canary_improvement_status:-none} $(printf '%s' "$canary_improvement_detail" | jget improvement.error)"
+[ "$canary_improvement_decision" = "canary_started" ] \
+  || fail "canary improvement decision is ${canary_improvement_decision:-none}, expected canary_started"
+pass "improvement run $canary_improvement_id decided canary_started"
+
+canary_view=""
+canary_rollout_id=""
+canary_candidate_commit=""
+for _ in $(seq 1 120); do
+  canary_view="$(api "$API_URL/factories/$CANARY_FACTORY/canary")"
+  canary_rollout_id="$(printf '%s' "$canary_view" | jget active.rollout.id)"
+  canary_candidate_commit="$(printf '%s' "$canary_view" | jget active.rollout.candidateCommit)"
+  if [ "$(printf '%s' "$canary_view" | jget active.rollout.status)" = "active" ] && [ -n "$canary_candidate_commit" ]; then break; fi
+  sleep 0.5
+done
+[ -n "$canary_rollout_id" ] || fail "no active canary rollout: $canary_view"
+printf '%s' "$canary_view" | bun -e '
+  const d = JSON.parse(await Bun.stdin.text());
+  const active = d.active ?? {};
+  const rollout = active.rollout ?? {};
+  if (rollout.status !== "active") { console.error(`rollout status ${rollout.status}`); process.exit(1); }
+  if (active.split?.canaryPercent !== 100 || active.split?.stablePercent !== 0) {
+    console.error(`unexpected split ${JSON.stringify(active.split)}`);
+    process.exit(1);
+  }
+  if (!/^factory-v\d+-candidate$/.test(rollout.candidateVersion ?? "")) {
+    console.error(`candidate version ${rollout.candidateVersion}`); process.exit(1);
+  }
+  if (!rollout.stableVersion) { console.error("no stable version"); process.exit(1); }
+  if (!/^[0-9a-f]{40}$/.test(rollout.candidateCommit ?? "")) {
+    console.error(`candidate commit ${rollout.candidateCommit}`); process.exit(1);
+  }
+  if (!(active.window?.remainingMs > 0)) { console.error("window already closed"); process.exit(1); }
+  const types = (active.events ?? []).map((event) => event.type);
+  if (!types.includes("canary.started")) { console.error(`missing canary.started: ${types.join(",")}`); process.exit(1); }
+  if (typeof active.metrics?.stable?.passRate !== "number" && active.metrics?.stable?.scores !== 0) {
+    console.error(`unexpected stable metrics ${JSON.stringify(active.metrics?.stable)}`); process.exit(1);
+  }
+' || fail "canary projection assertions failed"
+pass "canary $canary_rollout_id active at 100% (candidate $canary_candidate_commit, window open)"
+
+log "routing one work item to the candidate version"
+canary_item="$(api -X POST "$API_URL/work-items" \
+  -H 'content-type: application/json' \
+  -d "{\"factory\":\"$CANARY_FACTORY\",\"title\":\"smoke: canary routing\",\"harness\":\"fake\"}")"
+canary_item_id="$(printf '%s' "$canary_item" | jget workItem.id)"
+[ -n "$canary_item_id" ] || fail "canary work item was not created: $canary_item"
+[ "$(printf '%s' "$canary_item" | jget workItem.definitionVersion)" = "candidate" ] \
+  || fail "work item did not route to the candidate: $canary_item"
+[ "$(printf '%s' "$canary_item" | jget workItem.canaryRolloutId)" = "$canary_rollout_id" ] \
+  || fail "work item did not record the rollout: $canary_item"
+[ "$(printf '%s' "$canary_item" | jget workItem.definitionCommit)" = "$canary_candidate_commit" ] \
+  || fail "work item did not pin the candidate commit: $canary_item"
+pass "work item $canary_item_id routed to candidate $canary_candidate_commit"
+
+log "rolling the canary back manually"
+canary_rollback="$(api -X POST "$API_URL/canary/rollback" \
+  -H 'content-type: application/json' \
+  -d "{\"factory\":\"$CANARY_FACTORY\",\"rolloutId\":\"$canary_rollout_id\",\"actor\":\"smoke\",\"reason\":\"smoke: manual rollback\"}")"
+[ "$(printf '%s' "$canary_rollback" | jget rollout.status)" = "rolled_back" ] \
+  || fail "canary rollback did not end the rollout: $canary_rollback"
+[ "$(printf '%s' "$canary_rollback" | jget rollout.reason)" = "smoke: manual rollback" ] \
+  || fail "rollback reason not recorded: $canary_rollback"
+pass "canary $canary_rollout_id rolled back (reason recorded)"
+
+canary_after="$(api "$API_URL/factories/$CANARY_FACTORY/canary")"
+printf '%s' "$canary_after" | ROLLOUT_ID="$canary_rollout_id" bun -e '
+  const d = JSON.parse(await Bun.stdin.text());
+  if (d.active !== null) { console.error("an active rollout survived the rollback"); process.exit(1); }
+  const entry = (d.history ?? []).find((row) => row.rollout.id === process.env.ROLLOUT_ID);
+  if (!entry) { console.error("rolled-back rollout missing from history"); process.exit(1); }
+  if (entry.rollout.status !== "rolled_back") { console.error(`history status ${entry.rollout.status}`); process.exit(1); }
+  const types = (entry.events ?? []).map((event) => event.type);
+  for (const type of ["canary.started", "canary.rolled_back"]) {
+    if (!types.includes(type)) { console.error(`missing ${type}: ${types.join(",")}`); process.exit(1); }
+  }
+  const rollback = (entry.events ?? []).find((event) => event.type === "canary.rolled_back");
+  if (rollback?.payload?.reason !== "smoke: manual rollback") {
+    console.error(`rollback event reason ${rollback?.payload?.reason}`); process.exit(1);
+  }
+  if (rollback?.payload?.automatic !== false) { console.error("manual rollback marked automatic"); process.exit(1); }
+' || fail "canary history / audit event assertions failed"
+pass "canary history records canary.started + canary.rolled_back with reason + evidence"
+
+log "asserting routing returned to stable"
+canary_stable_item="$(api -X POST "$API_URL/work-items" \
+  -H 'content-type: application/json' \
+  -d "{\"factory\":\"$CANARY_FACTORY\",\"title\":\"smoke: canary post-rollback\",\"harness\":\"fake\"}")"
+canary_stable_item_id="$(printf '%s' "$canary_stable_item" | jget workItem.id)"
+[ "$(printf '%s' "$canary_stable_item" | jget workItem.definitionVersion)" = "stable" ] \
+  || fail "routing did not return to stable after rollback: $canary_stable_item"
+[ -z "$(printf '%s' "$canary_stable_item" | jget workItem.canaryRolloutId)" ] \
+  || fail "a rolled-back rollout still routes work: $canary_stable_item"
+pass "new work items route to stable after rollback"
+
+# Cleanup: reject the pending gates so the smoke leaves no parked workflows.
+for item_id in "$canary_item_id" "$canary_stable_item_id"; do
+  gate_stage=""
+  for _ in $(seq 1 60); do
+    gate_stage="$(api "$API_URL/work-items/$item_id" | jget pendingGate.stage)"
+    [ -n "$gate_stage" ] && break
+    sleep 0.5
+  done
+  if [ -n "$gate_stage" ]; then
+    api -X POST "$API_URL/work-items/$item_id/gates/$gate_stage" \
+      -H 'content-type: application/json' \
+      -d '{"decision":"reject","actor":"smoke","reason":"smoke: canary cleanup"}' >/dev/null
+  fi
+done
+pass "canary work items cleaned up"
 
 log "SMOKE PASSED"

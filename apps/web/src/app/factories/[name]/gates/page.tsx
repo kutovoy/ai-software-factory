@@ -8,6 +8,7 @@ import { safeGet } from '@/lib/api';
 import { GATE_STAGES, docOf, gateMeaning, type AutomationDoc } from '@/lib/definition';
 import type {
   BenchmarkGateStatusWire,
+  CanaryOverviewWire,
   FactoryDetail,
   FactoryResources,
   GateStage,
@@ -38,6 +39,7 @@ export default async function GatesPage({ params }: { params: Promise<{ name: st
     `/factories/${encoded}/benchmark-gate`,
     null,
   );
+  const canary = await safeGet<CanaryOverviewWire | null>(`/factories/${encoded}/canary`, null);
 
   // There is no `GET /autonomy` read endpoint yet: the newest `autonomy.*` event in this
   // factory's work-item log is the only durable projection of a kill-switch change.
@@ -185,6 +187,53 @@ export default async function GatesPage({ params }: { params: Promise<{ name: st
               Attestation status is unavailable: the benchmark gate projection could not be read.
             </p>
           )}
+        </CardBody>
+      </Card>
+
+      <Card testId="gates-canary-card">
+        <CardHeader
+          title="Canary rollout"
+          hint="A canary routes new work items by a deterministic hash; the observation window decides promotion or rollback."
+          action={
+            canary?.active ? (
+              <Badge tone="info" testId="gates-canary-badge">
+                active · {canary.active.rollout.canaryPercent}%
+              </Badge>
+            ) : canary?.history[0]?.rollout.status === 'rolled_back' ? (
+              <Badge tone="warning" testId="gates-canary-badge">
+                last: rolled back
+              </Badge>
+            ) : canary?.history[0]?.rollout.status === 'promoted' ? (
+              <Badge tone="success" testId="gates-canary-badge">
+                last: promoted
+              </Badge>
+            ) : (
+              <Badge tone="neutral" testId="gates-canary-badge">
+                none
+              </Badge>
+            )
+          }
+        />
+        <CardBody className="space-y-2 text-xs text-slate-700">
+          <p data-testid="gates-canary-status" data-status={canary?.active?.rollout.status ?? 'none'}>
+            <span className="font-semibold">
+              {canary?.active ? 'Active:' : 'No active rollout'}:
+            </span>{' '}
+            {canary?.active
+              ? `${canary.active.rollout.candidateVersion} receives ${canary.active.rollout.canaryPercent}% of new work items (${canary.active.split.candidateItems} candidate / ${canary.active.split.stableItems} stable so far); the window closes at ${canary.active.window.endsAt ?? '—'}.`
+              : canary?.resolved.authority === 'canary'
+                ? `authority is canary (${canary.resolved.canaryPercent ?? 'unset'}% configured); apply an accepted proposal to start a rollout.`
+                : `authority is ${canary?.resolved.authority ?? 'unknown'}; canary routing is off.`}
+          </p>
+          <p>
+            <a
+              data-testid="gates-canary-link"
+              href={`/factories/${encoded}/self-improvement`}
+              className="text-slate-900 underline decoration-slate-300 underline-offset-2"
+            >
+              Open the canary panel →
+            </a>
+          </p>
         </CardBody>
       </Card>
 

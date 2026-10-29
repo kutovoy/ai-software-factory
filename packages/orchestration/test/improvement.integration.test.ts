@@ -8,6 +8,9 @@ import type { Worker } from '@temporalio/worker';
 import {
   createCalibrationSet,
   getImprovementRun,
+  getProposal,
+  listCanaryEvents,
+  listCanaryRollouts,
   listImprovementEvents,
   listLessons,
   listProposalEdits,
@@ -24,9 +27,12 @@ import { closeSql, insertRun, setSql } from '../src/db';
 import { loadConfig, type OrchestrationConfig } from '../src/config';
 import { setForge } from '../src/activities/forge';
 import { setImprovementProbeRunner } from '../src/activities/improvement';
+import { rollbackCanaryRollout } from '../src/canary-apply';
+import { signalCanaryRollback } from '../src/canary-client';
 import { clearSessions } from '../src/sessions';
 import { createWorker } from '../src/worker';
 import { startImprovementWorkflow } from '../src/improvement-client';
+import { canaryWorkflowId } from '../src/types';
 import type {
   ImprovementWorkflowInput,
   ImprovementWorkflowOutcome,
@@ -204,6 +210,14 @@ suite('improvement workflow on the fake forge', () => {
     setSql(new SQL(process.env.DATABASE_URL as string, { max: 4 }));
     sql = new SQL(process.env.DATABASE_URL as string, { max: 4 });
 
+    // The compose DB is shared across local runs: a stale in-flight rollout for this
+    // fixture factory would (correctly) refuse a new one. Reset it.
+    await sql`
+      update canary_rollouts
+      set status = 'rolled_back', reason = 'fixture reset', ended_at = coalesce(ended_at, now())
+      where factory = ${FACTORY} and status in ('pending', 'active')
+    `;
+
     const scorer = loadScorerRegistry(loadOrThrow(factoryRoot)).find(
       (entry) => entry.name === 'scope',
     );
@@ -338,7 +352,7 @@ suite('improvement workflow on the fake forge', () => {
     expect(run?.decision).toBe('pr_opened');
   }, 120_000);
 
-  test('canary returns canary_not_available and records the candidate', async () => {
+  test('canary publishes a candidate version and starts a real rollout', async () => {
     const input = inputFor({
       authority: 'canary',
       canaryPercent: 10,
@@ -347,11 +361,42 @@ suite('improvement workflow on the fake forge', () => {
     const outcome = await runImprovement(input);
 
     expect(outcome.status).toBe('completed');
-    expect(outcome.decision).toBe('canary_not_available');
+    expect(outcome.decision).toBe('canary_started');
     const proposal = outcome.proposals[0]!;
-    expect(proposal.status).toBe('canary_not_available');
+    expect(proposal.status).toBe('canary');
     expect(proposal.candidateHash).toMatch(/^[0-9a-f]{64}$/);
     expect(proposal.prUrl).toBeNull();
+
+    const rollouts = await listCanaryRollouts(sql, { factory: FACTORY, limit: 10 });
+    const rollout = rollouts.find((entry) => entry.proposalId === proposal.proposalId);
+    expect(rollout).toBeDefined();
+    expect(['pending', 'active']).toContain(rollout!.status);
+    expect(rollout!.candidateVersion).toMatch(/-candidate$/);
+    expect(rollout!.canaryPercent).toBe(10);
+    expect(rollout!.rollbackThreshold).toBe(0.1);
+
+    const events = await listCanaryEvents(sql, { rolloutId: rollout!.id });
+    // Publishing may still be in flight; either way the rollout row exists and the workflow
+    // owns it. Roll back so this test leaves no parked canary workflow.
+    const rolled = await rollbackCanaryRollout({
+      rolloutId: rollout!.id,
+      factory: FACTORY,
+      actor: 'itest',
+      reason: 'cleanup after the canary start assertion',
+    });
+    expect(rolled.rollout.status).toBe('rolled_back');
+    await signalCanaryRollback(rollout!.id, {
+      actor: 'itest',
+      reason: 'cleanup after the canary start assertion',
+    });
+    const client = await getClient(config);
+    await client.workflow
+      .getHandle(canaryWorkflowId(rollout!.id))
+      .result()
+      .catch(() => undefined);
+
+    expect(events.every((event) => event.type === 'canary.started')).toBe(true);
+    expect((await getProposal(sql, proposal.proposalId))?.status).toBe('rolled_back');
   }, 120_000);
 
   test('an ineligible corpus completes as skipped without a proposal', async () => {

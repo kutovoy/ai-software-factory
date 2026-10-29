@@ -41,24 +41,31 @@ import {
 } from './factories';
 import {
   authorityChangeBodySchema,
+  canaryPromoteBodySchema,
   canaryRollbackBodySchema,
+  canaryStartBodySchema,
   changeAuthorityForApi,
   decideProposalForApi,
   applyProposalForApi,
+  getCanaryForApi,
   getImprovementForApi,
   getImprovementRunForApi,
   getProposalForApi,
   improvementRunBodySchema,
   listLessonsForApi,
   listProposalsForApi,
+  promoteCanaryForApi,
   promoteLessonBodySchema,
   promoteLessonForApi,
   proposalApplyBodySchema,
   proposalDecisionBodySchema,
   rollbackCanaryForApi,
+  startCanaryForApi,
   startImprovementForApi,
   type AuthorityChangeBody,
+  type CanaryPromoteBody,
   type CanaryRollbackBody,
+  type CanaryStartBody,
   type ImprovementRunBody,
   type PromoteLessonBody,
   type ProposalApplyBody,
@@ -323,6 +330,15 @@ export function createApp(config: ApiConfig): Hono {
     c.json(await getImprovementForApi(config, c.req.param('name'))),
   );
 
+  app.get('/factories/:name/canary', async (c) =>
+    c.json(await getCanaryForApi(config, c.req.param('name'))),
+  );
+
+  app.post('/factories/:name/canary', async (c) => {
+    const body = await json<CanaryStartBody>(c, canaryStartBodySchema);
+    return c.json(await startCanaryForApi(config, c.req.param('name'), body), 202);
+  });
+
   app.post('/factories/:name/improvement/run', async (c) => {
     const body = await json<ImprovementRunBody>(c, improvementRunBodySchema);
     return c.json(await startImprovementForApi(config, c.req.param('name'), body), 202);
@@ -378,8 +394,12 @@ export function createApp(config: ApiConfig): Hono {
 
   app.post('/canary/rollback', async (c) => {
     const body = await json<CanaryRollbackBody>(c, canaryRollbackBodySchema);
-    rollbackCanaryForApi(body);
-    return c.json({ ok: false });
+    return c.json(await rollbackCanaryForApi(config, body));
+  });
+
+  app.post('/canary/promote', async (c) => {
+    const body = await json<CanaryPromoteBody>(c, canaryPromoteBodySchema);
+    return c.json(await promoteCanaryForApi(config, body));
   });
 
   /* ----------------------------------------------------------------- runs */

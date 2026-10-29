@@ -28,6 +28,7 @@ import {
   createImprovementRun,
   createProposal,
   finishImprovementRun,
+  getInFlightCanaryRollout,
   getImprovementRun,
   getProposal,
   latestCalibrationResult,
@@ -50,6 +51,7 @@ import {
 import { loadConfig } from '../config';
 import { getSql } from '../db';
 import { applyImprovementDecision } from '../improvement-apply';
+import { startCanaryRollout } from '../canary-apply';
 import type {
   ImprovementProposalOutcome,
   ImprovementWorkflowInput,
@@ -774,13 +776,18 @@ export interface ImprovementDecisionResult {
   prUrl: string | null;
   prNumber: number | null;
   merged: boolean;
+  /** Set when the authority is `canary` and a rollout was started. */
+  rolloutId?: string;
+  candidateVersion?: string;
+  stableVersion?: string;
 }
 
 /**
  * Applies each composed candidate by authority. The shared helper opens a PR for
  * `propose_only`, merges only on benchmark non-regression for
- * `auto_merge_on_benchmark`, and returns `canary_not_available` (Phase 5b) for
- * `canary`.
+ * `auto_merge_on_benchmark`, and for `canary` starts a real rollout: the candidate version
+ * is published by `CanaryWorkflow`, which then routes new work by deterministic hash and
+ * observes it (Phase 5b, ADR-021).
  */
 export async function decideImprovementActivity(args: {
   input: ImprovementWorkflowInput;
@@ -830,6 +837,84 @@ export async function decideImprovementActivity(args: {
         prNumber: null,
         merged: false,
       });
+      continue;
+    }
+
+    if (applied.decision.action === 'canary') {
+      if (args.input.canaryPercent === null || args.input.rollbackThreshold === null) {
+        fail(
+          'canary_config_missing',
+          'authority "canary" requires canaryPercent and rollbackThreshold',
+          { proposalId: proposal.id },
+        );
+      }
+      // One active rollout per factory (ADR-021): the first (highest-impact) candidate owns
+      // it; the rest stay open for a later rollout once this one finishes. Reading the
+      // active row keeps this idempotent across activity retries.
+      const active = await getInFlightCanaryRollout(sql, args.input.factory);
+      if (active && active.proposalId !== proposal.id) {
+        await updateProposal(sql, {
+          id: proposal.id,
+          decisionActor: 'improvement-observer',
+          decisionReason: `canary_active: rollout ${active.id} already routes this factory`,
+        });
+        results.push({
+          proposalId: proposal.id,
+          action: applied.decision.action,
+          code: 'canary_active',
+          reason: `rollout ${active.id} already routes this factory`,
+          prUrl: null,
+          prNumber: null,
+          merged: false,
+        });
+        continue;
+      }
+
+      try {
+        const started = await startCanaryRollout({
+          factory: args.input.factory,
+          factoryRoot: args.input.factoryRoot,
+          definitionRepo: args.input.definitionRepo,
+          ...(args.input.baseBranch ? { baseBranch: args.input.baseBranch } : {}),
+          proposal,
+          stableCommit: args.input.definitionCommit,
+          canaryPercent: args.input.canaryPercent,
+          rollbackThreshold: args.input.rollbackThreshold,
+          observationWindowHours: args.input.observationWindowHours,
+          actor: 'improvement-observer',
+          reason: `${applied.decision.code}: ${applied.decision.reason}`,
+        });
+        results.push({
+          proposalId: proposal.id,
+          action: applied.decision.action,
+          code: applied.decision.code,
+          reason: applied.decision.reason,
+          prUrl: null,
+          prNumber: null,
+          merged: false,
+          rolloutId: started.rollout.id,
+          candidateVersion: started.rollout.candidateVersion,
+          stableVersion: started.rollout.stableVersion,
+        });
+      } catch (error) {
+        const code = (error as { code?: string } | null)?.code ?? 'canary_error';
+        await updateProposal(sql, {
+          id: proposal.id,
+          status: 'failed',
+          decisionActor: 'improvement-observer',
+          decisionReason: `${code}: ${message(error)}`,
+          decided: true,
+        });
+        results.push({
+          proposalId: proposal.id,
+          action: applied.decision.action,
+          code,
+          reason: message(error),
+          prUrl: null,
+          prNumber: null,
+          merged: false,
+        });
+      }
       continue;
     }
 

@@ -17,6 +17,9 @@ export type ProposalStatus =
   | 'no_improvement'
   | 'pr_open'
   | 'merged'
+  | 'canary'
+  | 'rolled_back'
+  /** Historical status from Phase 5a; no longer produced but kept readable. */
   | 'canary_not_available'
   | 'failed';
 
@@ -129,29 +132,45 @@ export interface ImprovementEventRecord {
 }
 
 /**
- * Canary rollout state (Phase 5b). The table exists so the schema is complete; the apply
- * path refuses with `canary_not_available` until the rollout workflow ships.
+ * Canary rollout state (Phase 5b, ADR-021). A rollout is created `pending`, becomes
+ * `active` once the candidate version is published, and ends `promoted` or `rolled_back`.
  */
-export type CanaryStatus =
-  | 'pending'
-  | 'active'
-  | 'promoted'
-  | 'rolled_back'
-  | 'unavailable';
+export type CanaryStatus = 'pending' | 'active' | 'promoted' | 'rolled_back' | 'unavailable';
 
 export interface CanaryRolloutRecord {
   id: string;
   factory: string;
   proposalId: string;
+  /** `factory-vN+1-candidate` (or `candidate-<sha8>` when the repo has no version tag). */
   candidateVersion: string;
   stableVersion: string;
+  /** Commit of the published candidate (fake-forge content hash in CI). */
+  candidateCommit: string | null;
+  stableCommit: string | null;
+  /** Materialised candidate definition tree the candidate work items run from. */
+  candidateRoot: string | null;
   canaryPercent: number;
   rollbackThreshold: number;
   observationWindowHours: number;
   status: CanaryStatus;
   reason: string | null;
+  prUrl: string | null;
+  prNumber: number | null;
+  actor: string | null;
+  evidence: Record<string, unknown>;
   startedAt: string | null;
   endedAt: string | null;
+}
+
+export interface CanaryEventRecord {
+  id: number;
+  rolloutId: string;
+  factory: string;
+  type: string;
+  /** Rollout id or the manual/automatic subject; part of the dedupe key. */
+  subject: string;
+  payload: Record<string, unknown>;
+  createdAt: string | null;
 }
 
 export interface ProposalFilters {

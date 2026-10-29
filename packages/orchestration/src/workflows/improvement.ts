@@ -42,6 +42,7 @@ function message(error: unknown): string {
 function decisionSummary(outcomes: ImprovementProposalOutcome[]): string {
   const statuses = new Set(outcomes.map((outcome) => outcome.status));
   if (statuses.has('merged')) return 'merged';
+  if (statuses.has('canary')) return 'canary_started';
   if (statuses.has('pr_open')) return 'pr_opened';
   if (statuses.has('canary_not_available')) return 'canary_not_available';
   if (statuses.has('rejected')) return 'rejected';

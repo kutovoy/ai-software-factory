@@ -154,6 +154,7 @@ export interface BenchmarkNonRegressionEvidence {
 export type ImprovementDecisionAction =
   | 'open_pr'
   | 'merge'
+  | 'canary'
   | 'canary_not_available'
   | 'no_improvement';
 
@@ -162,6 +163,6 @@ export interface ImprovementDecision {
   /** Stable machine reason (`benchmark_attestation_missing`, `probe_regression`, ...). */
   code: string;
   reason: string;
-  /** Phase flag for the deferred canary rollout (Phase 5b). */
+  /** Phase flag, kept for historical decisions produced before Phase 5b. */
   phase?: '5b';
 }

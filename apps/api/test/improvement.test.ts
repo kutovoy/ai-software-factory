@@ -10,13 +10,16 @@ import { loadOrThrow } from '@factory/core';
 import { join } from 'node:path';
 import {
   ApiError,
-  canaryNotAvailable,
+  noActiveCanary,
   proposalNotAccepted,
   proposalNotDecidable,
   toEnvelope,
 } from '../src/errors';
 import {
   authorityChangeBodySchema,
+  canaryPromoteBodySchema,
+  canaryRollbackBodySchema,
+  canaryStartBodySchema,
   improvementRunBodySchema,
   proposalApplyBodySchema,
   proposalDecisionBodySchema,
@@ -67,6 +70,51 @@ describe('improvement API validation', () => {
       authorityChangeBodySchema.safeParse({ authority: 'propose_only', actor: 'a', reason: 'r', extra: 1 })
         .success,
     ).toBe(false);
+  });
+  test('canary start and manual actions are strict and bounded', () => {
+    expect(
+      canaryStartBodySchema.safeParse({
+        proposalId: 'prop_1',
+        actor: 'a',
+        reason: 'r',
+      }).success,
+    ).toBe(true);
+    expect(
+      canaryStartBodySchema.safeParse({
+        proposalId: 'prop_1',
+        actor: 'a',
+        reason: 'r',
+        canaryPercent: 100,
+        observationWindowHours: 2,
+      }).success,
+    ).toBe(true);
+    expect(
+      canaryStartBodySchema.safeParse({
+        proposalId: 'prop_1',
+        actor: 'a',
+        reason: 'r',
+        canaryPercent: 0,
+      }).success,
+    ).toBe(false);
+    expect(canaryStartBodySchema.safeParse({ proposalId: 'prop_1' }).success).toBe(false);
+    expect(
+      canaryRollbackBodySchema.safeParse({
+        factory: 'example-lights-off',
+        actor: 'a',
+        reason: 'r',
+      }).success,
+    ).toBe(true);
+    expect(
+      canaryRollbackBodySchema.safeParse({ factory: 'f', actor: 'a' }).success,
+    ).toBe(false);
+    expect(
+      canaryPromoteBodySchema.safeParse({
+        factory: 'f',
+        rolloutId: 'canary_1',
+        actor: 'a',
+        reason: 'r',
+      }).success,
+    ).toBe(true);
   });
 });
 
@@ -128,20 +176,21 @@ describe('authority routing', () => {
     expect(decision.action).toBe('merge');
   });
 
-  test('canary is refused with canary_not_available (Phase 5b)', () => {
+  test('canary starts a rollout instead of refusing (Phase 5b)', () => {
     const decision = decideImprovement({
       authority: 'canary',
       hasCandidate: true,
       probe,
       benchmark: null,
     });
-    expect(decision.action).toBe('canary_not_available');
-    expect(decision.phase).toBe('5b');
+    expect(decision.action).toBe('canary');
+    expect(decision.code).toBe('canary_rollout');
+    expect(decision.phase).toBeUndefined();
 
-    const envelope = toEnvelope(canaryNotAvailable({ authority: 'canary' }));
+    const envelope = toEnvelope(noActiveCanary('example-lights-off', ['pending', 'active']));
     expect(envelope.status).toBe(409);
-    expect(envelope.body.code).toBe('canary_not_available');
-    expect(envelope.body.details).toMatchObject({ phase: '5b', authority: 'canary' });
+    expect(envelope.body.code).toBe('no_active_canary');
+    expect(envelope.body.details).toMatchObject({ factory: 'example-lights-off' });
   });
 });
 

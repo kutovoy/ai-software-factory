@@ -672,3 +672,98 @@ export interface ImprovementWorkflowOutcome {
 export function improvementWorkflowId(improvementRunId: string): string {
   return `improvement-${improvementRunId}`;
 }
+
+/* ==================================================================== */
+/* Canary rollout (Phase 5b)                                            */
+/*                                                                      */
+/* Workflow-safe types only: no Node APIs, no Temporal worker imports.  */
+/* ==================================================================== */
+
+/** Why a canary rollout ended. */
+export type CanaryOutcomeStatus = 'promoted' | 'rolled_back' | 'unavailable';
+
+export interface CanaryWorkflowInput {
+  rolloutId: string;
+  factory: string;
+  /** Stable definition tree on the worker host (read-only mount). */
+  factoryRoot: string;
+  proposalId: string;
+  /** Definition repo (`owner/name`) that receives the candidate branch + PR. */
+  definitionRepo: string;
+  baseBranch?: string;
+  stableVersion: string;
+  stableCommit: string;
+  candidateVersion: string;
+  canaryPercent: number;
+  rollbackThreshold: number;
+  observationWindowHours: number;
+  /**
+   * Test/short-window override. The window normally comes from
+   * `improvement.observationWindowHours`; an integration test needs seconds, not hours.
+   */
+  observationWindowMs?: number;
+  /** How often the workflow re-reads the metrics while the window is open. */
+  checkIntervalMs?: number;
+  /** Who started the rollout (recorded on every event). */
+  actor: string;
+  reason?: string;
+}
+
+/** Snapshot returned by `observeCanaryActivity`. */
+export interface CanaryObservationSummary {
+  rolloutId: string;
+  status: string;
+  reason: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  canaryPercent: number;
+  rollbackThreshold: number;
+  observationWindowHours: number;
+  stable: CanaryStatsSummary;
+  candidate: CanaryStatsSummary;
+  threshold: number;
+  passRateDelta: number | null;
+  failureRateDelta: number | null;
+  regressionExceeded: boolean;
+  regressionReason: string | null;
+  detail: string;
+  insufficientData: boolean;
+  evidence: Record<string, unknown>;
+}
+
+export interface CanaryStatsSummary {
+  workItems: number;
+  scores: number;
+  passing: number;
+  errors: number;
+  passRate: number | null;
+  meanScore: number | null;
+  runs: number;
+  failedRuns: number;
+  failureRate: number | null;
+}
+
+export interface CanaryWorkflowOutcome {
+  rolloutId: string;
+  status: CanaryOutcomeStatus;
+  /** `promoted`, `manual_rollback`, `pass_rate_regression`, `incident_rate_regression`, ... */
+  reason: string;
+  actor: string;
+  observation: CanaryObservationSummary | null;
+  candidateVersion: string;
+  stableVersion: string;
+  promotedCommit?: string | null;
+  prUrl?: string | null;
+  prNumber?: number | null;
+}
+
+/** Payload of the manual `canaryRollback` / `canaryPromote` signals. */
+export interface CanaryDecisionSignal {
+  actor: string;
+  reason: string;
+}
+
+/** One canary workflow per rollout; id derived from the rollout id. */
+export function canaryWorkflowId(rolloutId: string): string {
+  return `canary-${rolloutId}`;
+}

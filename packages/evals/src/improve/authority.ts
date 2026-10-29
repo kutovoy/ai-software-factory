@@ -1,14 +1,14 @@
 import type { ImprovementDecision, ImprovementAuthority, BenchmarkNonRegressionEvidence } from './types';
 
 /**
- * Authority routing (spec `self-improvement` › Authority levels, ADR-020).
+ * Authority routing (spec `self-improvement` › Authority levels, ADR-020/ADR-021).
  *
  * The authority is read from the definition. It decides *how* an accepted candidate lands:
  *  - `propose_only` always opens a PR and never merges;
  *  - `auto_merge_on_benchmark` merges only with a passing, calibrated benchmark attestation
  *    for the running commit + configuration hash and no probe regression, else opens a PR;
- *  - `canary` is Phase 5b: the configuration is validated but the apply path refuses with
- *    `canary_not_available`.
+ *  - `canary` publishes the candidate as a candidate version and starts a rollout
+ *    (`CanaryWorkflow`) that routes new work by a deterministic hash and observes it.
  */
 
 export interface DecideImprovementInput {
@@ -23,7 +23,9 @@ export interface DecideImprovementInput {
   benchmark: BenchmarkNonRegressionEvidence | null;
 }
 
+/** Historical code from Phase 5a; kept so old proposals still render. */
 export const CANARY_NOT_AVAILABLE = 'canary_not_available';
+export const CANARY_ROLLOUT = 'canary_rollout';
 
 export function decideImprovement(input: DecideImprovementInput): ImprovementDecision {
   if (!input.hasCandidate || input.probe === null) {
@@ -38,11 +40,10 @@ export function decideImprovement(input: DecideImprovementInput): ImprovementDec
 
   if (input.authority === 'canary') {
     return {
-      action: 'canary_not_available',
-      code: CANARY_NOT_AVAILABLE,
+      action: 'canary',
+      code: CANARY_ROLLOUT,
       reason:
-        'canary rollout (publish candidate, hash routing, observation window, rollback) ships in Phase 5b; the candidate is ready but cannot be applied',
-      phase: '5b',
+        'authority is canary: the candidate is published as a candidate version and a rollout routes new work to it by deterministic hash while the observation window runs',
     };
   }
 
@@ -103,6 +104,8 @@ export function statusForDecision(action: ImprovementDecision['action']): string
       return 'merged';
     case 'open_pr':
       return 'pr_open';
+    case 'canary':
+      return 'canary';
     case 'canary_not_available':
       return 'canary_not_available';
     case 'no_improvement':

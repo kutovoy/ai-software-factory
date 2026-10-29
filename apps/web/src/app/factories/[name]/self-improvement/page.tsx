@@ -1,4 +1,5 @@
 import { AuthoritySelector } from '@/components/improvement/AuthoritySelector';
+import { CanaryPanel } from '@/components/improvement/CanaryPanel';
 import { ImprovementRunButton } from '@/components/improvement/ImprovementRunButton';
 import { LessonList } from '@/components/improvement/LessonList';
 import { ProposalCard } from '@/components/improvement/ProposalCard';
@@ -8,6 +9,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { safeGet } from '@/lib/api';
 import { ELIGIBILITY_REASONS, authorityTone, proposalStatusLabel } from '@/lib/improvement';
 import type {
+  CanaryOverviewWire,
   ImprovementOverviewWire,
   LessonWire,
   ProposalWire,
@@ -20,13 +22,14 @@ export default async function SelfImprovementPage({ params }: { params: Promise<
   const factory = decodeURIComponent(name);
   const encoded = encodeURIComponent(factory);
 
-  const [overview, proposalsResponse, lessonsResponse] = await Promise.all([
+  const [overview, proposalsResponse, lessonsResponse, canary] = await Promise.all([
     safeGet<ImprovementOverviewWire | null>(`/factories/${encoded}/improvement`, null),
     safeGet<{ proposals: ProposalWire[] }>(`/proposals?factory=${encoded}&limit=20`, { proposals: [] }),
     safeGet<{ lessons: LessonWire[]; factory: string; includeShared: boolean }>(
       `/lessons?factory=${encoded}&includeShared=true&limit=100`,
       { lessons: [], factory, includeShared: true },
     ),
+    safeGet<CanaryOverviewWire | null>(`/factories/${encoded}/canary`, null),
   ]);
 
   const resolved = overview?.resolved ?? null;
@@ -95,12 +98,11 @@ export default async function SelfImprovementPage({ params }: { params: Promise<
               <>
                 <AuthoritySelector factory={factory} resolved={resolved} />
                 <div data-testid="improvement-canary-note" className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
-                  <p className="font-semibold">Canary rollout is Phase 5b.</p>
+                  <p className="font-semibold">Canary rollout is live.</p>
                   <p className="mt-1">
                     {resolved.authority === 'canary'
-                      ? `Configured: ${resolved.canaryPercent ?? 'unset'}% of new work, rollback above ${resolved.rollbackThreshold ?? 'unset'}, ${resolved.observationWindowHours}h window. Applying a canary proposal returns `
-                      : 'The configuration is validated, but routing a percentage of work to a candidate version and rolling back automatically is deferred to Phase 5b. Applying a canary proposal returns '}
-                    <span className="font-mono">canary_not_available</span>.
+                      ? `Configured: ${resolved.canaryPercent ?? 'unset'}% of new work, rollback above ${resolved.rollbackThreshold ?? 'unset'}, ${resolved.observationWindowHours}h window. Applying an accepted proposal publishes a candidate version and routes new work by a deterministic hash of the work-item id.`
+                      : 'A canary rollout requires authority "canary": the candidate version is published, a configured percentage of new work runs it, and the observation window promotes or rolls it back.'}
                   </p>
                 </div>
               </>
@@ -212,6 +214,23 @@ export default async function SelfImprovementPage({ params }: { params: Promise<
               (or an ineligible corpus) it completes without inventing a proposal.
             </p>
           )}
+        </CardBody>
+      </Card>
+
+      <Card testId="canary-card">
+        <CardHeader
+          title="Canary rollout"
+          hint="Candidate vs stable, deterministic-hash traffic split, observation window, score comparison, promote/rollback."
+          action={
+            canary?.active ? (
+              <Badge tone="info" testId="canary-card-badge">
+                {canary.active.rollout.canaryPercent}% candidate
+              </Badge>
+            ) : null
+          }
+        />
+        <CardBody>
+          <CanaryPanel factory={factory} overview={canary} />
         </CardBody>
       </Card>
 

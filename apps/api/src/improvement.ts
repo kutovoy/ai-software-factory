@@ -15,10 +15,15 @@ import {
   createProposal,
   factorySchema,
   finishImprovementRun,
+  getActiveCanaryRollout,
+  getCanaryRollout,
   getImprovementRun,
+  getInFlightCanaryRollout,
   getLesson,
   getProposal,
   latestCalibrationResult,
+  listCanaryEvents,
+  listCanaryRollouts,
   listImprovementEvents,
   listImprovementRuns,
   listLessons,
@@ -33,6 +38,8 @@ import {
   resolveImprovement,
   serializeDefinition,
   updateProposal,
+  type CanaryEventRecord,
+  type CanaryRolloutRecord,
   type FactoryDefinition,
   type FactoryManifest,
   type LessonRecord,
@@ -45,7 +52,15 @@ import {
   applyImprovementDecision,
   getForge,
   getSql,
+  promoteCanaryRollout,
+  readCanaryObservation,
+  resolveCanaryRollout,
+  rollbackCanaryRollout,
+  signalCanaryPromote,
+  signalCanaryRollback,
+  startCanaryRollout,
   startImprovementWorkflow,
+  type CanaryObservationSummary,
   type ImprovementWorkflowInput,
 } from '@factory/orchestration';
 import { FakeForge, type FileChange } from '@factory/forge';
@@ -53,10 +68,12 @@ import type { ApiConfig } from './config';
 import { toOrchestrationConfig } from './config';
 import {
   ApiError,
+  canaryActive,
   canaryNotAvailable,
   definitionInvalid,
   invalidRequest,
   lessonNotFound,
+  noActiveCanary,
   proposalNotAccepted,
   proposalNotDecidable,
   proposalNotFound,
@@ -85,6 +102,8 @@ export const improvementRunBodySchema = z
     windowDays: z.number().int().min(1).max(90).optional(),
     minScoredRuns: z.number().int().min(1).max(50).optional(),
     maxProbes: z.number().int().min(1).max(50).optional(),
+    /** Override the canary traffic split for a rollout started by this run. */
+    canaryPercent: z.number().int().min(1).max(100).optional(),
   })
   .strict();
 
@@ -136,12 +155,32 @@ export const canaryRollbackBodySchema = z
   .object({
     factory: z.string().min(1),
     proposalId: z.string().min(1).optional(),
+    rolloutId: z.string().min(1).optional(),
     actor: z.string().min(1).max(120),
     reason: z.string().min(1).max(2_000),
   })
   .strict();
 
 export type CanaryRollbackBody = z.infer<typeof canaryRollbackBodySchema>;
+
+/** Manual promote takes the same targeting shape as rollback. */
+export const canaryPromoteBodySchema = canaryRollbackBodySchema;
+
+export type CanaryPromoteBody = z.infer<typeof canaryPromoteBodySchema>;
+
+export const canaryStartBodySchema = z
+  .object({
+    proposalId: z.string().min(1),
+    actor: z.string().min(1).max(120),
+    reason: z.string().min(1).max(2_000),
+    /** Explicit rollout override; defaults to `improvement.canaryPercent`. */
+    canaryPercent: z.number().int().min(1).max(100).optional(),
+    /** Explicit window override in hours; defaults to `improvement.observationWindowHours`. */
+    observationWindowHours: z.number().int().min(1).max(720).optional(),
+  })
+  .strict();
+
+export type CanaryStartBody = z.infer<typeof canaryStartBodySchema>;
 
 interface LoadedFactory {
   dir: string;
@@ -220,11 +259,19 @@ export interface ImprovementOverview {
   proposals: ProposalRecord[];
   lessonCount: number;
   canary: {
-    available: false;
-    phase: '5b';
+    available: boolean;
     configuredPercent: number | null;
     rollbackThreshold: number | null;
     observationWindowHours: number;
+    active: {
+      rolloutId: string;
+      status: CanaryRolloutRecord['status'];
+      candidateVersion: string;
+      stableVersion: string;
+      canaryPercent: number;
+      startedAt: string | null;
+      endsAt: string | null;
+    } | null;
   };
 }
 
@@ -236,11 +283,12 @@ export async function getImprovementForApi(
   const resolved = resolveImprovement(definition.manifest.improvement);
   const sql = getSql();
 
-  const [eligibility, lastRun, proposals, lessons] = await Promise.all([
+  const [eligibility, lastRun, proposals, lessons, active] = await Promise.all([
     eligibilityPreview(config, factory, definition, resolved.authority),
     listImprovementRuns(sql, { factory, limit: 1 }).then((runs) => runs[0] ?? null),
     listProposals(sql, { factory, limit: 10 }),
     listLessons(sql, { factory, includeShared: true, limit: 100 }),
+    getActiveCanaryRollout(sql, factory),
   ]);
 
   return {
@@ -254,11 +302,21 @@ export async function getImprovementForApi(
     proposals,
     lessonCount: lessons.length,
     canary: {
-      available: false,
-      phase: '5b',
+      available: resolved.canaryAvailable,
       configuredPercent: resolved.canaryPercent,
       rollbackThreshold: resolved.rollbackThreshold,
       observationWindowHours: resolved.observationWindowHours,
+      active: active
+        ? {
+            rolloutId: active.id,
+            status: active.status,
+            candidateVersion: active.candidateVersion,
+            stableVersion: active.stableVersion,
+            canaryPercent: active.canaryPercent,
+            startedAt: active.startedAt,
+            endsAt: canaryEndsAt(active),
+          }
+        : null,
     },
   };
 }
@@ -383,6 +441,405 @@ export async function promoteLessonForApi(
   return promoted;
 }
 
+/* ------------------------------------------------------------------ canary */
+
+/** End of the observation window, computed from the rollout start. */
+function canaryEndsAt(rollout: CanaryRolloutRecord): string | null {
+  if (!rollout.startedAt) return null;
+  const start = Date.parse(rollout.startedAt);
+  if (!Number.isFinite(start)) return null;
+  return new Date(start + rollout.observationWindowHours * 60 * 60 * 1000).toISOString();
+}
+
+export interface CanarySplit {
+  canaryPercent: number;
+  stablePercent: number;
+  candidateItems: number;
+  stableItems: number;
+  totalItems: number;
+}
+
+export interface CanaryWindow {
+  startedAt: string | null;
+  endsAt: string | null;
+  elapsedMs: number;
+  remainingMs: number;
+  complete: boolean;
+  observationWindowHours: number;
+}
+
+export interface CanaryRolloutView {
+  rollout: CanaryRolloutRecord;
+  window: CanaryWindow;
+  split: CanarySplit;
+  metrics: CanaryObservationSummary | null;
+  events: { type: string; payload: Record<string, unknown>; createdAt: string | null }[];
+}
+
+export interface CanaryOverview {
+  factory: string;
+  definitionCommit: string;
+  authority: ReturnType<typeof resolveImprovement>['authority'];
+  resolved: ReturnType<typeof resolveImprovement>;
+  available: boolean;
+  active: CanaryRolloutView | null;
+  history: CanaryRolloutView[];
+  /** Open/accepted proposals with a composed candidate, ready to roll out. */
+  proposals: ProposalRecord[];
+}
+
+function canaryApiError(error: unknown): never {
+  const code = (error as { code?: string } | null)?.code ?? 'canary_error';
+  const details = (error as { details?: unknown } | null)?.details;
+  const status = code === 'canary_not_found' || code === 'proposal_not_found' ? 404 : 409;
+  throw new ApiError(code, status, error instanceof Error ? error.message : String(error), details);
+}
+
+async function canarySplitFor(
+  factory: string,
+  rollout: CanaryRolloutRecord,
+): Promise<CanarySplit> {
+  const sql = getSql();
+  const rows = (await sql`
+    select definition_version, count(*) as items
+    from work_items
+    where factory = ${factory}
+      and (
+        canary_rollout_id = ${rollout.id}
+        or (
+          definition_version = 'stable'
+          and canary_rollout_id is null
+          and created_at >= ${rollout.startedAt ?? new Date(0).toISOString()}::timestamptz
+          and (${rollout.endedAt}::timestamptz is null or created_at <= ${rollout.endedAt}::timestamptz)
+        )
+      )
+    group by definition_version
+  `) as { definition_version: string; items: number | string }[];
+  const candidateItems = Number(rows.find((row) => row.definition_version === 'candidate')?.items ?? 0);
+  const stableItems = Number(rows.find((row) => row.definition_version === 'stable')?.items ?? 0);
+  return {
+    canaryPercent: rollout.canaryPercent,
+    stablePercent: 100 - rollout.canaryPercent,
+    candidateItems,
+    stableItems,
+    totalItems: candidateItems + stableItems,
+  };
+}
+
+function canaryWindowFor(rollout: CanaryRolloutRecord): CanaryWindow {
+  const started = rollout.startedAt ? Date.parse(rollout.startedAt) : Number.NaN;
+  const ends = canaryEndsAt(rollout);
+  const now = Date.now();
+  const elapsedMs = Number.isFinite(started) ? Math.max(0, now - started) : 0;
+  const remainingMs =
+    rollout.status === 'active' && ends ? Math.max(0, Date.parse(ends) - now) : 0;
+  return {
+    startedAt: rollout.startedAt,
+    endsAt: ends,
+    elapsedMs,
+    remainingMs,
+    complete: rollout.status !== 'active' || remainingMs === 0,
+    observationWindowHours: rollout.observationWindowHours,
+  };
+}
+
+async function canaryMetricsFor(
+  rollout: CanaryRolloutRecord,
+  definitionCommit: string,
+): Promise<CanaryObservationSummary | null> {
+  if (rollout.status === 'unavailable') return null;
+  try {
+    return await readCanaryObservation({
+      factory: rollout.factory,
+      rolloutId: rollout.id,
+      stableCommit: rollout.stableCommit ?? definitionCommit,
+      candidateCommit: rollout.candidateCommit,
+      startedAt: rollout.startedAt,
+      until: rollout.endedAt,
+      rollbackThreshold: rollout.rollbackThreshold,
+      canaryPercent: rollout.canaryPercent,
+      observationWindowHours: rollout.observationWindowHours,
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function canaryView(
+  rollout: CanaryRolloutRecord,
+  definitionCommit: string,
+  options: { metrics?: boolean } = {},
+): Promise<CanaryRolloutView> {
+  const sql = getSql();
+  const [split, metrics, events] = await Promise.all([
+    canarySplitFor(rollout.factory, rollout),
+    options.metrics === false ? Promise.resolve(null) : canaryMetricsFor(rollout, definitionCommit),
+    listCanaryEvents(sql, { rolloutId: rollout.id }),
+  ]);
+  return {
+    rollout,
+    window: canaryWindowFor(rollout),
+    split,
+    metrics,
+    events: events.map((event: CanaryEventRecord) => ({
+      type: event.type,
+      payload: event.payload,
+      createdAt: event.createdAt,
+    })),
+  };
+}
+
+/**
+ * Canary projection: the active rollout (split, window countdown, candidate-vs-stable
+ * metrics), the history with its audit events, and the proposals that can start a rollout.
+ */
+export async function getCanaryForApi(
+  config: ApiConfig,
+  factory: string,
+): Promise<CanaryOverview> {
+  const { definition, commit } = loadFactory(config, factory);
+  const resolved = resolveImprovement(definition.manifest.improvement);
+  const sql = getSql();
+
+  const [active, history, proposals] = await Promise.all([
+    getActiveCanaryRollout(sql, factory),
+    listCanaryRollouts(sql, { factory, limit: 10 }),
+    listProposals(sql, { factory, limit: 20 }),
+  ]);
+
+  const historyViews = await Promise.all(
+    history.map((rollout) => canaryView(rollout, commit, { metrics: true })),
+  );
+
+  return {
+    factory,
+    definitionCommit: commit,
+    authority: resolved.authority,
+    resolved,
+    available: resolved.canaryAvailable,
+    active: active ? await canaryView(active, commit) : null,
+    history: historyViews,
+    proposals: proposals.filter(
+      (proposal) =>
+        proposal.authority === 'canary' &&
+        (proposal.status === 'accepted' || proposal.status === 'open' || proposal.status === 'canary') &&
+        Boolean(proposal.candidateHash),
+    ),
+  };
+}
+
+export interface StartedCanaryRolloutResponse {
+  factory: string;
+  rollout: CanaryRolloutRecord;
+  workflow: { workflowId: string; temporalRunId: string } | null;
+  reused: boolean;
+}
+
+/**
+ * Starts a real canary rollout for a composed proposal (Phase 5b). The candidate version is
+ * published by `CanaryWorkflow`; until it activates, new work items stay on stable.
+ */
+export async function startCanaryForApi(
+  config: ApiConfig,
+  factory: string,
+  body: CanaryStartBody,
+): Promise<StartedCanaryRolloutResponse> {
+  const { dir, definition, commit } = loadFactory(config, factory);
+  const resolved = resolveImprovement(definition.manifest.improvement);
+  if (resolved.authority !== 'canary') {
+    throw new ApiError(
+      'canary_not_applicable',
+      409,
+      `factory "${factory}" declares improvement authority "${resolved.authority}"; a canary rollout requires authority "canary"`,
+      { factory, authority: resolved.authority },
+    );
+  }
+
+  const canaryPercent = body.canaryPercent ?? resolved.canaryPercent;
+  if (canaryPercent === null) {
+    throw new ApiError('canary_config_missing', 422, 'improvement.canaryPercent is required', {
+      factory,
+    });
+  }
+  if (resolved.rollbackThreshold === null) {
+    throw new ApiError('canary_config_missing', 422, 'improvement.rollbackThreshold is required', {
+      factory,
+    });
+  }
+
+  const sql = getSql();
+  const proposal = await getProposal(sql, body.proposalId);
+  if (!proposal || proposal.factory !== factory) throw proposalNotFound(body.proposalId);
+  if (!proposal.candidateHash || proposal.diff.length === 0) {
+    throw canaryNotAvailable({ proposalId: proposal.id, authority: proposal.authority });
+  }
+
+  try {
+    const started = await startCanaryRollout({
+      factory,
+      factoryRoot: dir,
+      definitionRepo: `${config.definitionRepoOwner}/${factory}`,
+      baseBranch: 'main',
+      proposal,
+      stableCommit: commit,
+      canaryPercent,
+      rollbackThreshold: resolved.rollbackThreshold,
+      observationWindowHours:
+        body.observationWindowHours ?? resolved.observationWindowHours,
+      actor: body.actor,
+      reason: body.reason,
+    });
+
+    log('info', 'canary_started', {
+      factory,
+      rolloutId: started.rollout.id,
+      proposalId: proposal.id,
+      canaryPercent,
+      reused: started.reused,
+    });
+
+    return {
+      factory,
+      rollout: started.rollout,
+      workflow: started.workflow,
+      reused: started.reused,
+    };
+  } catch (error) {
+    const code = (error as { code?: string } | null)?.code;
+    if (code === 'canary_active') {
+      const active = await getActiveCanaryRollout(sql, factory);
+      throw canaryActive(factory, active?.id ?? 'unknown');
+    }
+    canaryApiError(error);
+  }
+}
+
+export interface CanaryPromoteResponse {
+  factory: string;
+  rollout: CanaryRolloutRecord;
+  mergedCommit: string | null;
+  delivery: boolean;
+}
+
+/** Manual promotion: merges the candidate PR, ends the rollout `promoted`, wakes the workflow. */
+export async function promoteCanaryForApi(
+  config: ApiConfig,
+  body: CanaryPromoteBody,
+): Promise<CanaryPromoteResponse> {
+  const rollout = await resolveCanaryRollout({
+    factory: body.factory,
+    rolloutId: body.rolloutId ?? null,
+    proposalId: body.proposalId ?? null,
+  });
+  if (!rollout || rollout.status !== 'active') {
+    throw noActiveCanary(body.factory, ['active']);
+  }
+
+  const observation = await canaryMetricsFor(
+    rollout,
+    rollout.stableCommit ?? loadFactory(config, body.factory).commit,
+  );
+
+  let result: Awaited<ReturnType<typeof promoteCanaryRollout>>;
+  try {
+    result = await promoteCanaryRollout({
+      rolloutId: rollout.id,
+      factory: body.factory,
+      actor: body.actor,
+      reason: body.reason,
+      observation,
+      automatic: false,
+    });
+  } catch (error) {
+    canaryApiError(error);
+  }
+
+  const delivery = await signalCanaryPromote(
+    rollout.id,
+    { actor: body.actor, reason: body.reason },
+    toOrchestrationConfig(config),
+  );
+
+  log('info', 'canary_promoted', {
+    factory: body.factory,
+    rolloutId: rollout.id,
+    actor: body.actor,
+    mergedCommit: result.mergedCommit ?? null,
+  });
+
+  return {
+    factory: body.factory,
+    rollout: result.rollout,
+    mergedCommit: result.mergedCommit ?? null,
+    delivery: delivery.delivered,
+  };
+}
+
+export interface CanaryRollbackResponse {
+  factory: string;
+  rollout: CanaryRolloutRecord;
+  delivery: boolean;
+  metrics: CanaryObservationSummary | null;
+}
+
+/**
+ * Manual rollback, regardless of the window: the read-model update makes the active-rollout
+ * query stop matching immediately, so new work returns to stable even if the workflow
+ * Signal never arrives. The evidence at rollback time is recorded on the event.
+ */
+export async function rollbackCanaryForApi(
+  config: ApiConfig,
+  body: CanaryRollbackBody,
+): Promise<CanaryRollbackResponse> {
+  const rollout = await resolveCanaryRollout({
+    factory: body.factory,
+    rolloutId: body.rolloutId ?? null,
+    proposalId: body.proposalId ?? null,
+  });
+  if (!rollout || (rollout.status !== 'active' && rollout.status !== 'pending')) {
+    throw noActiveCanary(body.factory, ['pending', 'active']);
+  }
+
+  const observation = await canaryMetricsFor(
+    rollout,
+    rollout.stableCommit ?? loadFactory(config, body.factory).commit,
+  );
+
+  let result: Awaited<ReturnType<typeof rollbackCanaryRollout>>;
+  try {
+    result = await rollbackCanaryRollout({
+      rolloutId: rollout.id,
+      factory: body.factory,
+      actor: body.actor,
+      reason: body.reason,
+      observation,
+      automatic: false,
+    });
+  } catch (error) {
+    canaryApiError(error);
+  }
+
+  const delivery = await signalCanaryRollback(
+    rollout.id,
+    { actor: body.actor, reason: body.reason },
+    toOrchestrationConfig(config),
+  );
+
+  log('info', 'canary_rolled_back', {
+    factory: body.factory,
+    rolloutId: rollout.id,
+    actor: body.actor,
+    reason: body.reason,
+  });
+
+  return {
+    factory: body.factory,
+    rollout: result.rollout,
+    delivery: delivery.delivered,
+    metrics: observation,
+  };
+}
+
 /* ---------------------------------------------------------------- decisions */
 
 function winningProbe(probes: ProbeRecord[]): ProbeRecord | null {
@@ -481,11 +938,15 @@ export interface ProposalApplyResponse {
   prUrl: string | null;
   prNumber: number | null;
   merged: boolean;
+  /** Set when the authority is `canary` and a rollout was started. */
+  rollout?: CanaryRolloutRecord;
+  workflow?: { workflowId: string; temporalRunId: string } | null;
 }
 
 /**
- * Applies an accepted proposal by its recorded authority. `canary` validates the config
- * and refuses with `canary_not_available` (Phase 5b); nothing is routed yet.
+ * Applies an accepted proposal by its recorded authority. `canary` starts a real rollout
+ * (Phase 5b): the candidate version is published, new work is routed by deterministic hash
+ * and the observation window decides promotion or rollback (ADR-021).
  */
 export async function applyProposalForApi(
   config: ApiConfig,
@@ -508,10 +969,25 @@ export async function applyProposalForApi(
       merged: proposal.status === 'merged',
     };
   }
-  if (proposal.status === 'canary_not_available') {
-    throw canaryNotAvailable({ proposalId: id, authority: proposal.authority });
+  if (proposal.status === 'canary') {
+    const inFlight = await getInFlightCanaryRollout(sql, proposal.factory);
+    const rollout = inFlight?.proposalId === proposal.id ? inFlight : null;
+    return {
+      proposal,
+      decision: {
+        action: 'canary',
+        code: 'already_applied',
+        reason: 'a canary rollout is already active for this proposal',
+      },
+      prUrl: null,
+      prNumber: null,
+      merged: false,
+      ...(rollout ? { rollout } : {}),
+    };
   }
-  if (proposal.status !== 'accepted') throw proposalNotAccepted(id, proposal.status);
+  if (proposal.status !== 'accepted' && proposal.status !== 'canary_not_available') {
+    throw proposalNotAccepted(id, proposal.status);
+  }
 
   if (!proposal.candidateHash || proposal.diff.length === 0) {
     throw new ApiError('no_improvement', 409, 'the proposal has no composed candidate', {
@@ -548,20 +1024,54 @@ export async function applyProposalForApi(
     },
   });
 
-  if (applied.decision.action === 'canary_not_available') {
-    await updateProposal(sql, {
-      id,
-      status: 'canary_not_available',
-      decisionActor: body.actor,
-      decisionReason: `${applied.decision.code}: ${applied.decision.reason}`,
-      decided: true,
-    });
-    throw canaryNotAvailable({
+  if (applied.decision.action === 'canary') {
+    const { dir, definition } = loadFactory(config, proposal.factory);
+    const resolved = resolveImprovement(definition.manifest.improvement);
+    if (resolved.canaryPercent === null || resolved.rollbackThreshold === null) {
+      throw new ApiError(
+        'canary_config_missing',
+        422,
+        'improvement.authority "canary" requires canaryPercent and rollbackThreshold',
+        { factory: proposal.factory },
+      );
+    }
+    const { commit } = pinVersion(dir, proposal.factory);
+    const started = await startCanaryRollout({
+      factory: proposal.factory,
+      factoryRoot: dir,
+      definitionRepo: `${config.definitionRepoOwner}/${proposal.factory}`,
+      baseBranch: 'main',
+      proposal,
+      stableCommit: commit,
+      canaryPercent: resolved.canaryPercent,
+      rollbackThreshold: resolved.rollbackThreshold,
+      observationWindowHours: resolved.observationWindowHours,
+      actor: body.actor,
+      reason: body.reason,
+    }).catch(canaryApiError);
+
+    const updated = (await getProposal(sql, id)) ?? proposal;
+    log('info', 'proposal_applied', {
       proposalId: id,
       authority: proposal.authority,
-      canaryPercent: resolveImprovement(loadFactory(config, proposal.factory).definition.manifest.improvement)
-        .canaryPercent,
+      action: 'canary',
+      rolloutId: started.rollout.id,
+      actor: body.actor,
     });
+
+    return {
+      proposal: updated,
+      decision: {
+        action: 'canary',
+        code: applied.decision.code,
+        reason: applied.decision.reason,
+      },
+      prUrl: null,
+      prNumber: null,
+      merged: false,
+      rollout: started.rollout,
+      workflow: started.workflow,
+    };
   }
 
   const status =
@@ -844,7 +1354,7 @@ export async function startImprovementForApi(
     definitionDirty: dirty,
     trigger: body.trigger ?? 'on_demand',
     authority: resolved.authority,
-    canaryPercent: resolved.canaryPercent,
+    canaryPercent: body.canaryPercent ?? resolved.canaryPercent,
     rollbackThreshold: resolved.rollbackThreshold,
     observationWindowHours: resolved.observationWindowHours,
     maxProbes: Math.min(body.maxProbes ?? resolved.maxProbes, resolved.maxProbes),
@@ -923,14 +1433,4 @@ export async function getImprovementRunForApi(id: string): Promise<{
       createdAt: event.createdAt,
     })),
   };
-}
-
-/** Phase 5b: canary rollback has no routing to roll back yet; the request is refused. */
-export function rollbackCanaryForApi(body: CanaryRollbackBody): never {
-  throw canaryNotAvailable({
-    factory: body.factory,
-    proposalId: body.proposalId ?? null,
-    actor: body.actor,
-    reason: body.reason,
-  });
 }

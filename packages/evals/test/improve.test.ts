@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { loadOrThrow } from '@factory/core';
 import { join } from 'node:path';
 import {
-  CANARY_NOT_AVAILABLE,
+  CANARY_ROLLOUT,
   ComposeError,
   EDIT_OUT_OF_SCOPE,
   ProbeError,
@@ -384,16 +384,17 @@ describe('authority routing', () => {
     expect(decision.code).toBe('benchmark_non_regression');
   });
 
-  it('canary returns canary_not_available, flagged Phase 5b', () => {
+  it('canary starts a real rollout (Phase 5b)', () => {
     const decision = decideImprovement({
       authority: 'canary',
       hasCandidate: true,
       probe,
       benchmark,
     });
-    expect(decision.action).toBe('canary_not_available');
-    expect(decision.code).toBe(CANARY_NOT_AVAILABLE);
-    expect(decision.phase).toBe('5b');
+    expect(decision.action).toBe('canary');
+    expect(decision.code).toBe(CANARY_ROLLOUT);
+    expect(decision.phase).toBeUndefined();
+    expect(decision.reason).toContain('deterministic hash');
   });
 
   it('no candidate means no_improvement', () => {

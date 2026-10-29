@@ -1,5 +1,6 @@
 import type { SQL } from 'bun';
 import type {
+  CanaryEventRecord,
   CanaryRolloutRecord,
   ImprovementEventRecord,
   ImprovementRunRecord,
@@ -689,11 +690,18 @@ interface CanaryRow {
   proposal_id: string;
   candidate_version: string;
   stable_version: string;
+  candidate_commit: string | null;
+  stable_commit: string | null;
+  candidate_root: string | null;
   canary_percent: number | string;
   rollback_threshold: unknown;
   observation_window_hours: number | string;
   status: string;
   reason: string | null;
+  pr_url: string | null;
+  pr_number: number | string | null;
+  actor: string | null;
+  evidence: unknown;
   started_at: unknown;
   ended_at: unknown;
 }
@@ -705,28 +713,59 @@ function mapCanary(row: CanaryRow): CanaryRolloutRecord {
     proposalId: row.proposal_id,
     candidateVersion: row.candidate_version,
     stableVersion: row.stable_version,
+    candidateCommit: row.candidate_commit ?? null,
+    stableCommit: row.stable_commit ?? null,
+    candidateRoot: row.candidate_root ?? null,
     canaryPercent: Number(row.canary_percent),
     rollbackThreshold: numOrZero(row.rollback_threshold),
     observationWindowHours: Number(row.observation_window_hours),
     status: row.status as CanaryRolloutRecord['status'],
     reason: row.reason,
+    prUrl: row.pr_url ?? null,
+    prNumber: row.pr_number === null || row.pr_number === undefined ? null : Number(row.pr_number),
+    actor: row.actor ?? null,
+    evidence: parseJsonb<Record<string, unknown>>(row.evidence, {}),
     startedAt: iso(row.started_at),
     endedAt: iso(row.ended_at),
   };
 }
 
+export interface CreateCanaryRolloutArgs {
+  id: string;
+  factory: string;
+  proposalId: string;
+  candidateVersion: string;
+  stableVersion: string;
+  candidateCommit?: string | null;
+  stableCommit?: string | null;
+  candidateRoot?: string | null;
+  canaryPercent: number;
+  rollbackThreshold: number;
+  observationWindowHours: number;
+  status?: CanaryRolloutRecord['status'];
+  reason?: string | null;
+  prUrl?: string | null;
+  prNumber?: number | null;
+  actor?: string | null;
+  evidence?: Record<string, unknown>;
+}
+
 export async function createCanaryRollout(
   sql: SQL,
-  args: Omit<CanaryRolloutRecord, 'startedAt' | 'endedAt'>,
+  args: CreateCanaryRolloutArgs,
 ): Promise<CanaryRolloutRecord> {
   const rows = (await sql`
     insert into canary_rollouts (
-      id, factory, proposal_id, candidate_version, stable_version, canary_percent,
-      rollback_threshold, observation_window_hours, status, reason
+      id, factory, proposal_id, candidate_version, stable_version, candidate_commit,
+      stable_commit, candidate_root, canary_percent, rollback_threshold,
+      observation_window_hours, status, reason, pr_url, pr_number, actor, evidence
     ) values (
       ${args.id}, ${args.factory}, ${args.proposalId}, ${args.candidateVersion},
-      ${args.stableVersion}, ${args.canaryPercent}, ${args.rollbackThreshold},
-      ${args.observationWindowHours}, ${args.status}, ${args.reason ?? null}
+      ${args.stableVersion}, ${args.candidateCommit ?? null}, ${args.stableCommit ?? null},
+      ${args.candidateRoot ?? null}, ${args.canaryPercent}, ${args.rollbackThreshold},
+      ${args.observationWindowHours}, ${args.status ?? 'pending'}, ${args.reason ?? null},
+      ${args.prUrl ?? null}, ${args.prNumber ?? null}, ${args.actor ?? null},
+      ${JSON.stringify(args.evidence ?? {})}::jsonb
     )
     on conflict (id) do nothing
     returning *
@@ -736,6 +775,92 @@ export async function createCanaryRollout(
     select * from canary_rollouts where id = ${args.id} limit 1
   `) as CanaryRow[];
   return mapCanary(existing[0] as CanaryRow);
+}
+
+export async function getCanaryRollout(
+  sql: SQL,
+  id: string,
+): Promise<CanaryRolloutRecord | null> {
+  const rows = (await sql`
+    select * from canary_rollouts where id = ${id} limit 1
+  `) as CanaryRow[];
+  return rows[0] ? mapCanary(rows[0]) : null;
+}
+
+/** The rollout that currently routes new work items, if any. */
+export async function getActiveCanaryRollout(
+  sql: SQL,
+  factory: string,
+): Promise<CanaryRolloutRecord | null> {
+  const rows = (await sql`
+    select * from canary_rollouts
+    where factory = ${factory} and status = 'active'
+    order by started_at desc
+    limit 1
+  `) as CanaryRow[];
+  return rows[0] ? mapCanary(rows[0]) : null;
+}
+
+/**
+ * The rollout that owns this factory: `pending` (publishing) or `active` (routing).
+ * Only one may exist at a time; a second start must be refused before it races the
+ * activation of the first (ADR-021).
+ */
+export async function getInFlightCanaryRollout(
+  sql: SQL,
+  factory: string,
+): Promise<CanaryRolloutRecord | null> {
+  const rows = (await sql`
+    select * from canary_rollouts
+    where factory = ${factory} and status in ('pending', 'active')
+    order by started_at desc
+    limit 1
+  `) as CanaryRow[];
+  return rows[0] ? mapCanary(rows[0]) : null;
+}
+
+export interface UpdateCanaryRolloutArgs {
+  id: string;
+  /** Guarded transition: only applied while the rollout is in `from`. */
+  from?: CanaryRolloutRecord['status'] | CanaryRolloutRecord['status'][];
+  status?: CanaryRolloutRecord['status'];
+  reason?: string | null;
+  candidateVersion?: string | null;
+  candidateCommit?: string | null;
+  candidateRoot?: string | null;
+  prUrl?: string | null;
+  prNumber?: number | null;
+  evidence?: Record<string, unknown> | null;
+  ended?: boolean;
+}
+
+/**
+ * Updates a rollout. When `from` is set the update only applies while the row is still in
+ * one of those statuses, so a retried activity cannot resurrect a finished rollout.
+ */
+export async function updateCanaryRollout(
+  sql: SQL,
+  args: UpdateCanaryRolloutArgs,
+): Promise<CanaryRolloutRecord | null> {
+  const from = args.from === undefined ? null : Array.isArray(args.from) ? args.from : [args.from];
+  // A comma-joined string avoids driver-specific array encoding: `status = any(string_to_array(...))`.
+  const fromCsv = from === null ? null : from.join(',');
+  const rows = (await sql`
+    update canary_rollouts set
+      status = coalesce(${args.status ?? null}, status),
+      reason = coalesce(${args.reason ?? null}, reason),
+      candidate_version = coalesce(${args.candidateVersion ?? null}, candidate_version),
+      candidate_commit = coalesce(${args.candidateCommit ?? null}, candidate_commit),
+      candidate_root = coalesce(${args.candidateRoot ?? null}, candidate_root),
+      pr_url = coalesce(${args.prUrl ?? null}, pr_url),
+      pr_number = coalesce(${args.prNumber ?? null}, pr_number),
+      evidence = coalesce(${args.evidence === undefined || args.evidence === null ? null : JSON.stringify(args.evidence)}::jsonb, evidence),
+      ended_at = case when ${args.ended === true} then coalesce(ended_at, now()) else ended_at end
+    where id = ${args.id}
+      and (${fromCsv}::text is null or status = any(string_to_array(${fromCsv}, ',')))
+    returning *
+  `) as CanaryRow[];
+  return rows[0] ? mapCanary(rows[0]) : null;
 }
 
 export async function listCanaryRollouts(
@@ -751,4 +876,72 @@ export async function listCanaryRollouts(
     limit ${limit}
   `) as CanaryRow[];
   return rows.map(mapCanary);
+}
+
+/* ---------------------------------------------------- canary event rows */
+
+interface CanaryEventRow {
+  id: number | string;
+  rollout_id: string;
+  factory: string;
+  type: string;
+  subject: string;
+  payload: unknown;
+  created_at: unknown;
+}
+
+function mapCanaryEvent(row: CanaryEventRow): CanaryEventRecord {
+  return {
+    id: Number(row.id),
+    rolloutId: row.rollout_id,
+    factory: row.factory,
+    type: row.type,
+    subject: row.subject,
+    payload: parseJsonb<Record<string, unknown>>(row.payload, {}),
+    createdAt: iso(row.created_at),
+  };
+}
+
+/** Append-only canary audit log, deduped by `(rollout_id, type, subject)`. */
+export async function recordCanaryEvent(
+  sql: SQL,
+  args: {
+    rolloutId: string;
+    factory: string;
+    type: 'canary.started' | 'canary.promoted' | 'canary.rolled_back' | string;
+    subject?: string;
+    payload?: Record<string, unknown>;
+  },
+): Promise<{ event: CanaryEventRecord | null; appended: boolean }> {
+  const rows = (await sql`
+    insert into canary_events (rollout_id, factory, type, subject, payload)
+    values (
+      ${args.rolloutId}, ${args.factory}, ${args.type}, ${args.subject ?? ''},
+      ${JSON.stringify(args.payload ?? {})}::jsonb
+    )
+    on conflict (rollout_id, type, subject) do nothing
+    returning *
+  `) as CanaryEventRow[];
+
+  if (rows.length > 0) {
+    return { event: mapCanaryEvent(rows[0] as CanaryEventRow), appended: true };
+  }
+  return { event: null, appended: false };
+}
+
+export async function listCanaryEvents(
+  sql: SQL,
+  args: { rolloutId?: string | null; factory?: string | null; limit?: number } = {},
+): Promise<CanaryEventRecord[]> {
+  const rolloutId = args.rolloutId ?? null;
+  const factory = args.factory ?? null;
+  const limit = Math.min(Math.max(args.limit ?? 200, 1), 1000);
+  const rows = (await sql`
+    select * from canary_events
+    where (${rolloutId}::text is null or rollout_id = ${rolloutId})
+      and (${factory}::text is null or factory = ${factory})
+    order by id asc
+    limit ${limit}
+  `) as CanaryEventRow[];
+  return rows.map(mapCanaryEvent);
 }

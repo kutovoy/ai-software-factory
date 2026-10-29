@@ -18,6 +18,10 @@ export type WorkItemSource = (typeof WORK_ITEM_SOURCES)[number];
 export const WORK_ITEM_STATUSES = ['active', 'blocked', 'escalated', 'done', 'cancelled'] as const;
 export type WorkItemStatus = (typeof WORK_ITEM_STATUSES)[number];
 
+/** Which factory version a work item ran (canary routing, ADR-021). */
+export const WORK_ITEM_VERSIONS = ['stable', 'candidate'] as const;
+export type WorkItemVersion = (typeof WORK_ITEM_VERSIONS)[number];
+
 export const GATE_DECISIONS = ['approve', 'reject', 'request_changes'] as const;
 export type GateDecisionValue = (typeof GATE_DECISIONS)[number];
 
@@ -39,6 +43,12 @@ export const workItemSchema = z
     parentId: z.string().regex(WORK_ITEM_ID_RE).nullable().default(null),
     factory: codedString(FACTORY_NAME_RE, 'invalid_value', 'invalid factory name'),
     definitionCommit: z.string().min(7),
+    /**
+     * Canary routing (ADR-021): assigned once at creation and honoured by every stage of
+     * this item. `null` when no rollout was active.
+     */
+    canaryRolloutId: z.string().min(1).nullable().default(null),
+    definitionVersion: z.enum(WORK_ITEM_VERSIONS).default('stable'),
     prUrl: z.string().url().nullable().default(null),
     prNumber: z.number().int().min(1).nullable().default(null),
     loopCount: z.number().int().min(0).default(0),

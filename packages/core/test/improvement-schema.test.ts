@@ -25,7 +25,7 @@ describe('improvement block', () => {
     expect(resolved.source).toBe('default');
     expect(resolved.maxProbes).toBe(3);
     expect(resolved.observationWindowHours).toBe(24);
-    expect(resolved.canaryAvailable).toBe(false);
+    expect(resolved.canaryAvailable).toBe(true);
   });
 
   it('accepts every supported authority', () => {

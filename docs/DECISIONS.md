@@ -377,27 +377,36 @@ change takes effect for proposals created afterwards. Proposals are file-scoped 
 rejected with `edit_out_of_scope` and recorded.
 **Consequences:** every autonomy widening is a reviewable git change with provenance; no hidden
 switch. Cost: changing authority is slower than a toggle (PR + merge), and the UI has to explain the
-diff. Canary is accepted as a level but its rollout is deferred (ADR-021); the apply path returns
-`canary_not_available` with `phase: "5b"` instead of pretending to route.
+diff. Canary is accepted as a level; its rollout mechanics are ADR-021.
 
 ---
 
 ## ADR-021 — Canary routing uses a deterministic hash at work-item creation (Phase 5b)
 
-**Status:** accepted, implementation deferred to Phase 5b (2026-10-29)
+**Status:** accepted, implemented (2026-10-29, Phase 5b)
 **Context:** A canary must route a configured percentage of *new* work to a candidate version and
 compare it with the stable version over an observation window, with automatic rollback on regression.
 Random assignment would make runs irreproducible and could split one work item's stages across
 versions; a shared mutable counter would drift under retries and replays.
 **Options:** random assignment per stage · a database counter · a deterministic hash of the work-item
 id at creation.
-**Decision:** when Phase 5b ships, a work item is assigned to stable or candidate exactly once, at
-creation, by `hash(workItemId) % 100 < canaryPercent`; the assignment is persisted with the work item
-so every stage of that item runs the same version. Both versions stay pinned (`factory-vN` +
-`definitionCommit`), the observation window is measured from the rollout start, and rollback
-(promote or manual) flips routing back to stable immediately while keeping the previous version
-addressable. Rollout, promotion and rollback emit `canary.*` events with the reason and evidence.
+**Decision:** a work item is assigned to stable or candidate exactly once, at creation, by
+`sha256(workItemId) % 100 < canaryPercent`; the assignment (`definition_version` +
+`canary_rollout_id`) is persisted with the item so every stage of that item runs the same version.
+Only one rollout per factory may be in flight (`pending` or `active`); a second start is refused with
+`canary_active`. The candidate version is published by `CanaryWorkflow`: the composed definition is
+materialised under `runs/canary/<rolloutId>/definition` (writable runs dir, ADR-012), committed on a
+`canary/<rolloutId>` branch and opened as a draft PR on the definition repo; candidate items pin the
+candidate commit and run from the materialised tree, stable items pin the current definition commit.
+The observation window is a durable Temporal timer; metrics compare pass rate and incident
+(error/cancelled run) rate per commit over the window. A regression beyond `rollbackThreshold` rolls
+back automatically; otherwise the window ending promotes by merging the candidate PR. Manual promote
+and rollback are synchronous in the read model (routing stops matching the active rollout at once) and
+wake the workflow with a Signal. `canary.started`, `canary.promoted` and `canary.rolled_back` are
+append-only, deduped events carrying the reason and the evidence snapshot; the previous version stays
+recorded on the rollout for rollback.
 **Consequences:** routing is reproducible and testable without randomness; a work item never straddles
-versions. Cost: the assignment must be stored and honoured by every dispatch path, and the rollout
-workflow is a separate, stateful piece of orchestration. Until it ships, `canary` validates as a
-configuration but cannot be applied.
+versions. Cost: the assignment must be stored and honoured by every dispatch path, the candidate tree
+must be materialised for every rollout, and promotion merges the definition repo but does not rewrite
+the local checkout — the next checkout/deploy picks up the merged version. A rollout that cannot
+publish is recorded `unavailable` and never routes work.

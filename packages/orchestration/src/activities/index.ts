@@ -8,3 +8,4 @@ export * from './forge';
 export * from './scoring';
 export * from './benchmark';
 export * from './improvement';
+export * from './canary';

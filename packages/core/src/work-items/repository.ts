@@ -7,6 +7,7 @@ import type {
   WorkItemSource,
   WorkItemStatus,
   WorkItemType,
+  WorkItemVersion,
 } from './types';
 
 /**
@@ -34,6 +35,8 @@ interface WorkItemRow {
   parent_id: string | null;
   definition_commit: string;
   definition_dirty: boolean;
+  canary_rollout_id: string | null;
+  definition_version: string;
   pr_url: string | null;
   pr_number: number | null;
   loop_count: number | string;
@@ -148,6 +151,8 @@ function mapWorkItem(row: WorkItemRow): WorkItem {
     parentId: row.parent_id,
     factory: row.factory,
     definitionCommit: row.definition_commit,
+    canaryRolloutId: row.canary_rollout_id ?? null,
+    definitionVersion: (row.definition_version ?? 'stable') as WorkItemVersion,
     prUrl: row.pr_url,
     prNumber: row.pr_number === null ? null : Number(row.pr_number),
     loopCount: Number(row.loop_count),
@@ -213,6 +218,9 @@ export interface CreateWorkItemArgs {
   parentId?: string | null;
   definitionCommit: string;
   definitionDirty?: boolean;
+  /** Set when a canary rollout routed this item to the candidate version (ADR-021). */
+  canaryRolloutId?: string | null;
+  definitionVersion?: WorkItemVersion;
   workflowId?: string | null;
   input?: Record<string, unknown>;
 }
@@ -222,11 +230,13 @@ export async function createWorkItem(sql: SQL, args: CreateWorkItemArgs): Promis
     const rows = (await tx`
       insert into work_items (
         id, factory, type, source, source_ref, title, stage, status, parent_id,
-        definition_commit, definition_dirty, workflow_id, input
+        definition_commit, definition_dirty, canary_rollout_id, definition_version,
+        workflow_id, input
       ) values (
         ${args.id}, ${args.factory}, ${args.type}, ${args.source},
         ${JSON.stringify(args.sourceRef ?? {})}::jsonb, ${args.title}, ${args.stage}, 'active',
         ${args.parentId ?? null}, ${args.definitionCommit}, ${args.definitionDirty ?? false},
+        ${args.canaryRolloutId ?? null}, ${args.definitionVersion ?? 'stable'},
         ${args.workflowId ?? null}, ${JSON.stringify(args.input ?? {})}::jsonb
       )
       returning *
@@ -241,6 +251,8 @@ export async function createWorkItem(sql: SQL, args: CreateWorkItemArgs): Promis
                 sourceRef: args.sourceRef ?? {},
                 parentId: args.parentId ?? null,
                 definitionCommit: args.definitionCommit,
+                definitionVersion: args.definitionVersion ?? 'stable',
+                canaryRolloutId: args.canaryRolloutId ?? null,
               })}::jsonb)
     `;
 

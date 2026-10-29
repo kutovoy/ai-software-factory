@@ -52,9 +52,11 @@ export function lessonFromProposal(args: {
       ? 'merged'
       : decision.action === 'open_pr'
         ? 'opened as a pull request'
-        : decision.action === 'canary_not_available'
-          ? 'left as a candidate (canary rollout deferred to Phase 5b)'
-          : 'closed without a candidate';
+        : decision.action === 'canary'
+          ? 'published as a candidate version and rolled out by deterministic-hash routing'
+          : decision.action === 'canary_not_available'
+            ? 'left as a candidate (canary rollout was not available)'
+            : 'closed without a candidate';
   return {
     cue: proposal.failureSignature,
     lesson: `${proposal.title} — ${outcome}. ${decision.reason}`,

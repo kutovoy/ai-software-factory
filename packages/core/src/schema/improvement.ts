@@ -66,8 +66,8 @@ export interface ResolvedImprovementConfig {
   maxProbes: number;
   /** `declared` when factory.yaml carries the block, `default` otherwise. */
   source: 'declared' | 'default';
-  /** True when the authority is `canary` but Phase 5b (rollout) is not available yet. */
-  canaryAvailable: false;
+  /** True when the canary rollout workflow is available (Phase 5b shipped). */
+  canaryAvailable: boolean;
 }
 
 export function resolveImprovement(
@@ -81,6 +81,6 @@ export function resolveImprovement(
       improvement?.observationWindowHours ?? DEFAULT_IMPROVEMENT_OBSERVATION_WINDOW_HOURS,
     maxProbes: improvement?.maxProbes ?? DEFAULT_IMPROVEMENT_MAX_PROBES,
     source: improvement ? 'declared' : 'default',
-    canaryAvailable: false,
+    canaryAvailable: true,
   };
 }

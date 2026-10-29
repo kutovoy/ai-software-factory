@@ -18,9 +18,9 @@ import type { ImprovementAuthorityName } from './types';
 
 /**
  * Applies one improvement decision: PR for `propose_only`, PR-or-merge for
- * `auto_merge_on_benchmark`, and an explicit `canary_not_available` for `canary`
- * (Phase 5b). Shared by the workflow activity and `POST /proposals/:id/apply` so the two
- * paths cannot drift.
+ * `auto_merge_on_benchmark`, and a `canary` decision that the caller turns into a real
+ * rollout (Phase 5b, ADR-021). Shared by the workflow activity and
+ * `POST /proposals/:id/apply` so the two paths cannot drift.
  */
 
 export interface ApplyImprovementArgs {

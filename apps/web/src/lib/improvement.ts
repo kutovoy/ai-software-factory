@@ -1,5 +1,6 @@
 import type { Tone } from '@/components/ui/Badge';
 import type {
+  CanaryStatusWire,
   ImprovementAuthorityWire,
   ProposalStatusWire,
   ProposalWire,
@@ -25,7 +26,7 @@ export const AUTHORITY_OPTIONS: {
     value: 'canary',
     label: 'Canary',
     description:
-      'Publish a candidate version and route a percentage of new work to it. Rollout/rollback ships in Phase 5b; the apply path refuses with canary_not_available.',
+      'Publish a candidate version and route a configured percentage of new work to it by deterministic hash; promote or roll back after the observation window.',
   },
 ];
 
@@ -40,11 +41,12 @@ export function proposalStatusTone(status: ProposalStatusWire): Tone {
     case 'merged':
       return 'success';
     case 'pr_open':
-      return 'info';
     case 'accepted':
+    case 'canary':
       return 'info';
     case 'rejected':
     case 'no_improvement':
+    case 'rolled_back':
       return 'neutral';
     case 'failed':
       return 'danger';
@@ -59,13 +61,71 @@ export function proposalStatusLabel(status: ProposalStatusWire): string {
   switch (status) {
     case 'pr_open':
       return 'PR open';
+    case 'canary':
+      return 'canary rollout';
+    case 'rolled_back':
+      return 'rolled back';
     case 'canary_not_available':
-      return 'canary (Phase 5b)';
+      return 'canary (legacy)';
     case 'no_improvement':
       return 'no improvement';
     default:
       return status.replace(/_/g, ' ');
   }
+}
+
+/* ------------------------------------------------------------ canary */
+
+export function canaryStatusTone(status: CanaryStatusWire): Tone {
+  switch (status) {
+    case 'active':
+      return 'info';
+    case 'promoted':
+      return 'success';
+    case 'rolled_back':
+      return 'warning';
+    case 'unavailable':
+      return 'danger';
+    default:
+      return 'neutral';
+  }
+}
+
+export function canaryStatusLabel(status: CanaryStatusWire): string {
+  switch (status) {
+    case 'pending':
+      return 'publishing';
+    case 'active':
+      return 'active';
+    case 'promoted':
+      return 'promoted';
+    case 'rolled_back':
+      return 'rolled back';
+    case 'unavailable':
+      return 'unavailable';
+  }
+}
+
+/** `1h 20m`, `12m 04s`, `45s` — a stable countdown label for the observation window. */
+export function formatDuration(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m`;
+  if (minutes > 0) return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+  return `${seconds}s`;
+}
+
+export function formatRate(rate: number | null): string {
+  if (rate === null) return '—';
+  return `${(rate * 100).toFixed(1)}%`;
+}
+
+export function formatDelta(delta: number | null): string {
+  if (delta === null) return '—';
+  const sign = delta > 0 ? '+' : '';
+  return `${sign}${(delta * 100).toFixed(1)}pp`;
 }
 
 /** A compact textual diff for the viewer: one line per changed field/file. */

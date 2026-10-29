@@ -139,13 +139,31 @@ export const proposalNotAccepted = (proposalId: string, status: string): ApiErro
     { proposalId, status },
   );
 
-/** Phase 5b: the canary rollout workflow has not shipped; the configuration is validated. */
+/** Phase 5a legacy refusal: kept for old proposals/readers; canary rollout is live in 5b. */
 export const canaryNotAvailable = (details?: unknown): ApiError =>
   new ApiError(
     'canary_not_available',
     409,
-    'canary rollout (publish candidate, deterministic-hash routing, observation window, rollback) is Phase 5b; the candidate is ready but cannot be applied',
-    { phase: '5b', ...(details && typeof details === 'object' ? details : {}) },
+    'the proposal has no composed candidate to roll out',
+    { ...(details && typeof details === 'object' ? details : {}) },
+  );
+
+/** A factory already has an active canary rollout; only one may route work at a time. */
+export const canaryActive = (factory: string, rolloutId: string): ApiError =>
+  new ApiError(
+    'canary_active',
+    409,
+    `factory "${factory}" already has an active canary rollout`,
+    { factory, rolloutId },
+  );
+
+/** Manual promote/rollback found nothing to act on. */
+export const noActiveCanary = (factory: string, statuses: string[]): ApiError =>
+  new ApiError(
+    'no_active_canary',
+    409,
+    `factory "${factory}" has no canary rollout in ${statuses.join(' or ')}`,
+    { factory, statuses },
   );
 
 export const lessonNotFound = (lessonId: string): ApiError =>

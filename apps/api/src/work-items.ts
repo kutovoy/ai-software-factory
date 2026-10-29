@@ -3,10 +3,12 @@ import {
   SpawnNotAllowedError,
   StageGraphError,
   appendWorkItemEvent,
+  assignCanaryVersion,
   compileStageGraph,
   createWorkItem as createWorkItemRow,
   evaluateAutonomyRequest,
   foremanAgentName,
+  getActiveCanaryRollout,
   getAutonomyState,
   getPendingGate,
   getWorkItem,
@@ -25,6 +27,7 @@ import {
   type GateDecisionRequest,
   type LoopStage,
   type WorkItem,
+  type WorkItemVersion,
 } from '@factory/core';
 import {
   getSql,
@@ -122,6 +125,9 @@ export interface WorkItemSummary {
   status: string;
   parentId: string | null;
   definitionCommit: string;
+  /** Canary routing (ADR-021): the version this item runs and the rollout that chose it. */
+  definitionVersion: WorkItemVersion;
+  canaryRolloutId: string | null;
   prUrl: string | null;
   prNumber: number | null;
   loopCount: number;
@@ -141,6 +147,8 @@ function summarize(item: WorkItem): WorkItemSummary {
     status: item.status,
     parentId: item.parentId,
     definitionCommit: item.definitionCommit,
+    definitionVersion: item.definitionVersion,
+    canaryRolloutId: item.canaryRolloutId,
     prUrl: item.prUrl,
     prNumber: item.prNumber,
     loopCount: item.loopCount,
@@ -155,13 +163,10 @@ interface CompiledLoop {
   configs: ReturnType<typeof resolveStageConfigs>;
   stageGraph: StageGraphSummary;
   gates: Record<string, string>;
-  commit: string;
-  dirty: boolean;
 }
 
 /** Compiles the definition's stage graph and resolves per-stage configs (spawnableBy). */
-function compileLoop(config: ApiConfig, factory: string): CompiledLoop {
-  const dir = resolveFactoryDir(config, factory);
+function compileLoopAt(dir: string, factory: string): CompiledLoop {
   const { definition, errors } = loadDefinition(dir);
   if (!definition) {
     // A bad stage graph is reported with its own code (spec: `invalid_stage_graph`).
@@ -216,16 +221,12 @@ function compileLoop(config: ApiConfig, factory: string): CompiledLoop {
   const gates: Record<string, string> = {};
   for (const node of graph.nodes) gates[node.name] = configs[node.name].gate;
 
-  const { commit, dirty } = pinVersion(dir, factory);
-
   return {
     definition,
     graph,
     configs,
     stageGraph: { order: [...graph.order], fanOut: { ...graph.fanOut }, nodes },
     gates,
-    commit,
-    dirty,
   };
 }
 
@@ -239,8 +240,41 @@ export async function createWorkItemForApi(
   body: CreateWorkItemBody,
 ): Promise<CreatedWorkItem> {
   const factory = body.factory;
-  const dir = resolveFactoryDir(config, factory);
-  const compiled = compileLoop(config, factory);
+  const sql = getSql();
+  const workItemId = newWorkItemId();
+
+  // Canary routing (ADR-021): assign once, at creation, by a deterministic hash of the
+  // item id. A candidate item runs the materialised candidate tree and pins its commit, so
+  // every stage of the item stays on one version.
+  const activeCanary = await getActiveCanaryRollout(sql, factory);
+  let canary: { rolloutId: string; root: string; commit: string } | null = null;
+  if (
+    activeCanary &&
+    assignCanaryVersion(workItemId, activeCanary.canaryPercent) === 'candidate'
+  ) {
+    if (activeCanary.candidateRoot && activeCanary.candidateCommit) {
+      canary = {
+        rolloutId: activeCanary.id,
+        root: activeCanary.candidateRoot,
+        commit: activeCanary.candidateCommit,
+      };
+    } else {
+      // A broken rollout must not block new work: fall back to stable and say so.
+      log('error', 'canary_candidate_unavailable', {
+        factory,
+        rolloutId: activeCanary.id,
+        workItemId,
+        reason: 'the active rollout has no published candidate tree',
+      });
+    }
+  }
+
+  const dir = canary?.root ?? resolveFactoryDir(config, factory);
+  const compiled = compileLoopAt(dir, factory);
+  const { commit, dirty } = canary
+    ? { commit: canary.commit, dirty: false }
+    : pinVersion(dir, factory);
+  const definitionVersion: WorkItemVersion = canary ? 'candidate' : 'stable';
   const manifest = compiled.definition.manifest;
   const orchestration = toOrchestrationConfig(config);
 
@@ -250,13 +284,11 @@ export async function createWorkItemForApi(
     ...(body.runner ? { runner: body.runner } : {}),
   });
 
-  const sql = getSql();
   const state = await getAutonomyState(sql, factory);
   const gate = await benchmarkGateStatus(config, factory);
   const benchmarkGateSatisfied =
     gate.satisfied || Boolean(state?.overrideActor && state?.overrideReason);
 
-  const workItemId = newWorkItemId();
   const workflowId = workItemWorkflowId(workItemId);
   const firstStage = compiled.graph.order[0] as LoopStageName;
   const sourceRef = body.sourceRef ?? {};
@@ -267,7 +299,8 @@ export async function createWorkItemForApi(
       '',
       `Source: ${body.source ?? 'manual'}`,
       `Factory: ${factory}`,
-      `Definition commit: ${compiled.commit}`,
+      `Definition commit: ${commit}`,
+      `Definition version: ${definitionVersion}`,
       ...(Object.keys(sourceRef).length > 0 ? [`Context: ${JSON.stringify(sourceRef)}`] : []),
     ].join('\n');
 
@@ -275,8 +308,8 @@ export async function createWorkItemForApi(
     workItemId,
     factory,
     factoryRoot: dir,
-    definitionCommit: compiled.commit,
-    definitionDirty: compiled.dirty,
+    definitionCommit: commit,
+    definitionDirty: dirty,
     title: body.title,
     prompt,
     sourceRef,
@@ -311,13 +344,17 @@ export async function createWorkItemForApi(
     title: body.title,
     stage: firstStage as LoopStage,
     parentId: body.parentId ?? null,
-    definitionCommit: compiled.commit,
-    definitionDirty: compiled.dirty,
+    definitionCommit: commit,
+    definitionDirty: dirty,
+    canaryRolloutId: canary?.rolloutId ?? null,
+    definitionVersion,
     workflowId,
     input: {
       stageGraph: compiled.stageGraph.order,
       gates: compiled.gates,
       mergePolicy: manifest.mergePolicy,
+      definitionVersion,
+      canaryRolloutId: canary?.rolloutId ?? null,
     },
   });
 
@@ -353,7 +390,9 @@ export async function createWorkItemForApi(
     workItemId,
     factory,
     stage: firstStage,
-    definitionCommit: compiled.commit,
+    definitionCommit: commit,
+    definitionVersion,
+    canaryRolloutId: canary?.rolloutId ?? null,
     workflowId,
   });
 

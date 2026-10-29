@@ -226,6 +226,9 @@ export interface WorkItemSummary {
   status: string;
   parentId: string | null;
   definitionCommit: string;
+  /** Canary routing (ADR-021). */
+  definitionVersion?: 'stable' | 'candidate';
+  canaryRolloutId?: string | null;
   prUrl: string | null;
   prNumber: number | null;
   loopCount: number;
@@ -724,7 +727,7 @@ export interface ImprovementResolvedWire {
   observationWindowHours: number;
   maxProbes: number;
   source: 'declared' | 'default';
-  canaryAvailable: false;
+  canaryAvailable: boolean;
 }
 
 export interface ImprovementEligibilityWire {
@@ -790,6 +793,8 @@ export type ProposalStatusWire =
   | 'no_improvement'
   | 'pr_open'
   | 'merged'
+  | 'canary'
+  | 'rolled_back'
   | 'canary_not_available'
   | 'failed';
 
@@ -845,12 +850,111 @@ export interface ImprovementOverviewWire {
   proposals: ProposalWire[];
   lessonCount: number;
   canary: {
-    available: false;
-    phase: '5b';
+    available: boolean;
     configuredPercent: number | null;
     rollbackThreshold: number | null;
     observationWindowHours: number;
+    active: {
+      rolloutId: string;
+      status: CanaryStatusWire;
+      candidateVersion: string;
+      stableVersion: string;
+      canaryPercent: number;
+      startedAt: string | null;
+      endsAt: string | null;
+    } | null;
   };
+}
+
+/* ------------------------------------------------------ canary (Phase 5b) */
+
+export type CanaryStatusWire = 'pending' | 'active' | 'promoted' | 'rolled_back' | 'unavailable';
+
+export interface CanaryRolloutWire {
+  id: string;
+  factory: string;
+  proposalId: string;
+  candidateVersion: string;
+  stableVersion: string;
+  candidateCommit: string | null;
+  stableCommit: string | null;
+  candidateRoot: string | null;
+  canaryPercent: number;
+  rollbackThreshold: number;
+  observationWindowHours: number;
+  status: CanaryStatusWire;
+  reason: string | null;
+  prUrl: string | null;
+  prNumber: number | null;
+  actor: string | null;
+  evidence: Record<string, unknown>;
+  startedAt: string | null;
+  endedAt: string | null;
+}
+
+export interface CanaryStatsWire {
+  workItems: number;
+  scores: number;
+  passing: number;
+  errors: number;
+  passRate: number | null;
+  meanScore: number | null;
+  runs: number;
+  failedRuns: number;
+  failureRate: number | null;
+}
+
+export interface CanaryMetricsWire {
+  rolloutId: string;
+  status: string;
+  reason: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  canaryPercent: number;
+  rollbackThreshold: number;
+  observationWindowHours: number;
+  stable: CanaryStatsWire;
+  candidate: CanaryStatsWire;
+  threshold: number;
+  passRateDelta: number | null;
+  failureRateDelta: number | null;
+  regressionExceeded: boolean;
+  regressionReason: string | null;
+  detail: string;
+  insufficientData: boolean;
+  evidence: Record<string, unknown>;
+}
+
+export interface CanaryRolloutViewWire {
+  rollout: CanaryRolloutWire;
+  window: {
+    startedAt: string | null;
+    endsAt: string | null;
+    elapsedMs: number;
+    remainingMs: number;
+    complete: boolean;
+    observationWindowHours: number;
+  };
+  split: {
+    canaryPercent: number;
+    stablePercent: number;
+    candidateItems: number;
+    stableItems: number;
+    totalItems: number;
+  };
+  metrics: CanaryMetricsWire | null;
+  events: { type: string; payload: Record<string, unknown>; createdAt: string | null }[];
+}
+
+export interface CanaryOverviewWire {
+  factory: string;
+  definitionCommit: string;
+  authority: ImprovementAuthorityWire;
+  resolved: ImprovementResolvedWire;
+  available: boolean;
+  active: CanaryRolloutViewWire | null;
+  history: CanaryRolloutViewWire[];
+  proposals: ProposalWire[];
 }
 
 export interface ProposalDetailWire {
