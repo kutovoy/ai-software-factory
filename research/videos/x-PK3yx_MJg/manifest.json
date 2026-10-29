@@ -1,0 +1,30 @@
+{
+  "source_url": "https://www.youtube.com/watch?v=x-PK3yx_MJg",
+  "video_id": "x-PK3yx_MJg",
+  "title": "What it takes to build a software factory",
+  "channel": "Warp",
+  "duration_s": 1551.0,
+  "duration_hms": "0:25:51",
+  "resolution": "3840x2160",
+  "fps": 24,
+  "caption_source": "manual",
+  "caption_lang": "en",
+  "transcript_segments": 172,
+  "video_file": "/Users/kutovoy/AI_tools/SoftwareFactory/research/videos/x-PK3yx_MJg/video.mp4",
+  "frame_count": 131,
+  "asr_model": null,
+  "updated_at": "2026-10-28T19:30:55",
+  "tool_versions": {
+    "yt-dlp": "2026.08.19",
+    "ffmpeg": "9.0.1",
+    "python": "3.9.6"
+  },
+  "scene_threshold": 0.3,
+  "video_file_probe": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 23.976,
+    "duration_s": 1551.07
+  },
+  "video_bytes": 72652741
+}

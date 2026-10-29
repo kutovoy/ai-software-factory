@@ -1,0 +1,921 @@
+{
+  "frames": [
+    {
+      "file": "frame_0850.png",
+      "timestamp": 530.0,
+      "mmss": "08:50",
+      "kind": "at",
+      "md5": "207c3fb66bdaf769736fbcc68c4653be"
+    },
+    {
+      "file": "frame_0856.png",
+      "timestamp": 536.0,
+      "mmss": "08:56",
+      "kind": "at",
+      "md5": "95d060397f6ba8f661b03a0769a1597f"
+    },
+    {
+      "file": "frame_0900.png",
+      "timestamp": 540.0,
+      "mmss": "09:00",
+      "kind": "range",
+      "md5": "84ad46aa2b51fd016af5fe3bfb653892"
+    },
+    {
+      "file": "frame_0902.png",
+      "timestamp": 542.0,
+      "mmss": "09:02",
+      "kind": "range",
+      "md5": "0e028478b4be7c4fbbead9c33a909cdf"
+    },
+    {
+      "file": "frame_0904.png",
+      "timestamp": 544.0,
+      "mmss": "09:04",
+      "kind": "range",
+      "md5": "687b3b4f69858202f96fc623fa29a8b9"
+    },
+    {
+      "file": "frame_0906.png",
+      "timestamp": 546.0,
+      "mmss": "09:06",
+      "kind": "range",
+      "md5": "54985cf4a67fae065a463e57b6f8d4ff"
+    },
+    {
+      "file": "frame_0908.png",
+      "timestamp": 548.0,
+      "mmss": "09:08",
+      "kind": "range",
+      "md5": "d7e700c1fc1fe659c5218d5c432f5c0e"
+    },
+    {
+      "file": "frame_0910.png",
+      "timestamp": 550.0,
+      "mmss": "09:10",
+      "kind": "range",
+      "md5": "b5ce9a0d5a3acd2c89527ce19ce5ccc5"
+    },
+    {
+      "file": "frame_0911.png",
+      "timestamp": 551.0,
+      "mmss": "09:11",
+      "kind": "at",
+      "md5": "7940d3d3394a9aa11e889402e765d7ee"
+    },
+    {
+      "file": "frame_0912.png",
+      "timestamp": 552.0,
+      "mmss": "09:12",
+      "kind": "range",
+      "md5": "7c189c8e5202502bcba72081dfff4524"
+    },
+    {
+      "file": "frame_0914.png",
+      "timestamp": 554.0,
+      "mmss": "09:14",
+      "kind": "range",
+      "md5": "51dac89c6e79b7da16d0fd15175ae127"
+    },
+    {
+      "file": "frame_0916.png",
+      "timestamp": 556.0,
+      "mmss": "09:16",
+      "kind": "range",
+      "md5": "26e9988fea3a270f134469f403123344"
+    },
+    {
+      "file": "frame_0918.png",
+      "timestamp": 558.0,
+      "mmss": "09:18",
+      "kind": "range",
+      "md5": "0b5807a50c8c5a643efab698aecf39f5"
+    },
+    {
+      "file": "frame_0920.png",
+      "timestamp": 560.0,
+      "mmss": "09:20",
+      "kind": "range",
+      "md5": "26c870de8dfac7b54eaf0e9bd94ddf97"
+    },
+    {
+      "file": "frame_0922.png",
+      "timestamp": 562.0,
+      "mmss": "09:22",
+      "kind": "range",
+      "md5": "413def09238f856a45ba364c33b2b5a4"
+    },
+    {
+      "file": "frame_0924.png",
+      "timestamp": 564.0,
+      "mmss": "09:24",
+      "kind": "range",
+      "md5": "0765361879450486dd777ddf76692d98"
+    },
+    {
+      "file": "frame_0926.png",
+      "timestamp": 566.0,
+      "mmss": "09:26",
+      "kind": "range",
+      "md5": "d8049a1767bfb3e79aeabeef620edf53"
+    },
+    {
+      "file": "frame_0928.png",
+      "timestamp": 568.0,
+      "mmss": "09:28",
+      "kind": "range",
+      "md5": "67686d442398f062960101aa3fd1c461"
+    },
+    {
+      "file": "frame_0930.png",
+      "timestamp": 570.0,
+      "mmss": "09:30",
+      "kind": "range",
+      "md5": "6e25561465d1541224e0f84d74488b7b"
+    },
+    {
+      "file": "frame_0932.png",
+      "timestamp": 572.238,
+      "mmss": "09:32",
+      "kind": "scene",
+      "md5": "b3d084e3ed9f210cbcabb77858fbb367"
+    },
+    {
+      "file": "frame_0934.png",
+      "timestamp": 574.0,
+      "mmss": "09:34",
+      "kind": "range",
+      "md5": "f10966a1128aefc8023e751c815395ae"
+    },
+    {
+      "file": "frame_0936.png",
+      "timestamp": 576.0,
+      "mmss": "09:36",
+      "kind": "range",
+      "md5": "391d5b045f832756cc5ac1723b6c4a41"
+    },
+    {
+      "file": "frame_0938.png",
+      "timestamp": 578.0,
+      "mmss": "09:38",
+      "kind": "range",
+      "md5": "b4256a2a7c2955d6947c994bcf1a4c26"
+    },
+    {
+      "file": "frame_0940.png",
+      "timestamp": 580.0,
+      "mmss": "09:40",
+      "kind": "range",
+      "md5": "532f11983bc5557e7932d558dae90252"
+    },
+    {
+      "file": "frame_0942.png",
+      "timestamp": 582.0,
+      "mmss": "09:42",
+      "kind": "range",
+      "md5": "c74286ba444d6f57d19d78dcb2a62508"
+    },
+    {
+      "file": "frame_0944.png",
+      "timestamp": 584.0,
+      "mmss": "09:44",
+      "kind": "range",
+      "md5": "d6032e26dee9ca4a8948e926fb80377e"
+    },
+    {
+      "file": "frame_0946.png",
+      "timestamp": 586.0,
+      "mmss": "09:46",
+      "kind": "range",
+      "md5": "736cb750bd53c754375a86ae19354e6a"
+    },
+    {
+      "file": "frame_0948.png",
+      "timestamp": 588.0,
+      "mmss": "09:48",
+      "kind": "range",
+      "md5": "fb5bac94dbd3b1ca043e5734ff4c7cd8"
+    },
+    {
+      "file": "frame_0950.png",
+      "timestamp": 590.0,
+      "mmss": "09:50",
+      "kind": "range",
+      "md5": "a4e390fe2a64309a902fbf0d99c05fba"
+    },
+    {
+      "file": "frame_0952.png",
+      "timestamp": 592.0,
+      "mmss": "09:52",
+      "kind": "range",
+      "md5": "fdd1bdd3695a752a152ed5c21b395cb0"
+    },
+    {
+      "file": "frame_0954.png",
+      "timestamp": 594.0,
+      "mmss": "09:54",
+      "kind": "range",
+      "md5": "b9ee6319efaabc5a85831a1e7dfc2778"
+    },
+    {
+      "file": "frame_0956.png",
+      "timestamp": 596.0,
+      "mmss": "09:56",
+      "kind": "range",
+      "md5": "96b9480a2ed4826e2b7e26a4f60ed934"
+    },
+    {
+      "file": "frame_0958.png",
+      "timestamp": 598.0,
+      "mmss": "09:58",
+      "kind": "range",
+      "md5": "96c04233cb800d0601ddfd08fa9ec381"
+    },
+    {
+      "file": "frame_1000.png",
+      "timestamp": 600.0,
+      "mmss": "10:00",
+      "kind": "range",
+      "md5": "51b64babc9619c9d41dff219bc2ba8ae"
+    },
+    {
+      "file": "frame_1002.png",
+      "timestamp": 602.0,
+      "mmss": "10:02",
+      "kind": "range",
+      "md5": "cb78c62ded8e8c56e145187e9d4e04e9"
+    },
+    {
+      "file": "frame_1004.png",
+      "timestamp": 604.0,
+      "mmss": "10:04",
+      "kind": "range",
+      "md5": "717d2121a92c8a576aa2cde9f1296c0b"
+    },
+    {
+      "file": "frame_1006.png",
+      "timestamp": 606.0,
+      "mmss": "10:06",
+      "kind": "range",
+      "md5": "2384a1e445457801600ef47ddd1ffa5e"
+    },
+    {
+      "file": "frame_1008.png",
+      "timestamp": 608.0,
+      "mmss": "10:08",
+      "kind": "range",
+      "md5": "fbb03b1ef9cc06fca0002c1db80f5de2"
+    },
+    {
+      "file": "frame_1010.png",
+      "timestamp": 610.0,
+      "mmss": "10:10",
+      "kind": "range",
+      "md5": "d3a6adbd15a6b8a9de71771eaef87221"
+    },
+    {
+      "file": "frame_1012.png",
+      "timestamp": 612.0,
+      "mmss": "10:12",
+      "kind": "range",
+      "md5": "fad49540037aa0268e258445164c3954"
+    },
+    {
+      "file": "frame_1014.png",
+      "timestamp": 614.0,
+      "mmss": "10:14",
+      "kind": "range",
+      "md5": "76ace1a2d5a54b3d8f6f24152d658f90"
+    },
+    {
+      "file": "frame_1016.png",
+      "timestamp": 616.0,
+      "mmss": "10:16",
+      "kind": "range",
+      "md5": "f0bc6e5358163974e2f5e3ba55d56bc6"
+    },
+    {
+      "file": "frame_1018.png",
+      "timestamp": 618.0,
+      "mmss": "10:18",
+      "kind": "range",
+      "md5": "e7dc02140f1b89dd33aadae38947f05d"
+    },
+    {
+      "file": "frame_1020.png",
+      "timestamp": 620.0,
+      "mmss": "10:20",
+      "kind": "range",
+      "md5": "8b1ad94e3695e915bacb07ede91ca59e"
+    },
+    {
+      "file": "frame_1022.png",
+      "timestamp": 622.0,
+      "mmss": "10:22",
+      "kind": "range",
+      "md5": "b66adbed3e215ef508679fba2923c872"
+    },
+    {
+      "file": "frame_1024.png",
+      "timestamp": 624.0,
+      "mmss": "10:24",
+      "kind": "range",
+      "md5": "54b44f4a7e7d4bcaf301b093bfcc2847"
+    },
+    {
+      "file": "frame_1026.png",
+      "timestamp": 626.0,
+      "mmss": "10:26",
+      "kind": "range",
+      "md5": "f54a6e056ccf5ba3a1e17fcb21b0b187"
+    },
+    {
+      "file": "frame_1028.png",
+      "timestamp": 628.0,
+      "mmss": "10:28",
+      "kind": "range",
+      "md5": "4ecd1767a3c32b322e5e6c1ee9e02688"
+    },
+    {
+      "file": "frame_1030.png",
+      "timestamp": 630.0,
+      "mmss": "10:30",
+      "kind": "range",
+      "md5": "e1a99cff8164e26890c6a78e7f603b1c"
+    },
+    {
+      "file": "frame_1032.png",
+      "timestamp": 632.0,
+      "mmss": "10:32",
+      "kind": "range",
+      "md5": "cd7356d598fcb6def6ff0951ad29c0ff"
+    },
+    {
+      "file": "frame_1034.png",
+      "timestamp": 634.0,
+      "mmss": "10:34",
+      "kind": "range",
+      "md5": "fba5914b375179d0523ec561ce5be793"
+    },
+    {
+      "file": "frame_1036.png",
+      "timestamp": 636.0,
+      "mmss": "10:36",
+      "kind": "range",
+      "md5": "858d8fd49b562a3f7f7beea8a2017958"
+    },
+    {
+      "file": "frame_1038.png",
+      "timestamp": 638.0,
+      "mmss": "10:38",
+      "kind": "range",
+      "md5": "2bc02dd383950df7d0e490b68c409bd6"
+    },
+    {
+      "file": "frame_1040.png",
+      "timestamp": 640.0,
+      "mmss": "10:40",
+      "kind": "range",
+      "md5": "bcef9c346e38653e383cbd057c71c154"
+    },
+    {
+      "file": "frame_1042.png",
+      "timestamp": 642.0,
+      "mmss": "10:42",
+      "kind": "range",
+      "md5": "dbf3116cdf05cb270f3727ae724b3d73"
+    },
+    {
+      "file": "frame_1044.png",
+      "timestamp": 644.0,
+      "mmss": "10:44",
+      "kind": "range",
+      "md5": "77fdd3e4d7a2d94ed5a189ea49acc9a3"
+    },
+    {
+      "file": "frame_1046.png",
+      "timestamp": 646.0,
+      "mmss": "10:46",
+      "kind": "range",
+      "md5": "52ce888482fdf62256037e79049fd6a4"
+    },
+    {
+      "file": "frame_1048.png",
+      "timestamp": 648.0,
+      "mmss": "10:48",
+      "kind": "range",
+      "md5": "00ed8f959db449178866604cd536171d"
+    },
+    {
+      "file": "frame_1050.png",
+      "timestamp": 650.0,
+      "mmss": "10:50",
+      "kind": "range",
+      "md5": "9153c81cc22994ea4eb509627b5cd80d"
+    },
+    {
+      "file": "frame_1052.png",
+      "timestamp": 652.0,
+      "mmss": "10:52",
+      "kind": "range",
+      "md5": "b37a4a57d838d2bf1bd6436606b52a83"
+    },
+    {
+      "file": "frame_1054.png",
+      "timestamp": 654.0,
+      "mmss": "10:54",
+      "kind": "range",
+      "md5": "d1a20450bb1bd828974a62e2de0dfdd5"
+    },
+    {
+      "file": "frame_1056.png",
+      "timestamp": 656.0,
+      "mmss": "10:56",
+      "kind": "range",
+      "md5": "b5b720c790b2290b8f2e535c6ebc4963"
+    },
+    {
+      "file": "frame_1058.png",
+      "timestamp": 658.0,
+      "mmss": "10:58",
+      "kind": "range",
+      "md5": "a49d12fe7c1b76dd714027c85b4f33fa"
+    },
+    {
+      "file": "frame_1100.png",
+      "timestamp": 660.0,
+      "mmss": "11:00",
+      "kind": "range",
+      "md5": "c234192cfb86681f69729f4617c97e07"
+    },
+    {
+      "file": "frame_1102.png",
+      "timestamp": 662.0,
+      "mmss": "11:02",
+      "kind": "range",
+      "md5": "7b7558a13b701ee4ffec61552e842c75"
+    },
+    {
+      "file": "frame_1104.png",
+      "timestamp": 664.0,
+      "mmss": "11:04",
+      "kind": "range",
+      "md5": "65f7bd442c9e667a635997997aa4adca"
+    },
+    {
+      "file": "frame_1106.png",
+      "timestamp": 666.0,
+      "mmss": "11:06",
+      "kind": "range",
+      "md5": "f2dc49078afb16607c5803de551306e3"
+    },
+    {
+      "file": "frame_1108.png",
+      "timestamp": 668.0,
+      "mmss": "11:08",
+      "kind": "range",
+      "md5": "dd8212cacefc363229664f0527ec5b38"
+    },
+    {
+      "file": "frame_1110.png",
+      "timestamp": 670.0,
+      "mmss": "11:10",
+      "kind": "range",
+      "md5": "c4ce1e103ead9aae752177824cd5e7ae"
+    },
+    {
+      "file": "frame_1112.png",
+      "timestamp": 672.0,
+      "mmss": "11:12",
+      "kind": "range",
+      "md5": "5825b67e011cedec3a9d478ba9112f5f"
+    },
+    {
+      "file": "frame_1114.png",
+      "timestamp": 674.0,
+      "mmss": "11:14",
+      "kind": "range",
+      "md5": "d059a470f53861e79eb2275c3153985e"
+    },
+    {
+      "file": "frame_1116.png",
+      "timestamp": 676.0,
+      "mmss": "11:16",
+      "kind": "range",
+      "md5": "b6b065b1f97fb0a1eca57088de42614e"
+    },
+    {
+      "file": "frame_1118.png",
+      "timestamp": 678.0,
+      "mmss": "11:18",
+      "kind": "range",
+      "md5": "64504c1861f9e25997baded7c91cd1a4"
+    },
+    {
+      "file": "frame_1120.png",
+      "timestamp": 680.0,
+      "mmss": "11:20",
+      "kind": "range",
+      "md5": "2f731a1602ac08cbb4e8d69d0f7d714f"
+    },
+    {
+      "file": "frame_1122.png",
+      "timestamp": 682.0,
+      "mmss": "11:22",
+      "kind": "range",
+      "md5": "18413ffa36711473a089d77fc5b8fd1e"
+    },
+    {
+      "file": "frame_1124.png",
+      "timestamp": 684.0,
+      "mmss": "11:24",
+      "kind": "range",
+      "md5": "95adc134c32f975679ae044b8df9f014"
+    },
+    {
+      "file": "frame_1126.png",
+      "timestamp": 686.0,
+      "mmss": "11:26",
+      "kind": "range",
+      "md5": "3472152228eeefcacddb73d901bda82d"
+    },
+    {
+      "file": "frame_1128.png",
+      "timestamp": 688.0,
+      "mmss": "11:28",
+      "kind": "range",
+      "md5": "db2168aea2a06234ad96e728a070d3e4"
+    },
+    {
+      "file": "frame_1130.png",
+      "timestamp": 690.0,
+      "mmss": "11:30",
+      "kind": "range",
+      "md5": "9544af4c322b02dc3f59916e91d05780"
+    },
+    {
+      "file": "frame_1132.png",
+      "timestamp": 692.0,
+      "mmss": "11:32",
+      "kind": "range",
+      "md5": "c9bfba84be4d6886bbc772beb89fb8dd"
+    },
+    {
+      "file": "frame_1134.png",
+      "timestamp": 694.0,
+      "mmss": "11:34",
+      "kind": "range",
+      "md5": "80cb8cb2a3e22056230e3e49f1782bd7"
+    },
+    {
+      "file": "frame_1136.png",
+      "timestamp": 696.0,
+      "mmss": "11:36",
+      "kind": "range",
+      "md5": "f7a727ca2949dc875ec27a5a811282c3"
+    },
+    {
+      "file": "frame_1138.png",
+      "timestamp": 698.0,
+      "mmss": "11:38",
+      "kind": "range",
+      "md5": "f29752746450ece48418f6de81220e0c"
+    },
+    {
+      "file": "frame_1140.png",
+      "timestamp": 700.0,
+      "mmss": "11:40",
+      "kind": "range",
+      "md5": "e7a11369df9a820192b4e454e91de3f6"
+    },
+    {
+      "file": "frame_1142.png",
+      "timestamp": 702.0,
+      "mmss": "11:42",
+      "kind": "range",
+      "md5": "dd2582e05a13a1900c8f324076be9292"
+    },
+    {
+      "file": "frame_1144.png",
+      "timestamp": 704.0,
+      "mmss": "11:44",
+      "kind": "range",
+      "md5": "7804b8b78692a6a89e252587dd060750"
+    },
+    {
+      "file": "frame_1146.png",
+      "timestamp": 706.0,
+      "mmss": "11:46",
+      "kind": "range",
+      "md5": "98c095ca641fdc7132813322502ccc7d"
+    },
+    {
+      "file": "frame_1148.png",
+      "timestamp": 708.0,
+      "mmss": "11:48",
+      "kind": "range",
+      "md5": "c499cd39e4b786f0e7ee35927cf45bcb"
+    },
+    {
+      "file": "frame_1150.png",
+      "timestamp": 710.0,
+      "mmss": "11:50",
+      "kind": "range",
+      "md5": "554608514ec938033cae2ad33a435bf9"
+    },
+    {
+      "file": "frame_1152.png",
+      "timestamp": 712.0,
+      "mmss": "11:52",
+      "kind": "range",
+      "md5": "057d49fb82647879b1ad7ef1e1422804"
+    },
+    {
+      "file": "frame_1153.png",
+      "timestamp": 712.879,
+      "mmss": "11:53",
+      "kind": "scene",
+      "md5": "30354988119c4ed10224745d6c4b0820"
+    },
+    {
+      "file": "frame_1154.png",
+      "timestamp": 714.0,
+      "mmss": "11:54",
+      "kind": "range",
+      "md5": "5eba443c0371806d2c82684e0bd2028b"
+    },
+    {
+      "file": "frame_1156.png",
+      "timestamp": 716.0,
+      "mmss": "11:56",
+      "kind": "range",
+      "md5": "eaa2603090b2a20b30676a0bd3823475"
+    },
+    {
+      "file": "frame_1158.png",
+      "timestamp": 718.0,
+      "mmss": "11:58",
+      "kind": "range",
+      "md5": "c30056b7031cf9f6eb58f227f8e501e9"
+    },
+    {
+      "file": "frame_1159.png",
+      "timestamp": 719.093,
+      "mmss": "11:59",
+      "kind": "scene",
+      "md5": "41959c1b3ca9c0bc9c4ea0411909f92b"
+    },
+    {
+      "file": "frame_1200.png",
+      "timestamp": 720.0,
+      "mmss": "12:00",
+      "kind": "range",
+      "md5": "f336acb1897b15add33439ef0cf80b94"
+    },
+    {
+      "file": "frame_1201.png",
+      "timestamp": 720.803,
+      "mmss": "12:01",
+      "kind": "scene",
+      "md5": "d6995accf10a0bd5977853878a5e5aac"
+    },
+    {
+      "file": "frame_1202.png",
+      "timestamp": 722.0,
+      "mmss": "12:02",
+      "kind": "range",
+      "md5": "ebc8c1d220bee367eeb4482f20a3d6fb"
+    },
+    {
+      "file": "frame_1204.png",
+      "timestamp": 724.0,
+      "mmss": "12:04",
+      "kind": "range",
+      "md5": "857b6bd58f69b1f4bea503b1c12e0168"
+    },
+    {
+      "file": "frame_1206.png",
+      "timestamp": 726.0,
+      "mmss": "12:06",
+      "kind": "range",
+      "md5": "9c376d94eab52d6feab7915950276e5d"
+    },
+    {
+      "file": "frame_1208.png",
+      "timestamp": 728.0,
+      "mmss": "12:08",
+      "kind": "range",
+      "md5": "afb941a1b8016c8ee794a5a0e20a9211"
+    },
+    {
+      "file": "frame_1210.png",
+      "timestamp": 730.0,
+      "mmss": "12:10",
+      "kind": "range",
+      "md5": "9a66f139b40cad2daf48e52bc1730e5c"
+    },
+    {
+      "file": "frame_1212.png",
+      "timestamp": 732.0,
+      "mmss": "12:12",
+      "kind": "range",
+      "md5": "a9dbe6faa9611534d7faa0637c2bee45"
+    },
+    {
+      "file": "frame_1214.png",
+      "timestamp": 734.0,
+      "mmss": "12:14",
+      "kind": "range",
+      "md5": "6657ae230b56dcc06bc35fea145ee2cc"
+    },
+    {
+      "file": "frame_1216.png",
+      "timestamp": 736.0,
+      "mmss": "12:16",
+      "kind": "range",
+      "md5": "8a0e41f931daa00eb909ce9e267f8ce2"
+    },
+    {
+      "file": "frame_1218.png",
+      "timestamp": 738.0,
+      "mmss": "12:18",
+      "kind": "range",
+      "md5": "42d591c5970774681c5534d5acd9984c"
+    },
+    {
+      "file": "frame_1220.png",
+      "timestamp": 740.0,
+      "mmss": "12:20",
+      "kind": "range",
+      "md5": "2575f47cab52f038da8a59df3e436cae"
+    },
+    {
+      "file": "frame_1222.png",
+      "timestamp": 742.0,
+      "mmss": "12:22",
+      "kind": "range",
+      "md5": "aca63117ffbd62375953e7b61a9f8b93"
+    },
+    {
+      "file": "frame_1224.png",
+      "timestamp": 744.0,
+      "mmss": "12:24",
+      "kind": "range",
+      "md5": "6d6a6cdc49b41c5b07ae580be3db6f85"
+    },
+    {
+      "file": "frame_1226.png",
+      "timestamp": 746.0,
+      "mmss": "12:26",
+      "kind": "range",
+      "md5": "6ef55f0a02b51511f0320302fc599886"
+    },
+    {
+      "file": "frame_1228.png",
+      "timestamp": 748.0,
+      "mmss": "12:28",
+      "kind": "range",
+      "md5": "7ce77815ebc89607cfa8d4a4e31d9913"
+    },
+    {
+      "file": "frame_1301.png",
+      "timestamp": 781.197,
+      "mmss": "13:01",
+      "kind": "scene",
+      "md5": "b2bda2e3635772006be9351ac1c22a6c"
+    },
+    {
+      "file": "frame_1310.png",
+      "timestamp": 790.0,
+      "mmss": "13:10",
+      "kind": "at",
+      "md5": "24bc62e4324ea671b5f17a84387ee8b5"
+    },
+    {
+      "file": "frame_1325.png",
+      "timestamp": 805.0,
+      "mmss": "13:25",
+      "kind": "at",
+      "md5": "8da5b451becac668c5649f143d67f13d"
+    },
+    {
+      "file": "frame_1410.png",
+      "timestamp": 850.0,
+      "mmss": "14:10",
+      "kind": "at",
+      "md5": "609f4214dd14e8751fad4c87737cd172"
+    },
+    {
+      "file": "frame_1425.png",
+      "timestamp": 865.0,
+      "mmss": "14:25",
+      "kind": "at",
+      "md5": "57ccd5c4b6cd5dc1f9b157480891dfcc"
+    },
+    {
+      "file": "frame_1445.png",
+      "timestamp": 885.0,
+      "mmss": "14:45",
+      "kind": "at",
+      "md5": "c1eba83b03cb97444fbd79ad4477e2df"
+    },
+    {
+      "file": "frame_1510.png",
+      "timestamp": 910.0,
+      "mmss": "15:10",
+      "kind": "at",
+      "md5": "f904098f1e61633005e3ffb5c437ab51"
+    },
+    {
+      "file": "frame_1530.png",
+      "timestamp": 930.0,
+      "mmss": "15:30",
+      "kind": "at",
+      "md5": "3707239b18277bdc8af35b69d2f609ef"
+    },
+    {
+      "file": "frame_1550.png",
+      "timestamp": 950.0,
+      "mmss": "15:50",
+      "kind": "at",
+      "md5": "8c17565d5ae774d95a9cf908703c7c54"
+    },
+    {
+      "file": "frame_1605.png",
+      "timestamp": 965.0,
+      "mmss": "16:05",
+      "kind": "at",
+      "md5": "fd967a119f77af3639a0a65ce4754924"
+    },
+    {
+      "file": "frame_1612.png",
+      "timestamp": 971.929,
+      "mmss": "16:12",
+      "kind": "scene",
+      "md5": "271c6b732c07e04c3e647d0a084382ea"
+    },
+    {
+      "file": "frame_1614.png",
+      "timestamp": 974.098,
+      "mmss": "16:14",
+      "kind": "scene",
+      "md5": "7606d0ea16281723b51aee2f69e01107"
+    },
+    {
+      "file": "frame_1735.png",
+      "timestamp": 1055.0,
+      "mmss": "17:35",
+      "kind": "at",
+      "md5": "12d51999032f76205a5dd4fe73872797"
+    },
+    {
+      "file": "frame_1815.png",
+      "timestamp": 1095.0,
+      "mmss": "18:15",
+      "kind": "at",
+      "md5": "708c666788a901679b078c1004c17a90"
+    },
+    {
+      "file": "frame_1855.png",
+      "timestamp": 1135.0,
+      "mmss": "18:55",
+      "kind": "at",
+      "md5": "62d8703625f63461cf6301474bfec338"
+    },
+    {
+      "file": "frame_1935.png",
+      "timestamp": 1175.0,
+      "mmss": "19:35",
+      "kind": "at",
+      "md5": "b6ed238678c8ee852e02cba2fb33956e"
+    },
+    {
+      "file": "frame_2005.png",
+      "timestamp": 1205.0,
+      "mmss": "20:05",
+      "kind": "at",
+      "md5": "f19a98d6b88fa557578ae2dcf91d70e3"
+    },
+    {
+      "file": "frame_2439.png",
+      "timestamp": 1479.019,
+      "mmss": "24:39",
+      "kind": "scene",
+      "md5": "0fadfd3e244851ee8dd1f02620de54ef"
+    },
+    {
+      "file": "frame_2515.png",
+      "timestamp": 1514.596,
+      "mmss": "25:15",
+      "kind": "scene",
+      "md5": "7d730847f768a7b413cd72c40a31950c"
+    },
+    {
+      "file": "frame_2516.png",
+      "timestamp": 1516.306,
+      "mmss": "25:16",
+      "kind": "scene",
+      "md5": "d8ff3e11516efee10583a380c0959265"
+    }
+  ]
+}

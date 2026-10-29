@@ -1,0 +1,1513 @@
+{
+  "wireMagic": "pb3",
+  "pens": [ {
+  
+  } ],
+  "wsWinStyles": [ {
+  
+  } ],
+  "wpWinPositions": [ {
+  
+  } ],
+  "events": [ {
+    "tStartMs": 0,
+    "dDurationMs": 6020,
+    "segs": [ {
+      "utf8": "Hey, I'm Zach, the founder of Warp. I wanted to record a version of a talk I've been giving"
+    } ]
+  }, {
+    "tStartMs": 6020,
+    "dDurationMs": 6580,
+    "segs": [ {
+      "utf8": "about how I think about software factories and how we at Warp think about them."
+    } ]
+  }, {
+    "tStartMs": 13240,
+    "dDurationMs": 6700,
+    "segs": [ {
+      "utf8": "I want to cover what a software factory is, in my opinion. What are the most important"
+    } ]
+  }, {
+    "tStartMs": 19940,
+    "dDurationMs": 4400,
+    "segs": [ {
+      "utf8": "characteristics of it? We think of it as infrastructure. What does a working"
+    } ]
+  }, {
+    "tStartMs": 24340,
+    "dDurationMs": 5180,
+    "segs": [ {
+      "utf8": "software factory look like? I'm going to illustrate a lot of this with a real product:"
+    } ]
+  }, {
+    "tStartMs": 29520,
+    "dDurationMs": 5720,
+    "segs": [ {
+      "utf8": "I'll show some of Warp Factories. But I think the same concepts apply if you're"
+    } ]
+  }, {
+    "tStartMs": 35240,
+    "dDurationMs": 4680,
+    "segs": [ {
+      "utf8": "building your own software factory from scratch, which a lot of folks are trying to do."
+    } ]
+  }, {
+    "tStartMs": 41580,
+    "dDurationMs": 6280,
+    "segs": [ {
+      "utf8": "About me: I was a principal engineer at Google. I used to run engineering on the Google Docs suite."
+    } ]
+  }, {
+    "tStartMs": 48020,
+    "dDurationMs": 6200,
+    "segs": [ {
+      "utf8": "I've been a software developer for a really long time. I'm the founder and CEO of Warp."
+    } ]
+  }, {
+    "tStartMs": 54220,
+    "dDurationMs": 5240,
+    "segs": [ {
+      "utf8": "If you're not familiar, we're a company in the agentic development space. Our mission has"
+    } ]
+  }, {
+    "tStartMs": 59460,
+    "dDurationMs": 6220,
+    "segs": [ {
+      "utf8": "always been to help developers ship better software more quickly. Our total focus right now is on"
+    } ]
+  }, {
+    "tStartMs": 65680,
+    "dDurationMs": 6460,
+    "segs": [ {
+      "utf8": "software factories. We have a platform called Warp Factories, which is open infrastructure for"
+    } ]
+  }, {
+    "tStartMs": 72140,
+    "dDurationMs": 4580,
+    "segs": [ {
+      "utf8": "companies that want to build their own internal software factories. But we're also pretty well"
+    } ]
+  }, {
+    "tStartMs": 76720,
+    "dDurationMs": 5720,
+    "segs": [ {
+      "utf8": "known for the Warp terminal, an agentic terminal with about 65,000 GitHub stars. We have almost"
+    } ]
+  }, {
+    "tStartMs": 82440,
+    "dDurationMs": 5680,
+    "segs": [ {
+      "utf8": "a million developers who actively use it. It's a super cool product. But today I'm going to talk"
+    } ]
+  }, {
+    "tStartMs": 88120,
+    "dDurationMs": 5640,
+    "segs": [ {
+      "utf8": "about software factories. The way I usually tee this up is: this is the journey"
+    } ]
+  }, {
+    "tStartMs": 93760,
+    "dDurationMs": 7080,
+    "segs": [ {
+      "utf8": "of agentic development. If you look back a couple of years, we were using things like"
+    } ]
+  }, {
+    "tStartMs": 100840,
+    "dDurationMs": 6720,
+    "segs": [ {
+      "utf8": "Cursor autocomplete, which was really cool. About a year ago, we collectively moved into a mode where"
+    } ]
+  }, {
+    "tStartMs": 107560,
+    "dDurationMs": 8800,
+    "segs": [ {
+      "utf8": "every developer installs Claude Code or Codex on their laptop and prompts to build features. But"
+    } ]
+  }, {
+    "tStartMs": 116360,
+    "dDurationMs": 6240,
+    "segs": [ {
+      "utf8": "they're basically working locally, creating a PR, and then pushing it up into the system. What I"
+    } ]
+  }, {
+    "tStartMs": 122600,
+    "dDurationMs": 4520,
+    "segs": [ {
+      "utf8": "think we're going to get to, from talking to a lot of companies and from how we're working more"
+    } ]
+  }, {
+    "tStartMs": 127120,
+    "dDurationMs": 5860,
+    "segs": [ {
+      "utf8": "and more internally at Warp, is a world of much more automated development. The reason for this,"
+    } ]
+  }, {
+    "tStartMs": 133080,
+    "dDurationMs": 6420,
+    "segs": [ {
+      "utf8": "from a business perspective, is that there's this magical new technology. It's really incredible."
+    } ]
+  }, {
+    "tStartMs": 139500,
+    "dDurationMs": 5520,
+    "segs": [ {
+      "utf8": "Everyone wants to get the most out of it, and we're all learning together."
+    } ]
+  }, {
+    "tStartMs": 145660,
+    "dDurationMs": 5700,
+    "segs": [ {
+      "utf8": "What does that mean? How do we deploy agents to get maximum business value, to ship stuff that's"
+    } ]
+  }, {
+    "tStartMs": 151360,
+    "dDurationMs": 6640,
+    "segs": [ {
+      "utf8": "really useful for customers, and make sure it's not sloppy and the quality isn't bad? We all"
+    } ]
+  }, {
+    "tStartMs": 158000,
+    "dDurationMs": 3860,
+    "segs": [ {
+      "utf8": "want to do this, and there's going to be a better way to do it than what everyone is"
+    } ]
+  }, {
+    "tStartMs": 161860,
+    "dDurationMs": 6680,
+    "segs": [ {
+      "utf8": "doing right now. If you drill one level deeper, the problems the world"
+    } ]
+  }, {
+    "tStartMs": 168540,
+    "dDurationMs": 4560,
+    "segs": [ {
+      "utf8": "has with these interactive agents are, first, you're totally bottlenecked by people. And this"
+    } ]
+  }, {
+    "tStartMs": 173100,
+    "dDurationMs": 5320,
+    "segs": [ {
+      "utf8": "is software that you want to let loose to do more. You want more automation if you want more"
+    } ]
+  }, {
+    "tStartMs": 178420,
+    "dDurationMs": 6020,
+    "segs": [ {
+      "utf8": "productivity. Interactive agents also have all sorts of problems with cost management."
+    } ]
+  }, {
+    "tStartMs": 184760,
+    "dDurationMs": 3700,
+    "segs": [ {
+      "utf8": "They're very hard to collectively optimize because everyone's doing their own thing."
+    } ]
+  }, {
+    "tStartMs": 188460,
+    "dDurationMs": 4200,
+    "segs": [ {
+      "utf8": "And the third thing is there's no central layer for governing them, so there are"
+    } ]
+  }, {
+    "tStartMs": 192660,
+    "dDurationMs": 5280,
+    "segs": [ {
+      "utf8": "all sorts of security problems. To double-click on security for one"
+    } ]
+  }, {
+    "tStartMs": 197940,
+    "dDurationMs": 5720,
+    "segs": [ {
+      "utf8": "second: when everyone is using local agents, everyone's setting up their own MCPs. If something"
+    } ]
+  }, {
+    "tStartMs": 203660,
+    "dDurationMs": 5800,
+    "segs": [ {
+      "utf8": "gets compromised, it's compromised as the logged-in user. They're hard to govern."
+    } ]
+  }, {
+    "tStartMs": 209500,
+    "dDurationMs": 5580,
+    "segs": [ {
+      "utf8": "The solution here is generally going to be to sandbox them. What I want to talk about is"
+    } ]
+  }, {
+    "tStartMs": 215080,
+    "dDurationMs": 5820,
+    "segs": [ {
+      "utf8": "what a cloud software factory is. If you follow Twitter, there are a lot of different"
+    } ]
+  }, {
+    "tStartMs": 220900,
+    "dDurationMs": 6800,
+    "segs": [ {
+      "utf8": "versions of what this might mean. To me, it means something very specific. It's an agentic loop"
+    } ]
+  }, {
+    "tStartMs": 227700,
+    "dDurationMs": 6940,
+    "segs": [ {
+      "utf8": "where humans and agents collaborate. It runs in the cloud. You can't have a local software factory"
+    } ]
+  }, {
+    "tStartMs": 234640,
+    "dDurationMs": 6400,
+    "segs": [ {
+      "utf8": "because you can't have automations running off your laptops. And the really key thing is that"
+    } ]
+  }, {
+    "tStartMs": 241040,
+    "dDurationMs": 7700,
+    "segs": [ {
+      "utf8": "it's a measurable, improvable system that you can do what I call factory engineering on, so that you"
+    } ]
+  }, {
+    "tStartMs": 248740,
+    "dDurationMs": 4800,
+    "segs": [ {
+      "utf8": "can actually make the system better over time. I'll talk about that more in a second. But"
+    } ]
+  }, {
+    "tStartMs": 253540,
+    "dDurationMs": 6700,
+    "segs": [ {
+      "utf8": "the basic way one of these software factories works is that ideas come in from various sources. It could"
+    } ]
+  }, {
+    "tStartMs": 260240,
+    "dDurationMs": 7120,
+    "segs": [ {
+      "utf8": "be directly from a person. Then agents do some amount of work, whether it's triage or"
+    } ]
+  }, {
+    "tStartMs": 267360,
+    "dDurationMs": 7080,
+    "segs": [ {
+      "utf8": "spec. They might loop a human in to work on a spec together. Agents implement, they do code review,"
+    } ]
+  }, {
+    "tStartMs": 274600,
+    "dDurationMs": 6000,
+    "segs": [ {
+      "utf8": "they might loop a human in for code review, they do computer-use verification and QA, they go"
+    } ]
+  }, {
+    "tStartMs": 280600,
+    "dDurationMs": 6700,
+    "segs": [ {
+      "utf8": "through CI/CD to ship, and then they do some amount of monitoring. This loop is going to look different"
+    } ]
+  }, {
+    "tStartMs": 287300,
+    "dDurationMs": 6860,
+    "segs": [ {
+      "utf8": "in its details at every company, on every team. So this isn't meant to be one-size-fits-all. But"
+    } ]
+  }, {
+    "tStartMs": 294160,
+    "dDurationMs": 7080,
+    "segs": [ {
+      "utf8": "a software factory should support building different variants of this loop. It could"
+    } ]
+  }, {
+    "tStartMs": 301240,
+    "dDurationMs": 4500,
+    "segs": [ {
+      "utf8": "be for the software lifecycle or for the broader product lifecycle. But this is what you"
+    } ]
+  }, {
+    "tStartMs": 305740,
+    "dDurationMs": 5820,
+    "segs": [ {
+      "utf8": "want. This is how you should conceive of it, in my opinion. I also feel really strongly that the"
+    } ]
+  }, {
+    "tStartMs": 311560,
+    "dDurationMs": 5020,
+    "segs": [ {
+      "utf8": "right way to view software factories is as infrastructure, and that infrastructure should be"
+    } ]
+  }, {
+    "tStartMs": 316580,
+    "dDurationMs": 7080,
+    "segs": [ {
+      "utf8": "as flexible as GCP or AWS. Specifically,"
+    } ]
+  }, {
+    "tStartMs": 323660,
+    "dDurationMs": 7440,
+    "segs": [ {
+      "utf8": "that infrastructure should be open, meaning you should be able to put in any model, any harness, and use"
+    } ]
+  }, {
+    "tStartMs": 331100,
+    "dDurationMs": 5560,
+    "segs": [ {
+      "utf8": "it in your factory. It should be very composable, pluggable, and really adaptable."
+    } ]
+  }, {
+    "tStartMs": 336660,
+    "dDurationMs": 4200,
+    "segs": [ {
+      "utf8": "The only way the software factory approach is going to work for companies at any kind of"
+    } ]
+  }, {
+    "tStartMs": 340860,
+    "dDurationMs": 7060,
+    "segs": [ {
+      "utf8": "scale is if you can set it up to work with your existing tools and systems. And this really"
+    } ]
+  }, {
+    "tStartMs": 347920,
+    "dDurationMs": 4860,
+    "segs": [ {
+      "utf8": "big thing is what makes the whole thing real to me: software factories should be defined"
+    } ]
+  }, {
+    "tStartMs": 352780,
+    "dDurationMs": 5760,
+    "segs": [ {
+      "utf8": "in code. You should declare what your software factory actually is. You should say, \"These are all"
+    } ]
+  }, {
+    "tStartMs": 358540,
+    "dDurationMs": 6180,
+    "segs": [ {
+      "utf8": "my agents and MCPs, these are the repos they operate on, these are the skills they use.\" And it should be"
+    } ]
+  }, {
+    "tStartMs": 364720,
+    "dDurationMs": 6460,
+    "segs": [ {
+      "utf8": "versioned. Once you do this, it creates opportunities: how do you test"
+    } ]
+  }, {
+    "tStartMs": 371180,
+    "dDurationMs": 6620,
+    "segs": [ {
+      "utf8": "different versions of a factory? How do you let agents self-improve a factory? This is the"
+    } ]
+  }, {
+    "tStartMs": 377800,
+    "dDurationMs": 7500,
+    "segs": [ {
+      "utf8": "key thing. It's got to be a real declarative system. I also think AI sovereignty really matters. What"
+    } ]
+  }, {
+    "tStartMs": 385300,
+    "dDurationMs": 5040,
+    "segs": [ {
+      "utf8": "I mean by this is, if you're building one of these factories, you should really try to keep"
+    } ]
+  }, {
+    "tStartMs": 390340,
+    "dDurationMs": 5940,
+    "segs": [ {
+      "utf8": "all the data going through it on your own systems. That data is what you're going"
+    } ]
+  }, {
+    "tStartMs": 396280,
+    "dDurationMs": 6120,
+    "segs": [ {
+      "utf8": "to use to improve your agents, and you don't want someone else having it."
+    } ]
+  }, {
+    "tStartMs": 402920,
+    "dDurationMs": 5340,
+    "segs": [ {
+      "utf8": "If you view producing software as a core part of your business going forward, having that data in"
+    } ]
+  }, {
+    "tStartMs": 408260,
+    "dDurationMs": 4960,
+    "segs": [ {
+      "utf8": "your own system matters. It should be flexible enough to run on your own compute. You might want"
+    } ]
+  }, {
+    "tStartMs": 413220,
+    "dDurationMs": 3500,
+    "segs": [ {
+      "utf8": "to run your own models. It should be able to run with your own inference gateway, and it should be able"
+    } ]
+  }, {
+    "tStartMs": 416720,
+    "dDurationMs": 6640,
+    "segs": [ {
+      "utf8": "to use any model in any harness. So I think open is going to win here, as opposed to a walled"
+    } ]
+  }, {
+    "tStartMs": 423360,
+    "dDurationMs": 6280,
+    "segs": [ {
+      "utf8": "garden, single-vendor solution. Okay, this is really important when I think about software factories."
+    } ]
+  }, {
+    "tStartMs": 431060,
+    "dDurationMs": 6980,
+    "segs": [ {
+      "utf8": "If you look at Twitter, which I do too much, on any given day you might have the sense"
+    } ]
+  }, {
+    "tStartMs": 438040,
+    "dDurationMs": 7040,
+    "segs": [ {
+      "utf8": "that there's a new best harness or a new best model. It's hard to tell who has a"
+    } ]
+  }, {
+    "tStartMs": 445080,
+    "dDurationMs": 5180,
+    "segs": [ {
+      "utf8": "conflict of interest when they're talking about things. The solution is to get a system in"
+    } ]
+  }, {
+    "tStartMs": 450260,
+    "dDurationMs": 6400,
+    "segs": [ {
+      "utf8": "place where you can measure how coding agents are doing on your own workflows. That means"
+    } ]
+  }, {
+    "tStartMs": 456660,
+    "dDurationMs": 5960,
+    "segs": [ {
+      "utf8": "having LLM-as-a-judge evals on all your coding agent sessions, using those evals to drive a"
+    } ]
+  }, {
+    "tStartMs": 462620,
+    "dDurationMs": 5020,
+    "segs": [ {
+      "utf8": "self-improvement loop, and being able to benchmark different configurations. So you can actually,"
+    } ]
+  }, {
+    "tStartMs": 468220,
+    "dDurationMs": 5640,
+    "segs": [ {
+      "utf8": "instead of using SWE-bench or Terminal-Bench, prove to yourself that you have the right setup."
+    } ]
+  }, {
+    "tStartMs": 475080,
+    "dDurationMs": 4900,
+    "segs": [ {
+      "utf8": "As for what this all means for engineers, I think it matters a lot. The way I"
+    } ]
+  }, {
+    "tStartMs": 479980,
+    "dDurationMs": 4760,
+    "segs": [ {
+      "utf8": "conceive of it, there are going to be two kinds of engineering going forward. There's product"
+    } ]
+  }, {
+    "tStartMs": 484740,
+    "dDurationMs": 4920,
+    "segs": [ {
+      "utf8": "engineering, which is still going to matter. You're building something of value for some"
+    } ]
+  }, {
+    "tStartMs": 489660,
+    "dDurationMs": 6580,
+    "segs": [ {
+      "utf8": "customer or user. But product engineering is going to happen through a factory, meaning work is going to"
+    } ]
+  }, {
+    "tStartMs": 496240,
+    "dDurationMs": 6480,
+    "segs": [ {
+      "utf8": "go into this closed-loop system, and humans are going to have touch points with it. Then there's factory"
+    } ]
+  }, {
+    "tStartMs": 502720,
+    "dDurationMs": 5160,
+    "segs": [ {
+      "utf8": "engineering, and I'm very excited about factory engineering. This is the job of taking"
+    } ]
+  }, {
+    "tStartMs": 507880,
+    "dDurationMs": 5780,
+    "segs": [ {
+      "utf8": "your software factory and making it more efficient. It's really a lot of performance"
+    } ]
+  }, {
+    "tStartMs": 513660,
+    "dDurationMs": 7660,
+    "segs": [ {
+      "utf8": "tuning: figuring out what skills and MCPs, what model mix, and what workflow are right, so that"
+    } ]
+  }, {
+    "tStartMs": 521320,
+    "dDurationMs": 6820,
+    "segs": [ {
+      "utf8": "your whole team doing product engineering can do it better. Instead of just"
+    } ]
+  }, {
+    "tStartMs": 528140,
+    "dDurationMs": 4900,
+    "segs": [ {
+      "utf8": "doing slides, I'm going to show this in the context of Warp Factories, which I'd"
+    } ]
+  }, {
+    "tStartMs": 533040,
+    "dDurationMs": 5640,
+    "segs": [ {
+      "utf8": "encourage folks to go try, obviously. But I think these same things apply as you think"
+    } ]
+  }, {
+    "tStartMs": 538680,
+    "dDurationMs": 4700,
+    "segs": [ {
+      "utf8": "about factories more broadly. So let me bring up Warp Factories to illustrate some of these"
+    } ]
+  }, {
+    "tStartMs": 543380,
+    "dDurationMs": 5880,
+    "segs": [ {
+      "utf8": "concepts. I mentioned earlier that there's a job of product engineering and a job of factory"
+    } ]
+  }, {
+    "tStartMs": 549260,
+    "dDurationMs": 7420,
+    "segs": [ {
+      "utf8": "engineering. This view is what the factory engineer is going to use. It's a view of your whole"
+    } ]
+  }, {
+    "tStartMs": 556680,
+    "dDurationMs": 5840,
+    "segs": [ {
+      "utf8": "system. The way this works in Warp Factories is you have one factory per product surface."
+    } ]
+  }, {
+    "tStartMs": 563440,
+    "dDurationMs": 7000,
+    "segs": [ {
+      "utf8": "The way to think about that factory is as a collection of agents, and this collection of"
+    } ]
+  }, {
+    "tStartMs": 570440,
+    "dDurationMs": 7780,
+    "segs": [ {
+      "utf8": "agents is defined in code. I'll go back to this"
+    } ]
+  }, {
+    "tStartMs": 578220,
+    "dDurationMs": 6060,
+    "segs": [ {
+      "utf8": "for one second. We provide a default implementation where all work that"
+    } ]
+  }, {
+    "tStartMs": 584280,
+    "dDurationMs": 4540,
+    "segs": [ {
+      "utf8": "comes into the factory goes through what we call a foreman agent. If you look at this foreman"
+    } ]
+  }, {
+    "tStartMs": 588820,
+    "dDurationMs": 6900,
+    "segs": [ {
+      "utf8": "agent, it has all of the centralized configuration: what MCPs does it"
+    } ]
+  }, {
+    "tStartMs": 595720,
+    "dDurationMs": 6020,
+    "segs": [ {
+      "utf8": "need? What are the secrets? What model does it use? Where does it run? You can see what automations"
+    } ]
+  }, {
+    "tStartMs": 601740,
+    "dDurationMs": 4260,
+    "segs": [ {
+      "utf8": "it can be triggered by. And you can see the prompt for this"
+    } ]
+  }, {
+    "tStartMs": 606000,
+    "dDurationMs": 5840,
+    "segs": [ {
+      "utf8": "foreman agent. When work comes in, it delegates it to other"
+    } ]
+  }, {
+    "tStartMs": 611840,
+    "dDurationMs": 4480,
+    "segs": [ {
+      "utf8": "agents using an orchestration pattern. The actual details of this aren't too important."
+    } ]
+  }, {
+    "tStartMs": 616440,
+    "dDurationMs": 4760,
+    "segs": [ {
+      "utf8": "This is our stock factory, but you can think of it as going through that loop. You do"
+    } ]
+  }, {
+    "tStartMs": 621200,
+    "dDurationMs": 6260,
+    "segs": [ {
+      "utf8": "triage, specs, implementation, and code review. The way you interact with"
+    } ]
+  }, {
+    "tStartMs": 627460,
+    "dDurationMs": 6300,
+    "segs": [ {
+      "utf8": "this foreman, and I think this is really important, is that you can do it from any surface. If you're"
+    } ]
+  }, {
+    "tStartMs": 633760,
+    "dDurationMs": 6000,
+    "segs": [ {
+      "utf8": "setting up a factory, we do support talking to your factory here,"
+    } ]
+  }, {
+    "tStartMs": 639760,
+    "dDurationMs": 5960,
+    "segs": [ {
+      "utf8": "but this isn't how we expect folks to interact with factories. I think you should"
+    } ]
+  }, {
+    "tStartMs": 645720,
+    "dDurationMs": 5860,
+    "segs": [ {
+      "utf8": "be thinking about factories by integrating them into your existing tool set."
+    } ]
+  }, {
+    "tStartMs": 651660,
+    "dDurationMs": 9660,
+    "segs": [ {
+      "utf8": "For instance, at Warp, the tool we primarily use at this point is Slack. But we have customers"
+    } ]
+  }, {
+    "tStartMs": 661320,
+    "dDurationMs": 5720,
+    "segs": [ {
+      "utf8": "who use Teams, Linear, Jira, and GitHub. It doesn't matter"
+    } ]
+  }, {
+    "tStartMs": 667040,
+    "dDurationMs": 5380,
+    "segs": [ {
+      "utf8": "where you interact, because all of the context for your factory needs to be in the cloud, in one"
+    } ]
+  }, {
+    "tStartMs": 672420,
+    "dDurationMs": 5160,
+    "segs": [ {
+      "utf8": "central place. For instance, here you can start, and this looks a lot like starting with"
+    } ]
+  }, {
+    "tStartMs": 677580,
+    "dDurationMs": 5720,
+    "segs": [ {
+      "utf8": "a prompt to a local agent, honestly. This is Varun on our team asking for some changes."
+    } ]
+  }, {
+    "tStartMs": 683880,
+    "dDurationMs": 5160,
+    "segs": [ {
+      "utf8": "It goes through a flow, and work goes to the foreman. What's different from just using a"
+    } ]
+  }, {
+    "tStartMs": 689040,
+    "dDurationMs": 6940,
+    "segs": [ {
+      "utf8": "regular coding agent is that along the way,"
+    } ]
+  }, {
+    "tStartMs": 695980,
+    "dDurationMs": 4920,
+    "segs": [ {
+      "utf8": "it goes through the triage step and all the steps we define"
+    } ]
+  }, {
+    "tStartMs": 700900,
+    "dDurationMs": 5800,
+    "segs": [ {
+      "utf8": "in the actual workflow. Everyone is working this way. And you can"
+    } ]
+  }, {
+    "tStartMs": 706700,
+    "dDurationMs": 6640,
+    "segs": [ {
+      "utf8": "see you get these cool benefits. Here, it's created the Linear issue."
+    } ]
+  }, {
+    "tStartMs": 713340,
+    "dDurationMs": 4820,
+    "segs": [ {
+      "utf8": "I could interact with this in Linear if I wanted. In the same way, it's created"
+    } ]
+  }, {
+    "tStartMs": 718160,
+    "dDurationMs": 9840,
+    "segs": [ {
+      "utf8": "the server PR, and it's done computer use, so it's proven that it's done the"
+    } ]
+  }, {
+    "tStartMs": 728000,
+    "dDurationMs": 6320,
+    "segs": [ {
+      "utf8": "right thing. Anyhow, the point is, as a product engineer, you're working through the tools"
+    } ]
+  }, {
+    "tStartMs": 734320,
+    "dDurationMs": 4980,
+    "segs": [ {
+      "utf8": "you already use. We use Slack; you could use Linear or GitHub. You could"
+    } ]
+  }, {
+    "tStartMs": 739300,
+    "dDurationMs": 5960,
+    "segs": [ {
+      "utf8": "even use a local coding agent and submit work into the factory through it. In many ways, this is"
+    } ]
+  }, {
+    "tStartMs": 745320,
+    "dDurationMs": 4840,
+    "segs": [ {
+      "utf8": "the least interesting part of the factory approach. The more interesting part"
+    } ]
+  }, {
+    "tStartMs": 750160,
+    "dDurationMs": 7180,
+    "segs": [ {
+      "utf8": "is that when you start working this way, not only do you define your factory"
+    } ]
+  }, {
+    "tStartMs": 757340,
+    "dDurationMs": 7140,
+    "segs": [ {
+      "utf8": "workflow in code, but you also get the ability to see in real time what everyone on your"
+    } ]
+  }, {
+    "tStartMs": 764480,
+    "dDurationMs": 6780,
+    "segs": [ {
+      "utf8": "team is doing across all the factories you're working on. Think of this almost like Google Docs,"
+    } ]
+  }, {
+    "tStartMs": 771260,
+    "dDurationMs": 6240,
+    "segs": [ {
+      "utf8": "but for your team's coding agents. I can see Ben on our team is working on this"
+    } ]
+  }, {
+    "tStartMs": 777500,
+    "dDurationMs": 5380,
+    "segs": [ {
+      "utf8": "diagnostics cloud agent run. I can go in and see it. I could go back and see the original Slack"
+    } ]
+  }, {
+    "tStartMs": 782880,
+    "dDurationMs": 6200,
+    "segs": [ {
+      "utf8": "thread where this happened. The cool thing is that it's all centralized. When you centralize it, not only do you"
+    } ]
+  }, {
+    "tStartMs": 789080,
+    "dDurationMs": 8280,
+    "segs": [ {
+      "utf8": "get this real-time view, but you get automatic storage and tracking of everything"
+    } ]
+  }, {
+    "tStartMs": 797360,
+    "dDurationMs": 5540,
+    "segs": [ {
+      "utf8": "people on your team are doing with coding agents. Once you have that, you can actually start doing"
+    } ]
+  }, {
+    "tStartMs": 802900,
+    "dDurationMs": 6240,
+    "segs": [ {
+      "utf8": "factory engineering. To me, one aspect of factory engineering is"
+    } ]
+  }, {
+    "tStartMs": 809140,
+    "dDurationMs": 7240,
+    "segs": [ {
+      "utf8": "understanding the flow of work through your factory. This is the stuff"
+    } ]
+  }, {
+    "tStartMs": 816380,
+    "dDurationMs": 3820,
+    "segs": [ {
+      "utf8": "you should be looking at today if you're doing factory engineering:"
+    } ]
+  }, {
+    "tStartMs": 820200,
+    "dDurationMs": 5700,
+    "segs": [ {
+      "utf8": "How many human interactions are there per PR? How automated are you? How long does it take"
+    } ]
+  }, {
+    "tStartMs": 825900,
+    "dDurationMs": 9440,
+    "segs": [ {
+      "utf8": "to ship? How much money are you spending per PR? Slicing that by different"
+    } ]
+  }, {
+    "tStartMs": 835340,
+    "dDurationMs": 7600,
+    "segs": [ {
+      "utf8": "sources, by user, by agent, by model. Calculating and knowing your cost per PR,"
+    } ]
+  }, {
+    "tStartMs": 842940,
+    "dDurationMs": 7060,
+    "segs": [ {
+      "utf8": "and having a plan in place to drive it down. Then, one level deeper, what I mentioned earlier:"
+    } ]
+  }, {
+    "tStartMs": 850000,
+    "dDurationMs": 7480,
+    "segs": [ {
+      "utf8": "the ability to do online evals, or what we call scoring in Warp Factories,"
+    } ]
+  }, {
+    "tStartMs": 857640,
+    "dDurationMs": 5140,
+    "segs": [ {
+      "utf8": "on top of all your existing coding agent runs. What do I mean by scoring?"
+    } ]
+  }, {
+    "tStartMs": 862940,
+    "dDurationMs": 5380,
+    "segs": [ {
+      "utf8": "Once you're in a world where, just to remind you, all of your coding agent runs are stored,"
+    } ]
+  }, {
+    "tStartMs": 868320,
+    "dDurationMs": 7480,
+    "segs": [ {
+      "utf8": "you get the ability to run LLM-as-a-judge over them to evaluate them along"
+    } ]
+  }, {
+    "tStartMs": 875800,
+    "dDurationMs": 4740,
+    "segs": [ {
+      "utf8": "different dimensions. One of the dimensions we look at at Warp is redundant"
+    } ]
+  }, {
+    "tStartMs": 880540,
+    "dDurationMs": 5200,
+    "segs": [ {
+      "utf8": "tests. This is just an example; you can define your own. With redundant tests,"
+    } ]
+  }, {
+    "tStartMs": 885740,
+    "dDurationMs": 3840,
+    "segs": [ {
+      "utf8": "there's a common failure mode where coding agents"
+    } ]
+  }, {
+    "tStartMs": 889580,
+    "dDurationMs": 5600,
+    "segs": [ {
+      "utf8": "waste a bunch of money, time, and context writing unnecessary tests. So we have"
+    } ]
+  }, {
+    "tStartMs": 895180,
+    "dDurationMs": 8200,
+    "segs": [ {
+      "utf8": "agents look at our past agent runs using LLM-as-a-judge to figure out where we're"
+    } ]
+  }, {
+    "tStartMs": 903380,
+    "dDurationMs": 6860,
+    "segs": [ {
+      "utf8": "experiencing this failure mode. We don't do this on every run because it's kind of expensive,"
+    } ]
+  }, {
+    "tStartMs": 910240,
+    "dDurationMs": 6200,
+    "segs": [ {
+      "utf8": "but there's a sampling strategy and pass/fail criteria. And all of this,"
+    } ]
+  }, {
+    "tStartMs": 916440,
+    "dDurationMs": 6780,
+    "segs": [ {
+      "utf8": "again, is defined in code, this whole scoring mechanism. So you can see how you're trending."
+    } ]
+  }, {
+    "tStartMs": 923220,
+    "dDurationMs": 7540,
+    "segs": [ {
+      "utf8": "The next thing you can do once you have this type of system in place is set up another"
+    } ]
+  }, {
+    "tStartMs": 930760,
+    "dDurationMs": 7140,
+    "segs": [ {
+      "utf8": "loop, which we call self-improvement, where agents look at these failed runs"
+    } ]
+  }, {
+    "tStartMs": 937900,
+    "dDurationMs": 6320,
+    "segs": [ {
+      "utf8": "and try to suggest changes to improve the underlying factory. I think this concept is"
+    } ]
+  }, {
+    "tStartMs": 944220,
+    "dDurationMs": 4000,
+    "segs": [ {
+      "utf8": "really important. We're getting more and more sophisticated in terms of"
+    } ]
+  }, {
+    "tStartMs": 948220,
+    "dDurationMs": 5440,
+    "segs": [ {
+      "utf8": "how we do this and how we prove that it actually works. But the general idea is"
+    } ]
+  }, {
+    "tStartMs": 954280,
+    "dDurationMs": 7460,
+    "segs": [ {
+      "utf8": "we have agents looking at all of these scores. They find repeated"
+    } ]
+  }, {
+    "tStartMs": 961740,
+    "dDurationMs": 5880,
+    "segs": [ {
+      "utf8": "problems. Here's one that was identified as a problem with our triage agent. We saw this 54 times."
+    } ]
+  }, {
+    "tStartMs": 967620,
+    "dDurationMs": 10400,
+    "segs": [ {
+      "utf8": "Then they suggest improvements to the definition of the factory itself to fix the"
+    } ]
+  }, {
+    "tStartMs": 978020,
+    "dDurationMs": 8380,
+    "segs": [ {
+      "utf8": "problem. For instance, this is a change to our factory"
+    } ]
+  }, {
+    "tStartMs": 986400,
+    "dDurationMs": 6860,
+    "segs": [ {
+      "utf8": "code format. This is why it's so important to define everything in code:"
+    } ]
+  }, {
+    "tStartMs": 993260,
+    "dDurationMs": 5200,
+    "segs": [ {
+      "utf8": "you have coding agents observing problems in how your company is producing"
+    } ]
+  }, {
+    "tStartMs": 998460,
+    "dDurationMs": 7460,
+    "segs": [ {
+      "utf8": "software. They observe it on a repeated basis. They're smart. They say, \"Okay, the actual underlying"
+    } ]
+  }, {
+    "tStartMs": 1005920,
+    "dDurationMs": 5860,
+    "segs": [ {
+      "utf8": "problem is with the way the factory itself is specified, and we can suggest a fix.\""
+    } ]
+  }, {
+    "tStartMs": 1011780,
+    "dDurationMs": 8320,
+    "segs": [ {
+      "utf8": "Then they make a PR that we can merge into the factory definition, so this problem"
+    } ]
+  }, {
+    "tStartMs": 1020100,
+    "dDurationMs": 7560,
+    "segs": [ {
+      "utf8": "doesn't occur again. This is what we call self-improvement."
+    } ]
+  }, {
+    "tStartMs": 1027660,
+    "dDurationMs": 5280,
+    "segs": [ {
+      "utf8": "No matter how you approach this, it's a very useful primitive for getting to a loop"
+    } ]
+  }, {
+    "tStartMs": 1032940,
+    "dDurationMs": 6300,
+    "segs": [ {
+      "utf8": "where your factory actually gets better over time. A couple more things"
+    } ]
+  }, {
+    "tStartMs": 1039240,
+    "dDurationMs": 5180,
+    "segs": [ {
+      "utf8": "I want to show: I've mentioned how you put work into the factory as a person."
+    } ]
+  }, {
+    "tStartMs": 1044420,
+    "dDurationMs": 7100,
+    "segs": [ {
+      "utf8": "The goal is to have a similar flow for work coming in through automation"
+    } ]
+  }, {
+    "tStartMs": 1051520,
+    "dDurationMs": 4940,
+    "segs": [ {
+      "utf8": "triggers. If you're building a factory, this might even be where you start."
+    } ]
+  }, {
+    "tStartMs": 1056460,
+    "dDurationMs": 7220,
+    "segs": [ {
+      "utf8": "You should have a way of saying, in addition to a direct human prompt, we want"
+    } ]
+  }, {
+    "tStartMs": 1063680,
+    "dDurationMs": 5780,
+    "segs": [ {
+      "utf8": "an automated prompt or trigger that puts work through this"
+    } ]
+  }, {
+    "tStartMs": 1069460,
+    "dDurationMs": 4080,
+    "segs": [ {
+      "utf8": "exact same factory workflow, or a slightly different one. So your"
+    } ]
+  }, {
+    "tStartMs": 1073540,
+    "dDurationMs": 7560,
+    "segs": [ {
+      "utf8": "factory should support a set of automations. One more thing I want to touch on, which comes"
+    } ]
+  }, {
+    "tStartMs": 1081100,
+    "dDurationMs": 7080,
+    "segs": [ {
+      "utf8": "back to measuring and improving everything, is that you want to be able to"
+    } ]
+  }, {
+    "tStartMs": 1088180,
+    "dDurationMs": 9120,
+    "segs": [ {
+      "utf8": "truly measure how coding tasks perform with different models and different factory"
+    } ]
+  }, {
+    "tStartMs": 1097300,
+    "dDurationMs": 7840,
+    "segs": [ {
+      "utf8": "configurations on your own real workflows. The way we think about this at Warp, and what"
+    } ]
+  }, {
+    "tStartMs": 1105140,
+    "dDurationMs": 7560,
+    "segs": [ {
+      "utf8": "we've built in, is the concept of a benchmark suite. Basically, that means"
+    } ]
+  }, {
+    "tStartMs": 1112700,
+    "dDurationMs": 6540,
+    "segs": [ {
+      "utf8": "for anything being done within a Warp factory, you have the ability to say, \"This is an"
+    } ]
+  }, {
+    "tStartMs": 1119240,
+    "dDurationMs": 5720,
+    "segs": [ {
+      "utf8": "interesting task.\" Maybe it's a hard task, or a specific class of"
+    } ]
+  }, {
+    "tStartMs": 1124960,
+    "dDurationMs": 7960,
+    "segs": [ {
+      "utf8": "task, like a frontend engineering task. You can add it to a benchmark. What ends up"
+    } ]
+  }, {
+    "tStartMs": 1132920,
+    "dDurationMs": 5900,
+    "segs": [ {
+      "utf8": "happening is you build up benchmark suites, and with these benchmark suites,"
+    } ]
+  }, {
+    "tStartMs": 1139380,
+    "dDurationMs": 5900,
+    "segs": [ {
+      "utf8": "because you're tracking all of your coding agent sessions, you have the ability"
+    } ]
+  }, {
+    "tStartMs": 1145280,
+    "dDurationMs": 7400,
+    "segs": [ {
+      "utf8": "to rerun and replay them. You have to be thoughtful about how you do this with side"
+    } ]
+  }, {
+    "tStartMs": 1152680,
+    "dDurationMs": 4420,
+    "segs": [ {
+      "utf8": "effects and so on, but we've built a lot of infrastructure where you can say,"
+    } ]
+  }, {
+    "tStartMs": 1157100,
+    "dDurationMs": 9480,
+    "segs": [ {
+      "utf8": "\"I want to test how things perform against different model configurations.\""
+    } ]
+  }, {
+    "tStartMs": 1167060,
+    "dDurationMs": 4720,
+    "segs": [ {
+      "utf8": "You can test against different harness configurations. I could see how it does in Pi."
+    } ]
+  }, {
+    "tStartMs": 1171780,
+    "dDurationMs": 8380,
+    "segs": [ {
+      "utf8": "I could choose the model. When you do this, it runs a matrix of tests"
+    } ]
+  }, {
+    "tStartMs": 1180160,
+    "dDurationMs": 9320,
+    "segs": [ {
+      "utf8": "against your own real coding agent tasks, and then produces something that looks like what you get"
+    } ]
+  }, {
+    "tStartMs": 1189480,
+    "dDurationMs": 5960,
+    "segs": [ {
+      "utf8": "with one of the public benchmarks. I think this concept is extremely powerful,"
+    } ]
+  }, {
+    "tStartMs": 1195440,
+    "dDurationMs": 7820,
+    "segs": [ {
+      "utf8": "and everyone should be thinking about how to get to it. It generates a"
+    } ]
+  }, {
+    "tStartMs": 1203260,
+    "dDurationMs": 6120,
+    "segs": [ {
+      "utf8": "correctness-versus-cost trade-off curve. You can use different scoring"
+    } ]
+  }, {
+    "tStartMs": 1209380,
+    "dDurationMs": 5120,
+    "segs": [ {
+      "utf8": "dimensions here, but for this particular benchmark, the way to read it is"
+    } ]
+  }, {
+    "tStartMs": 1214540,
+    "dDurationMs": 6920,
+    "segs": [ {
+      "utf8": "the further up and to the left, the better, because left is cheaper and up is higher"
+    } ]
+  }, {
+    "tStartMs": 1221460,
+    "dDurationMs": 4120,
+    "segs": [ {
+      "utf8": "quality. You can see the two candidate models"
+    } ]
+  }, {
+    "tStartMs": 1226040,
+    "dDurationMs": 5860,
+    "segs": [ {
+      "utf8": "for winning this benchmark, along this Pareto curve, are GPT-5.6 Sol. We ran this"
+    } ]
+  }, {
+    "tStartMs": 1231900,
+    "dDurationMs": 8780,
+    "segs": [ {
+      "utf8": "one a while ago. It cost $6.23 on average but got 95% correct. And GLM-5.3"
+    } ]
+  }, {
+    "tStartMs": 1240680,
+    "dDurationMs": 6440,
+    "segs": [ {
+      "utf8": "Flash, which was a third of the cost and just a little less correct. This isn't saying"
+    } ]
+  }, {
+    "tStartMs": 1247120,
+    "dDurationMs": 6580,
+    "segs": [ {
+      "utf8": "that GPT-5.6 Sol is better than GLM-5.3 Flash or vice versa in every situation."
+    } ]
+  }, {
+    "tStartMs": 1253700,
+    "dDurationMs": 7720,
+    "segs": [ {
+      "utf8": "It's saying that for these types of tasks, you can make an educated trade-off on whether"
+    } ]
+  }, {
+    "tStartMs": 1261420,
+    "dDurationMs": 5720,
+    "segs": [ {
+      "utf8": "you prefer slightly higher quality at three times the cost. I'd say we would probably"
+    } ]
+  }, {
+    "tStartMs": 1267140,
+    "dDurationMs": 6440,
+    "segs": [ {
+      "utf8": "choose GLM-5.3 Flash for this, honestly. Then you can feed this into a model routing"
+    } ]
+  }, {
+    "tStartMs": 1273580,
+    "dDurationMs": 8820,
+    "segs": [ {
+      "utf8": "strategy that applies to similar tasks. Again, the idea is that instead of relying"
+    } ]
+  }, {
+    "tStartMs": 1282400,
+    "dDurationMs": 4120,
+    "segs": [ {
+      "utf8": "on Terminal-Bench or SWE-bench, which are cool and useful for general intelligence,"
+    } ]
+  }, {
+    "tStartMs": 1287000,
+    "dDurationMs": 5820,
+    "segs": [ {
+      "utf8": "for generally measuring a model, you say, \"For our own work,"
+    } ]
+  }, {
+    "tStartMs": 1292880,
+    "dDurationMs": 5420,
+    "segs": [ {
+      "utf8": "what's best?\" This is a very powerful primitive, especially when you"
+    } ]
+  }, {
+    "tStartMs": 1298300,
+    "dDurationMs": 4900,
+    "segs": [ {
+      "utf8": "combine it with the ability to do model routing off of this information. The way we tie this all"
+    } ]
+  }, {
+    "tStartMs": 1303200,
+    "dDurationMs": 6080,
+    "segs": [ {
+      "utf8": "together, and the way I think it's useful to tie it together, is by thinking of software"
+    } ]
+  }, {
+    "tStartMs": 1309280,
+    "dDurationMs": 10080,
+    "segs": [ {
+      "utf8": "factories as a stack. At the bottom of this stack is the definition of factories as code."
+    } ]
+  }, {
+    "tStartMs": 1320680,
+    "dDurationMs": 8140,
+    "segs": [ {
+      "utf8": "Just to remind you, that unlocks versioning, testing, and rolling back all of the"
+    } ]
+  }, {
+    "tStartMs": 1328820,
+    "dDurationMs": 5180,
+    "segs": [ {
+      "utf8": "configuration for how your factories work, which really means how software development,"
+    } ]
+  }, {
+    "tStartMs": 1334000,
+    "dDurationMs": 7460,
+    "segs": [ {
+      "utf8": "agentic development, works at your company. The second piece above that is a data and context"
+    } ]
+  }, {
+    "tStartMs": 1341460,
+    "dDurationMs": 4800,
+    "segs": [ {
+      "utf8": "layer. You should think about all the data coming into the"
+    } ]
+  }, {
+    "tStartMs": 1346260,
+    "dDurationMs": 5800,
+    "segs": [ {
+      "utf8": "factory, from MCPs or from APIs, and all the"
+    } ]
+  }, {
+    "tStartMs": 1352060,
+    "dDurationMs": 5120,
+    "segs": [ {
+      "utf8": "data coming out of the factory. That could be agent runs and transcripts,"
+    } ]
+  }, {
+    "tStartMs": 1357180,
+    "dDurationMs": 3400,
+    "segs": [ {
+      "utf8": "which I'd say is the most important thing, but agents also produce things like screenshots"
+    } ]
+  }, {
+    "tStartMs": 1360580,
+    "dDurationMs": 3880,
+    "segs": [ {
+      "utf8": "and videos, and there's a memory concept. So all sorts of data comes out."
+    } ]
+  }, {
+    "tStartMs": 1365360,
+    "dDurationMs": 3320,
+    "segs": [ {
+      "utf8": "The third layer to think about is compute: where do your agents run?"
+    } ]
+  }, {
+    "tStartMs": 1369520,
+    "dDurationMs": 5780,
+    "segs": [ {
+      "utf8": "As I mentioned earlier, you want them to run in sandboxes for security and governance reasons."
+    } ]
+  }, {
+    "tStartMs": 1375420,
+    "dDurationMs": 4260,
+    "segs": [ {
+      "utf8": "Depending on requirements, you may want to support sandboxes across multiple"
+    } ]
+  }, {
+    "tStartMs": 1379680,
+    "dDurationMs": 8880,
+    "segs": [ {
+      "utf8": "platforms. Inference should be pluggable. I feel very strongly about this. Most companies we"
+    } ]
+  }, {
+    "tStartMs": 1388560,
+    "dDurationMs": 4080,
+    "segs": [ {
+      "utf8": "talk to want to bring their own inference. They want the ability to try different"
+    } ]
+  }, {
+    "tStartMs": 1392640,
+    "dDurationMs": 4680,
+    "segs": [ {
+      "utf8": "models: open-weight models, frontier models. They may want to try a fine-tuned model they've"
+    } ]
+  }, {
+    "tStartMs": 1397320,
+    "dDurationMs": 6760,
+    "segs": [ {
+      "utf8": "built. So having this be a pluggable layer is very important. Improvement primitives"
+    } ]
+  }, {
+    "tStartMs": 1404080,
+    "dDurationMs": 6600,
+    "segs": [ {
+      "utf8": "that let you close the loop and actually improve your factories: very important. Orchestration:"
+    } ]
+  }, {
+    "tStartMs": 1410680,
+    "dDurationMs": 6400,
+    "segs": [ {
+      "utf8": "I showed just a little of our orchestration primitives, but the way we think"
+    } ]
+  }, {
+    "tStartMs": 1417080,
+    "dDurationMs": 6120,
+    "segs": [ {
+      "utf8": "about this is: what steps or stages do you want your process to go through? How do you"
+    } ]
+  }, {
+    "tStartMs": 1423200,
+    "dDurationMs": 6960,
+    "segs": [ {
+      "utf8": "gate those with human gates and determinism, while also taking advantage of the fact"
+    } ]
+  }, {
+    "tStartMs": 1430160,
+    "dDurationMs": 5180,
+    "segs": [ {
+      "utf8": "that agents are intelligent and can do intelligent routing? Again, this should support"
+    } ]
+  }, {
+    "tStartMs": 1435340,
+    "dDurationMs": 5580,
+    "segs": [ {
+      "utf8": "multiple harnesses and multiple automation primitives. And finally, a really"
+    } ]
+  }, {
+    "tStartMs": 1440920,
+    "dDurationMs": 6600,
+    "segs": [ {
+      "utf8": "important primitive for building a factory is supporting all sorts of access points"
+    } ]
+  }, {
+    "tStartMs": 1447520,
+    "dDurationMs": 5960,
+    "segs": [ {
+      "utf8": "into the factory. The mental model is that work goes into the factory, and agents within the"
+    } ]
+  }, {
+    "tStartMs": 1453480,
+    "dDurationMs": 5280,
+    "segs": [ {
+      "utf8": "factory work on it. That work can come in via MCP, through Slack or Teams,"
+    } ]
+  }, {
+    "tStartMs": 1458900,
+    "dDurationMs": 5460,
+    "segs": [ {
+      "utf8": "through Jira, Linear, GitHub, or GitLab. You should be able to build your own"
+    } ]
+  }, {
+    "tStartMs": 1464360,
+    "dDurationMs": 6240,
+    "segs": [ {
+      "utf8": "UI on top of it. It should all be API-driven. To me, this is the system where, if you're"
+    } ]
+  }, {
+    "tStartMs": 1470600,
+    "dDurationMs": 6060,
+    "segs": [ {
+      "utf8": "thinking hard about what automated development looks like, you're going to want to end up with"
+    } ]
+  }, {
+    "tStartMs": 1476660,
+    "dDurationMs": 7660,
+    "segs": [ {
+      "utf8": "something that looks kind of like this stack. Obviously, I'm not unbiased here."
+    } ]
+  }, {
+    "tStartMs": 1484380,
+    "dDurationMs": 4460,
+    "segs": [ {
+      "utf8": "We've built a lot of the primitives here, and the way we think about this is"
+    } ]
+  }, {
+    "tStartMs": 1488840,
+    "dDurationMs": 6780,
+    "segs": [ {
+      "utf8": "really about helping platform teams that are looking at this space accelerate getting to this"
+    } ]
+  }, {
+    "tStartMs": 1495620,
+    "dDurationMs": 5180,
+    "segs": [ {
+      "utf8": "world. You can definitely come check out Warp Factories if you're"
+    } ]
+  }, {
+    "tStartMs": 1500800,
+    "dDurationMs": 5180,
+    "segs": [ {
+      "utf8": "interested, but hopefully this has been useful for anyone asking: what are software"
+    } ]
+  }, {
+    "tStartMs": 1505980,
+    "dDurationMs": 5500,
+    "segs": [ {
+      "utf8": "factories? What do they really mean? How do you build one for real? We're spending"
+    } ]
+  }, {
+    "tStartMs": 1511480,
+    "dDurationMs": 7580,
+    "segs": [ {
+      "utf8": "a lot of time thinking about this, and we've had a lot of success. I usually have"
+    } ]
+  }, {
+    "tStartMs": 1519060,
+    "dDurationMs": 6780,
+    "segs": [ {
+      "utf8": "a slide in here about how we've lowered Warp's cost per PR from about $55 to around $15"
+    } ]
+  }, {
+    "tStartMs": 1525840,
+    "dDurationMs": 7120,
+    "segs": [ {
+      "utf8": "in the last six weeks, while increasing our PR throughput by about 40% and having a lower revert"
+    } ]
+  }, {
+    "tStartMs": 1532960,
+    "dDurationMs": 5940,
+    "segs": [ {
+      "utf8": "rate. So this isn't just putting out slop. I have high"
+    } ]
+  }, {
+    "tStartMs": 1538900,
+    "dDurationMs": 5860,
+    "segs": [ {
+      "utf8": "conviction that this approach works and that this is what the future of development"
+    } ]
+  }, {
+    "tStartMs": 1544760,
+    "dDurationMs": 2700,
+    "segs": [ {
+      "utf8": "is going to look like. All right, thanks for checking this out."
+    } ]
+  } ]
+}

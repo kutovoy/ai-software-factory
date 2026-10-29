@@ -1,0 +1,83 @@
+# Software Factory Talks
+
+Captured 2026-10-28. Metadata (title / channel / duration / upload date) verified with `yt-dlp`;
+ideas extracted from video descriptions, chapter timestamps, and the AI Engineer talk pages
+(edited transcripts + slide chapters). Companion file: `research/ecosystem.md`.
+
+Reproduce metadata:
+```bash
+yt-dlp --skip-download --print "%(title)s || %(uploader)s || %(duration_string)s || %(upload_date)s" URL
+yt-dlp --skip-download --write-auto-subs --sub-langs en --skip-download URL   # transcript
+```
+
+## Talks
+
+| # | Title | Speaker | Channel | URL | Duration | Key ideas worth stealing |
+|---|---|---|---|---|---|---|
+| 1 | **Why Software Factories Fail** (a.k.a. *Harness Engineering is not Enough*) | Dex Horthy (HumanLayer) | AI Engineer | https://www.youtube.com/watch?v=Ib5GBkD555M | 19:18 | (1) Harness engineering cannot fix a training objective that rewards only "tests pass" — architecture cost arrives months later and is never penalized. (2) Faros AI (22k devs / 4k teams): high AI adoption ↔ **+242.7% incidents per PR**, **+54% bugs per developer**, **31.3% more PRs merged with no review**. (3) Move decisions earlier: product review → architecture (contracts, data models) → **program design** (types, signatures, call graphs) → vertical slices. (4) ~30 min of planning saves hours of review; a misaligned PR forces the reviewer back into design work. (5) FrontierCode check: agent-written tests must **fail against pre-patch code**, or they prove nothing. |
+| 2 | **Harness Engineering: How to Build a Software Factory** | Dru Knox (Tessl, Head of Product & Design) | AI Engineer | https://www.youtube.com/watch?v=X6l4lpA0_NY | 20:32 | (1) Define a factory by three metrics: **autonomy, automation, quality** — not speed. (2) Three loops: **inner** (agent does the task), **outer** (factory improves the agent), **meta** (factory improves itself). (3) Three layers to build: **control plane**, **agent-ready stack**, **improvement loops**. (4) Track **manual takeovers, human PR comments, PRs started without a human** — leading indicators, not PR count. (5) Adopt one workflow at a time; signals you need are stuck in local logs, so centralize traces first. |
+| 3 | **Software Engineering Is Becoming Factory Engineering** | Zach Lloyd (Warp CEO) | AI Engineer | https://www.youtube.com/watch?v=tUPPVhBBcoM | 20:36 | (1) Every serious project will run a factory the way every project now has CI/CD. (2) The factory floor: inputs → triage → product spec → tech spec → implementation → review → verification → monitoring, plus the data layer underneath. (3) Open-sourcing built the ecosystem (60k+ stars, 800k devs) — "when software gets cheap to build and clone, a great product isn't enough." (4) Skill loops that improve the factory itself, not just the product. (5) Human taste still matters; automation absorbs noisy issues and sloppy PRs. |
+| 4 | **Building Self-Improving Agent Software Factories** | Suraj Gupta (Warp, harness lead) | AI Engineer | https://www.youtube.com/watch?v=TN3mj92oZ8I | 12:52 | (1) **Self-improving skills**: an outer-loop agent watches the triage agent's runs + feedback and opens a **PR** to update its skill — every change is git-tracked and human-reviewed. (2) **Versioned persistent memory**: a traceable fact store so a Sentry agent doesn't rediscover a root cause it already found. (3) **Model routing**: don't pay Opus prices for triage or simple CI fixes; Warp's evals found UI tasks run well on GLM. (4) Works with **any harness** (Claude Code, Codex) — improvement is not harness-locked. (5) Three concrete mechanisms, not a philosophy. |
+| 5 | **The Software Factory: From Bug Report to Production Code** | Davis Palmie (Factory) | AI Engineer | https://www.youtube.com/watch?v=exiwa9QbQXI | 18:32 | (1) Coding was never the bottleneck — **review, debugging, docs, testing** are; a factory must attack those. (2) Principles: **model-agnostic, sovereign deployment, SDLC-wide, available on every surface**. (3) **Eight pillars of agent readiness** (repo, tests, CI, observability, docs, etc.). (4) Start narrow — incident triage — then widen. (5) Token leaderboards are Goodhart's law; track **signal-to-production time, interventions per PR, cost per PR**. |
+| 6 | **What it takes to build a software factory** | Zach Lloyd (Warp) | Warp | https://www.youtube.com/watch?v=x-PK3yx_MJg | 25:52 | (1) A cloud factory should be **open infrastructure defined in code**. (2) "Factory engineering" is the discipline that makes agents improve over time. (3) Demo of Warp Factories UI: new chat, inbox, runs, MCPs, secrets, factories (dashboard/agents/automations/scorers/self-improvement/benchmarks/definition). (4) Scoring + self-improvement loop. (5) Benchmarks as a product surface; the factory stack (factories-as-code → context → compute → inference → improvement → orchestration → access). **This is the UI reference in `initial_idea.md` (9:11).** |
+| 7 | **Building a Self-Improving Software Factory** | Zach Lloyd (Warp) | The AI Conference | https://www.youtube.com/watch?v=AIH8AGJm_IY | 25:59 | (1) Interactive agents don't scale: runaway cost, no governance, hard to automate. (2) Cloud infra to **centralize conversations, skills, and security permissions**. (3) **Configuration as code** that both humans *and agents* can manage. (4) Metrics beyond "PRs shipped": efficiency and code-quality signals. (5) Self-improvement loops where agents review past conversations, score quality, and propose changes to the skills driving the factory. |
+| 8 | **Build Your Own AI Software Factory with Claude Code** | ZazenCodes | ZazenCodes | https://www.youtube.com/watch?v=ctoaIC4LHmI | 28:02 | (1) Concrete Claude Code implementation: subagents, slash commands, hooks, settings. (2) An **approval gate** inside the loop (run → review → approve a feature). (3) **Parallel feature development** (worktrees / multiple agents). (4) Extension points for growing the factory. (5) Full source: `github.com/zazencodes/zazencodes-season-3/tree/main/src/software-factory-claude-code` — the most copyable single-harness factory. |
+| 9 | **Build an agentic software factory: deep dive** | Steve (Builder.io) | Steve (Builder.io) | https://www.youtube.com/watch?v=pNmfMi-yjZk | 17:35 | (1) Skills as the unit of reuse (`github.com/builderio/skills`). (2) Agent-native app/framework architecture. (3) Pipeline of skills + evals rather than one mega-prompt. (4) Practical deep dive into wiring skills into an agent loop. (5) Open-source artifacts you can lift directly. |
+| 10 | **How to build an enterprise-grade AI software factory** | Matar Peles (Field CTO, Port) | Platform Engineering | https://www.youtube.com/watch?v=Yz3iU4hSFZA | 48:07 | (1) Bottleneck moved from code to everything around it; agents lead idea → PR. (2) Anthropic's **repo-based software factory** as a reference model. (3) **Factory lines**: idea→PR, infra, incidents, CVEs — separate pipelines, not one chain. (4) "The real challenge is **scaling, not chaining** agents"; put agents on **deterministic rails**. (5) Foundations: unified context layer, **agent/skill/MCP registries**, governance + ROI tracking. |
+| 11 | **WTF is a Software Factory?** | Adam Jacob (Swamp Club) with Scott & Wes | Syntax | https://www.youtube.com/watch?v=aYz9G3__Z4g | 57:34 | (1) A factory is **unique to each team** — not a product you buy. (2) Trust comes from **black-box testing**, not from reading every line. (3) Domain-driven design still matters; adversarial review (e.g. accessibility) as a first-class agent role. (4) Flipping the agent loop inside out lets you **swap models/APIs** freely; bring your own inference. (5) Shipping **2,500 PRs/month**; the perception problem ("slop factory"); give five people permission to break the rules to start. |
+| 12 | **Building the Agentic Software Factory** | Matan Grinberg (Factory CEO) & Thomas Dohmke (Entire CEO) | WeAreDevelopers | https://www.youtube.com/watch?v=l7cusZswpG4 | 30:29 | (1) Agents become the **primary producers of code**; the SDLC must change around that. (2) Git hosting changes when agents are the main committers. (3) **Multi-agent reviews** as the replacement for human review. (4) "The end of human code review" — argued, not assumed. (5) Independent, **model-agnostic platforms** as the durable position. |
+| 13 | **Building Your Own Software Factory** | Johannes Schickling (Prisma co-founder) | Prisma (Builder's Day 2026) | https://www.youtube.com/watch?v=Glcgs8mY32o | 19:17 | (1) Wakes up to **~50 merged PRs** every morning. (2) The **intent → work → feedback** loop, with agents taking over more of it. (3) Long-horizon agent work needs a **declarative foundation** — the jQuery→React jump as the analogy. (4) **Missions**: structured executable plans with steps, dependencies, **gates, and human approvals**. (5) **Fractal** (open source) reconciles declarations into running agents. Closest public match to "definitions as code + gates." |
+| 14 | **Inside Kikimora: We Built a Dark Software Factory** | Tessl team | AI Native Dev | https://www.youtube.com/watch?v=u37qkpp5eB8 | 15:51 | (1) Dark factory = nobody inside; the rule was literally **"don't look at the code at all."** (2) Eight weeks: everyone built their own orchestrator, then merged the best into one "Frankenstein" factory. (3) It ran in a Docker container **on one laptop** until someone closed the lid. (4) Onboarded the whole engineering team in three weeks. (5) The real blocker is **trust**, not tooling: "can you sign your name to a PR you didn't write?" |
+| 15 | **Controlling AI Software Factories: Engineers in Charge at Agent Speed** | Jonathan Nolen & Timothy Cook | The AI Conference | https://www.youtube.com/watch?v=L52bqXMtLgI | 24:37 | (1) What happens when coding agents meet the oldest, most complex production code. (2) Why every autonomous loop needs a **control surface** for engineers. (3) Governance at agent speed without becoming the bottleneck. (4) Concrete failure modes from a real codebase. (5) Human-in-charge, not human-in-the-loop-by-accident. |
+| 16 | **Introducing Warp Factories** | Zach Lloyd | Warp | https://www.youtube.com/watch?v=0WBk4ai8y1A | 8:56 | (1) Factories = cloud agent pipelines across the whole dev cycle. (2) Open infrastructure, any model/harness. (3) Factory MCP so local agents can push work into the factory. (4) Benchmark configurations against your own workflows. (5) Short, product-shaped framing of the stack. |
+| 17 | **AI Governance for developers: deploying autonomous coding agents safely** | Platform Engineering | Platform Engineering | https://www.youtube.com/watch?v=Qjw0PSoVsJk | 23:33 | (1) Autonomous agents can ship features or trigger incidents. (2) A practical framework for **safe deployment** of coding agents. (3) Guardrails, approvals, and blast-radius control. (4) What to measure before widening autonomy. (5) Directly relevant to our lights-on → lights-off dial. |
+| 18 | **Microsoft Build 2026 — agent-first keynote** | Microsoft (Satya Nadella et al.) | Microsoft Developer | https://www.youtube.com/watch?v=nlGqajJEsWs | 6:40:25 (full day; recaps ~11–17 min) | (1) The platform shift is "agent-first": from software you operate to agents that do the work. (2) Copilot + GitHub as the agent surface across the SDLC. (3) Agent governance/identity as platform concerns. (4) Agents in the IDE, in Actions, and in the OS. (5) Useful for the *platform* framing; light on factory internals. |
+
+### Honorable mentions (not in the table, worth a skim)
+
+- **Agentic SDLC at Uber — Building Blocks for Uber's Software Factory**, Uday Kiran Medisetty & Adam Huda,
+  AI Engineer, 18:26 — https://ai.engineer/talks/17-YSUHo6Lk-agentic-sdlc-at-uber-building-blocks-ubers
+- **Building the Oz Cloud Agent Platform**, Safia Abdalla (Warp), AI Engineer, 20:51 — the cloud-agent
+  runtime underneath a factory.
+- **Building Your Own Software Factory with Claude Code + Codex**, Leon van Zyl, 27:34 —
+  https://www.youtube.com/watch?v=AsvzMlLyQ38 (two-harness setup).
+- **I Built a Self-Improving Software Factory**, Eric Tech, 12:37 —
+  https://www.youtube.com/watch?v=aggJvNZxfKA (small-scale self-improvement demo).
+- **How Factory is building autonomous software with Claude**, Claude channel, 10:38 —
+  https://www.youtube.com/watch?v=N6FkmdL0Lg0 (vendor case study).
+- **The great software factory debate**, LinearB, 57:21 — https://www.youtube.com/watch?v=8fqTBWWnK3Y
+  (skeptical counterpoint).
+- **Stop coding, build Software Factories instead**, David Ondrej, 1:00:57 —
+  https://www.youtube.com/watch?v=ZHOmBeMNbnc (solo-dev framing).
+
+## Top 5 to watch (in this order)
+
+1. **#1 Why Software Factories Fail — Dex Horthy** (19:18)
+   *Why:* it is the only talk that explains the *mechanism* of failure (training reward ≠ maintainability)
+   and gives concrete countermeasures (earlier decisions, program design, FrontierCode-style test checks).
+   It is the strongest argument for our lights-on default and for a benchmark gate on lights-off.
+
+2. **#2 Harness Engineering: How to Build a Software Factory — Dru Knox** (20:32)
+   *Why:* it gives the cleanest taxonomy we can build against — three metrics (autonomy/automation/quality),
+   three loops (inner/outer/meta), three layers (control plane / agent-ready stack / improvement loops).
+   Almost every primitive in our roadmap maps to one of those nine boxes.
+
+3. **#4 Building Self-Improving Agent Software Factories — Suraj Gupta** (12:52)
+   *Why:* the most concrete self-improvement mechanics of any talk — skill updates via PR, versioned
+   persistent memory, model routing — and it explicitly works across harnesses. This is the practical
+   companion to Harness²'s research method.
+
+4. **#13 Building Your Own Software Factory — Johannes Schickling** (19:17)
+   *Why:* "Missions = steps + dependencies + gates + human approvals" is almost exactly our `factory.yaml`
+   + stage graph + human-gate primitive, and Fractal is an open-source reference for reconciling
+   declarations into running agents.
+
+5. **#7 Building a Self-Improving Software Factory — Zach Lloyd (AI Conference)** (25:59)
+   *Why:* the most complete statement of the *stack* we need: centralized conversations/skills/permissions,
+   config-as-code editable by humans and agents, metrics beyond PR count, and improvement loops that
+   review past runs. Pairs with #6 for the UI reference.
+
+**If you only watch one implementation video:** #8 ZazenCodes (28:02) — it is the most copyable
+single-harness factory, with source code, an approval gate, and parallel feature development.
+
+**If you want the skeptical view before committing:** #11 Adam Jacob (57:34) and #1 Horthy.
