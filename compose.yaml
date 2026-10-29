@@ -1,0 +1,131 @@
+# Full stack for Phase 2a: postgres (read model) + Temporal dev server + api + worker.
+#
+#   docker compose up -d
+#   bash scripts/smoke.sh
+#
+# Inference credentials live only in the api/worker containers; the runner sandbox sees
+# just OPENAI_BASE_URL=<proxy>/v1 and OPENAI_API_KEY=<per-run token> (ADR-011).
+
+name: factory
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: factory
+      POSTGRES_PASSWORD: factory
+      POSTGRES_DB: factory
+    ports:
+      - '5433:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U factory -d factory']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  temporal:
+    image: temporalio/temporal:latest
+    command: server start-dev --ip 0.0.0.0 --ui-port 8233
+    ports:
+      - '7233:7233'
+      - '8233:8233'
+    healthcheck:
+      test: ['CMD', 'temporal', 'operator', 'cluster', 'health', '--address', '127.0.0.1:7233']
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: postgres://factory:factory@postgres:5432/factory
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
+      TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-factory-runs}
+      FACTORY_ROOT: /repo/factories
+      REPO_ROOT: /repo
+      RUNS_DIR: /app/runs
+      DEFAULT_FACTORY: ${DEFAULT_FACTORY:-example}
+      API_PORT: '8080'
+      FACTORY_VERSION: ${FACTORY_VERSION:-0.0.0-dev}
+      # Sandbox-facing URL of this API's proxy (Docker Desktop resolves this to the host).
+      PROXY_PUBLIC_URL: ${PROXY_PUBLIC_URL:-http://host.docker.internal:8080/v1}
+      # Upstream model endpoint. Defaults to the built-in stub so CI needs no credentials.
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://127.0.0.1:8080/internal/stub-model/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-provider-secret}
+      PROXY_STUB_UPSTREAM: ${PROXY_STUB_UPSTREAM:-1}
+      EXPOSE_RUN_TOKEN: ${EXPOSE_RUN_TOKEN:-1}
+    ports:
+      - '8080:8080'
+    volumes:
+      - ./:/repo:ro
+      - ./runs:/app/runs
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'bun',
+          '-e',
+          "fetch('http://127.0.0.1:8080/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  worker:
+    build:
+      context: .
+      dockerfile: packages/orchestration/Dockerfile
+    environment:
+      DATABASE_URL: postgres://factory:factory@postgres:5432/factory
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
+      TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-factory-runs}
+      FACTORY_ROOT: /repo/factories
+      REPO_ROOT: /repo
+      RUNS_DIR: /app/runs
+      PROXY_PUBLIC_URL: ${PROXY_PUBLIC_URL:-http://host.docker.internal:8080/v1}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://127.0.0.1:8080/internal/stub-model/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-provider-secret}
+      RUNNER_BACKEND: ${RUNNER_BACKEND:-docker}
+      WORKER_HEARTBEAT_FILE: /app/runs/.worker-heartbeat
+    volumes:
+      - ./:/repo:ro
+      - ./runs:/app/runs
+      # Real (non-fake) runs lease sibling containers through the docker backend.
+      - /var/run/docker.sock:/var/run/docker.sock
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'bun',
+          '-e',
+          "const s = require('node:fs').statSync('/app/runs/.worker-heartbeat'); process.exit(Date.now() - s.mtimeMs > 60000 ? 1 : 0)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  pgdata:

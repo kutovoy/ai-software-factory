@@ -1,0 +1,16 @@
+# Keep the build context small: only sources, lockfile and manifests.
+node_modules
+**/node_modules
+runs
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+research
+tools
+.opencode
+openspec
+docs
+factories/*/.factory-cache

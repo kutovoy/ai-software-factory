@@ -8,10 +8,14 @@
     "apps/*"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/cli && tsc --noEmit -p packages/adapters && tsc --noEmit -p packages/runners",
+    "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/cli && tsc --noEmit -p packages/adapters && tsc --noEmit -p packages/runners && tsc --noEmit -p packages/orchestration && tsc --noEmit -p apps/api",
     "test": "bun test",
     "lint": "bun run typecheck",
     "factory": "bun packages/cli/src/index.ts",
+    "api": "bun apps/api/src/index.ts",
+    "worker": "bun packages/orchestration/src/worker.ts",
+    "migrate": "bun scripts/migrate.ts",
+    "smoke": "bash scripts/smoke.sh",
     "ci": "bash scripts/ci.sh"
   },
   "devDependencies": {

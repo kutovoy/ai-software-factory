@@ -1,0 +1,319 @@
+import { createHash } from 'node:crypto';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+
+import { FakeAdapter, type SessionHandle, type UsageReport } from '@factory/adapters';
+import {
+  DEFAULT_HARNESS_COMMAND,
+  DockerRunnerBackend,
+  LocalRunnerBackend,
+  type Artifact,
+  type RunnerBackend,
+} from '@factory/runners';
+import { loadConfig } from '../config';
+import { heartbeat } from '../heartbeat';
+import { upsertStep } from '../db';
+import { artifactsDir, ensureRunDir, patchPath, runDir } from '../run-dir';
+import { createAdapter, dropSession, getSession } from '../sessions';
+import type { LeaseInfo, RunArtifact, RunInput } from '../types';
+
+/**
+ * Runner activities: lease → (harness runs inside) → artifacts → kill.
+ *
+ * The fake harness needs no sandbox (the scripted adapter runs in-process), so it gets an
+ * *ephemeral* lease: a workspace directory only, no container, no network. Every other
+ * harness goes through `@factory/runners` (`docker` or `local`), which is where all tool
+ * execution happens (ADR-009).
+ *
+ * Idempotency is the runner protocol's job: `runnerId` defaults to `factory-<runId>`, so a
+ * retried lease re-attaches instead of starting a second sandbox, and `kill` is a no-op
+ * when nothing is leased.
+ */
+
+const ephemeralLeases = new Map<string, LeaseInfo>();
+
+/**
+ * `@factory/runners` bans every `OPENAI_*` name from `spec.env` and `spec.harness.env`
+ * (that is the provider-credential boundary). The inference proxy therefore reaches the
+ * harness through the harness *command*: a per-run token and the proxy base URL, never the
+ * provider key. The token is revoked when the run ends (ADR-011).
+ */
+function harnessCommandWithProxyEnv(env: Record<string, string> | undefined): string {
+  const entries = Object.entries(env ?? {}).filter(([, value]) => value !== '');
+  if (entries.length === 0) return DEFAULT_HARNESS_COMMAND;
+  const prefix = entries
+    .map(([name, value]) => `${name}='${value.replace(/'/g, `'\\''`)}'`)
+    .join(' ');
+  return `${prefix} ${DEFAULT_HARNESS_COMMAND}`;
+}
+
+function backendFor(input: RunInput): RunnerBackend {
+  const config = loadConfig();
+  const kind =
+    input.runner === 'local-process' || config.defaultRunner === 'local' ? 'local' : 'docker';
+  return kind === 'docker' ? new DockerRunnerBackend() : new LocalRunnerBackend();
+}
+
+export async function leaseRunner(args: {
+  input: RunInput;
+  /** Env for the harness process only — proxy base URL + per-run token, never a provider key. */
+  harnessEnv?: Record<string, string>;
+}): Promise<LeaseInfo> {
+  const config = loadConfig();
+  const existing = ephemeralLeases.get(args.input.runId);
+  if (existing) return existing;
+
+  const ephemeral = args.input.harness === 'fake' || args.input.runner === 'fake';
+  const workspace = join(runDir(config.runsDir, args.input.runId), 'workspace');
+  await mkdir(workspace, { recursive: true });
+
+  if (ephemeral) {
+    const lease: LeaseInfo = {
+      runnerId: `factory-${args.input.runId}`,
+      kind: 'local',
+      workspace,
+      ephemeral: true,
+    };
+    ephemeralLeases.set(args.input.runId, lease);
+    await upsertStep({
+      runId: args.input.runId,
+      stepId: 'lease-runner',
+      kind: 'runner',
+      status: 'ok',
+      detail: { ...lease, backend: 'ephemeral', envKeys: [] },
+    });
+    return lease;
+  }
+
+  const backend = backendFor(args.input);
+  const handle = await backend.lease({
+    runId: args.input.runId,
+    repo: {
+      path: args.input.repo?.path ?? args.input.factoryRoot,
+      url: args.input.repo?.url,
+      commit: args.input.repo?.commit ?? args.input.definitionCommit,
+    },
+    harness: { command: harnessCommandWithProxyEnv(args.harnessEnv) },
+    keepWorkspace: false,
+  });
+
+  const lease: LeaseInfo = {
+    runnerId: handle.runnerId,
+    kind: handle.kind,
+    workspace: handle.workspace,
+    harnessUrl: handle.harnessUrl,
+    ephemeral: false,
+  };
+
+  await upsertStep({
+    runId: args.input.runId,
+    stepId: 'lease-runner',
+    kind: 'runner',
+    status: 'ok',
+    detail: {
+      runnerId: lease.runnerId,
+      kind: lease.kind,
+      workspace: lease.workspace,
+      harnessUrl: lease.harnessUrl,
+      // Only key names are recorded — never values (ADR-009 / secret boundary).
+      envKeys: Object.keys(args.harnessEnv ?? {}),
+      envChannel: 'harness-command',
+    },
+  });
+  return lease;
+}
+
+export interface CommandResult {
+  exitCode: number;
+  /** Path relative to the run directory, or null when nothing ran (fake harness). */
+  logPath: string | null;
+  bytes: number;
+}
+
+/**
+ * Runs a setup/verification command inside the sandbox (never on the API host) and keeps
+ * its stdout/stderr as a log artifact. Used for the definition runner's `setupCommands`;
+ * Phase 3 will reuse it for stage verification commands.
+ *
+ * Canonical events are owned by the adapter's sequencer, so command output is not injected
+ * into the event log: it lands in `runs/<runId>/artifacts/<stepId>.log` and the exit code
+ * is recorded on the step.
+ */
+export async function runCommand(args: {
+  input: RunInput;
+  lease: LeaseInfo;
+  command: string;
+  stepId: string;
+  timeoutMs?: number;
+}): Promise<CommandResult> {
+  if (args.lease.ephemeral) {
+    await upsertStep({
+      runId: args.input.runId,
+      stepId: args.stepId,
+      kind: 'exec',
+      status: 'ok',
+      detail: { skipped: 'ephemeral runner', command: args.command },
+    });
+    return { exitCode: 0, logPath: null, bytes: 0 };
+  }
+
+  const config = loadConfig();
+  const backend = backendFor(args.input);
+  const chunks: string[] = [];
+  let exitCode = 0;
+
+  for await (const event of backend.exec(args.lease.runnerId, {
+    command: args.command,
+    timeoutMs: args.timeoutMs ?? 10 * 60 * 1000,
+  })) {
+    if (event.type === 'stdout' || event.type === 'stderr') chunks.push(event.data);
+    if (event.type === 'exit') exitCode = event.code;
+    if (event.type === 'error') {
+      chunks.push(`[${event.code}] ${event.message}\n`);
+      exitCode = 1;
+    }
+    heartbeat({ stepId: args.stepId, exitCode });
+  }
+
+  const logPath = join(artifactsDir(config.runsDir, args.input.runId), `${args.stepId}.log`);
+  await mkdir(dirname(logPath), { recursive: true });
+  const body = chunks.join('');
+  await writeFile(logPath, body, 'utf8');
+
+  await upsertStep({
+    runId: args.input.runId,
+    stepId: args.stepId,
+    kind: 'exec',
+    status: exitCode === 0 ? 'ok' : 'error',
+    detail: {
+      command: args.command,
+      exitCode,
+      logPath: `artifacts/${args.stepId}.log`,
+      bytes: Buffer.byteLength(body),
+    },
+    error: exitCode === 0 ? null : `command exited with ${exitCode}`,
+  });
+
+  return {
+    exitCode,
+    logPath: `artifacts/${args.stepId}.log`,
+    bytes: Buffer.byteLength(body),
+  };
+}
+
+export interface ArtifactResult {
+  artifacts: RunArtifact[];
+  usage: UsageReport | null;
+}
+
+export async function collectArtifacts(args: {
+  input: RunInput;
+  lease: LeaseInfo;
+}): Promise<ArtifactResult> {
+  const config = loadConfig();
+  const dir = await ensureRunDir(config.runsDir, args.input.runId);
+  const artifacts: RunArtifact[] = [];
+  let usage: UsageReport | null = null;
+
+  const entry = getSession(args.input.runId);
+  if (entry) {
+    try {
+      usage = await entry.adapter.getUsage(entry.handle);
+    } catch {
+      usage = null;
+    }
+  }
+
+  if (args.lease.ephemeral) {
+    // Scripted adapter: no workspace diff to capture, so persist the adapter's diff.
+    const adapter = entry?.adapter ?? createAdapter('fake', {});
+    const handle: SessionHandle =
+      entry?.handle ?? { adapterId: 'fake', runId: args.input.runId };
+    let diffs: { path: string; diff: string }[] = [];
+    try {
+      diffs = await adapter.getDiff(handle);
+    } catch {
+      diffs = [];
+    }
+    const patch = diffs.map((diff) => diff.diff).join('\n');
+    const patchFile = patchPath(config.runsDir, args.input.runId);
+    await writeFile(patchFile, patch, 'utf8');
+    const bytes = Buffer.byteLength(patch);
+    artifacts.push({
+      path: 'patch.diff',
+      bytes,
+      sha256: createHash('sha256').update(patch).digest('hex'),
+      kind: 'patch',
+    });
+
+    if (usage) {
+      const usageFile = join(artifactsDir(config.runsDir, args.input.runId), 'usage.json');
+      await mkdir(dirname(usageFile), { recursive: true });
+      const body = JSON.stringify(usage, null, 2);
+      await writeFile(usageFile, body, 'utf8');
+      artifacts.push({
+        path: 'artifacts/usage.json',
+        bytes: Buffer.byteLength(body),
+        sha256: createHash('sha256').update(body).digest('hex'),
+        kind: 'log',
+      });
+    }
+  } else {
+    const backend = backendFor(args.input);
+    const collected: Artifact[] = await backend.artifacts(args.lease.runnerId, {
+      destDir: dir,
+      includeGitDiff: true,
+    });
+    for (const artifact of collected) {
+      artifacts.push({
+        path: artifact.path,
+        bytes: artifact.bytes,
+        sha256: artifact.sha256,
+        kind: artifact.kind,
+      });
+    }
+    // Verify the patch exists even when the backend reported nothing (empty diff is fine).
+    try {
+      await readFile(patchPath(config.runsDir, args.input.runId));
+    } catch {
+      await writeFile(patchPath(config.runsDir, args.input.runId), '', 'utf8');
+    }
+  }
+
+  heartbeat({ artifacts: artifacts.length });
+  await upsertStep({
+    runId: args.input.runId,
+    stepId: 'collect-artifacts',
+    kind: 'artifacts',
+    status: 'ok',
+    detail: { artifacts, usage },
+  });
+
+  return { artifacts, usage };
+}
+
+/** Stops and removes the sandbox; the run directory is retained. Idempotent. */
+export async function killRunner(args: { input: RunInput; lease?: LeaseInfo }): Promise<void> {
+  const lease = args.lease ?? ephemeralLeases.get(args.input.runId);
+  if (!lease || lease.ephemeral) {
+    ephemeralLeases.delete(args.input.runId);
+    await dropSession(args.input.runId);
+    return;
+  }
+  const backend = backendFor(args.input);
+  await backend.kill(lease.runnerId);
+  // Release the in-worker adapter session so a long-lived worker does not accumulate runs.
+  await dropSession(args.input.runId);
+  await upsertStep({
+    runId: args.input.runId,
+    stepId: 'kill-runner',
+    kind: 'runner',
+    status: 'ok',
+    detail: { runnerId: lease.runnerId },
+  });
+}
+
+/** Test hook. */
+export function clearEphemeralLeases(): void {
+  ephemeralLeases.clear();
+}
