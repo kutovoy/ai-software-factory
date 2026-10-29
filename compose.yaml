@@ -68,6 +68,14 @@ services:
       SCORING_CADENCE_MS: ${SCORING_CADENCE_MS:-0}
       SCORING_CRON: ${SCORING_CRON:-0 3 * * *}
       SCORING_WINDOW_DAYS: ${SCORING_WINDOW_DAYS:-1}
+      # Benchmarks (Phase 4b): compose runs hermetic trials on the fake harness + fake forge.
+      BENCHMARK_HARNESS: ${BENCHMARK_HARNESS:-fake}
+      BENCHMARK_RUNNER: ${BENCHMARK_RUNNER:-fake}
+      BENCHMARK_CONCURRENCY: ${BENCHMARK_CONCURRENCY:-2}
+      BENCHMARK_DEFAULT_RUN_COST_USD: ${BENCHMARK_DEFAULT_RUN_COST_USD:-0.5}
+      BENCHMARK_CONFIRM_THRESHOLD_USD: ${BENCHMARK_CONFIRM_THRESHOLD_USD:-5}
+      BENCHMARK_MAX_COST_USD: ${BENCHMARK_MAX_COST_USD:-25}
+      BENCHMARK_PASS_THRESHOLD: ${BENCHMARK_PASS_THRESHOLD:-0.8}
     ports:
       - '8080:8080'
     volumes:
@@ -146,6 +154,12 @@ services:
       SCORING_CADENCE_MS: ${SCORING_CADENCE_MS:-0}
       SCORING_CRON: ${SCORING_CRON:-0 3 * * *}
       SCORING_WINDOW_DAYS: ${SCORING_WINDOW_DAYS:-1}
+      # Benchmarks (Phase 4b): hermetic trials on the fake harness + fake forge in compose.
+      BENCHMARK_CONCURRENCY: ${BENCHMARK_CONCURRENCY:-2}
+      BENCHMARK_DEFAULT_RUN_COST_USD: ${BENCHMARK_DEFAULT_RUN_COST_USD:-0.5}
+      BENCHMARK_CONFIRM_THRESHOLD_USD: ${BENCHMARK_CONFIRM_THRESHOLD_USD:-5}
+      BENCHMARK_MAX_COST_USD: ${BENCHMARK_MAX_COST_USD:-25}
+      BENCHMARK_PASS_THRESHOLD: ${BENCHMARK_PASS_THRESHOLD:-0.8}
       # ADR-013: permission waits hold no activity slot, so 8 slots (the old hardcoded
       # value that used to starve the queue) is enough for eight blocked runs plus new work.
       # Raise for more concurrent streaming runs; the code default is Temporal's 100.

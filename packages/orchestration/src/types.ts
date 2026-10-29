@@ -57,6 +57,12 @@ export interface RunInput {
    * ADR-013 durable wait is unchanged for humans.
    */
   autoAllowPermissions?: boolean;
+  /**
+   * Benchmark trials are hermetic (Phase 4b): a fresh sandbox, a fresh fake-forge repo,
+   * and no network by default. Recorded on the run so the inputs are re-runnable.
+   */
+  hermetic?: boolean;
+  networkPolicy?: 'denied' | 'allowed';
 }
 
 export interface LeaseInfo {
@@ -503,4 +509,99 @@ export interface ScoringWorkflowOutcome {
   skipped: number;
   budgetExhausted: boolean;
   error?: string;
+}
+
+/* ==================================================================== */
+/* Benchmarks (Phase 4b)                                                */
+/*                                                                      */
+/* Workflow-safe types only: no Node APIs, no Temporal worker imports.  */
+/* ==================================================================== */
+
+export type BenchmarkStatus = 'queued' | 'running' | 'completed' | 'error' | 'cancelled';
+export type BenchmarkTrialStatus = 'pending' | 'running' | 'ok' | 'error' | 'skipped';
+
+/** One (task × configuration) trial, resolved by the API before the workflow starts. */
+export interface BenchmarkTrialPlan {
+  trialId: string;
+  configuration: string;
+  task: string;
+  runId: string;
+  prompt: string;
+  successCriteria: string;
+  /** Full 40-char SHAs; a trial is pinned to them. */
+  startingRepoRefs: string[];
+  tags: string[];
+  /** Fresh fake-forge repo key for this trial. */
+  repo: string;
+  /** Tags may declare `requires-network`; a hermetic trial then fails `network_denied`. */
+  requiresNetwork: boolean;
+}
+
+export interface BenchmarkWorkflowInput {
+  benchmarkRunId: string;
+  factory: string;
+  factoryRoot: string;
+  /** Git root that contains `factoryRoot`; pinned repo path for the hermetic trial. */
+  repoRoot?: string;
+  suite: string;
+  definitionCommit: string;
+  definitionDirty: boolean;
+  /** sha256 over the full normalized matrix + definitionCommit. */
+  configHash: string;
+  trials: BenchmarkTrialPlan[];
+  harness: HarnessId;
+  model?: string;
+  runner: RunnerKindName;
+  /** Max concurrent child runs; the workflow fans out in deterministic batches. */
+  concurrency: number;
+  estimateUsd: number;
+  maxCostUsd: number;
+  passThreshold: number;
+  /** True only when every declared task × configuration is in `trials`. */
+  fullMatrix: boolean;
+  judgeMode?: ScoringJudgeMode;
+  permissionTimeoutMs?: number;
+}
+
+export interface BenchmarkTrialOutcome {
+  trialId: string;
+  configuration: string;
+  task: string;
+  runId: string | null;
+  status: BenchmarkTrialStatus;
+  errorCode: string | null;
+  score: number | null;
+  passing: boolean;
+  costUsd: number;
+  uncalibrated: boolean;
+}
+
+export interface BenchmarkWorkflowOutcome {
+  benchmarkRunId: string;
+  status: BenchmarkStatus;
+  passRate: number | null;
+  calibrationOk: boolean;
+  passed: boolean;
+  sampleSize: number;
+  costUsd: number;
+  errors: number;
+  skipped: number;
+  budgetExhausted: boolean;
+  attestationId?: string;
+  trials: BenchmarkTrialOutcome[];
+  error?: string;
+}
+
+/** One benchmark workflow per run; id derived from the run id (stable across retries). */
+export function benchmarkWorkflowId(benchmarkRunId: string): string {
+  return `benchmark-${benchmarkRunId}`;
+}
+
+/** One child run per (task × configuration) trial. */
+export function benchmarkTrialRunId(
+  benchmarkRunId: string,
+  configurationIndex: number,
+  taskIndex: number,
+): string {
+  return `run_bench_${benchmarkRunId.replace(/^bench_/, '')}_${configurationIndex}_${taskIndex}`;
 }

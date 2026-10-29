@@ -101,7 +101,13 @@ test.describe('Scoring and measurement', () => {
     const score = await scoreRun(request, run.id);
     expect(score.status).toBe('ok');
     expect(score.label).toBeTruthy();
-    expect(score.uncalibrated).toBe(true);
+
+    // Smoke (which runs before Playwright) calibrates `scope` on the shared stack, so the
+    // uncalibrated flag depends on whether a passing calibration exists for this rubric hash.
+    const calibrationResponse = await request.get('/api/calibration/scope?factory=example');
+    expect(calibrationResponse.ok()).toBeTruthy();
+    const calibrationStatus = (await calibrationResponse.json()) as { calibrated: boolean };
+    expect(score.uncalibrated).toBe(!calibrationStatus.calibrated);
 
     // Registry: class, labels, passing score, sampling, judge model, calibration badge.
     await page.goto('/factories/example/scorers');
@@ -119,9 +125,13 @@ test.describe('Scoring and measurement', () => {
     await expect(row.getByTestId('scorer-labels')).toContainText('compliant');
     await expect(row.getByTestId('scorer-calibration')).toContainText(/uncalibrated|calibrated|insufficient/);
 
-    // Calibration panel is honest about the missing golden set.
+    // Calibration panel is honest about the current golden-set state.
     await expect(page.getByTestId('calibration-panel')).toBeVisible();
-    await expect(page.getByTestId('calibration-insufficient')).toBeVisible();
+    if (calibrationStatus.calibrated) {
+      await expect(page.getByTestId('calibration-verdict')).toBeVisible();
+    } else {
+      await expect(page.getByTestId('calibration-insufficient')).toBeVisible();
+    }
 
     // Score detail: label/score/rationale/evidence/provenance/cost.
     await page.goto(`/scores/${score.id}`);
@@ -134,8 +144,13 @@ test.describe('Scoring and measurement', () => {
     await expect(page.getByTestId('score-provenance')).toBeVisible();
     await expect(page.getByTestId('score-judge-model')).toHaveText('anthropic/claude-haiku-4-5');
     await expect(page.getByTestId('score-cost')).toBeVisible();
-    await expect(page.getByTestId('score-uncalibrated')).toBeVisible();
-    await expect(page.getByTestId('score-calibration-none')).toBeVisible();
+    if (calibrationStatus.calibrated) {
+      await expect(page.getByTestId('score-uncalibrated')).toHaveCount(0);
+      await expect(page.getByTestId('score-calibration')).toContainText('pass');
+    } else {
+      await expect(page.getByTestId('score-uncalibrated')).toBeVisible();
+      await expect(page.getByTestId('score-calibration-none')).toBeVisible();
+    }
     await expect(page.getByTestId('score-events')).toContainText('score.completed');
 
     // The run detail carries the score and links to its detail page.

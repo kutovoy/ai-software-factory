@@ -32,6 +32,9 @@ export const ERROR_CODES = [
   'invalid_cron',
   'invalid_scorer_labels',
   'benchmark_task_mismatch',
+  'too_many_configurations',
+  'duplicate_tasks',
+  'duplicate_configurations',
   'invalid_stage_graph',
   'dirty_worktree',
 ] as const;

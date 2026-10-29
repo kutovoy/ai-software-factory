@@ -22,22 +22,41 @@ test.describe('Factory loop (lights off)', () => {
     await page.goto(`/factories/${FACTORY}/gates`);
     await expect(page.getByTestId('gates-table')).toBeVisible();
     await expect(page.getByTestId('autonomy-panel')).toBeVisible();
-    await expect(page.getByTestId('autonomy-benchmark-gate-note')).toBeVisible();
-    await expect(page.getByTestId('autonomy-benchmark-gate-note')).toContainText('Phase 4');
 
-    // Refused: the control is disabled with an explanation, not merely unresponsive.
-    await expect(page.getByTestId('autonomy-enable')).toBeDisabled();
-    await expect(page.getByTestId('autonomy-enable-blocked')).toContainText('benchmark gate unresolved');
+    // An earlier benchmark E2E may have left a current attestation on the shared stack.
+    // Both paths are valid: with an attestation the gate is satisfied; without one the
+    // control is disabled and only an explicit override {actor, reason} gets through.
+    const satisfied = await page
+      .getByTestId('gates-attestation-status')
+      .getAttribute('data-satisfied');
 
-    // The only way through: an explicit override, confirmed in a dialog.
-    await page.getByTestId('autonomy-override-open').click();
-    await expect(page.getByTestId('autonomy-override-dialog')).toBeVisible();
-    await page.getByTestId('autonomy-override-actor').fill('e2e-operator');
-    await page.getByTestId('autonomy-override-reason').fill('e2e: accept the Phase 4 benchmark risk');
-    await page.getByTestId('autonomy-override-confirm').click();
-    await expect(page.getByTestId('autonomy-override-dialog')).toHaveCount(0);
-    await expect(page.getByTestId('autonomy-override-recorded')).toContainText('e2e-operator');
-    await expect(page.getByTestId('autonomy-enable')).toBeEnabled();
+    if (satisfied === 'true') {
+      await expect(page.getByTestId('autonomy-attestation-ok')).toBeVisible();
+      await expect(page.getByTestId('autonomy-enable')).toBeEnabled();
+    } else {
+      await expect(page.getByTestId('gates-attestation-status')).toHaveAttribute(
+        'data-satisfied',
+        'false',
+      );
+      await expect(page.getByTestId('autonomy-benchmark-gate-note')).toBeVisible();
+      await expect(page.getByTestId('autonomy-benchmark-gate-note')).toContainText('attestation');
+
+      // Refused: the control is disabled with an explanation, not merely unresponsive.
+      await expect(page.getByTestId('autonomy-enable')).toBeDisabled();
+      await expect(page.getByTestId('autonomy-enable-blocked')).toContainText('attestation missing');
+
+      // The only way through without an attestation: an explicit override in a dialog.
+      await page.getByTestId('autonomy-override-open').click();
+      await expect(page.getByTestId('autonomy-override-dialog')).toBeVisible();
+      await page.getByTestId('autonomy-override-actor').fill('e2e-operator');
+      await page
+        .getByTestId('autonomy-override-reason')
+        .fill('e2e: accept the benchmark risk without an attestation');
+      await page.getByTestId('autonomy-override-confirm').click();
+      await expect(page.getByTestId('autonomy-override-dialog')).toHaveCount(0);
+      await expect(page.getByTestId('autonomy-override-recorded')).toContainText('e2e-operator');
+      await expect(page.getByTestId('autonomy-enable')).toBeEnabled();
+    }
 
     await page.getByTestId('autonomy-actor').fill('e2e-operator');
     await page.getByTestId('autonomy-reason').fill('e2e: lights-off run');

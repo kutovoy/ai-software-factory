@@ -40,17 +40,29 @@ export const benchmarkSuiteSchema = z
     name: z.string().min(1),
     description: z.string().min(1).optional(),
     agent: z.string().min(1),
-    configurations: z.array(benchmarkConfigurationSchema).min(1).max(6),
+    configurations: z.array(benchmarkConfigurationSchema).min(1),
     tasks: z.array(z.string().min(1)),
   })
   .strict()
   .superRefine((value, ctx) => {
+    // The supported maximum is a benchmark policy (see `@factory/evals`), reported with a
+    // stable code instead of Zod's generic array bound.
+    if (value.configurations.length > 6) {
+      addIssue(
+        ctx,
+        'too_many_configurations',
+        `a suite supports at most 6 configurations (got ${value.configurations.length})`,
+        ['configurations'],
+      );
+    }
     const configurationNames = value.configurations.map((configuration) => configuration.name);
     if (new Set(configurationNames).size !== configurationNames.length) {
-      addIssue(ctx, 'invalid_value', 'configuration names must be unique', ['configurations']);
+      addIssue(ctx, 'duplicate_configurations', 'configuration names must be unique', [
+        'configurations',
+      ]);
     }
     if (new Set(value.tasks).size !== value.tasks.length) {
-      addIssue(ctx, 'invalid_value', 'task slugs must be unique', ['tasks']);
+      addIssue(ctx, 'duplicate_tasks', 'task slugs must be unique', ['tasks']);
     }
   });
 

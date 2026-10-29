@@ -6,3 +6,4 @@ export * from './work-items';
 export * from './foreman';
 export * from './forge';
 export * from './scoring';
+export * from './benchmark';

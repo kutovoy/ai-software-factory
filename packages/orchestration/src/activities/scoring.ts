@@ -399,7 +399,7 @@ export function scoreIdFor(runId: string, scorer: string, rubricHash: string): s
 }
 
 export async function persistScore(args: {
-  scoreRunId: string;
+  scoreRunId: string | null;
   draft: ScoreDraft;
 }): Promise<{ scoreId: string; status: ScoreDraft['status']; eventType: string; eventAppended: boolean }> {
   const sql = getSql();

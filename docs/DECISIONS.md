@@ -307,3 +307,50 @@ slow, materialized views are an implementation detail behind the same response s
 **Consequences:** numbers are explainable and rebuildable from the read model; replaying or backfilling
 cannot corrupt them. Cost: queries scan tables per request, so indexes and later materialization
 matter at scale; metric definitions are part of the API/UI contract and must change deliberately.
+
+---
+
+## ADR-018 — A benchmark attestation binds definition commit + configuration hash + calibration
+
+**Status:** accepted (2026-10-29, Phase 4b)
+**Context:** The autonomy guardrail (`benchmarkGateRequired`) must be satisfiable by evidence, not by
+a declaration. A benchmark result is only comparable if it replays the same tasks at the same pinned
+revisions with the same model/harness mix; a result from another version or another matrix must not
+unlock autonomy. Judges also drift, so a benchmark scored by an uncalibrated judge is an opinion.
+**Options:** gate on "a benchmark ran" · gate on the latest pass rate · bind an attestation to
+`(factory, definitionCommit, configHash)` and require `passed && calibrationOk`.
+**Decision:** every benchmark run records `definitionCommit` (git SHA) and `configHash` = sha256 over
+the normalized full (task × configuration) matrix plus `definitionCommit`. A run that passes its
+calibrated pass-rate threshold on the **full matrix** writes one attestation keyed by
+`(factory, definitionCommit, configHash)` with `{suite, passRate, calibrationOk, passed, createdAt}`.
+The autonomy gate accepts only an attestation whose commit + hash match the running version; otherwise
+it refuses with `benchmark_attestation_missing`. Changing a configuration, a task set or the definition
+invalidates the attestation (a stale attestation never satisfies the gate). A partial matrix run reports
+results but cannot attest. The explicit override `{actor, reason}` from Phase 3a remains as an audited
+escape hatch, but it is no longer the only way through.
+**Consequences:** autonomy claims are reproducible and version-scoped; a model swap or definition edit
+requires a fresh benchmark before lights-off can be re-enabled. Cost: benchmarks are the most expensive
+operation in the system, guarded by an estimate + confirmation threshold + hard `maxCostUsd` cap.
+Attestations are a read-model projection; the definition stays in git.
+
+---
+
+## ADR-019 — Benchmarks report a Pareto frontier, not a single score
+
+**Status:** accepted (2026-10-29, Phase 4b)
+**Context:** Comparing configurations on one blended number hides the trade-off that actually matters:
+quality versus cost. A cheap configuration that passes 70% may be the right choice for low-risk work,
+while a 95% configuration at 4× the cost may be right for production. Collapsing that into a winner
+invites overfitting to the benchmark's task set and hides uncertainty (small sample sizes).
+**Options:** one weighted score + ranking · pass rate only · pass rate and cost as a two-axis Pareto
+frontier with labels and a recommendation only on dominance.
+**Decision:** each configuration reports `passRate`, `weightedScore`, `sampleSize`, `costUsd`, `errors`
+and `uncalibrated`; results are rendered as a pass-rate-versus-cost scatter. Non-dominated
+configurations form the **Pareto frontier**; labels `highest_performance`, `most_efficient` and
+`lowest_cost` are assigned where applicable. A single recommendation is produced only when one
+configuration dominates every other one on both axes (or when only one configuration has samples);
+otherwise the API says `pareto_frontier` and the human chooses by the axis they care about. Errors and
+skipped trials are always reported, and no configuration with zero samples gets a fabricated rate.
+**Consequences:** the comparison is honest about trade-offs and small samples; the UI has to explain
+three labels instead of one winner. The frontier is recomputed from the persisted trial/result rows, so
+a re-run with more samples can move it without rewriting history.

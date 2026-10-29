@@ -7,6 +7,7 @@ import { Table } from '@/components/ui/Table';
 import { safeGet } from '@/lib/api';
 import { GATE_STAGES, docOf, gateMeaning, type AutomationDoc } from '@/lib/definition';
 import type {
+  BenchmarkGateStatusWire,
   FactoryDetail,
   FactoryResources,
   GateStage,
@@ -33,6 +34,10 @@ export default async function GatesPage({ params }: { params: Promise<{ name: st
     safeGet<{ factory: FactoryDetail } | null>(`/factories/${encoded}`, null),
     safeGet<FactoryResources | null>(`/factories/${encoded}/resources`, null),
   ]);
+  const benchmarkGate = await safeGet<BenchmarkGateStatusWire | null>(
+    `/factories/${encoded}/benchmark-gate`,
+    null,
+  );
 
   // There is no `GET /autonomy` read endpoint yet: the newest `autonomy.*` event in this
   // factory's work-item log is the only durable projection of a kill-switch change.
@@ -107,10 +112,11 @@ export default async function GatesPage({ params }: { params: Promise<{ name: st
           <p className="font-semibold">Fully autonomous — lights off.</p>
           <p className="mt-1 text-xs">
             Every stage resolves to <span className="font-mono">agent</span> and the merge policy is{' '}
-            <span className="font-mono">{gates.mergePolicy}</span>. A benchmark non-regression gate is
-            required before enabling this in production
-            {gates.benchmarkGateRequired ? ' — and this factory reports it as required' : ''}. Until the
-            benchmark suite has recorded runs, autonomy is a declaration, not a proven capability.
+            <span className="font-mono">{gates.mergePolicy}</span>. Enabling this in production
+            requires a benchmark non-regression gate
+            {gates.benchmarkGateRequired ? ' — and this factory reports it as required' : ''}. The
+            gate is satisfied only by a passing, calibrated attestation matching the current
+            definition commit + configuration hash (ADR-018).
           </p>
         </div>
       ) : gates ? (
@@ -124,16 +130,76 @@ export default async function GatesPage({ params }: { params: Promise<{ name: st
         </div>
       ) : null}
 
+      <Card testId="gates-attestation-card">
+        <CardHeader
+          title="Benchmark attestation"
+          hint="An attestation binds the definition commit + configuration hash; changing either invalidates it."
+          action={
+            benchmarkGate ? (
+              <Badge
+                tone={benchmarkGate.satisfied ? 'success' : benchmarkGate.required ? 'warning' : 'neutral'}
+                testId="gates-attestation-badge"
+              >
+                {benchmarkGate.required
+                  ? benchmarkGate.satisfied
+                    ? 'current'
+                    : 'missing'
+                  : 'not required'}
+              </Badge>
+            ) : null
+          }
+        />
+        <CardBody className="space-y-2 text-xs text-slate-700">
+          {benchmarkGate ? (
+            <>
+              <p data-testid="gates-attestation-status" data-satisfied={benchmarkGate.satisfied ? 'true' : 'false'}>
+                <span className="font-semibold">
+                  {benchmarkGate.required ? 'Required' : 'Not required'}:
+                </span>{' '}
+                {benchmarkGate.satisfied
+                  ? 'a passing, calibrated attestation matches this version.'
+                  : benchmarkGate.reason ?? 'no attestation matches this version.'}
+              </p>
+              <ul className="space-y-1">
+                {benchmarkGate.suites.map((entry) => (
+                  <li key={entry.suite} data-testid="gates-attestation-suite" className="font-mono text-[11px] text-slate-600">
+                    {entry.suite} · {entry.configHash.slice(0, 12)} ·{' '}
+                    {entry.attestation
+                      ? `${entry.attestation.passed ? 'passed' : 'failed'}${entry.attestation.calibrationOk ? ', calibrated' : ', uncalibrated'}${entry.attestation.partial ? ', partial (not gate-eligible)' : ''} (${Math.round((entry.attestation.passRate ?? 0) * 100)}%)`
+                      : 'no attestation'}
+                  </li>
+                ))}
+              </ul>
+              <p>
+                <a
+                  data-testid="gates-attestation-link"
+                  href={`/factories/${encoded}/benchmarks`}
+                  className="text-slate-900 underline decoration-slate-300 underline-offset-2"
+                >
+                  Run or inspect the benchmark suite →
+                </a>
+              </p>
+            </>
+          ) : (
+            <p data-testid="gates-attestation-unavailable" className="text-slate-500">
+              Attestation status is unavailable: the benchmark gate projection could not be read.
+            </p>
+          )}
+        </CardBody>
+      </Card>
+
       <Card testId="gates-autonomy-card">
         <CardHeader
           title="Autonomy and kill switch"
-          hint="Enabling is guardrailed by the benchmark gate until Phase 4; pausing always works."
+          hint="Enabling is guardrailed by a passing benchmark attestation; pausing always works."
         />
         <CardBody>
           {gates ? (
             <AutonomyControl
               factory={factory}
               benchmarkGateRequired={gates.benchmarkGateRequired}
+              benchmarkAttestationSatisfied={benchmarkGate?.satisfied ?? false}
+              benchmarkAttestationCode={benchmarkGate?.code ?? null}
               fullyAutonomous={gates.fullyAutonomous}
               mergePolicy={gates.mergePolicy}
               initialEvent={autonomyEvent}
@@ -263,9 +329,9 @@ export default async function GatesPage({ params }: { params: Promise<{ name: st
       <p data-testid="gates-killswitch-note" className="text-xs text-slate-500">
         A gate decision is a durable workflow wait: it holds no activity slot. The kill switch pauses new
         stage dispatch and forces every gate back to <span className="font-mono">human</span>. Enabling
-        autonomy on a fully autonomous factory is refused while the benchmark non-regression gate is
-        unresolved, unless an explicit override <span className="font-mono">{'{actor, reason}'}</span> is
-        confirmed above.
+        autonomy on a fully autonomous factory is refused while no passing, calibrated benchmark
+        attestation matches the current definition commit + configuration hash, unless an explicit
+        override <span className="font-mono">{'{actor, reason}'}</span> is confirmed above.
       </p>
     </div>
   );

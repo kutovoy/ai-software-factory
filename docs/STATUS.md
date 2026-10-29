@@ -4,15 +4,80 @@ Last updated: 2026-10-29
 
 ## Phase
 
-**Phase 3a — factory loop + console: complete** (2026-10-29). Work items are durable workflows
-(`FactoryWorkflow` + child `StageWorkflow`), the stage graph is compiled from the definition, the
-foreman dispatches with `spawnableBy` enforcement, gates are workflow-level durable waits
-(Update/Signal + SLA), the review committee is advisory (≥2 reviewers + judge), and autonomy has a
-policy + kill switch — all exercised on the fake forge + fake harness. The Phase 3 console ships
-with it: a work-items board, gate approvals in the Inbox, a work-item detail page (timeline, gate
-decisions, reviewer findings, PR/checks) and a Gates page with the kill switch and the benchmark-gate
-guardrail. Phase 2b web console remains complete.
-Next: **Phase 4b** (benchmark replay + version comparison) and Phase 3b (GitHub forge + merge queue).
+**Phase 4b — benchmark replay + attestation: complete** (2026-10-29). Benchmarks load suites/tasks
+from the git-backed definition, pin every trial to full `startingRepoRefs` + `definitionCommit`,
+run hermetically on the fake harness + fresh fake-forge repo, aggregate pass rate / weighted score /
+cost per configuration, report a Pareto frontier, and write an attestation that binds
+`(factory, definitionCommit, configHash)` — which the autonomy gate now requires (ADR-018/ADR-019).
+Next: **Phase 3b** (GitHub forge + merge queue) and Phase 5 (self-improvement observer loop).
+
+### Phase 4b — benchmarks, Pareto and attestation (ADR-018/ADR-019, 2026-10-29)
+
+`packages/evals` (new `benchmark.ts`): suite/task loader with stable validation codes (`invalid_sha`,
+`too_many_configurations`, `duplicate_tasks`, `duplicate_configurations`, `benchmark_task_mismatch`),
+normalized configuration matrix, `configHash = sha256(matrix + definitionCommit)`, cost estimator
+(trials × median comparable run cost, fallback when no data, confirmation threshold), aggregation
+(`passRate`, `weightedScore`, `sampleSize`, `passingCount`, `costUsd`, `errors`, `skipped`,
+`uncalibrated`), and a Pareto frontier with `highest_performance` / `most_efficient` / `lowest_cost`
+labels; a single recommendation is produced only on dominance. Unit tests cover hash stability,
+validation codes, estimate/cap arithmetic, aggregation, dominance and trade-offs.
+
+Persistence: `005_benchmarks.sql` (`benchmark_runs`, `benchmark_trials`, `benchmark_results`,
+`benchmark_attestations`, `benchmark_events`) + `006_benchmark_attestation_partial.sql` (partial runs
+record a reporting-only attestation), and a repository (create run, upsert trial by
+`(run, configuration, task)`, aggregate results, attestation lookup by `(factory, commit, configHash)`,
+deduped events, median comparable run costs).
+
+Orchestration: `BenchmarkWorkflow` fans out child `RunWorkflow`s in deterministic concurrency batches;
+each trial gets a fresh fake-forge repo, a pinned full SHA + definition commit, `hermetic: true`,
+`networkPolicy: denied`, and a `network_denied` failure for tasks tagged `requires-network`. A failed
+trial is recorded and excluded; the hard cap skips remaining trials with `budget_exhausted` and the run
+completes with partial results. Activities: `estimateBenchmarkCostActivity`, `startBenchmarkTrial`,
+`finishBenchmarkTrial`, `failBenchmarkTrial`, `skipBenchmarkTrial`, `aggregateBenchmarkActivity`,
+`attestBenchmarkActivity`; `benchmark.started` / `benchmark.completed` are append-only and deduped by
+`(benchmark_run_id, type)`. Trial scoring reuses the Phase 4a scorer path (deterministic + judge +
+`persistScore`), so calibration/provenance are identical to ordinary scoring.
+
+API: `GET /factories/:name/benchmarks` (suites, matrix hash, latest run, attestations, gate),
+`POST /factories/:name/benchmarks/:suite/run` (`dryRun` estimate, `cost_confirmation_required` above
+the threshold, hard `maxCostUsd`, starts the workflow), `GET /benchmarks/:id` (run, trials, results,
+events, aggregate, frontier, labels, recommendation, attestation), `GET /factories/:name/attestations`,
+`GET /factories/:name/benchmark-gate`. `POST /autonomy` now refuses with
+`benchmark_attestation_missing` unless a passing, calibrated, non-partial attestation matches the
+running commit + configHash; the explicit `{actor, reason}` override remains.
+
+UI: Benchmarks page (suites, configurations, pinned tasks, `configHash`, latest run, attestation
+badge), run dialog (configuration/task selection, estimate, confirmation, hard cap), results matrix,
+Pareto scatter (pass rate vs cost), labels/recommendation, per-trial drill-down to the child run, and
+a Gates page attestation card with status + link; the enable button reflects the attestation.
+
+Verification (2026-10-29):
+
+```
+bun run ci                     → typecheck clean; 291 pass / 46 skip / 0 fail
+benchmark orchestration (Temporal + PG, fake harness/forge, stub judge)
+                               → 4 pass: 2 tasks × 2 configs → 4 ok trials, 2 results, frontier,
+                                 attestation + benchmark.started/completed; zero cap → all skipped
+                                 budget_exhausted; one requires-network trial → error recorded,
+                                 the other trial still runs (partial failure tolerated)
+benchmark API (PG + Temporal)  → 5 pass: suites/hash/gate projection, dry-run estimate,
+                                 cost_confirmation_required → confirmed start, zero cap refused,
+                                 stale attestation → benchmark_attestation_missing, matching
+                                 attestation → autonomy enabled
+docker compose up -d --build   → api, worker, web, postgres, temporal healthy
+bash scripts/smoke.sh          → SMOKE PASSED incl. calibration + 1 task × 2 configs benchmark
+                                 (2 trials, 2 results, pass rate 1) + attestation row
+cd apps/web && bunx playwright test → 19 passed: benchmarks (run → results → frontier →
+                                 attestation → autonomy enabled), lights-off override/attestation,
+                                 chat, inbox, runs, definition, scoring, metrics
+```
+
+Caveat: compose runs benchmarks on `BENCHMARK_HARNESS=fake` + `BENCHMARK_RUNNER=fake` with the stub
+judge; a real benchmark needs the factory's harness/model and a passing calibration. A partial matrix
+(task/config subset) records an attestation for reporting but is marked `partial` and the autonomy
+gate ignores it. Trials are hermetic replays, not production replays (no recorded-tool-response replay
+in v1).
+
 
 ### Phase 4a — scoring and metrics (ADR-016/ADR-017, 2026-10-29)
 
@@ -370,16 +435,16 @@ both accepted; `benchmarkGateRequired` is true exactly when `fullyAutonomous`; k
 
 ## Next
 
-1. Phase 4b: benchmark replay at pinned SHAs + version comparison, consuming calibrated judge scores;
-   the benchmark gate then has real evidence (currently the scoring layer exposes its precondition).
-2. Phase 3b: GitHub `CodeForge` backend (must pass the shared contract suite) + merge queue, and the
+1. Phase 3b: GitHub `CodeForge` backend (must pass the shared contract suite) + merge queue, and the
    MCPs & apps page (per-agent MCP wiring). Also: an autonomy read endpoint (`GET /autonomy`) and a
    work-item cancel route, so the console no longer derives state from the event log or cleans up
    by rejecting a gate.
+2. Phase 5 self-improvement observer loop over scored runs, gated by a benchmark non-regression win
+   (ADR-018 gives it a real attestation to compare against).
 3. Rebuild tool for the read model (replay JSONL → Postgres) before benchmarks rely on it.
-4. Phase 5 self-improvement observer loop over scored runs.
-5. Real runner path: build `factory-runner:local`, verify `opencode serve` readiness + proxy env inside
-   the container against a live model endpoint.
+4. Real runner path: build `factory-runner:local`, verify `opencode serve` readiness + proxy env inside
+   the container against a live model endpoint. Run a real (non-fake) benchmark once calibration and a
+   model endpoint exist.
 
 ## Open questions
 

@@ -13,6 +13,15 @@ import {
   temporalHealthy,
   type HarnessId,
 } from '@factory/orchestration';
+import {
+  benchmarkGateStatus,
+  benchmarkRunBodySchema,
+  getBenchmarkRunForApi,
+  getBenchmarkSuitesForApi,
+  listAttestationsForApi,
+  startBenchmarkForApi,
+  type BenchmarkRunBody,
+} from './benchmarks';
 import type { ApiConfig } from './config';
 import { toOrchestrationConfig } from './config';
 import {
@@ -254,6 +263,34 @@ export function createApp(config: ApiConfig): Hono {
     const body = await json<ScoringBody>(c, scoringBodySchema);
     return c.json(await startScoringForApi(config, body), 202);
   });
+
+  /* ------------------------------------------------------------ benchmarks */
+
+  app.get('/factories/:name/benchmarks', async (c) =>
+    c.json(await getBenchmarkSuitesForApi(config, c.req.param('name'))),
+  );
+
+  app.post('/factories/:name/benchmarks/:suite/run', async (c) => {
+    const body = await json<BenchmarkRunBody>(c, benchmarkRunBodySchema);
+    const result = await startBenchmarkForApi(
+      config,
+      c.req.param('name'),
+      c.req.param('suite'),
+      body,
+    );
+    // A dry run is an estimate, not a resource creation.
+    return c.json(result, 'workflow' in result ? 202 : 200);
+  });
+
+  app.get('/benchmarks/:id', async (c) => c.json(await getBenchmarkRunForApi(c.req.param('id'))));
+
+  app.get('/factories/:name/attestations', async (c) =>
+    c.json(await listAttestationsForApi(config, c.req.param('name'))),
+  );
+
+  app.get('/factories/:name/benchmark-gate', async (c) =>
+    c.json(await benchmarkGateStatus(config, c.req.param('name'))),
+  );
 
   /* ----------------------------------------------------------------- runs */
 

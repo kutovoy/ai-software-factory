@@ -1,0 +1,12 @@
+name: Suite
+agent: a
+configurations:
+  - name: c1
+  - name: c2
+  - name: c3
+  - name: c4
+  - name: c5
+  - name: c6
+  - name: c7
+tasks:
+  - t1

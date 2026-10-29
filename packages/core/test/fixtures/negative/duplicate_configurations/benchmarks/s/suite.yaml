@@ -1,0 +1,7 @@
+name: Suite
+agent: a
+configurations:
+  - name: Baseline
+  - name: Baseline
+tasks:
+  - t1

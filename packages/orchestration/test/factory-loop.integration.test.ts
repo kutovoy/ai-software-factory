@@ -264,6 +264,15 @@ suite('factory loop on the fake forge + fake harness', () => {
     setForge('fake', null);
     setJudgementModel(null);
     setReviewerModel(null);
+    // The kill-switch test pauses the shared factory; restore it for smoke/E2E.
+    await setAutonomyState(getSql(), {
+      factory: FACTORY,
+      enabled: false,
+      paused: false,
+      actor: 'itest',
+      reason: 'integration cleanup',
+      benchmarkGateRequired: false,
+    }).catch(() => undefined);
     await closeSql();
     await closeClient();
   }, 90_000);

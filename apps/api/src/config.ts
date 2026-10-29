@@ -1,5 +1,5 @@
 import { join, resolve } from 'node:path';
-import type { OrchestrationConfig } from '@factory/orchestration';
+import type { HarnessId, OrchestrationConfig, RunnerKindName } from '@factory/orchestration';
 
 /**
  * API configuration. Everything is env-driven so the same image runs in compose, CI and
@@ -43,6 +43,14 @@ export interface ApiConfig {
   scoringCadenceMs: number;
   scoringCron: string;
   scoringWindowDays: number;
+  /** Optional benchmark harness override (CI/smoke use `fake`; production uses the factory default). */
+  benchmarkHarness: HarnessId | null;
+  benchmarkRunner: RunnerKindName | null;
+  benchmarkConcurrency: number;
+  benchmarkDefaultRunCostUsd: number;
+  benchmarkConfirmThresholdUsd: number;
+  benchmarkMaxCostUsd: number;
+  benchmarkPassThreshold: number;
 }
 
 function boolFromEnv(value: string | undefined, fallback: boolean): boolean {
@@ -53,6 +61,21 @@ function boolFromEnv(value: string | undefined, fallback: boolean): boolean {
 function intFromEnv(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : fallback;
+}
+
+function numberFromEnv(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function harnessFromEnv(value: string | undefined): HarnessId | null {
+  const allowed: HarnessId[] = ['opencode', 'claude-code', 'codex', 'gemini', 'generic-cli', 'fake'];
+  return allowed.includes(value as HarnessId) ? (value as HarnessId) : null;
+}
+
+function runnerFromEnv(value: string | undefined): RunnerKindName | null {
+  const allowed: RunnerKindName[] = ['local-docker', 'local-process', 'fake'];
+  return allowed.includes(value as RunnerKindName) ? (value as RunnerKindName) : null;
 }
 
 export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
@@ -80,6 +103,13 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     scoringCadenceMs: intFromEnv(env.SCORING_CADENCE_MS, 0),
     scoringCron: env.SCORING_CRON ?? '0 3 * * *',
     scoringWindowDays: intFromEnv(env.SCORING_WINDOW_DAYS, 1),
+    benchmarkHarness: harnessFromEnv(env.BENCHMARK_HARNESS),
+    benchmarkRunner: runnerFromEnv(env.BENCHMARK_RUNNER),
+    benchmarkConcurrency: intFromEnv(env.BENCHMARK_CONCURRENCY, 2),
+    benchmarkDefaultRunCostUsd: numberFromEnv(env.BENCHMARK_DEFAULT_RUN_COST_USD, 0.5),
+    benchmarkConfirmThresholdUsd: numberFromEnv(env.BENCHMARK_CONFIRM_THRESHOLD_USD, 5),
+    benchmarkMaxCostUsd: numberFromEnv(env.BENCHMARK_MAX_COST_USD, 25),
+    benchmarkPassThreshold: numberFromEnv(env.BENCHMARK_PASS_THRESHOLD, 0.8),
   };
 }
 
@@ -113,5 +143,10 @@ export function toOrchestrationConfig(config: ApiConfig): OrchestrationConfig {
     scoringCadenceMs: config.scoringCadenceMs,
     scoringCron: config.scoringCron,
     scoringWindowDays: config.scoringWindowDays,
+    benchmarkConcurrency: config.benchmarkConcurrency,
+    benchmarkDefaultRunCostUsd: config.benchmarkDefaultRunCostUsd,
+    benchmarkConfirmThresholdUsd: config.benchmarkConfirmThresholdUsd,
+    benchmarkMaxCostUsd: config.benchmarkMaxCostUsd,
+    benchmarkPassThreshold: config.benchmarkPassThreshold,
   };
 }

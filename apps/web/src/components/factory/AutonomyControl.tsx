@@ -6,22 +6,27 @@ import type { AutonomyEventView } from '@/lib/work-items';
 import type { AutonomyState } from '@/lib/types';
 
 /**
- * Kill switch + lights-off control (spec: autonomy policy and kill switch).
+ * Kill switch + lights-off control (spec: autonomy policy and kill switch, ADR-018).
  *
- * Enabling autonomy is refused by the API while `benchmarkGateRequired` is unresolved
- * (Phase 4 benchmarks do not exist yet). The button is disabled with an explanation; the
- * only way through is an explicit override {actor, reason}, confirmed in a dialog. Pausing
- * always succeeds and forces every gate back to `human`.
+ * Enabling autonomy is refused by the API while `benchmarkGateRequired` has no passing,
+ * calibrated attestation for the running definition commit + configuration hash. The button
+ * is disabled with an explanation; the only way through is an explicit override
+ * {actor, reason}, confirmed in a dialog. Pausing always succeeds and forces every gate
+ * back to `human`.
  */
 export function AutonomyControl({
   factory,
   benchmarkGateRequired,
+  benchmarkAttestationSatisfied,
+  benchmarkAttestationCode,
   fullyAutonomous,
   mergePolicy,
   initialEvent,
 }: {
   factory: string;
   benchmarkGateRequired: boolean;
+  benchmarkAttestationSatisfied: boolean;
+  benchmarkAttestationCode: 'benchmark_attestation_missing' | null;
   fullyAutonomous: boolean;
   mergePolicy: string;
   initialEvent: AutonomyEventView | null;
@@ -37,7 +42,8 @@ export function AutonomyControl({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AutonomyState | null>(null);
 
-  const enableBlocked = benchmarkGateRequired && override === null;
+  const enableBlocked =
+    benchmarkGateRequired && !benchmarkAttestationSatisfied && override === null;
 
   const submit = async (enabled: boolean): Promise<void> => {
     setError(null);
@@ -94,21 +100,40 @@ export function AutonomyControl({
         <span className="font-mono">merge: {mergePolicy}</span>
         <span className="text-slate-400">·</span>
         <span className="font-mono">
-          benchmark gate {benchmarkGateRequired ? 'required (unresolved)' : 'not required'}
+          benchmark gate{' '}
+          {benchmarkGateRequired
+            ? benchmarkAttestationSatisfied
+              ? 'satisfied by attestation'
+              : 'required (attestation missing)'
+            : 'not required'}
         </span>
       </div>
 
-      {benchmarkGateRequired ? (
+      {benchmarkGateRequired && !benchmarkAttestationSatisfied ? (
         <div
           data-testid="autonomy-benchmark-gate-note"
           role="note"
           className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
         >
-          <p className="font-semibold">Enabling autonomy is blocked until Phase 4.</p>
+          <p className="font-semibold">Enabling autonomy needs a benchmark attestation.</p>
           <p className="mt-1">
-            This factory is fully autonomous by declaration, so the loop requires a benchmark
-            non-regression gate that does not exist yet. The API refuses to enable autonomy without an
-            explicit override <span className="font-mono">{'{actor, reason}'}</span>.
+            This factory is fully autonomous by declaration, so the loop requires a passing,
+            calibrated benchmark attestation that matches the current definition commit + configuration
+            hash. The API refuses with <span className="font-mono">benchmark_attestation_missing</span>{' '}
+            unless an explicit override <span className="font-mono">{'{actor, reason}'}</span> is recorded.
+            Run the benchmark suite to produce one.
+          </p>
+        </div>
+      ) : benchmarkGateRequired ? (
+        <div
+          data-testid="autonomy-attestation-ok"
+          role="note"
+          className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900"
+        >
+          <p className="font-semibold">Benchmark attestation matches this version.</p>
+          <p className="mt-1">
+            A passing, calibrated benchmark covers the current definition commit + configuration hash,
+            so enabling autonomy is allowed without an override.
           </p>
         </div>
       ) : null}
@@ -169,10 +194,10 @@ export function AutonomyControl({
         </button>
         {enableBlocked ? (
           <span id="autonomy-block-reason" data-testid="autonomy-enable-blocked" className="text-xs text-amber-800">
-            disabled — benchmark gate unresolved. Provide an override to proceed.
+            disabled — benchmark attestation missing. Provide an override to proceed.
           </span>
         ) : null}
-        {benchmarkGateRequired ? (
+        {benchmarkGateRequired && !benchmarkAttestationSatisfied ? (
           <button
             type="button"
             data-testid="autonomy-override-open"
@@ -195,7 +220,7 @@ export function AutonomyControl({
           <p className="text-sm font-semibold text-amber-900">Override the benchmark gate (confirm)</p>
           <p className="mt-1 text-xs text-amber-800">
             This records who accepts the risk of unattended merges without a benchmark
-            non-regression gate. It is an audit record, not a benchmark result.
+            non-regression attestation. It is an audit record, not a benchmark result.
           </p>
           <div className="mt-2 flex flex-wrap items-end gap-3">
             <label className="text-xs text-amber-900">

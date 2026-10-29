@@ -43,6 +43,7 @@ import { toOrchestrationConfig } from './config';
 import {
   ApiError,
   autonomyRefused,
+  benchmarkAttestationMissing,
   definitionInvalid,
   gateNotFound,
   invalidStageGraph,
@@ -50,6 +51,7 @@ import {
   spawnNotAllowed,
   workItemNotFound,
 } from './errors';
+import { benchmarkGateStatus } from './benchmarks';
 import { log } from './logger';
 import { resolveFactoryDir } from './factories';
 import { pinVersion, resolveRunDefaults } from './runs';
@@ -249,11 +251,10 @@ export async function createWorkItemForApi(
   });
 
   const sql = getSql();
-  const resolution = resolveAllGates(manifest);
   const state = await getAutonomyState(sql, factory);
+  const gate = await benchmarkGateStatus(config, factory);
   const benchmarkGateSatisfied =
-    !resolution.benchmarkGateRequired ||
-    Boolean(state?.overrideActor && state?.overrideReason);
+    gate.satisfied || Boolean(state?.overrideActor && state?.overrideReason);
 
   const workItemId = newWorkItemId();
   const workflowId = workItemWorkflowId(workItemId);
@@ -507,13 +508,16 @@ export interface AutonomyResult {
   overrideReason: string | null;
   benchmarkGateRequired: boolean;
   benchmarkGateSatisfied: boolean;
+  benchmarkAttestationSatisfied: boolean;
+  benchmarkAttestationCode: 'benchmark_attestation_missing' | null;
   signaled: number;
 }
 
 /**
  * Enable or pause autonomy (the kill switch). Enabling is refused while
- * `benchmarkGateRequired` is unresolved unless an explicit override {actor, reason} is
- * recorded (spec: autonomy policy and kill switch). Pausing always succeeds, forces every
+ * `benchmarkGateRequired` is unresolved (no passing, calibrated attestation matches the
+ * running commit + configHash) unless an explicit override {actor, reason} is recorded
+ * (spec: autonomy policy and kill switch, ADR-018). Pausing always succeeds, forces every
  * gate to `human`, and stops new stage dispatch.
  */
 export async function setAutonomyForApi(
@@ -526,6 +530,7 @@ export async function setAutonomyForApi(
   const resolution = resolveAllGates(definition.manifest);
   const sql = getSql();
   const current = await getAutonomyState(sql, body.factory);
+  const gate = await benchmarkGateStatus(config, body.factory);
 
   const decision = evaluateAutonomyRequest({
     resolution,
@@ -536,9 +541,13 @@ export async function setAutonomyForApi(
       ...(body.override ? { override: body.override } : {}),
     },
     current,
+    benchmarkAttestationSatisfied: gate.satisfied,
   });
 
   if (!decision.allowed) {
+    if (gate.required && !gate.satisfied && !body.override) {
+      throw benchmarkAttestationMissing(body.factory, gate.definitionCommit, gate.suites);
+    }
     throw autonomyRefused(decision.message ?? 'autonomy refused', {
       factory: body.factory,
       benchmarkGateRequired: decision.benchmarkGateRequired,
@@ -594,6 +603,8 @@ export async function setAutonomyForApi(
     overrideReason: state.overrideReason,
     benchmarkGateRequired: resolution.benchmarkGateRequired,
     benchmarkGateSatisfied: decision.benchmarkGateSatisfied,
+    benchmarkAttestationSatisfied: gate.satisfied,
+    benchmarkAttestationCode: gate.code,
     signaled,
   };
 }

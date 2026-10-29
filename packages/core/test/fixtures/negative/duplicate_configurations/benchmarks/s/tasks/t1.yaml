@@ -1,0 +1,5 @@
+title: Task
+prompt: Do it.
+successCriteria: It is done.
+startingRepoRefs:
+  - github.com:acme/api@0123456789abcdef0123456789abcdef01234567

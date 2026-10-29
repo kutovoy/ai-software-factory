@@ -45,11 +45,26 @@ export interface OrchestrationConfig {
   scoringCron: string;
   /** Default window (days) for scheduled scoring. */
   scoringWindowDays: number;
+  /** Max concurrent benchmark trials (child runs) per benchmark workflow. */
+  benchmarkConcurrency: number;
+  /** Fallback per-run cost when a factory has no comparable terminal runs. */
+  benchmarkDefaultRunCostUsd: number;
+  /** Estimates above this require an explicit `confirm: true`. */
+  benchmarkConfirmThresholdUsd: number;
+  /** Default hard cap for a benchmark run; aborts remaining trials. */
+  benchmarkMaxCostUsd: number;
+  /** Pass rate a calibrated benchmark must reach to attest. */
+  benchmarkPassThreshold: number;
 }
 
 function intFromEnv(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : fallback;
+}
+
+function numberFromEnv(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): OrchestrationConfig {
@@ -79,5 +94,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): OrchestrationC
     scoringCadenceMs: intFromEnv(env.SCORING_CADENCE_MS, 0),
     scoringCron: env.SCORING_CRON ?? '0 3 * * *',
     scoringWindowDays: intFromEnv(env.SCORING_WINDOW_DAYS, 1),
+    benchmarkConcurrency: intFromEnv(env.BENCHMARK_CONCURRENCY, 2),
+    benchmarkDefaultRunCostUsd: numberFromEnv(env.BENCHMARK_DEFAULT_RUN_COST_USD, 0.5),
+    benchmarkConfirmThresholdUsd: numberFromEnv(env.BENCHMARK_CONFIRM_THRESHOLD_USD, 5),
+    benchmarkMaxCostUsd: numberFromEnv(env.BENCHMARK_MAX_COST_USD, 25),
+    benchmarkPassThreshold: numberFromEnv(env.BENCHMARK_PASS_THRESHOLD, 0.8),
   };
 }

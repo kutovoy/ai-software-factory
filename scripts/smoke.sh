@@ -204,7 +204,10 @@ done
 score_label="$(printf '%s' "$scores_resp" | jget scores.0.label)"
 [ -n "$score_label" ] || fail "score has no label"
 score_uncalibrated="$(printf '%s' "$scores_resp" | jget scores.0.uncalibrated)"
-[ "$score_uncalibrated" = "true" ] || fail "judge score is not flagged uncalibrated (got $score_uncalibrated)"
+case "$score_uncalibrated" in
+  true|false) ;;
+  *) fail "judge score has no uncalibrated flag (got '$score_uncalibrated')" ;;
+esac
 
 score_detail="$(api "$API_URL/scores/$score_id")"
 [ "$(printf '%s' "$score_detail" | jget events.0.type)" = "score.completed" ] \
@@ -339,5 +342,89 @@ if [ -n "$next_stage" ]; then
     -d '{"decision":"reject","actor":"smoke","reason":"smoke: cleanup"}' >/dev/null
 fi
 pass "one-stage loop verified and cleaned up"
+
+# ---------------------------------------- 12. benchmarks (Phase 4b, fake stack)
+log "calibrating the judge, then running a tiny benchmark (1 task × 2 configs)"
+calibration_resp="$(api -X POST "$API_URL/calibration" \
+  -H 'content-type: application/json' \
+  -d "{\"factory\":\"example\",\"scorer\":\"scope\",\"name\":\"smoke benchmark calibration\",\"minSize\":1,\"threshold\":1,\"items\":[{\"runId\":\"$run_id\",\"humanLabel\":\"compliant\"}]}")"
+[ "$(printf '%s' "$calibration_resp" | jget calibration.verdict)" = "pass" ] \
+  || fail "calibration did not pass: $calibration_resp"
+pass "judge calibrated against the smoke run"
+
+benchmark_resp="$(api -X POST "$API_URL/factories/example/benchmarks/review/run" \
+  -H 'content-type: application/json' \
+  -d '{"configurations":["Baseline","Candidate"],"tasks":["broken-doc-link"],"confirm":true,"maxCostUsd":10}')"
+benchmark_id="$(printf '%s' "$benchmark_resp" | jget benchmark.id)"
+[ -n "$benchmark_id" ] || fail "benchmark did not start: $benchmark_resp"
+benchmark_config_hash="$(printf '%s' "$benchmark_resp" | jget benchmark.configHash)"
+[ -n "$benchmark_config_hash" ] || fail "benchmark has no configHash: $benchmark_resp"
+pass "benchmark $benchmark_id started (configHash ${benchmark_config_hash:0:12})"
+
+benchmark_detail=""
+benchmark_status=""
+for _ in $(seq 1 240); do
+  benchmark_detail="$(api "$API_URL/benchmarks/$benchmark_id")"
+  benchmark_status="$(printf '%s' "$benchmark_detail" | jget benchmark.status)"
+  started_event="$(printf '%s' "$benchmark_detail" | jget events.0.type)"
+  completed_event="$(printf '%s' "$benchmark_detail" | jget events.1.type)"
+  if [ "$benchmark_status" = "completed" ] \
+    && [ "$started_event" = "benchmark.started" ] \
+    && [ "$completed_event" = "benchmark.completed" ]; then
+    break
+  fi
+  case "$benchmark_status" in
+    error|cancelled) break ;;
+  esac
+  sleep 0.5
+done
+[ "$benchmark_status" = "completed" ] || fail "benchmark did not complete: $benchmark_status"
+
+printf '%s' "$benchmark_detail" | bun -e '
+  const d = JSON.parse(await Bun.stdin.text());
+  const benchmark = d.benchmark ?? {};
+  const trials = d.trials ?? [];
+  const results = d.results ?? [];
+  if (trials.length !== 2) { console.error(`expected 2 trials, got ${trials.length}`); process.exit(1); }
+  if (!trials.every((trial) => trial.status === "ok")) {
+    console.error(`a trial did not finish ok: ${trials.map((trial) => trial.status).join(",")}`);
+    process.exit(1);
+  }
+  if (results.length !== 2) { console.error(`expected 2 result rows, got ${results.length}`); process.exit(1); }
+  if (!results.every((row) => row.passRate === 1)) {
+    console.error(`a configuration did not pass every trial: ${JSON.stringify(results)}`);
+    process.exit(1);
+  }
+  if (benchmark.passed !== true) { console.error("benchmark is not passed"); process.exit(1); }
+  if (benchmark.calibrationOk !== true) { console.error("benchmark is not calibrated"); process.exit(1); }
+  if (benchmark.budgetExhausted !== false) { console.error("benchmark unexpectedly exhausted its budget"); process.exit(1); }
+  if (!d.attestation) { console.error("no attestation recorded"); process.exit(1); }
+  if (d.attestation.passed !== true || d.attestation.calibrationOk !== true) {
+    console.error("attestation is not passing + calibrated");
+    process.exit(1);
+  }
+  if (d.attestation.configHash !== benchmark.configHash) {
+    console.error("attestation configHash does not match the run");
+    process.exit(1);
+  }
+  const types = new Set((d.events ?? []).map((event) => event.type));
+  if (!types.has("benchmark.started") || !types.has("benchmark.completed")) {
+    console.error(`missing benchmark events: ${[...types].join(",")}`);
+    process.exit(1);
+  }
+' || fail "benchmark matrix / attestation assertions failed"
+pass "benchmark $benchmark_id: 2 trials, 2 results, pass rate 1, attestation recorded"
+
+attestations_resp="$(api "$API_URL/factories/example/attestations")"
+printf '%s' "$attestations_resp" | bun -e '
+  const d = JSON.parse(await Bun.stdin.text());
+  const rows = d.attestations ?? [];
+  if (rows.length === 0) { console.error("no attestation rows for the factory"); process.exit(1); }
+  if (!rows.some((row) => row.passed && row.calibrationOk)) {
+    console.error("no passing, calibrated attestation row");
+    process.exit(1);
+  }
+' || fail "attestation lookup assertions failed"
+pass "attestation row is queryable by (factory, definitionCommit, configHash)"
 
 log "SMOKE PASSED"

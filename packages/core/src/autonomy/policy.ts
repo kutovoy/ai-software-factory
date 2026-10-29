@@ -4,9 +4,10 @@ import type { GateResolution } from '../gates/resolve';
  * Autonomy policy (lights-off) and the benchmark guardrail.
  *
  * `fullyAutonomous` (every gate `agent` + an unattended merge policy) sets
- * `benchmarkGateRequired`. Until Phase 4 benchmarks exist that flag is unresolved, so
- * enabling autonomy is refused unless an explicit override (actor + reason) is recorded.
- * Pausing (the kill switch) is always allowed.
+ * `benchmarkGateRequired`. Enabling autonomy is refused until a passing, calibrated
+ * benchmark attestation matches the running definition commit + configuration hash
+ * (ADR-018), unless an explicit override (actor + reason) is recorded. Pausing (the kill
+ * switch) is always allowed.
  */
 
 export interface AutonomyOverride {
@@ -43,6 +44,12 @@ export interface EvaluateAutonomyInput {
   resolution: GateResolution;
   request: AutonomyRequest;
   current?: AutonomyStateLike | null;
+  /**
+   * True when a passing, calibrated benchmark attestation matches the running definition
+   * commit + configuration hash (ADR-018). Defaults to false: an attestation is evidence,
+   * never assumed.
+   */
+  benchmarkAttestationSatisfied?: boolean;
 }
 
 export function evaluateAutonomyRequest(input: EvaluateAutonomyInput): AutonomyDecision {
@@ -53,7 +60,8 @@ export function evaluateAutonomyRequest(input: EvaluateAutonomyInput): AutonomyD
       ? { actor: input.current.overrideActor, reason: input.current.overrideReason }
       : null;
   const override = input.request.override ?? carried;
-  const benchmarkGateSatisfied = !benchmarkGateRequired || override !== null;
+  const benchmarkGateSatisfied =
+    !benchmarkGateRequired || input.benchmarkAttestationSatisfied === true || override !== null;
 
   if (input.request.enabled && benchmarkGateRequired && !benchmarkGateSatisfied) {
     return {
@@ -61,7 +69,9 @@ export function evaluateAutonomyRequest(input: EvaluateAutonomyInput): AutonomyD
       code: 'autonomy_refused',
       message:
         'enabling autonomy is refused: this factory requires a benchmark non-regression gate ' +
-        'that does not exist yet (Phase 4); pass an explicit override {actor, reason} to proceed',
+        'and no passing attestation matches its definition commit + configuration hash ' +
+        '(benchmark_attestation_missing); run a benchmark or pass an explicit override ' +
+        '{actor, reason} to proceed',
       benchmarkGateRequired,
       benchmarkGateSatisfied,
       override: null,

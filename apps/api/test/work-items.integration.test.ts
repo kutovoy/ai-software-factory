@@ -3,7 +3,7 @@ import { SQL } from 'bun';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Hono } from 'hono';
-import { closeClient } from '@factory/orchestration';
+import { closeClient, getSql } from '@factory/orchestration';
 import { createApp } from '../src/app';
 import { loadApiConfig, type ApiConfig } from '../src/config';
 
@@ -75,6 +75,10 @@ suite('work item API', () => {
   }, 60_000);
 
   afterAll(async () => {
+    // Autonomy state is shared across suites in the compose DB; leave the kill switch off
+    // so a later smoke/E2E run is not blocked by this test's pause.
+    const sql = getSql();
+    await sql`delete from autonomy_state where factory in ('example', 'example-lights-off')`;
     await closeClient();
   }, 30_000);
 
@@ -157,11 +161,12 @@ suite('work item API', () => {
     const refusedBody = (await refused.json()) as {
       code: string;
       message: string;
-      details?: { benchmarkGateRequired?: boolean };
+      details?: { factory?: string; definitionCommit?: string };
     };
-    expect(refusedBody.code).toBe('autonomy_refused');
-    expect(refusedBody.message).toContain('benchmark');
-    expect(refusedBody.details?.benchmarkGateRequired).toBe(true);
+    expect(refusedBody.code).toBe('benchmark_attestation_missing');
+    expect(refusedBody.message).toContain('attestation');
+    expect(refusedBody.details?.factory).toBe('example-lights-off');
+    expect(refusedBody.details?.definitionCommit).toMatch(/^[0-9a-f]{40}$/);
 
     const allowed = await postJson(app, '/autonomy', {
       factory: 'example-lights-off',

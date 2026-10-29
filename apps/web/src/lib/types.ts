@@ -275,6 +275,8 @@ export interface AutonomyState {
   overrideReason: string | null;
   benchmarkGateRequired: boolean;
   benchmarkGateSatisfied: boolean;
+  benchmarkAttestationSatisfied?: boolean;
+  benchmarkAttestationCode?: 'benchmark_attestation_missing' | null;
   signaled: number;
 }
 
@@ -499,4 +501,204 @@ export interface StartScoringResponse {
   trigger: 'on_demand';
   workflow: { workflowId: string; temporalRunId: string };
   runs: string[];
+}
+
+/* ----------------------------------------------------------- benchmarks */
+
+export interface BenchmarkConfigurationWire {
+  name: string;
+  agents: { agent: string; model?: string; harness?: string }[];
+}
+
+export interface BenchmarkTaskWire {
+  slug: string;
+  path: string;
+  title: string;
+  prompt: string;
+  successCriteria: string;
+  startingRepoRefs: string[];
+  tags: string[];
+  sourceRunId: string | null;
+}
+
+export interface BenchmarkAttestationWire {
+  id: string;
+  factory: string;
+  definitionCommit: string;
+  suite: string;
+  configHash: string;
+  passRate: number | null;
+  calibrationOk: boolean;
+  passed: boolean;
+  partial: boolean;
+  benchmarkRunId: string | null;
+  createdAt: string | null;
+}
+
+export interface BenchmarkSuiteEntryWire {
+  name: string;
+  path: string;
+  description: string | null;
+  agent: string;
+  configurations: BenchmarkConfigurationWire[];
+  tasks: BenchmarkTaskWire[];
+  configHash: string;
+  trialCount: number;
+  attestation: BenchmarkAttestationWire | null;
+}
+
+export interface BenchmarkGateStatusWire {
+  factory: string;
+  definitionCommit: string;
+  required: boolean;
+  satisfied: boolean;
+  code: 'benchmark_attestation_missing' | null;
+  reason: string | null;
+  suites: { suite: string; configHash: string; attestation: BenchmarkAttestationWire | null }[];
+}
+
+export interface BenchmarkRunWire {
+  id: string;
+  factory: string;
+  suite: string;
+  definitionCommit: string;
+  configHash: string;
+  status: 'queued' | 'running' | 'completed' | 'error' | 'cancelled';
+  tasks: string[];
+  configurations: string[];
+  matrix: { configuration: string; task: string }[];
+  estimateUsd: number | null;
+  maxCostUsd: number;
+  spentUsd: number;
+  budgetExhausted: boolean;
+  partial: boolean;
+  passRate: number | null;
+  calibrationOk: boolean;
+  passed: boolean;
+  error: string | null;
+  workflowId: string | null;
+  temporalRunId: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+}
+
+export interface BenchmarkSuiteListResponse {
+  factory: string;
+  definitionCommit: string;
+  definitionDirty: boolean;
+  suites: BenchmarkSuiteEntryWire[];
+  latestRun: BenchmarkRunWire | null;
+  attestations: BenchmarkAttestationWire[];
+  benchmarkGate: BenchmarkGateStatusWire;
+}
+
+export interface BenchmarkTrialWire {
+  id: string;
+  benchmarkRunId: string;
+  factory: string;
+  suite: string;
+  configuration: string;
+  task: string;
+  runId: string | null;
+  status: 'pending' | 'running' | 'ok' | 'error' | 'skipped';
+  errorCode: string | null;
+  score: number | null;
+  passing: boolean;
+  costUsd: number;
+  uncalibrated: boolean;
+  startingRepoRefs: string[];
+  repo: string | null;
+  definitionCommit: string;
+  configHash: string;
+  startedAt: string | null;
+  endedAt: string | null;
+}
+
+export interface BenchmarkResultWire {
+  benchmarkRunId: string;
+  configuration: string;
+  passRate: number | null;
+  weightedScore: number | null;
+  sampleSize: number;
+  passingCount: number;
+  costUsd: number;
+  errors: number;
+  skipped: number;
+  uncalibrated: boolean;
+  labels: string[];
+  frontier: boolean;
+  dominatedBy: string | null;
+}
+
+export interface BenchmarkAggregateWire {
+  configurations: {
+    configuration: string;
+    passRate: number | null;
+    weightedScore: number | null;
+    sampleSize: number;
+    passingCount: number;
+    costUsd: number;
+    errors: number;
+    skipped: number;
+    uncalibrated: boolean;
+  }[];
+  sampleSize: number;
+  passingCount: number;
+  passRate: number | null;
+  weightedScore: number | null;
+  costUsd: number;
+  errors: number;
+  skipped: number;
+  uncalibrated: boolean;
+  calibrationOk: boolean;
+  passed: boolean;
+  threshold: number;
+}
+
+export interface BenchmarkRunDetailResponse {
+  benchmark: BenchmarkRunWire;
+  trials: BenchmarkTrialWire[];
+  results: BenchmarkResultWire[];
+  events: { id: number; benchmarkRunId: string; factory: string; type: string; payload: Record<string, unknown>; createdAt: string | null }[];
+  aggregate: BenchmarkAggregateWire;
+  frontier: string[];
+  labels: { highest_performance: string | null; most_efficient: string | null; lowest_cost: string | null };
+  dominated: { configuration: string; by: string }[];
+  recommendation: { configuration: string; reason: 'dominance' | 'only_configuration' } | null;
+  recommendationReason: string | null;
+  attestation: BenchmarkAttestationWire | null;
+}
+
+export interface BenchmarkEstimateWire {
+  factory: string;
+  suite: string;
+  definitionCommit: string;
+  configHash: string;
+  configurations: string[];
+  tasks: string[];
+  trials: number;
+  fullMatrix: boolean;
+  estimate: {
+    trials: number;
+    medianRunCostUsd: number;
+    estimateUsd: number;
+    thresholdUsd: number;
+    requiresConfirmation: boolean;
+  };
+}
+
+export interface StartedBenchmarkWire {
+  factory: string;
+  suite: string;
+  benchmark: BenchmarkRunWire;
+  estimate: BenchmarkEstimateWire['estimate'];
+  workflow: { workflowId: string; temporalRunId: string };
+  trials: number;
+}
+
+export interface AttestationsResponse {
+  factory: string;
+  definitionCommit: string;
+  attestations: BenchmarkAttestationWire[];
+  benchmarkGate: BenchmarkGateStatusWire;
 }

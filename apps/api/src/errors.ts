@@ -104,3 +104,38 @@ export const spawnNotAllowed = (
 
 export const autonomyRefused = (message: string, details?: unknown): ApiError =>
   new ApiError('autonomy_refused', 409, message, details);
+
+export const benchmarkNotFound = (benchmarkRunId: string): ApiError =>
+  new ApiError('benchmark_not_found', 404, `benchmark "${benchmarkRunId}" does not exist`, {
+    benchmarkRunId,
+  });
+
+export const benchmarkSuiteNotFound = (factory: string, suite: string): ApiError =>
+  new ApiError(
+    'benchmark_suite_not_found',
+    404,
+    `factory "${factory}" has no benchmark suite "${suite}"`,
+    { factory, suite },
+  );
+
+/** Above the confirmation threshold, a run must be explicitly confirmed. */
+export const costConfirmationRequired = (estimate: unknown): ApiError =>
+  new ApiError(
+    'cost_confirmation_required',
+    409,
+    'the benchmark estimate exceeds the confirmation threshold; re-send with `confirm: true`',
+    { estimate },
+  );
+
+/** The autonomy gate refuses because no passing attestation matches the running version. */
+export const benchmarkAttestationMissing = (
+  factory: string,
+  definitionCommit: string,
+  suites: unknown,
+): ApiError =>
+  new ApiError(
+    'benchmark_attestation_missing',
+    409,
+    `enabling autonomy requires a passing, calibrated benchmark attestation for definition ${definitionCommit.slice(0, 8)}; none matches the current configuration hash (pass an explicit override {actor, reason} to proceed)`,
+    { factory, definitionCommit, suites },
+  );
