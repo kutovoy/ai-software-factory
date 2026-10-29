@@ -8,8 +8,9 @@
     "apps/*"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/cli && tsc --noEmit -p packages/adapters && tsc --noEmit -p packages/runners && tsc --noEmit -p packages/orchestration && tsc --noEmit -p apps/api",
-    "test": "bun test",
+    "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/cli && tsc --noEmit -p packages/adapters && tsc --noEmit -p packages/runners && tsc --noEmit -p packages/orchestration && tsc --noEmit -p apps/api && tsc --noEmit -p apps/web",
+    "test": "bun test --path-ignore-patterns 'apps/web/e2e/**'",
+    "e2e": "bun run --cwd apps/web e2e",
     "lint": "bun run typecheck",
     "factory": "bun packages/cli/src/index.ts",
     "api": "bun apps/api/src/index.ts",

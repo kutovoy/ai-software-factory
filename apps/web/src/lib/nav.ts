@@ -1,0 +1,38 @@
+export interface NavItem {
+  href: string;
+  label: string;
+  testId: string;
+}
+
+/** Top-level nav parity with the reference product (`ANALYSIS.md` §4.1). */
+export const TOP_NAV: NavItem[] = [
+  { href: '/chat', label: 'New Chat', testId: 'nav-chat' },
+  { href: '/inbox', label: 'Inbox', testId: 'nav-inbox' },
+  { href: '/runs', label: 'Runs', testId: 'nav-runs' },
+  { href: '/mcps', label: 'MCPs and apps', testId: 'nav-mcps' },
+  { href: '/secrets', label: 'Secrets', testId: 'nav-secrets' },
+  { href: '/users', label: 'Users', testId: 'nav-users' },
+];
+
+export interface FactoryNavItem {
+  segment: string;
+  label: string;
+  testId: string;
+}
+
+/** Per-factory group; `Definition` and `Gates` are promoted to first-class pages. */
+export const FACTORY_NAV: FactoryNavItem[] = [
+  { segment: 'dashboard', label: 'Dashboard', testId: 'nav-dashboard' },
+  { segment: 'agents', label: 'Agents', testId: 'nav-agents' },
+  { segment: 'automations', label: 'Automations', testId: 'nav-automations' },
+  { segment: 'scorers', label: 'Scorers', testId: 'nav-scorers' },
+  { segment: 'self-improvement', label: 'Self-improvement', testId: 'nav-self-improvement' },
+  { segment: 'benchmarks', label: 'Benchmarks', testId: 'nav-benchmarks' },
+  { segment: 'definition', label: 'Definition', testId: 'nav-definition' },
+  { segment: 'gates', label: 'Gates', testId: 'nav-gates' },
+  { segment: 'settings', label: 'Settings', testId: 'nav-settings' },
+];
+
+export function factoryHref(factory: string, segment: string): string {
+  return `/factories/${encodeURIComponent(factory)}/${segment}`;
+}

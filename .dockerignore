@@ -1,6 +1,9 @@
 # Keep the build context small: only sources, lockfile and manifests.
 node_modules
 **/node_modules
+**/.next
+**/playwright-report
+**/test-results
 runs
 .git
 .gitignore

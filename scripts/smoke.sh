@@ -6,6 +6,7 @@
 #
 # Asserts, against a running stack:
 #   1. /health is green (db + temporal)
+#   1b. the web console serves / (200) and renders the full nav + New Chat composer
 #   2. migrations apply (idempotent)
 #   3. POST /chat starts a fake-harness run (no model, no network)
 #   4. GET /runs/:id/events streams >= 3 events including exactly one terminal event
@@ -22,6 +23,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 API_URL="${API_URL:-http://localhost:8080}"
+WEB_URL="${WEB_URL:-http://localhost:3000}"
 DATABASE_URL="${DATABASE_URL:-postgres://factory:factory@localhost:5433/factory}"
 RUNS_DIR="${RUNS_DIR:-runs}"
 PROVIDER_KEY="${OPENAI_API_KEY:-sk-provider-secret}"
@@ -67,6 +69,25 @@ for _ in $(seq 1 90); do
 done
 [ "$(printf '%s' "$health" | jget status)" = "ok" ] || fail "health is not ok: $health"
 pass "health ok ($(printf '%s' "$health" | jget checks.temporal.address))"
+
+# ------------------------------------------------------------ 1b. web console
+log "waiting for $WEB_URL/"
+web_code=""
+for _ in $(seq 1 90); do
+  web_code="$(curl -sSL -o "$TMP_DIR/web.html" -w '%{http_code}' "$WEB_URL/" || true)"
+  [ "$web_code" = "200" ] && break
+  sleep 2
+done
+[ "$web_code" = "200" ] || fail "web / did not return 200 (got ${web_code:-none})"
+grep -q 'data-testid="nav-sidebar"' "$TMP_DIR/web.html" || fail "web nav sidebar did not render"
+for label in 'New Chat' 'Inbox' 'Runs' 'MCPs and apps' 'Secrets' 'Users' \
+  'Dashboard' 'Agents' 'Automations' 'Scorers' 'Self-improvement' 'Benchmarks' \
+  'Definition' 'Gates' 'Settings'; do
+  grep -q "$label" "$TMP_DIR/web.html" || fail "nav item '$label' is missing from the rendered shell"
+done
+grep -q 'data-testid="chat-prompt"' "$TMP_DIR/web.html" || fail "New Chat composer did not render"
+grep -q 'data-testid="factory-switcher"' "$TMP_DIR/web.html" || fail "factory switcher did not render"
+pass "web / returns 200 with full nav + New Chat composer"
 
 # ------------------------------------------------------------- 2. migrations
 log "applying migrations"

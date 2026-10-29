@@ -10,6 +10,11 @@ dist/
 out/
 *.tsbuildinfo
 
+# Playwright artifacts
+playwright-report/
+test-results/
+blob-report/
+
 # Python
 __pycache__/
 *.pyc

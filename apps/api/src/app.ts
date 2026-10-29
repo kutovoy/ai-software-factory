@@ -22,6 +22,13 @@ import {
   toEnvelope,
   unsupportedCapability,
 } from './errors';
+import {
+  getFactory,
+  getFactoryDiff,
+  getFactoryResources,
+  getFactoryVersions,
+  listFactories,
+} from './factories';
 import { log } from './logger';
 import { registerProxy } from './proxy';
 import {
@@ -132,6 +139,39 @@ export function createApp(config: ApiConfig): Hono {
       ok ? 200 : 503,
     );
   });
+
+  /* ------------------------------------------------------------ factories */
+
+  app.get('/factories', (c) => c.json({ factories: listFactories(config) }));
+
+  app.get('/factories/:name', (c) => c.json({ factory: getFactory(config, c.req.param('name')) }));
+
+  app.get('/factories/:name/resources', (c) =>
+    c.json(getFactoryResources(config, c.req.param('name'))),
+  );
+
+  app.get('/factories/:name/versions', (c) => {
+    const limit = Number(c.req.query('limit') ?? '20');
+    return c.json({
+      factory: c.req.param('name'),
+      versions: getFactoryVersions(
+        config,
+        c.req.param('name'),
+        Number.isFinite(limit) ? limit : 20,
+      ),
+    });
+  });
+
+  app.get('/factories/:name/diff', (c) =>
+    c.json(
+      getFactoryDiff(
+        config,
+        c.req.param('name'),
+        c.req.query('from') ?? undefined,
+        c.req.query('to') ?? undefined,
+      ),
+    ),
+  );
 
   /* ----------------------------------------------------------------- runs */
 
