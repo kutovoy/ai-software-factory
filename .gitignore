@@ -1,0 +1,32 @@
+# OS / editor
+.DS_Store
+*.swp
+
+# Node / Bun
+node_modules/
+.bun/
+dist/
+.next/
+out/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+tools/yt/.venv/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+*.pem
+
+# Media & run artifacts (keep transcripts, frames, manifests — not raw video/audio)
+*.mp4
+*.mkv
+*.webm
+*.m4a
+*.wav
+runs/
+.opencode/state/
