@@ -51,12 +51,16 @@ export function formatDateTime(value: string | null | undefined): string {
 export function statusTone(status: string): 'neutral' | 'success' | 'danger' | 'warning' | 'info' {
   switch (status) {
     case 'ok':
+    case 'done':
       return 'success';
     case 'error':
+    case 'escalated':
       return 'danger';
     case 'cancelled':
+    case 'blocked':
       return 'warning';
     case 'running':
+    case 'active':
       return 'info';
     default:
       return 'neutral';

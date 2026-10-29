@@ -4,13 +4,15 @@ Last updated: 2026-10-29
 
 ## Phase
 
-**Phase 3a — factory loop: complete** (2026-10-29). Work items are durable workflows
+**Phase 3a — factory loop + console: complete** (2026-10-29). Work items are durable workflows
 (`FactoryWorkflow` + child `StageWorkflow`), the stage graph is compiled from the definition, the
 foreman dispatches with `spawnableBy` enforcement, gates are workflow-level durable waits
 (Update/Signal + SLA), the review committee is advisory (≥2 reviewers + judge), and autonomy has a
-policy + kill switch — all exercised on the fake forge + fake harness. Phase 2b web console remains
-complete.
-Next: **Phase 3b** (GitHub forge + merge queue) and the Phase 3 UI (work-items board, gate approvals).
+policy + kill switch — all exercised on the fake forge + fake harness. The Phase 3 console ships
+with it: a work-items board, gate approvals in the Inbox, a work-item detail page (timeline, gate
+decisions, reviewer findings, PR/checks) and a Gates page with the kill switch and the benchmark-gate
+guardrail. Phase 2b web console remains complete.
+Next: **Phase 3b** (GitHub forge + merge queue) and the MCPs & apps page (per-agent MCP wiring).
 
 ### Phase 2b fix — human permission waits are workflow-level durable waits (ADR-013, 2026-10-29)
 
@@ -163,14 +165,40 @@ isolation yet.
       `request_changes` loop limit, SLA auto-reject and auto-approve, kill switch, disagreement →
       `needs_human`; API integration: create/list/detail, gate delivery, autonomy refusal/override,
       `invalid_stage_graph`, `spawn_not_allowed`
+- [x] `apps/web` — Work items board (`/work-items`): seven stage columns (triage → ship), manual
+      creation (`POST /work-items` through a same-origin proxy), factory filter, cards with
+      id/title/source/age/status/loop count, derived links to each stage run and the detail page,
+      pending-gate badge with SLA countdown, PR link, honest empty/error states
+- [x] `apps/web` — Inbox gate approvals: pending gates across factories show stage, item, age, live
+      SLA countdown and `approve | reject | request_changes` (feedback required for request_changes),
+      posted to `POST /work-items/:id/gates/:stage`; the row leaves the inbox once decided
+- [x] `apps/web` — Work item detail (`/work-items/:id`): stage timeline (from → to, by, reason),
+      gate decisions (actor/time/automatic), reviewer findings per reviewer + judge verdict/confidence
+      (advisory), PR link, forge checks, loop count, status events (merge evidence) and the item's
+      last autonomy event; honest empty states for every projection the API does not have yet
+- [x] `apps/web` — Gates page: live autonomy policy from `GET /factories/:name` plus the last
+      `autonomy.*` event in the work-item log (no `GET /autonomy` read endpoint exists yet — the
+      page says so); kill switch (`POST /autonomy`), and "Enable autonomy" disabled with an
+      explanation while `benchmarkGateRequired` is unresolved, unless an override `{actor, reason}`
+      is confirmed in a dialog
+- [x] Playwright: `factory-loop` (manual item → triage/spec gates → implement → 2 reviewers + judge →
+      verify → ship; asserts timeline, advisory verdict, PR link, checks, and that nothing merged
+      before the ship gate) and `lights-off` (benchmark-gate refusal, override dialog, enable, all
+      gates auto-resolve, merge on ship); every created work item/run cleaned up in `afterEach`
+- [x] `scripts/smoke.sh` §11: one-stage factory loop on the fake stack (create work item → triage
+      gate → approve → assert `stage.changed` triage→spec + `gate.decided` + Update delivery, then
+      reject the next gate so no workflow is left parked)
 
 ## Phase 3a verification (2026-10-29)
 
 ```
-bun run ci                     → typecheck clean; 221 pass / 23 skip / 0 fail; both factories validate,
+bun run ci                     → typecheck clean; 221 pass / 24 skip / 0 fail; both factories validate,
                                  export --check canonical (15 files each)
 docker compose up -d --build   → postgres, temporal, api, web, worker healthy
-bash scripts/smoke.sh          → SMOKE PASSED incl. scripts/smoke-permissions.sh
+bash scripts/smoke.sh          → SMOKE PASSED incl. scripts/smoke-permissions.sh and §11 one-stage
+                                 loop (create work item → triage gate → approve → stage.changed
+                                 triage→spec + gate.decided delivered as an Update)
+cd apps/web && bunx playwright test → 16 passed (14 existing + factory-loop + lights-off)
 integration (Temporal + PG)    → factory-loop: 6 pass (full loop with 2 reviewers + merge,
                                  request_changes loop limit, SLA auto-reject, SLA auto-approve,
                                  kill switch, disagreement → needs_human)
@@ -187,6 +215,8 @@ DATABASE_URL=postgres://factory:factory@localhost:5433/factory TEMPORAL_ADDRESS=
 RUN_INTEGRATION=1 bun test packages/orchestration/test/factory-loop.integration.test.ts
 DATABASE_URL=postgres://factory:factory@localhost:5433/factory TEMPORAL_ADDRESS=localhost:7233 \
 RUN_INTEGRATION=1 bun test apps/api/test/work-items.integration.test.ts
+docker compose up -d --build && bash scripts/smoke.sh
+cd apps/web && bunx playwright test
 ```
 
 Notes:
@@ -199,9 +229,16 @@ Notes:
   (`RunInput.autoAllowPermissions`), while chat runs keep the ADR-013 human wait unchanged.
 - Review verdicts are advisory. A disagreement forces the human review gate; a human approval at the
   ship gate is the authority that allows the merge, never the verdict.
-- Deferred to other tasks: ADR-014/ADR-015 (7.4), UI board/inbox (6.x), smoke one-stage loop (7.3),
-  GitHub forge backend (3b), real model for judgement/review (deterministic models behind injectable
-  hooks today).
+- The board always renders all seven columns; a factory with no agent for a stage (e.g. `plan` in the
+  example factory) shows an honest empty column, because the backend compiles the graph from agents.
+- There is no `GET /autonomy` read endpoint yet. The Gates page shows the declaration from
+  `GET /factories/:name` and the newest `autonomy.*` event in the work-item log; after a kill-switch
+  action it shows the state returned by `POST /autonomy` verbatim. A dedicated read model is deferred
+  to 3b.
+- Deferred to later phases: ADR-014/ADR-015 are recorded (7.4); the remaining deferrals are the
+  GitHub forge backend + merge queue (3b), an autonomy read endpoint, a work-item cancel endpoint
+  (E2E cleanup rejects a pending gate instead), and real models for judgement/review (deterministic
+  models behind injectable hooks today).
 
 ## Phase 2b verification (2026-10-29)
 
@@ -276,9 +313,10 @@ both accepted; `benchmarkGateRequired` is true exactly when `fullyAutonomous`; k
 
 ## Next
 
-1. Phase 3b: GitHub `CodeForge` backend (must pass the shared contract suite) + merge queue; then the
-   Phase 3 UI (work-items board, gate approvals in the Inbox, live autonomy state + kill switch) and
-   MCPs & apps page (per-agent MCP wiring).
+1. Phase 3b: GitHub `CodeForge` backend (must pass the shared contract suite) + merge queue, and the
+   MCPs & apps page (per-agent MCP wiring). Also: an autonomy read endpoint (`GET /autonomy`) and a
+   work-item cancel route, so the console no longer derives state from the event log or cleans up
+   by rejecting a gate.
 2. Rebuild tool for the read model (replay JSONL → Postgres) before benchmarks rely on it.
 3. Phase 4: scorers on real runs + benchmark replay; then Phase 5 self-improvement observer loop.
 4. Real runner path: build `factory-runner:local`, verify `opencode serve` readiness + proxy env inside

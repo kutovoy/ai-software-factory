@@ -39,15 +39,15 @@
 
 ## 6. UI (`apps/web`)
 
-- [ ] 6.1 Work items board (stage columns: triage/spec/plan/implement/review/verify/ship) with links to runs
-- [ ] 6.2 Inbox gains gate approvals (approve/reject/request_changes with feedback)
-- [ ] 6.3 Work item detail: stage timeline, gate decisions, reviewer findings, PR link
-- [ ] 6.4 Gates page shows live autonomy state + kill switch (disabled until benchmark gate in Phase 4)
+- [x] 6.1 Work items board (stage columns: triage/spec/plan/implement/review/verify/ship) with links to runs
+- [x] 6.2 Inbox gains gate approvals (approve/reject/request_changes with feedback)
+- [x] 6.3 Work item detail: stage timeline, gate decisions, reviewer findings, PR link
+- [x] 6.4 Gates page shows live autonomy state + kill switch (disabled until benchmark gate in Phase 4)
 
 ## 7. Tests & wrap-up
 
-- [ ] 7.1 E2E: create work item → triage → spec gate approve → implement → review (2 reviewers) → verify → ship (fake forge)
-- [ ] 7.2 E2E lights-off: same flow with all-agent gates; assert benchmark-gate refusal until overridden
-- [ ] 7.3 `scripts/smoke.sh` extended with a one-stage loop through the fake forge
-- [ ] 7.4 STATUS, ADR-014 (work item = durable workflow; foreman deterministic), ADR-015 (advisory review committee)
-- [ ] 7.5 `openspec validate add-factory-loop` passes
+- [x] 7.1 E2E: create work item → triage → spec gate approve → implement → review (2 reviewers) → verify → ship (fake forge)
+- [x] 7.2 E2E lights-off: same flow with all-agent gates; assert benchmark-gate refusal until overridden
+- [x] 7.3 `scripts/smoke.sh` extended with a one-stage loop through the fake forge
+- [x] 7.4 STATUS, ADR-014 (work item = durable workflow; foreman deterministic), ADR-015 (advisory review committee)
+- [x] 7.5 `openspec validate add-factory-loop` passes

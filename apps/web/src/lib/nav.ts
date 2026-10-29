@@ -8,6 +8,7 @@ export interface NavItem {
 export const TOP_NAV: NavItem[] = [
   { href: '/chat', label: 'New Chat', testId: 'nav-chat' },
   { href: '/inbox', label: 'Inbox', testId: 'nav-inbox' },
+  { href: '/work-items', label: 'Work items', testId: 'nav-work-items' },
   { href: '/runs', label: 'Runs', testId: 'nav-runs' },
   { href: '/mcps', label: 'MCPs and apps', testId: 'nav-mcps' },
   { href: '/secrets', label: 'Secrets', testId: 'nav-secrets' },

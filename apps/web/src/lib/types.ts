@@ -192,3 +192,88 @@ export interface FactoryDiff {
   diff: DefinitionDiff;
   text: string;
 }
+
+/* ----------------------------------------------------------- work items */
+
+/** Loop stages in board order (mirrors `LOOP_STAGES` in `@factory/core`). */
+export const WORK_ITEM_STAGES = [
+  'triage',
+  'spec',
+  'plan',
+  'implement',
+  'review',
+  'verify',
+  'ship',
+] as const;
+
+export type WorkItemStage = (typeof WORK_ITEM_STAGES)[number];
+
+export interface WorkItemSummary {
+  id: string;
+  factory: string;
+  type: string;
+  source: string;
+  sourceRef: Record<string, unknown>;
+  title: string;
+  stage: string;
+  status: string;
+  parentId: string | null;
+  definitionCommit: string;
+  prUrl: string | null;
+  prNumber: number | null;
+  loopCount: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface WorkItemEvent {
+  id: number;
+  workItemId: string;
+  type: string;
+  stage: string | null;
+  actor: string | null;
+  payload: Record<string, unknown>;
+  createdAt: string | null;
+}
+
+export interface GateDecisionRecord {
+  workItemId: string;
+  stage: string;
+  attempt: number;
+  gate: string;
+  workflowId: string | null;
+  decision: 'approve' | 'reject' | 'request_changes' | null;
+  actor: string | null;
+  reason: string | null;
+  feedback: string | null;
+  automatic: boolean;
+  requestedAt: string | null;
+  slaAt: string | null;
+  decidedAt: string | null;
+}
+
+export interface WorkItemDetail {
+  workItem: WorkItemSummary;
+  events: WorkItemEvent[];
+  gates: GateDecisionRecord[];
+  pendingGate: GateDecisionRecord | null;
+  workflowId: string;
+}
+
+export interface CreatedWorkItem {
+  workItem: WorkItemSummary;
+  workflow: { workflowId: string; temporalRunId: string } | null;
+}
+
+export interface AutonomyState {
+  factory: string;
+  enabled: boolean;
+  paused: boolean;
+  actor: string | null;
+  reason: string | null;
+  overrideActor: string | null;
+  overrideReason: string | null;
+  benchmarkGateRequired: boolean;
+  benchmarkGateSatisfied: boolean;
+  signaled: number;
+}

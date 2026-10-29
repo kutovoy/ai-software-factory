@@ -17,6 +17,8 @@
 #      rejects a disallowed model, and the run detail never leaks the provider key
 #   10. permission-blocked runs hold no activity slot: eight waiting runs do not stop a
 #      ninth run from completing (delegated to scripts/smoke-permissions.sh, ADR-013)
+#   11. one-stage factory loop on the fake stack: create work item → triage gate →
+#      approve → assert `stage.changed` (triage→spec) + `gate.decided`, then clean up
 #
 # Re-runnable: every invocation creates a fresh run; migrations and the proxy stub are
 # idempotent. Exits non-zero on any failure.
@@ -220,5 +222,80 @@ pass "proxy token revoked at run end"
 log "checking that permission-blocked runs do not starve the queue (ADR-013)"
 API_URL="$API_URL" bash scripts/smoke-permissions.sh \
   || fail "permission non-blocking smoke failed"
+
+# ---------------------------------------- 11. factory loop (one stage, fake forge)
+log "running a one-stage factory loop (fake harness + fake forge)"
+loop_created="$(api -X POST "$API_URL/work-items" \
+  -H 'content-type: application/json' \
+  -d '{"factory":"example","title":"smoke: loop stage","type":"task","source":"manual","harness":"fake","prompt":"smoke: fix the broken readme link"}')"
+loop_id="$(printf '%s' "$loop_created" | jget workItem.id)"
+[ -n "$loop_id" ] || fail "no work item id in response: $loop_created"
+[ "$(printf '%s' "$loop_created" | jget workItem.stage)" = "triage" ] \
+  || fail "work item did not start in triage"
+[ "$(printf '%s' "$loop_created" | jget workItem.factory)" = "example" ] \
+  || fail "work item factory is not example"
+
+# The triage stage runs on the fake harness, then parks on a durable human gate.
+gate_stage=""
+detail=""
+for _ in $(seq 1 120); do
+  detail="$(api "$API_URL/work-items/$loop_id")"
+  gate_stage="$(printf '%s' "$detail" | jget pendingGate.stage)"
+  [ -n "$gate_stage" ] && break
+  sleep 0.5
+done
+[ "$gate_stage" = "triage" ] || fail "expected a pending triage gate, got '${gate_stage:-none}'"
+[ "$(printf '%s' "$detail" | jget pendingGate.gate)" = "human" ] || fail "triage gate is not human"
+pass "work item $loop_id reached the triage gate"
+
+decision="$(api -X POST "$API_URL/work-items/$loop_id/gates/triage" \
+  -H 'content-type: application/json' \
+  -d '{"decision":"approve","actor":"smoke","reason":"smoke: triage looks scoped"}')"
+[ "$(printf '%s' "$decision" | jget decision)" = "approve" ] \
+  || fail "gate decision failed: $decision"
+[ "$(printf '%s' "$decision" | jget delivery)" = "update" ] \
+  || fail "gate decision was not delivered as a Temporal Update: $decision"
+
+transitioned=0
+for _ in $(seq 1 120); do
+  detail="$(api "$API_URL/work-items/$loop_id")"
+  stage="$(printf '%s' "$detail" | jget workItem.stage)"
+  if [ "$stage" != "triage" ]; then transitioned=1; break; fi
+  sleep 0.5
+done
+[ "$transitioned" = "1" ] || fail "work item did not leave triage after the gate decision"
+
+printf '%s' "$detail" | bun -e '
+  const d = JSON.parse(await Bun.stdin.text());
+  const events = d.events ?? [];
+  const types = new Set(events.map((e) => e.type));
+  const changed = events.find((e) => e.type === "stage.changed");
+  if (!types.has("gate.decided")) { console.error("no gate.decided event"); process.exit(1); }
+  if (!changed) { console.error("no stage.changed event"); process.exit(1); }
+  if (changed.payload.from !== "triage" || changed.payload.to !== "spec") {
+    console.error(`unexpected transition ${changed.payload.from} -> ${changed.payload.to}`);
+    process.exit(1);
+  }
+  if (changed.payload.by !== "foreman") {
+    console.error("transition is not attributed to the foreman");
+    process.exit(1);
+  }
+' || fail "stage transition / event assertions failed"
+pass "work item $loop_id: triage gate approved → spec (stage.changed + gate.decided recorded)"
+
+# Cleanup: reject the next pending gate so the smoke leaves no parked workflow.
+next_stage=""
+for _ in $(seq 1 60); do
+  detail="$(api "$API_URL/work-items/$loop_id")"
+  next_stage="$(printf '%s' "$detail" | jget pendingGate.stage)"
+  [ -n "$next_stage" ] && break
+  sleep 0.5
+done
+if [ -n "$next_stage" ]; then
+  api -X POST "$API_URL/work-items/$loop_id/gates/$next_stage" \
+    -H 'content-type: application/json' \
+    -d '{"decision":"reject","actor":"smoke","reason":"smoke: cleanup"}' >/dev/null
+fi
+pass "one-stage loop verified and cleaned up"
 
 log "SMOKE PASSED"

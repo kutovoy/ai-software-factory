@@ -1,3 +1,4 @@
+import { AutonomyControl } from '@/components/factory/AutonomyControl';
 import { ReadOnlyNotice } from '@/components/factory/ReadOnlyNotice';
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
@@ -5,7 +6,14 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Table } from '@/components/ui/Table';
 import { safeGet } from '@/lib/api';
 import { GATE_STAGES, docOf, gateMeaning, type AutomationDoc } from '@/lib/definition';
-import type { FactoryDetail, FactoryResources, GateStage } from '@/lib/types';
+import type {
+  FactoryDetail,
+  FactoryResources,
+  GateStage,
+  WorkItemDetail,
+  WorkItemSummary,
+} from '@/lib/types';
+import { lastAutonomyEvent, type AutonomyEventView } from '@/lib/work-items';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +33,27 @@ export default async function GatesPage({ params }: { params: Promise<{ name: st
     safeGet<{ factory: FactoryDetail } | null>(`/factories/${encoded}`, null),
     safeGet<FactoryResources | null>(`/factories/${encoded}/resources`, null),
   ]);
+
+  // There is no `GET /autonomy` read endpoint yet: the newest `autonomy.*` event in this
+  // factory's work-item log is the only durable projection of a kill-switch change.
+  const workItems = await safeGet<{ workItems: WorkItemSummary[] }>(
+    `/work-items?factory=${encoded}&limit=40`,
+    { workItems: [] },
+  );
+  const itemDetails = await Promise.all(
+    workItems.workItems.map((item) =>
+      safeGet<WorkItemDetail | null>(`/work-items/${encodeURIComponent(item.id)}`, null),
+    ),
+  );
+  let autonomyEvent: AutonomyEventView | null = null;
+  for (const item of itemDetails) {
+    if (!item) continue;
+    const candidate = lastAutonomyEvent(item.events);
+    if (!candidate?.at) continue;
+    if (!autonomyEvent?.at || Date.parse(candidate.at) > Date.parse(autonomyEvent.at)) {
+      autonomyEvent = candidate;
+    }
+  }
 
   const gates = detail?.factory.gates ?? null;
   const stageRows: GateStage[] = gates
@@ -94,6 +123,30 @@ export default async function GatesPage({ params }: { params: Promise<{ name: st
           <span className="font-mono">agent</span>.
         </div>
       ) : null}
+
+      <Card testId="gates-autonomy-card">
+        <CardHeader
+          title="Autonomy and kill switch"
+          hint="Enabling is guardrailed by the benchmark gate until Phase 4; pausing always works."
+        />
+        <CardBody>
+          {gates ? (
+            <AutonomyControl
+              factory={factory}
+              benchmarkGateRequired={gates.benchmarkGateRequired}
+              fullyAutonomous={gates.fullyAutonomous}
+              mergePolicy={gates.mergePolicy}
+              initialEvent={autonomyEvent}
+            />
+          ) : (
+            <EmptyState
+              testId="gates-autonomy-unavailable"
+              title="Autonomy state is unavailable"
+              description="The factory manifest could not be loaded from the API, so the autonomy policy cannot be shown or changed."
+            />
+          )}
+        </CardBody>
+      </Card>
 
       <Card testId="gates-table-card">
         <CardHeader
@@ -208,9 +261,11 @@ export default async function GatesPage({ params }: { params: Promise<{ name: st
       </Card>
 
       <p data-testid="gates-killswitch-note" className="text-xs text-slate-500">
-        Gate decisions, escalation timers and the global kill switch (which flips every gate back to{' '}
-        <span className="font-mono">human</span>) ship with the Phase 3 factory workflow. Until then, human
-        gates are actionable through the Inbox.
+        A gate decision is a durable workflow wait: it holds no activity slot. The kill switch pauses new
+        stage dispatch and forces every gate back to <span className="font-mono">human</span>. Enabling
+        autonomy on a fully autonomous factory is refused while the benchmark non-regression gate is
+        unresolved, unless an explicit override <span className="font-mono">{'{actor, reason}'}</span> is
+        confirmed above.
       </p>
     </div>
   );

@@ -204,3 +204,51 @@ the queue; cancellation while waiting is immediate (Signal wakes `condition`, th
 follow this shape. Cost: the decision path depends on Temporal being reachable (a failed delivery
 leaves the run to the SLA timer), and a worker restart recreates the adapter session — the pump
 re-forwards durable decisions best-effort and deduplicates events by `(runId, seq)`.
+
+---
+
+## ADR-014 — A work item is a durable workflow; the foreman is deterministic control flow
+
+**Status:** accepted (2026-10-29, Phase 3a)
+**Context:** Phase 2 proved a single run end-to-end. A factory is a loop over work items that must
+survive worker restarts, days-long human waits and repeated stage attempts. Two shapes were possible:
+a workflow variable carried in memory (lost on restart, impossible to inspect), or a persisted record
+whose workflow is derived from it. Separately, the loop's control flow could be driven by a model
+(flexible, nondeterministic, expensive, hard to replay) or by compiled policy.
+**Options:** in-memory loop state · persisted work item + derived workflow id · model-driven foreman
+that decides the next stage itself.
+**Decision:** a work item is a **persisted record**, not a workflow variable: typed
+(`task|bug|incident|pr_review`), sourced (`forge|slack|cron|manual`), with lineage (`parentId`) and a
+current stage, persisted in Postgres with a stable `wi_<ulid>` id. The workflow id is derived from the
+id (`factory-<workItemId>`), so a restart reattaches to the same item. The **foreman is workflow
+control flow**, not a model: the stage graph is compiled from the definition (`stages:` or agent
+roles) and the next stage is decided deterministically. The foreman *agent* is invoked only for
+judgement calls (triage classification, `request_changes` interpretation), with schema-constrained
+output, bounded retries, then escalation to a human. Each stage is a child workflow
+(`StageWorkflow`), and the parent calls `continueAsNew` after N stages to bound history.
+**Consequences:** loop control is replayable and cheap; a stage can be retried or replayed without
+re-running the loop; work items are inspectable records the console can project (board, detail,
+timeline). Cost: new stage behaviour is a workflow/definition change, not a prompt change; the
+judgement model is an injectable boundary (deterministic today, a real model later) and an invalid
+output can only escalate, never guess.
+
+---
+
+## ADR-015 — The review committee is advisory; only the ship gate merges
+
+**Status:** accepted (2026-10-29, Phase 3a)
+**Context:** A single reviewer is a weak signal and a self-approving agent would collapse the
+four-boundary model: agents must never push to the default branch or merge (ADR-002/ADR-009). The
+loop still needs structured review evidence to inform a human (or an agent gate under lights-off).
+**Options:** one reviewer that approves · N reviewers that approve · N independent reviewers + a
+judge producing an advisory verdict, with the gate as the only authority.
+**Decision:** the `review` stage fans out to **at least two independent reviewer children** running on
+the same commit; each returns a structured findings report (`reviewer`, `severity`, `summary`,
+`file?`, `confidence`). A judge merges the reports into one `{verdict, findings[], confidence}`
+(`approve|reject|needs_human`), always marked `advisory`. Disagreement, a reject, or fewer reports than
+configured resolves to `needs_human` and escalates to the review gate. Nothing merges on a verdict and
+no approval is posted to the forge: the **ship gate + merge policy** is the only merge authority, and a
+`human` merge policy refuses an automatic ship decision.
+**Consequences:** review costs more (≥2 runs + a judge per review stage) and is slower; verdicts are
+audit evidence, not permission. The judge is deterministic today (injectable), so calibration against
+real reviewers is a Phase 4 benchmark concern, not a Phase 3a claim.
