@@ -1,0 +1,10 @@
+schemaVersion: v1alpha1
+name: fixture
+repositories:
+  - owner: acme
+    name: api
+agentDefaults:
+  runner: local-docker
+gates:
+  review: human
+mergePolicy: human

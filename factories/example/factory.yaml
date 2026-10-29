@@ -1,0 +1,32 @@
+agentDefaults:
+  harness:
+    model: openai/gpt-5
+    type: opencode
+  runner: local-docker
+alias: Example
+description: "Reference factory exercising every resource type: a foreman routes work items through triage, spec, implement, review and verify agents."
+gates:
+  deploy: agent
+  implement: agent
+  plan: human
+  pr_review: human
+  review: agent
+  spec: human
+integrations:
+  - github
+mcpServers:
+  github:
+    command: github-mcp
+mergePolicy: human
+name: example
+repositories:
+  - name: api-service
+    owner: acme
+schemaVersion: v1alpha1
+secrets:
+  - OPENCODE_API_KEY
+selfImprovement:
+  enabled: true
+  failedRunThreshold: 3
+  requireBenchmarkWin: true
+  reviewerType: humans

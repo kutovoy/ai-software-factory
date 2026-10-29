@@ -1,0 +1,7 @@
+prompt: Find the broken internal documentation link and update it.
+startingRepoRefs:
+  - github.com:acme/api-service@0123456789abcdef0123456789abcdef01234567
+successCriteria: The destination resolves and the link text names the destination.
+tags:
+  - docs
+title: Fix a broken documentation link

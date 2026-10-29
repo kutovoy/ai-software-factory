@@ -89,3 +89,31 @@ process jail.
 **Leaning:** local runner = Docker (or Lima) with a bind-mounted worktree; remote runner = same image on
 a worker host; protocol identical.
 **Decision:** _pending._
+**Consequences:** affects secret injection, artifact capture, and macOS-specific tooling.
+
+---
+
+## ADR-007 — Definition schema v1alpha1
+
+**Status:** accepted (2026-10-28, Phase 1)
+**Context:** We need a format that is diffable, agent-editable, and expressive enough for gates and
+model/harness routing — Warp's schema lacks gates, tool allowlists, and version comparison.
+**Decision:** `schemaVersion: v1alpha1`. Path is identity (`agents/<name>/agent.md`); Markdown
+frontmatter for config, body for instructions; exactly one of `model` or `harness` wherever inference is
+selected; `gates` (stage → `human|agent|policy:<name>`) and `mergePolicy` live in `factory.yaml`;
+`routing.yaml` collapses Warp's `routers/`; `packs.lock` reserves composition for later.
+**Consequences:** schema changes require a version bump + codemod; unknown fields are rejected (no silent
+typos); the loader is the only place that parses YAML, so migrations are single-point.
+
+---
+
+## ADR-008 — Canonical form and semantic diff
+
+**Status:** accepted (2026-10-28, Phase 1)
+**Context:** Version comparison and self-improvement PRs are only meaningful if formatting noise is absent
+and diffs describe behaviour, not text layout.
+**Decision:** `export` emits deterministic YAML (sorted keys, 2-space indent, trailing newline) and stable
+frontmatter key order; `import → export` must be byte-identical (enforced by tests). `diff` compares parsed
+documents and reports added/removed/changed with JSON pointers, plus a human unified rendering.
+**Consequences:** agents can rewrite files without churn; `export --check` works as a CI lint; content
+hashes are order-independent, so a factory version is stable regardless of filesystem order.

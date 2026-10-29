@@ -1,0 +1,8 @@
+prompt: The payments integration test fails intermittently; find the race and fix it.
+startingRepoRefs:
+  - github.com:acme/api-service@89abcdef0123456789abcdef0123456789abcdef
+successCriteria: The test passes 20 consecutive runs and no sleeps were added.
+tags:
+  - test
+  - flaky
+title: Stabilise a flaky integration test

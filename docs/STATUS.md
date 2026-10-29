@@ -4,18 +4,35 @@ Last updated: 2026-10-28
 
 ## Phase
 
-**Phase 0 — Research & foundation: complete.** Architecture + roadmap drafted, awaiting user approval to
-start Phase 1 (definitions as code).
+**Phase 1 — Definitions as code: complete** (`factory-v0` tagged). Next: Phase 2 (Temporal + opencode
+adapter + local runner + chat/runs/inbox UI). Awaiting user go-ahead.
 
 ## Done
 
-- [x] `git init`, first commit `4d6da0d` (scaffold)
+- [x] `git init`, scaffold commit
 - [x] `openspec init --tools opencode --profile core` (schema: spec-driven)
 - [x] `initial_idea.md` (brief + clarifications + "web chat is the harness" addendum)
-- [x] `AGENTS.md`, `docs/GLOSSARY.md`, `docs/DECISIONS.md` (6 ADRs, status proposed)
+- [x] `AGENTS.md`, `docs/GLOSSARY.md`, `docs/DECISIONS.md` (ADR-001/002/004/007/008 accepted)
 - [x] `docs/ARCHITECTURE.md` (v0.1) and `docs/ROADMAP.md` (phases 1–6)
-- [x] Research: `research/warp-factories.md` (446 lines), `research/ecosystem.md` (749), `research/talks.md` (18 talks)
-- [x] `tools/yt/` YouTube toolkit (fetch/frames/scene/bundle) + `research/videos/x-PK3yx_MJg/` (transcript, 131 frames, ANALYSIS.md)
+- [x] Research: `research/warp-factories.md`, `research/ecosystem.md`, `research/talks.md`
+- [x] `tools/yt/` YouTube toolkit + `research/videos/x-PK3yx_MJg/` (transcript, 131 frames, ANALYSIS.md)
+- [x] **Phase 1**: `packages/core` (schema/loader/gates/diff/version + migration), `packages/cli`
+  (`factory validate|export|import|diff|fmt|version`), `factories/example` + `factories/example-lights-off`,
+  79 tests passing, round-trip byte-identical, `export --check` canonical
+- [x] Skills vendored (5 MIT + project-local `factory-definition`), `docs/SKILLS.md`
+- [x] Testing conventions: Playwright E2E + `docker compose` smoke tests
+
+## Phase 1 verification (2026-10-28)
+
+```
+bun run ci        → typecheck clean; 79 pass / 0 fail; both factories validate; export --check canonical
+factory validate  → example: 14 resources; example-lights-off: 14 resources
+factory diff      → 3 gate changes + /mergePolicy, exit 1
+```
+
+Notes from implementation: gate stages are the six from `ARCHITECTURE.md` §2; agent-level `gates` omitted
+(resolver is 3-level); duplicate identity is case-insensitive `kind:name`; flat and directory resource forms
+both accepted; `benchmarkGateRequired` is true exactly when `fullyAutonomous`; kill switch deferred to Phase 3.
 
 ## Key findings that shaped the design
 

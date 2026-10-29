@@ -1,0 +1,21 @@
+{
+  "name": "software-factory",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/cli",
+    "test": "bun test",
+    "lint": "bun run typecheck",
+    "factory": "bun packages/cli/src/index.ts",
+    "ci": "bash scripts/ci.sh"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "typescript": "^5.7.2"
+  }
+}

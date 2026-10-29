@@ -1,0 +1,8 @@
+schemaVersion: v1alpha1
+name: fixture
+repositories: []
+agentDefaults:
+  model: test-model
+gates:
+  review: human
+mergePolicy: human

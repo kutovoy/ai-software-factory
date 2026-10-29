@@ -1,0 +1,12 @@
+description: Default Docker runner for the example factory.
+failureSessionRetentionMinutes: 30
+instanceShape:
+  memoryGb: 4
+  vcpus: 2
+platform:
+  arch: x86_64
+  linux:
+    dockerImage: node:22-bookworm
+  os: linux
+setupCommands:
+  - '(cd /workspace/api-service && npm ci) || echo "warning: dependency prefetch skipped" >&2'

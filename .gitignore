@@ -16,6 +16,9 @@ __pycache__/
 .venv/
 tools/yt/.venv/
 
+# Factory definition caches
+factories/*/.factory-cache/
+
 # Env & secrets
 .env
 .env.*
