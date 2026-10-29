@@ -136,16 +136,18 @@ inference credentials never enter the runner (Warp's four-boundary model).
 
 ## 5. Orchestration
 
-**Phase 1–3:** Postgres state machine — `work_items`, `runs`, `run_steps`, `run_signals`, `events` —
-plus a Bun worker loop and SSE fan-out. Interfaces shaped for a mechanical swap:
-`startRun`, `signalGate`, `awaitGate`, `recordStep`, `emitEvent`.
+**Temporal from day one** (ADR-001). `temporal server start-dev` locally + one Bun worker.
 
-**Phase 4+:** move the same interfaces onto **Temporal** (one workflow per work item, child workflows per
-stage, activities wrapping runner + model calls). HITL gates, durable timers, retries and replayable
-history are native; event history doubles as the audit trail. Namespaces + search attributes give the
-multi-tenant path. Fallback spike: Restate (single binary, virtual objects).
+- `RunWorkflow` — one per chat message / ad-hoc run (Phase 2).
+- `FactoryWorkflow` — one per work item (Phase 3); child workflows per stage.
+- Activities wrap runner RPC and model calls; all Activities idempotent, retried with backoff.
+- Gates are Temporal **Updates** (synchronous decision) + **Signals** (async steer); `awaitGate` is a
+  durable wait with an escalation timer — days-long waits cost nothing.
+- Temporal event history is the execution truth; we mirror a canonical `FactoryEvent` JSONL + Postgres
+  read model for the UI (SSE fan-out). Temporal visibility gives per-run search and replay.
 
 Rejected: Inngest (per-step cost, wrong step shape), Windmill (not an orchestrator for this).
+Fallback if Temporal ops become painful: Restate (single binary, virtual objects per session).
 
 ## 6. Measurement and self-improvement
 

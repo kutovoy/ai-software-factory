@@ -7,30 +7,34 @@ Status: `proposed` | `accepted` | `superseded`.
 
 ## ADR-001 — Durable orchestration engine
 
-**Status:** proposed
+**Status:** accepted (2026-10-28)
 **Context:** Agent runs are long-lived (minutes to hours), must survive restarts, need retries, timers,
 human-in-the-loop waits, and per-run observability. Solo-on-Mac first, cloud multi-tenant later.
-**Options:** Temporal (self-hosted dev server, mature TS SDK) · Inngest · Restate · DBOS · Trigger.dev ·
-Windmill · plain Postgres queue + event log.
-**Leaning:** Temporal if the operational weight is acceptable; otherwise Postgres-backed state machine
-with a job queue, designed so it can be swapped for Temporal later.
-**Decision:** _pending — see `research/ecosystem.md` §E._
-**Consequences:** affects runner protocol, gate waits, replay/audit semantics.
+**Options:** Temporal · Inngest · Restate · DBOS · Trigger.dev · Windmill · plain Postgres queue.
+**Decision:** **Temporal from day one**, using `temporal server start-dev` locally and the TS SDK.
+One Workflow per work item, child Workflows per stage, Activities wrapping runner and model calls.
+Postgres remains the read model for the UI (runs/work items/events index); Temporal event history is the
+durable execution truth. Migrate to Temporal Cloud when multi-tenant (Phase 6).
+**Consequences:** gates use Signals/Updates (native durable waits, days-long); timers give escalation SLAs;
+replay gives auditability. Adds a local dev dependency and a worker process; every Activity must be
+idempotent. Do not put artifacts in Postgres — object store/disk + references.
 
 ---
 
 ## ADR-002 — Harness abstraction
 
-**Status:** proposed
+**Status:** accepted (2026-10-28)
 **Context:** Must be harness-agnostic (opencode first, then Claude Code / Codex / Gemini / generic CLI),
 model-agnostic (any OpenAI-compatible endpoint), and must stream tool calls into the web UI because the
 UI *is* the harness front-end.
-**Options:** embed opencode server directly · adapter interface over HTTP/SDK per harness · adopt ACP/AG-UI
-as the wire protocol · CLI wrapper with structured stdout.
-**Leaning:** one internal `HarnessAdapter` interface (start/send/stream/cancel/resume/permissions/artifacts)
-with per-harness implementations; opencode adapter talks to `opencode serve` (HTTP+SSE) as reference impl.
-**Decision:** _pending — see `research/ecosystem.md` §D._
-**Consequences:** defines the event schema; determines how much of the UI can be harness-specific.
+**Options:** embed opencode server in the UI · adapter interface per harness · adopt ACP/AG-UI as wire
+protocol · CLI wrapper with structured stdout.
+**Decision:** one internal `HarnessAdapter` interface + canonical `FactoryEvent` union. **New Chat always
+goes through adapter + runner** — the UI never talks to a harness process directly. Every prompt becomes a
+run on a runner, so chat and factory work share one code path, one audit trail, and one permission model.
+opencode adapter talks to `opencode serve` (HTTP+SSE) as the reference implementation.
+**Consequences:** slightly higher chat latency (runner lease per message); in exchange: full audit trail,
+identical semantics for all harnesses, and the ability to move a chat session into a factory run and back.
 
 ---
 
@@ -53,10 +57,13 @@ SHA; UI edits produce a commit (or PR) — never a DB-only mutation.
 **Context:** Humans should be optional but on by default; granularity needed per stage and per automation.
 **Options:** global boolean · per-stage enum (`human` | `agent` | `policy`) · per-automation overrides
 with global defaults.
-**Leaning:** gate policy object resolved as `automation override → factory default → global default`,
-each gate being `human` | `agent` | `policy:<name>`; default = spec, plan, pr_review = human.
-**Decision:** _pending._
-**Consequences:** drives inbox semantics, escalation paths, and what "lights off" means for audit.
+**Decision:** gate policy object resolved as `automation override → factory default → global default`,
+each gate being `human` | `agent` | `policy:<name>`. Default (lights on) = spec, plan, pr_review = human.
+Target capability (lights off) = **every stage agent-gated**, including deploy, with `mergePolicy:
+auto_on_green`. Build the full capability in Phase 3, but **enabling** all-agent gates requires a passing
+benchmark non-regression gate (Phase 4) — the switch exists earlier, the guardrail ships with it.
+**Consequences:** drives inbox semantics, escalation paths, and what "lights off" means for audit. A global
+kill switch flips every gate back to `human` and pauses dispatch.
 
 ---
 

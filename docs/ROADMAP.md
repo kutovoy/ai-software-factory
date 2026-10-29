@@ -17,18 +17,22 @@ read back identical); DB index tables; `factories/example` reference factory.
 
 ## Phase 2 — Chat → run → events → inbox (≈2–3 weeks)
 Build: `packages/adapters` canonical `FactoryEvent` union + **opencode adapter** (HTTP+SSE); `packages/runners`
-local Docker runner (lease/exec/heartbeat/kill); `apps/api` sessions/runs/events; `apps/web` New Chat +
+local Docker runner (lease/exec/heartbeat/kill); **Temporal worker** with `RunWorkflow` (one per chat message)
+and `RunnerActivity`s; `apps/api` sessions/runs/events (Postgres read model + SSE); `apps/web` New Chat +
 Runs + Inbox with live streaming; append-only JSONL event log.
-**Exit:** from the web chat, a prompt runs on a runner, streams tool calls/diffs live, produces a patch,
-and lands in the inbox. No terminal involved.
+**Exit:** from the web chat, a prompt runs on a runner via Temporal, streams tool calls/diffs live, produces
+a patch, and lands in the inbox. No terminal involved. Killing the worker mid-run and restarting resumes it.
 
 ## Phase 3 — The factory loop + gates (≈3–4 weeks)
 Build: work items, stage graph (triage → spec → plan → implement → review → verify → ship), foreman agent,
-automations (GitHub label, Slack mention, cron), gate primitive (typed decision, durable wait, escalation
+automations (GitHub label, Slack mention, cron), **`FactoryWorkflow`** (one per work item) with child
+workflows per stage, gate primitive (typed decision via Temporal Update/Signal, durable wait, escalation
 timer), gate policy resolution (automation → factory → global), merge policy + merge queue (agents never
-push to main), review committee (≥2 reviewers + judge, advisory verdicts).
-**Exit:** label a GitHub issue `factory-ready` → spec PR → human approves spec (or auto in lights-off) →
-implementation PR → agent review → human merge. Both lights-on and lights-off paths demoed.
+push to main), review committee (≥2 reviewers + judge, advisory verdicts), **full lights-off capability**
+(all stages agent-gated + `mergePolicy: auto_on_green` + kill switch).
+**Exit:** label a GitHub issue `factory-ready` → spec PR → gate (human or auto) → implementation PR →
+agent review → merge queue. Both lights-on and fully lights-off paths demoed. Lights-off stays behind a
+benchmark gate until Phase 4 lands.
 
 ## Phase 4 — Measurement (≈3 weeks)
 Build: `packages/evals` scorer registry (deterministic checks + LLM-as-judge), sampling + cadence,
@@ -45,8 +49,9 @@ proposal dedupe + impact ranking, PR generation against the definition repo, ben
 a PR (or auto-merges in lights-off), and can be rolled back in one click.
 
 ## Phase 6 — Team & cloud (ongoing)
-Build: auth/users/roles, remote runners (pull queue, mTLS, per-tenant isolation), Temporal migration,
-managed Postgres, cost/quota controls, Teams/Jira/GitLab integrations, multi-tenant namespaces.
+Build: auth/users/roles, remote runners (pull queue, mTLS, per-tenant isolation), **Temporal Cloud**
+(namespaces + search attributes; retire the local dev server), managed Postgres, cost/quota controls,
+Teams/Jira/GitLab integrations, multi-tenant namespaces.
 **Exit:** a second user and a remote Linux runner operate the same factory with per-tenant isolation.
 
 ## Cross-cutting, every phase
