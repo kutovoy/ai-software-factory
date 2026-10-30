@@ -31,7 +31,9 @@ src/app
   factories/[name]/benchmarks      suites, configurations, pinned tasks (replay is Phase 4)
   factories/[name]/self-improvement threshold, reviewer type, benchmark win (loop is Phase 5)
   factories/[name]/settings        manifest, repositories, agent defaults, secret/integration/MCP names
-  mcps|secrets|users               phase stubs (ComingSoon) — MCPs Phase 3, Secrets/Users Phase 6
+  mcps/page.tsx                    servers, transport, status, bound agents, tool globs, runner-side test
+  secrets/page.tsx                 name-only registry: presence, rotation, last use, delete guard
+  users                            phase stub (ComingSoon) — auth/users ship in Phase 6b
   api/chat                         POST proxy → /chat
   api/runs/[id]/events             SSE proxy (forwards Last-Event-ID / lastEventId)
   api/runs/[id]/permissions/[requestId]

@@ -1,5 +1,6 @@
 export * from './errors';
 export * from './schema/common';
+export * from './schema/mcp';
 export * from './schema/factory';
 export * from './schema/agent';
 export * from './schema/automation';
@@ -35,3 +36,5 @@ export * from './integrations/index';
 export * from './merge/index';
 export * from './webhooks/index';
 export * from './automations/index';
+export * from './secrets/index';
+export * from './mcp/index';

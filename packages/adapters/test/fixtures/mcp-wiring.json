@@ -1,0 +1,23 @@
+{
+  "note": "Recorded MCP wiring for factories/example (change add-secrets-and-mcp). Names only: env/headers values are secret NAMES, never values.",
+  "agent": "implement",
+  "servers": [
+    {
+      "name": "github",
+      "transport": "stdio",
+      "command": "github-mcp",
+      "args": ["--stdio"],
+      "env": { "GITHUB_TOKEN": "GITHUB_TOKEN" }
+    },
+    {
+      "name": "docs",
+      "transport": "http",
+      "url": "https://mcp.example.com/mcp",
+      "headers": { "Authorization": "DOCS_MCP_TOKEN" }
+    }
+  ],
+  "permissions": {
+    "github*": "allow",
+    "docs*": "deny"
+  }
+}

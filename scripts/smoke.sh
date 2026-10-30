@@ -901,5 +901,144 @@ printf '%s' "$rebuild_out" | grep -q 'orphaned:' \
   || fail "rebuild dry run did not report the diff: $rebuild_out"
 pass "factory rebuild --from runs --dry-run replays the logs and reports the diff without writing"
 
+# ------------------------------- 18. secrets registry + MCP wiring (Phase 6)
+log "registering a secret name and checking presence (names only, never values)"
+secret_resp="$(api -X POST "$API_URL/secrets" \
+  -H 'content-type: application/json' \
+  -d '{"name":"GITHUB_TOKEN","provider":"env","scope":"factory","description":"smoke: MCP credential"}')"
+[ "$(printf '%s' "$secret_resp" | jget secret.name)" = "GITHUB_TOKEN" ] \
+  || fail "secret registration failed: $secret_resp"
+[ "$(printf '%s' "$secret_resp" | jget secret.status)" = "resolved" ] \
+  || fail "GITHUB_TOKEN did not report resolved: $secret_resp"
+if printf '%s' "$secret_resp" | grep -q 'smoke-github-token'; then
+  fail "the registry response leaked the secret value"
+fi
+pass "secret GITHUB_TOKEN registered (status resolved, no value in the response)"
+
+unresolved_resp="$(api -X POST "$API_URL/secrets" \
+  -H 'content-type: application/json' -d '{"name":"SMOKE_UNRESOLVED_TOKEN"}')"
+[ "$(printf '%s' "$unresolved_resp" | jget secret.status)" = "unresolved" ] \
+  || fail "an absent name was not reported unresolved: $unresolved_resp"
+pass "an absent secret name is registered as unresolved (surfaced, not blocked)"
+
+value_code="$(curl -sS -o "$TMP_DIR/secret-value.json" -w '%{http_code}' -X POST "$API_URL/secrets" \
+  -H 'content-type: application/json' \
+  -d '{"name":"SMOKE_VALUE_REJECTED","value":"ghp_abcdefghijklmnopqrstuvwxyz0123"}')"
+[ "$value_code" = "400" ] || fail "expected 400 for a submitted value, got $value_code"
+[ "$(jget code < "$TMP_DIR/secret-value.json")" = "secret_value_rejected" ] \
+  || fail "wrong error code for a submitted secret value"
+pass "a submitted secret value is refused with secret_value_rejected"
+
+delete_code="$(curl -sS -o "$TMP_DIR/secret-in-use.json" -w '%{http_code}' -X DELETE "$API_URL/secrets/GITHUB_TOKEN")"
+[ "$delete_code" = "409" ] || fail "expected 409 deleting an in-use secret, got $delete_code"
+[ "$(jget code < "$TMP_DIR/secret-in-use.json")" = "secret_in_use" ] \
+  || fail "wrong error code for deleting an in-use secret"
+pass "deleting an in-use secret is refused with secret_in_use"
+
+log "checking that run $run_id resolved the secret and the usage row appeared"
+usage_resp=""
+usage_count=""
+usage_found=""
+for _ in $(seq 1 120); do
+  usage_resp="$(api "$API_URL/secrets/GITHUB_TOKEN/usage")"
+  usage_count="$(printf '%s' "$usage_resp" | jget useCount)"
+  usage_found="$(printf '%s' "$usage_resp" | RUN_ID="$run_id" bun -e '
+    const d = JSON.parse(await Bun.stdin.text());
+    const hit = (d.runs ?? []).find((row) => row.runId === process.env.RUN_ID);
+    console.log(hit && hit.resolved ? "yes" : "");
+  ')"
+  [ "$usage_found" = "yes" ] && break
+  sleep 0.5
+done
+[ "$usage_found" = "yes" ] || fail "secret usage did not record run $run_id: $usage_resp"
+[ "${usage_count:-0}" -ge 1 ] || fail "secret use count is ${usage_count:-0}"
+if printf '%s' "$usage_resp" | grep -q 'smoke-github-token'; then
+  fail "the usage response leaked the secret value"
+fi
+pass "run $run_id resolved GITHUB_TOKEN by name; usage row recorded (count $usage_count)"
+
+log "registering the declared MCP server and checking the projection"
+mcp_registered="$(api -X POST "$API_URL/factories/example/mcp" \
+  -H 'content-type: application/json' -d '{"servers":[{"name":"github"}]}')"
+printf '%s' "$mcp_registered" | bun -e '
+  const d = JSON.parse(await Bun.stdin.text());
+  const server = (d.servers ?? []).find((row) => row.name === "github");
+  if (!server) { console.error("no github MCP server"); process.exit(1); }
+  if (server.registered !== true) { console.error("github was not registered"); process.exit(1); }
+' || fail "MCP server registration failed: $mcp_registered"
+
+mcp_view="$(api "$API_URL/factories/example/mcp")"
+printf '%s' "$mcp_view" | bun -e '
+  const d = JSON.parse(await Bun.stdin.text());
+  const server = (d.servers ?? []).find((row) => row.name === "github");
+  if (!server) { console.error("no github MCP server"); process.exit(1); }
+  if (server.transport !== "stdio") { console.error(`transport ${server.transport}`); process.exit(1); }
+  if (server.env?.GITHUB_TOKEN !== "GITHUB_TOKEN") {
+    console.error(`env is not a secret reference: ${JSON.stringify(server.env)}`); process.exit(1);
+  }
+  if (!(server.agents ?? []).includes("implement")) {
+    console.error(`implement is not bound: ${JSON.stringify(server.agents)}`); process.exit(1);
+  }
+  const implement = (d.agents ?? []).find((row) => row.agent === "implement");
+  if (!implement || implement.allow.join(",") !== "github*") {
+    console.error(`unexpected implement wiring: ${JSON.stringify(implement)}`); process.exit(1);
+  }
+  const review = (d.agents ?? []).find((row) => row.agent === "review");
+  if (!review || review.deny.join(",") !== "github*") {
+    console.error(`unexpected review wiring: ${JSON.stringify(review)}`); process.exit(1);
+  }
+' || fail "MCP projection assertions failed"
+pass "MCP projection: github is stdio, implement allows github*, review denies github*"
+
+unknown_code="$(curl -sS -o "$TMP_DIR/mcp-unknown.json" -w '%{http_code}' -X POST "$API_URL/factories/example/mcp" \
+  -H 'content-type: application/json' -d '{"servers":[{"name":"not-declared"}]}')"
+[ "$unknown_code" = "422" ] || fail "expected 422 for an undeclared MCP server, got $unknown_code"
+[ "$(jget code < "$TMP_DIR/mcp-unknown.json")" = "unknown_mcp_server" ] \
+  || fail "wrong error code for an undeclared MCP server"
+pass "an undeclared MCP server is refused with unknown_mcp_server"
+
+mcp_test_resp="$(api -X POST "$API_URL/factories/example/mcp/github/test")"
+printf '%s' "$mcp_test_resp" | bun -e '
+  const d = JSON.parse(await Bun.stdin.text());
+  const result = d.result ?? {};
+  if (result.transport !== "stdio") { console.error(`transport ${result.transport}`); process.exit(1); }
+  if (result.executor !== "worker") { console.error(`executor ${result.executor}`); process.exit(1); }
+  if (typeof result.latencyMs !== "number") { console.error("no latency"); process.exit(1); }
+  if (typeof result.ok !== "boolean") { console.error("no ok flag"); process.exit(1); }
+  if (result.ok === false && !result.error) { console.error("a failed probe has no error"); process.exit(1); }
+' || fail "MCP probe result assertions failed"
+if printf '%s' "$mcp_test_resp" | grep -q 'smoke-github-token'; then
+  fail "the MCP probe response leaked the secret value"
+fi
+pass "MCP probe ran in the worker ($(printf '%s' "$mcp_test_resp" | jget result.transport), ok=$(printf '%s' "$mcp_test_resp" | jget result.ok))"
+
+log "checking that an inline credential literal fails definition validation"
+inline_dir="$TMP_DIR/inline-secret-factory"
+mkdir -p "$inline_dir"
+cat > "$inline_dir/factory.yaml" <<'YAML'
+schemaVersion: v1alpha1
+name: inline-secret
+repositories:
+  - owner: acme
+    name: api
+agentDefaults:
+  model: test-model
+gates:
+  review: human
+mergePolicy: human
+mcp:
+  servers:
+    - name: github
+      transport: stdio
+      command: github-mcp
+      args:
+        - ghp_abcdefghijklmnopqrstuvwxyz0123
+YAML
+inline_out="$(bun packages/cli/src/index.ts validate "$inline_dir" 2>&1)" && \
+  fail "an inline credential literal validated: $inline_out"
+printf '%s' "$inline_out" | grep -q 'secret_inline_rejected' \
+  || fail "inline credential literal was not reported as secret_inline_rejected: $inline_out"
+pass "an inline credential literal in an MCP declaration fails with secret_inline_rejected"
+
 log "SMOKE PASSED"
 

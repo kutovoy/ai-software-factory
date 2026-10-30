@@ -96,6 +96,25 @@ import {
 } from './merge-queue';
 import { registerProxy } from './proxy';
 import {
+  getMcpForApi,
+  mcpSyncBodySchema,
+  syncMcpForApi,
+  testMcpForApi,
+  type McpSyncBody,
+} from './mcp';
+import {
+  assertSecretName,
+  deleteSecretForApi,
+  getSecretUsageForApi,
+  listSecretsForApi,
+  registerSecretBodySchema,
+  registerSecretForApi,
+  rotateSecretBodySchema,
+  rotateSecretForApi,
+  type RegisterSecretBody,
+  type RotateSecretBody,
+} from './secrets';
+import {
   createRun,
   getRunDetail,
   listRuns,
@@ -183,6 +202,24 @@ async function json<T>(c: { req: { json: () => Promise<unknown> } }, schema: z.Z
   return parsed.data;
 }
 
+/** A body is optional for actions that only re-register metadata (`rotate`). */
+async function jsonOptional<T>(
+  c: { req: { json: () => Promise<unknown> } },
+  schema: z.ZodType<T>,
+  fallback: T,
+): Promise<T> {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return fallback;
+  }
+  if (body === null || body === undefined || body === '') return fallback;
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) throw invalidRequest('invalid request body', parsed.error.issues);
+  return parsed.data;
+}
+
 export function createApp(config: ApiConfig): Hono {
   // Seed the shared SQL singleton with this process's DATABASE_URL.
   getSql(config.databaseUrl);
@@ -238,6 +275,51 @@ export function createApp(config: ApiConfig): Hono {
   /* ------------------------------------------------------------ factories */
 
   app.get('/factories', (c) => c.json({ factories: listFactories(config) }));
+
+  /* -------------------------------------------------------- secrets (6.1) */
+
+  app.get('/secrets', async (c) => c.json(await listSecretsForApi(config)));
+
+  app.post('/secrets', async (c) => {
+    const body = await json<RegisterSecretBody>(c, registerSecretBodySchema);
+    return c.json(await registerSecretForApi(config, body), 201);
+  });
+
+  app.delete('/secrets/:name', async (c) => {
+    const name = c.req.param('name');
+    assertSecretName(name);
+    return c.json(await deleteSecretForApi(config, name));
+  });
+
+  app.post('/secrets/:name/rotate', async (c) => {
+    const name = c.req.param('name');
+    assertSecretName(name);
+    const body = await jsonOptional<RotateSecretBody>(c, rotateSecretBodySchema, {});
+    return c.json(await rotateSecretForApi(config, name, body));
+  });
+
+  app.get('/secrets/:name/usage', async (c) => {
+    const name = c.req.param('name');
+    assertSecretName(name);
+    return c.json(await getSecretUsageForApi(config, name));
+  });
+
+  /* ---------------------------------------------------- MCP wiring (6.3) */
+
+  app.get('/factories/:name/mcp', async (c) =>
+    c.json(await getMcpForApi(config, c.req.param('name'))),
+  );
+
+  app.post('/factories/:name/mcp', async (c) => {
+    const body = await jsonOptional<McpSyncBody>(c, mcpSyncBodySchema, {});
+    return c.json(await syncMcpForApi(config, c.req.param('name'), body));
+  });
+
+  app.post('/factories/:name/mcp/:server/test', async (c) =>
+    c.json(
+      await testMcpForApi(config, c.req.param('name'), c.req.param('server')),
+    ),
+  );
 
   app.get('/factories/:name', (c) => c.json({ factory: getFactory(config, c.req.param('name')) }));
 

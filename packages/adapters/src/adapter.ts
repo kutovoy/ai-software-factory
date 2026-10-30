@@ -1,4 +1,5 @@
 import type { FactoryEvent, JsonValue } from './events';
+import type { McpSessionWiring } from './mcp';
 
 export type AdapterId =
   | 'opencode'
@@ -24,6 +25,11 @@ export interface AdapterCapabilities {
   fork: boolean;
   usage: boolean;
   structuredOutput: boolean;
+  /**
+   * True when the harness can host MCP servers. A harness without it records the requested
+   * wiring as capability flags instead of silently dropping it (spec `mcp-integration`).
+   */
+  mcp: boolean;
 }
 
 export interface StartSessionRequest {
@@ -37,6 +43,11 @@ export interface StartSessionRequest {
   workspace?: string;
   /** Extra harness-native options; adapters ignore what they do not understand. */
   metadata?: Record<string, JsonValue>;
+  /**
+   * MCP servers + per-agent permission globs (spec `mcp-integration`). Names only:
+   * adapters render credentials as `{env:NAME}` templates and never see values.
+   */
+  mcp?: McpSessionWiring;
 }
 
 export interface SessionHandle {

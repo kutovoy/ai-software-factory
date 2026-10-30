@@ -18,9 +18,15 @@ improvement:
   observationWindowHours: 24
 integrations:
   - github
-mcpServers:
-  github:
-    command: github-mcp
+mcp:
+  servers:
+    - args:
+        - --stdio
+      command: github-mcp
+      env:
+        GITHUB_TOKEN: GITHUB_TOKEN
+      name: github
+      transport: stdio
 mergePolicy: human
 name: example
 repositories:

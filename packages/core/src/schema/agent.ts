@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { mcpServerNameSchema } from './mcp';
 import { secretNameSchema, withInference } from './common';
 
 export const AGENT_ROLES = [
@@ -24,6 +25,12 @@ export const agentFrontmatterSchema = withInference(
       .strict()
       .optional(),
     secrets: z.array(secretNameSchema).optional(),
+    /**
+     * MCP servers this agent may use (spec `mcp-integration` › per-agent binding).
+     * Names must be declared on the factory; anything not listed is denied.
+     */
+    mcp: z.array(mcpServerNameSchema).optional(),
+    /** @deprecated Legacy allow list; prefer `mcp`. */
     mcpServers: z.array(z.string().min(1)).optional(),
     spawnableBy: z.array(z.string().min(1)).optional(),
     idleTimeoutMinutes: z.number().int().min(1).max(60).optional(),

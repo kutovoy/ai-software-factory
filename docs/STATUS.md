@@ -4,15 +4,80 @@ Last updated: 2026-10-30
 
 ## Phase
 
-**Phase 3c — runtime hardening: complete** (2026-10-30). Six known gaps are closed without credentials:
-the console reads autonomy and cancels work items through real routes (no event-log inference, no
-gate-rejection cleanup), automations resolve the benchmark attestation exactly like manual items, the
-Postgres read model is rebuildable from the canonical JSONL log, jsonb values are encoded once (with a
-normalising migration), canary trees are collected with an hourly series and a promotion deploy hook, and
-the local runner can confine itself with `RUNNER_SANDBOX=exec`. The tracked canary flake was reproduced by
-a 50× loop, its signature identified, and fixed.
+**Phase 6a — secrets registry + per-agent MCP wiring: complete** (2026-10-30). The last two nav
+stubs are real pages: a name-only secret registry with presence checks and a usage audit, and an MCP
+registry with per-agent tool permissions and a runner-side connection test. Values never enter the
+database, events, logs, API responses or definitions.
 
-Next: **Phase 6** (multi-tenant/ops, auth/users, MCP wiring).
+Next: **Phase 6b** (auth/users, multi-tenant/ops, a managed secret provider behind the same
+registry).
+
+### Phase 6a — secrets registry + MCP wiring (ADR-026/ADR-027, 2026-10-30)
+
+Schema (`packages/core`): `mcp.servers` on `factory.yaml` (name, `transport: stdio|http`,
+`command`/`args`/`env` for stdio, `url`/`headers` for http, where `env`/`headers` map a runtime key
+to a secret **name**) and `agents[].mcp` as the per-agent allow list. The legacy `mcpServers` map and
+allow list still validate and are normalised into the same declaration, so existing definitions are
+unchanged. Validation adds `invalid_value` (unknown transport, or stdio with a url / http with a
+command), `secret_inline_rejected` (a credential-looking literal such as `sk-…`, `ghp_…`, `xoxb-…` in
+`command`/`args`/`url`/`env`/`headers`), and `unknown_mcp_server` (an agent binding a server the
+factory does not declare, naming both). `secret_unregistered` is a **warning**, emitted only when the
+caller supplies the registered names, so a fresh checkout still validates. `factories/example` now
+declares one stdio server (`github`, credential by reference) and binds it to the `implement` agent;
+the canonical snapshot was regenerated.
+
+Persistence: `014_secrets_mcp.sql` (the change text said `012`, but `012`/`013` are taken by
+harden-runtime) adds `secrets` (name/provider/scope/description/rotation — no value column),
+`secret_usage`, `run_secrets`, `mcp_servers`, `mcp_bindings`, `mcp_tests`. `registerSecret` refuses a
+`value` with `secret_value_rejected` *before* any query; presence is a boolean from the env provider
+reported as `resolved`/`unresolved` at read time; `deleteSecret` refuses `secret_in_use` while a
+definition still references the name (the caller supplies the references it found in git);
+`recordRunSecrets` is idempotent per `(runId, name)` and only increments usage for names that
+actually resolved.
+
+API: `GET/POST/DELETE /secrets`, `POST /secrets/:name/rotate` (metadata only), `GET
+/secrets/:name/usage` (count, last run, per-run rows, referencing resources), `GET/POST
+/factories/:name/mcp`, `POST /factories/:name/mcp/:server/test`. The lease activity records the
+secret names a run resolved on the lease step and in `run_secrets` — never a value. The probe runs in
+the worker/runner (`McpTestWorkflow` → `testMcpServerActivity` → `probeMcpServer`), resolves
+credentials locally by name (execution allowlist, inference credentials refused), scrubs them from
+errors and records transport/latency/error; a failure marks the server `unhealthy` while agents bound
+to it still validate.
+
+Adapter (`packages/adapters`): `buildOpencodeSessionConfig` renders `mcp` (`type: local` with
+`command` + `environment: {KEY: "{env:NAME}"}`, `type: remote` with `url` + `headers`), a
+`permission` map (`"<server>*": allow` for bound servers, `deny` for the rest) and the same globs on
+the agent override. `Capabilities.mcp` is `true` for opencode; the fake adapter records the requested
+wiring as `{supported: false, mode: 'recorded', servers, permissions}` instead of dropping it. The
+contract test replays a recorded wiring fixture, asserts the payload shape and that a secret value set
+in the environment never appears in it.
+
+UI: **Secrets** lists name/provider/scope/presence/last rotation/last use with a register dialog,
+rotate-by-reference and a delete that shows the referencing resources when refused; **MCPs and apps**
+shows servers (transport, status, bound/denied agents, tool globs, credential names, last probe) with
+an add-server dialog, a Test button and an agent-binding table. The Agents page shows bound servers
+plus the allow/deny globs. Both nav items are no longer Phase-6 stubs; only Users remains a stub.
+
+Verification (2026-10-30):
+
+```
+bun run ci                     → typecheck clean; 449 pass / 122 skip / 0 fail; both factories
+                                 validate, export --check canonical (16 / 15 files)
+integration (PG + Temporal)     → 534 pass / 1 skip / 0 fail (incl. new secrets.test.ts 3 unit +
+                                 7 PG cases, secrets.integration.test.ts 7 cases: register →
+                                 lease → usage, delete guard, MCP sync + fake-transport probe)
+docker compose up -d --build   → api, worker, web, postgres, temporal healthy; 014 applied
+bash scripts/smoke.sh          → SMOKE PASSED incl. §18 (register + presence, value refused,
+                                 in-use delete refused, run usage row, MCP projection + probe,
+                                 inline-secret definition rejected)
+cd apps/web && bunx playwright test → 28 passed (25 existing + secrets create/delete, in-use
+                                 refusal, MCP register + runner probe + agent binding)
+```
+
+Caveats: the registry verifies *presence*, not correctness — the first real run is the real test (the
+UI says so). MCP tool globs are opencode-specific; other harnesses record them as capability flags
+(best effort, no enforcement). The probe's stdio success criterion is transport-level ("exited 0" or
+"still alive at the timeout"), not an MCP JSON-RPC handshake.
 
 ### Phase 3c — runtime hardening (ADR-024/ADR-025, 2026-10-30)
 

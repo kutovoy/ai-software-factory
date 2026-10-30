@@ -221,19 +221,31 @@ export default async function SettingsPage({ params }: { params: Promise<{ name:
       </Card>
 
           <Card testId="settings-mcps">
-            <CardHeader title="MCP servers" hint="Names declared in factory.yaml; credentials are resolved elsewhere." />
+            <CardHeader
+              title="MCP servers"
+              hint="Declared in factory.yaml; credentials are secret names resolved at run time."
+            />
             <CardBody>
-              {Object.keys(manifest.mcpServers ?? {}).length === 0 ? (
-                <p className="text-xs text-slate-500">No MCP servers declared.</p>
-              ) : (
-                <div data-testid="settings-mcp-names" className="flex flex-wrap gap-1">
-                  {Object.keys(manifest.mcpServers ?? {}).map((server) => (
-                    <Badge key={server} tone="neutral" mono>
-                      {server}
-                    </Badge>
-                  ))}
-                </div>
-              )}
+              {(() => {
+                const names = [
+                  ...new Set([
+                    ...((manifest.mcp?.servers ?? []).map((server) => server.name)),
+                    ...Object.keys(manifest.mcpServers ?? {}),
+                  ]),
+                ];
+                if (names.length === 0) {
+                  return <p className="text-xs text-slate-500">No MCP servers declared.</p>;
+                }
+                return (
+                  <div data-testid="settings-mcp-names" className="flex flex-wrap gap-1">
+                    {names.map((server) => (
+                      <Badge key={server} tone="neutral" mono>
+                        {server}
+                      </Badge>
+                    ))}
+                  </div>
+                );
+              })()}
             </CardBody>
           </Card>
         </>

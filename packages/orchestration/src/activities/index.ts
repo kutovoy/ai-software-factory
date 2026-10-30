@@ -11,3 +11,4 @@ export * from './improvement';
 export * from './canary';
 export * from './merge';
 export * from './automation';
+export * from './mcp';

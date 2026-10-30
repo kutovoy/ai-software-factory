@@ -521,3 +521,54 @@ unchanged.
 surface as tool errors, not crashed runs. Cost: sandbox-exec is deprecated (a replacement will
 sit behind the same flag), the profile is macOS-only, and secrets still reach the process by
 name — the sandbox is a filesystem/network boundary, not a credential boundary.
+
+---
+
+## ADR-026 — Secrets are names, never values
+
+**Status:** accepted, implemented (2026-10-30, add-secrets-and-mcp)
+**Context:** definitions already referenced secrets by name (ADR-011/ADR-023) but there was no
+registry, no way to tell whether a referenced name resolves, and no audit of which runs used it. A
+registry that stores values would become a second credential store with its own rotation, backup and
+access story — exactly the surface the factory is trying to avoid.
+**Options:** store encrypted values and return them masked · store metadata only and verify presence ·
+keep names implicit in definitions with no registry.
+**Decision:** `secrets` stores `{name, provider, scope, description, lastRotatedAt}` and nothing else.
+A request carrying a `value` field is refused with `secret_value_rejected` *before* any query, and no
+API projection ever includes a value (not even masked). Presence is checked through the env provider
+at read time and reported as `resolved`/`unresolved`; a missing value registers fine and is surfaced,
+not blocked. Usage is audited by **name**: the lease activity records the names a run resolved in
+`run_secrets` (idempotent per `(runId, name)`) and increments `secret_usage` only for names that
+actually resolved. Deleting a name still referenced by a definition is refused with `secret_in_use`
+naming the resources — git stays the source of truth, so the guard reads definitions, not rows.
+**Consequences:** no credential can leak from the registry because it never holds one, and rotation
+is a metadata bump plus an out-of-band value change. Cost: the registry verifies *presence*, not
+correctness — a typo in the value is only caught by the first real run (the UI says so), and a
+managed secret provider (Vault/Supabase) needs a resolver behind the same `provider` field.
+
+---
+
+## ADR-027 — MCP permissions are per-agent globs
+
+**Status:** accepted, implemented (2026-10-30, add-secrets-and-mcp)
+**Context:** opencode supports MCP servers globally and per-agent tool globs; the factory needs
+several agents with different tool surfaces, and a global "enable everything" default would give the
+review agent the same write-capable tools as the implementer.
+**Options:** enable every declared server for every agent · a separate permission file per harness ·
+declare bindings on the agent and emit explicit allow/deny globs per agent.
+**Decision:** a server is declared once on the factory (`mcp.servers`, transport + credential
+*references*) and bound on the agent (`agents/<name>/agent.md` → `mcp: [server]`). The orchestrator
+resolves the wiring from the definition the run is pinned to and hands the adapter only the bound
+servers plus a permission map that states **both** sides: `"<server>*": "allow"` for each bound
+server and `"<server>*": "deny"` for every declared-but-unlisted server. opencode merges agent
+permissions over the global config, so the same globs are repeated on the agent override (the
+explicit source of truth). An agent that declares no `mcp` gets no servers and an explicit deny for
+every declared one — the resolved config says so rather than relying on a harness default. Harnesses
+without MCP support receive the same wiring as canonical capability flags (`{supported: false, mode:
+'recorded', servers, permissions}`), recorded on the session handle, never silently dropped.
+Credentials reach the harness as `{env:NAME}` templates: the adapter payload contains names and globs
+only, and a contract test asserts a value set in the environment never appears in it.
+**Consequences:** the tool surface is declared in git and reviewable per agent, and an unbound agent
+cannot reach a server by accident. Cost: globs are opencode-specific, so another harness only records
+the intent (best effort) until it grows an equivalent; and adding a server is a two-file edit
+(factory + agent) before it can be registered and tested.

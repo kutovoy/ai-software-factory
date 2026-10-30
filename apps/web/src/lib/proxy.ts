@@ -7,7 +7,7 @@ import { apiBaseUrl } from './api';
  */
 export async function forwardToApi(
   path: string,
-  init: { method: 'GET' | 'POST'; body?: string },
+  init: { method: 'GET' | 'POST' | 'DELETE'; body?: string },
 ): Promise<Response> {
   let upstream: Response;
   try {

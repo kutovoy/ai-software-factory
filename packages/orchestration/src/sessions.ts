@@ -4,8 +4,10 @@ import {
   type AdapterCapabilities,
   type FactoryEvent,
   type HarnessAdapter,
+  type McpSessionWiring,
   type SessionHandle,
 } from '@factory/adapters';
+import { loadDefinition, resolveMcpWiring } from '@factory/core';
 import type { HarnessId, RunInput } from './types';
 
 interface SessionEntry {
@@ -69,6 +71,28 @@ export function getSession(runId: string): SessionEntry | undefined {
   return sessions.get(runId);
 }
 
+/**
+ * Resolves the per-agent MCP wiring from the definition the run is pinned to (ADR-027).
+ *
+ * Best effort: a missing/unreadable definition degrades to "no MCP servers" rather than
+ * failing the session — the definition was already validated when the run was created.
+ * Names only; the adapter renders credentials as `{env:NAME}` templates.
+ */
+export function mcpWiringFor(input: RunInput): McpSessionWiring | undefined {
+  try {
+    const { definition } = loadDefinition(input.factoryRoot);
+    if (!definition) return undefined;
+    const wiring = resolveMcpWiring(definition, input.agent ?? null);
+    return {
+      servers: wiring.servers,
+      permissions: wiring.permissions,
+      ...(wiring.agent ? { agent: wiring.agent } : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 /** Returns the cached event stream for a run, creating one from the session if absent. */
 export function getOrCreateStream(entry: SessionEntry, runId: string): StreamEntry {
   const existing = streams.get(runId);
@@ -110,6 +134,8 @@ export async function ensureSession(
     fakeDelayMs: input.fakeDelayMs,
   });
 
+  const mcp = mcpWiringFor(input);
+
   let handle = await adapter.startSession({
     runId: input.runId,
     model: input.model,
@@ -117,6 +143,7 @@ export async function ensureSession(
     title: input.title ?? `run ${input.runId}`,
     workspace: input.workspace,
     metadata: { factory: input.factory, definitionCommit: input.definitionCommit },
+    ...(mcp ? { mcp } : {}),
   });
 
   const wantsResume =

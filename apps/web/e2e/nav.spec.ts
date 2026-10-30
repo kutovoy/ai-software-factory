@@ -15,7 +15,7 @@ const FACTORY_LEVEL = [
   'nav-settings',
 ];
 
-const STUBS = new Set(['nav-mcps', 'nav-secrets', 'nav-users']);
+const STUBS = new Set(['nav-users']);
 
 /** Factory pages ship in Phase 2b; each must render real data, not a stub. */
 const FACTORY_PAGE_MARKERS: Record<string, string[]> = {
@@ -29,6 +29,12 @@ const FACTORY_PAGE_MARKERS: Record<string, string[]> = {
   'nav-gates': ['gates-table'],
   'nav-merge-queue': ['merge-queue-batches'],
   'nav-settings': ['settings-manifest'],
+};
+
+/** Top-level pages that must render real data (Secrets and MCPs shipped in Phase 6). */
+const TOP_LEVEL_MARKERS: Record<string, string[]> = {
+  'nav-secrets': ['secrets-registry', 'secrets-unavailable'],
+  'nav-mcps': ['mcp-registry', 'mcp-unavailable'],
 };
 
 /** Every nav item renders; stubs name their phase; no console errors anywhere. */
@@ -64,7 +70,7 @@ test('every nav item renders and stubs name their phase', async ({ page }) => {
       await expect(phase).toBeVisible();
       await expect(phase).toContainText(/Phase \d/);
     } else {
-      const markers = FACTORY_PAGE_MARKERS[testId];
+      const markers = FACTORY_PAGE_MARKERS[testId] ?? TOP_LEVEL_MARKERS[testId];
       if (markers) {
         await expect(page.getByTestId('coming-soon')).toHaveCount(0);
         let marker = page.getByTestId(markers[0]!);

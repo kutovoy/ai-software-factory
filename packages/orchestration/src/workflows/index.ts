@@ -8,3 +8,4 @@ export * from './canary';
 export * from './merge';
 export * from './automation';
 export * from './merge-revert';
+export * from './mcp';

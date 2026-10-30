@@ -6,8 +6,10 @@ import {
   DefinitionValidationError,
   mapZodIssues,
   validationError,
+  validationWarning,
   type ErrorCode,
   type ValidationError,
+  type ValidationWarning,
 } from '../errors';
 import { agentFrontmatterSchema } from '../schema/agent';
 import { automationFrontmatterSchema } from '../schema/automation';
@@ -25,6 +27,7 @@ import { scorerFrontmatterSchema } from '../schema/scorer';
 import { skillFrontmatterSchema } from '../schema/skill';
 import { StageGraphError, compileStageGraph, isLoopStage, stageDeclarationsFromDefinition } from '../stage-graph/graph';
 import type { AgentDef } from '../schema/agent';
+import { collectSecretReferences, declaredMcpServers } from '../secrets/references';
 import { normalizeBody, splitFrontmatter } from './frontmatter';
 import { ALLOWED_LOCATIONS, classify, walk, type ResourceKind } from './walk';
 
@@ -49,6 +52,16 @@ export interface FactoryDefinition {
 export interface LoadResult {
   definition: FactoryDefinition | null;
   errors: ValidationError[];
+  /**
+   * Non-fatal findings. `secret_unregistered` is emitted only when the caller supplies
+   * the registered secret names (the API knows the registry; a fresh checkout does not).
+   */
+  warnings: ValidationWarning[];
+}
+
+export interface LoadOptions {
+  /** Names currently registered. When omitted, no `secret_unregistered` warning is made. */
+  registeredSecrets?: Iterable<string>;
 }
 
 const SCHEMAS: Record<Exclude<ResourceKind, 'factory'>, z.ZodTypeAny> = {
@@ -84,15 +97,19 @@ function compareResources(a: Resource, b: Resource): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-export function loadDefinition(root: string): LoadResult {
+export function loadDefinition(root: string, options: LoadOptions = {}): LoadResult {
   const errors: ValidationError[] = [];
+  const warnings: ValidationWarning[] = [];
   const push: Push = (code, file, pointer, message) => {
     errors.push(validationError(code, file, pointer, message));
+  };
+  const warn = (code: ValidationWarning['code'], file: string, pointer: string, message: string) => {
+    warnings.push(validationWarning(code, file, pointer, message));
   };
 
   if (!existsSync(root) || !statSync(root).isDirectory()) {
     push('missing_file', root, '/', 'definition directory does not exist');
-    return { definition: null, errors };
+    return { definition: null, errors, warnings };
   }
 
   const files = walk(root);
@@ -222,14 +239,33 @@ export function loadDefinition(root: string): LoadResult {
 
   if (manifest) crossValidate(manifest, resources, push);
 
+  if (manifest && options.registeredSecrets) {
+    const registered = new Set(options.registeredSecrets);
+    const agentResources = resources.filter((resource) => resource.kind === 'agent');
+    const agents = agentResources.map((resource) => ({
+      name: resource.name,
+      doc: resource.doc as AgentDef,
+    }));
+    const fileOf = new Map(agentResources.map((resource) => [resource.name, resource.path]));
+    for (const reference of collectSecretReferences(manifest, agents)) {
+      if (registered.has(reference.name)) continue;
+      warn(
+        'secret_unregistered',
+        reference.kind === 'agent' ? (fileOf.get(reference.resource) ?? 'factory.yaml') : 'factory.yaml',
+        reference.pointer,
+        `secret "${reference.name}" is referenced but not registered; the first real run will fail until it is provided`,
+      );
+    }
+  }
+
   resources.sort(compareResources);
 
-  if (errors.length > 0) return { definition: null, errors };
-  return { definition: { root, manifest: manifest as FactoryManifest, resources }, errors };
+  if (errors.length > 0) return { definition: null, errors, warnings };
+  return { definition: { root, manifest: manifest as FactoryManifest, resources }, errors, warnings };
 }
 
-export function loadOrThrow(root: string): FactoryDefinition {
-  const { definition, errors } = loadDefinition(root);
+export function loadOrThrow(root: string, options: LoadOptions = {}): FactoryDefinition {
+  const { definition, errors } = loadDefinition(root, options);
   if (!definition) throw new DefinitionValidationError(errors);
   return definition;
 }
@@ -241,7 +277,8 @@ function crossValidate(manifest: FactoryManifest, resources: Resource[], push: P
   const agents = namesOf('agent');
   const runners = namesOf('runner');
   const secrets = new Set(manifest.secrets);
-  const mcpServers = new Set(Object.keys(manifest.mcpServers ?? {}));
+  const declared = declaredMcpServers(manifest);
+  const mcpServers = new Set(declared.map((server) => server.name));
 
   const checkList = (
     file: string,
@@ -330,6 +367,22 @@ function crossValidate(manifest: FactoryManifest, resources: Resource[], push: P
           mcpServers,
           'MCP server',
         );
+        if (resource.kind === 'agent') {
+          // Per-agent MCP allow list (spec `mcp-integration` › unknown server).
+          const mcp = doc.mcp as string[] | undefined;
+          mcp?.forEach((server, index) => {
+            if (!mcpServers.has(server)) {
+              push(
+                'unknown_mcp_server',
+                resource.path,
+                `/mcp/${index}`,
+                `agent "${resource.name}" binds unknown MCP server "${server}"; declared servers: ${
+                  declared.map((candidate) => candidate.name).join(', ') || 'none'
+                }`,
+              );
+            }
+          });
+        }
         checkHarnessSecret(resource.path, doc.harness);
         if (resource.kind === 'automation') {
           checkOne(resource.path, '/agent', doc.agent as string | undefined, agents, 'agent');

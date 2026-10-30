@@ -17,8 +17,10 @@ import {
   type EventSequencer,
   type FactoryEvent,
   type FactoryEventInput,
+  type JsonValue,
   type PermissionRequestedEvent,
 } from './events';
+import { canonicalMcpCapabilityRecord } from './mcp';
 
 export interface FakeAdapterOptions {
   /** Delay between scripted steps. Defaults to 0 so tests run instantly. */
@@ -60,6 +62,8 @@ export class FakeAdapter implements HarnessAdapter {
     fork: false,
     usage: true,
     structuredOutput: true,
+    // The scripted adapter hosts no MCP servers; the request is recorded on the handle.
+    mcp: false,
   };
 
   private readonly delayMs: number;
@@ -85,6 +89,17 @@ export class FakeAdapter implements HarnessAdapter {
       runId: req.runId,
       sessionRef: `fake-${req.runId}`,
       model: req.model ?? this.model,
+      // No MCP support: record the requested wiring as canonical capability flags
+      // (spec `mcp-integration`: map + record, best effort).
+      ...(req.mcp
+        ? {
+            meta: {
+              mcp: {
+                ...canonicalMcpCapabilityRecord(req.mcp),
+              } as unknown as JsonValue,
+            },
+          }
+        : {}),
     };
     this.handles.set(req.runId, handle);
     this.sequencers.set(req.runId, createSequencer({ clock: this.clock }));

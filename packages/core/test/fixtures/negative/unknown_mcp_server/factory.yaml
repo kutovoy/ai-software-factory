@@ -1,0 +1,15 @@
+schemaVersion: v1alpha1
+name: fixture
+repositories:
+  - owner: acme
+    name: api
+agentDefaults:
+  model: test-model
+gates:
+  review: human
+mergePolicy: human
+mcp:
+  servers:
+    - name: github
+      transport: stdio
+      command: github-mcp

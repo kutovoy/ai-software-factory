@@ -10,6 +10,7 @@ import {
   withInference,
 } from './common';
 import { improvementSchema } from './improvement';
+import { mcpSchema } from './mcp';
 import { stageDeclarationSchema } from './stage';
 
 export const agentDefaultsSchema = withInference(
@@ -59,6 +60,13 @@ export const factorySchema = z
      */
     stages: z.array(stageDeclarationSchema).min(1).optional(),
     secrets: z.array(secretNameSchema).default([]),
+    /**
+     * MCP servers (spec `mcp-integration`): transport + credential *references*.
+     * `mcpServers` below is the legacy shorthand (`{name: {command}}`); it is still
+     * accepted so existing definitions keep validating, but new definitions use `mcp`.
+     */
+    mcp: mcpSchema.optional(),
+    /** @deprecated Legacy server map; prefer `mcp.servers`. */
     mcpServers: z.record(z.string(), z.unknown()).optional(),
     integrations: z.array(z.enum(INTEGRATIONS)).optional(),
     selfImprovement: selfImprovementSchema.optional(),

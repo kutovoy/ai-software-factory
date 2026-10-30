@@ -21,6 +21,16 @@ function Chips({ values, empty }: { values: string[]; empty: string }) {
   );
 }
 
+/** Declared MCP server names: the `mcp` block first, the legacy `mcpServers` map after. */
+function declaredMcpServers(manifest: FactoryDetail['manifest'] | undefined): string[] {
+  const declared = new Set<string>();
+  for (const server of (manifest?.mcp as { servers?: { name?: string }[] } | undefined)?.servers ?? []) {
+    if (server?.name) declared.add(server.name);
+  }
+  for (const name of Object.keys(manifest?.mcpServers ?? {})) declared.add(name);
+  return [...declared];
+}
+
 export default async function AgentsPage({ params }: { params: Promise<{ name: string }> }) {
   const { name } = await params;
   const factory = decodeURIComponent(name);
@@ -33,6 +43,7 @@ export default async function AgentsPage({ params }: { params: Promise<{ name: s
 
   const defaults = (detail?.factory.manifest.agentDefaults ?? null) as InferenceDoc | null;
   const agents = (resources?.resources ?? []).filter((resource) => resource.kind === 'agent');
+  const declaredServers = declaredMcpServers(detail?.factory.manifest);
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 px-6 py-6">
@@ -77,6 +88,12 @@ export default async function AgentsPage({ params }: { params: Promise<{ name: s
             const allow = doc.tools?.allow ?? [];
             const deny = doc.tools?.deny ?? [];
             const spawnableBy = doc.spawnableBy ?? [];
+            // MCP (spec `mcp-integration`, ADR-027): bound servers get an allow glob, the
+            // rest are denied explicitly. Legacy `mcpServers` is honoured as an allow list.
+            const boundServers = [
+              ...new Set([...(doc.mcp ?? []), ...(doc.mcpServers ?? [])]),
+            ];
+            const deniedServers = declaredServers.filter((server) => !boundServers.includes(server));
 
             return (
               <div
@@ -131,6 +148,27 @@ export default async function AgentsPage({ params }: { params: Promise<{ name: s
                       <p className="text-xs font-medium text-slate-600">Tools denied</p>
                       <div data-testid="agent-tools-deny">
                         <Chips values={deny} empty="nothing denied" />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1 border-t border-slate-100 pt-2">
+                      <p className="text-xs font-medium text-slate-600">MCP servers bound</p>
+                      <div data-testid="agent-mcp-servers">
+                        <Chips values={boundServers} empty="none — no MCP servers" />
+                      </div>
+                      <p className="text-xs font-medium text-slate-600">MCP tools allowed</p>
+                      <div data-testid="agent-mcp-allow">
+                        <Chips
+                          values={boundServers.map((server) => `${server}*`)}
+                          empty="nothing"
+                        />
+                      </div>
+                      <p className="text-xs font-medium text-slate-600">MCP tools denied</p>
+                      <div data-testid="agent-mcp-deny">
+                        <Chips
+                          values={deniedServers.map((server) => `${server}*`)}
+                          empty="no declared server is denied"
+                        />
                       </div>
                     </div>
 

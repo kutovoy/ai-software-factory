@@ -96,6 +96,9 @@ services:
       MERGE_IDLE_INTERVAL_MS: ${MERGE_IDLE_INTERVAL_MS:-30000}
       MERGE_IDLE_CYCLES: ${MERGE_IDLE_CYCLES:-2}
       GITHUB_DRY_RUN: ${GITHUB_DRY_RUN:-0}
+      # Secrets registry (ADR-026): a dummy execution secret so the smoke run resolves one
+      # name and records usage. Never a real credential.
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-smoke-github-token}
     ports:
       - '8080:8080'
     volumes:
@@ -196,6 +199,9 @@ services:
       MERGE_MAX_BATCHES: ${MERGE_MAX_BATCHES:-25}
       MERGE_IDLE_INTERVAL_MS: ${MERGE_IDLE_INTERVAL_MS:-30000}
       MERGE_IDLE_CYCLES: ${MERGE_IDLE_CYCLES:-2}
+      # Secrets registry (ADR-026): the worker resolves execution secrets by name; the
+      # smoke uses a dummy value so usage can be audited without a real credential.
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-smoke-github-token}
       # ADR-013: permission waits hold no activity slot, so 8 slots (the old hardcoded
       # value that used to starve the queue) is enough for eight blocked runs plus new work.
       # Raise for more concurrent streaming runs; the code default is Temporal's 100.

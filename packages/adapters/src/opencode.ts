@@ -19,6 +19,7 @@ import {
   type FactoryEventInput,
   type JsonValue,
 } from './events';
+import { buildOpencodeSessionConfig } from './mcp';
 import { readSseStream, type SseFrame } from './sse';
 
 /**
@@ -615,6 +616,8 @@ export class OpencodeAdapter implements HarnessAdapter {
     // The v2 `prompt` body has no JSON-schema `format` field, so structured output is
     // not exposed yet (v1 SDK advertised it; the installed server does not).
     structuredOutput: false,
+    // MCP servers are part of the session config (spec `mcp-integration`).
+    mcp: true,
   };
 
   private readonly transport: OpencodeTransport;
@@ -679,6 +682,11 @@ export class OpencodeAdapter implements HarnessAdapter {
     const modelRef = parseModelRef(req.model);
     if (modelRef) body.model = modelRef;
 
+    // MCP wiring + per-agent permission globs travel with the session (ADR-027). The
+    // config holds `{env:NAME}` templates only — never a credential value (ADR-026).
+    const sessionConfig = req.mcp ? buildOpencodeSessionConfig(req.mcp) : undefined;
+    if (sessionConfig) body.config = sessionConfig;
+
     const response = await this.transport.request<{ data?: SessionInfo }>(
       'POST',
       '/api/session',
@@ -698,6 +706,18 @@ export class OpencodeAdapter implements HarnessAdapter {
       sessionRef,
       harnessUrl: this.baseUrl,
       model: req.model ?? formatModelRef(info?.model),
+      ...(sessionConfig
+        ? {
+            meta: {
+              mcp: {
+                supported: true,
+                agent: req.mcp?.agent ?? null,
+                servers: req.mcp?.servers.map((server) => server.name) ?? [],
+                permissions: { ...(req.mcp?.permissions ?? {}) },
+              },
+            },
+          }
+        : {}),
     };
 
     this.sessions.set(req.runId, {

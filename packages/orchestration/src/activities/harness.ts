@@ -68,6 +68,8 @@ export async function startHarness(args: {
       harnessUrl: args.lease.harnessUrl ?? null,
       sessionRef: entry.handle.sessionRef ?? null,
       resumed: !existed && Boolean(args.sessionRef),
+      // MCP wiring actually handed to the harness (names + globs, never values).
+      mcp: entry.handle.meta?.mcp ?? { supported: false, servers: [], permissions: {} },
     },
   });
 
@@ -75,6 +77,9 @@ export async function startHarness(args: {
     sessionRef: entry.handle.sessionRef,
     harnessUrl: args.lease.harnessUrl,
     capabilities: capabilitiesOf(entry.adapter),
+    ...(entry.handle.meta?.mcp
+      ? { mcp: entry.handle.meta.mcp as unknown as HarnessStartInfo['mcp'] }
+      : {}),
     resumed: !existed && Boolean(args.sessionRef),
   };
 }

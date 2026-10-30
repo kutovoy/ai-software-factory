@@ -95,6 +95,15 @@ export interface HarnessStartInfo {
     fork: boolean;
     usage: boolean;
     structuredOutput: boolean;
+    /** True when the harness hosts MCP servers; false = wiring recorded only. */
+    mcp: boolean;
+  };
+  /** What was requested/recorded for MCP (names + globs, never values). */
+  mcp?: {
+    supported: boolean;
+    agent: string | null;
+    servers: string[];
+    permissions: Record<string, 'allow' | 'deny'>;
   };
   /** True when the session was recreated after a worker restart. */
   resumed: boolean;
@@ -916,4 +925,35 @@ export interface MergeRevertWorkflowOutcome {
 /** One workflow per revert; the id includes a timestamp so repeated reverts are distinct. */
 export function mergeRevertWorkflowId(batchId: string, at: string): string {
   return `merge-revert-${batchId}-${at.replace(/[^0-9]/g, '')}`;
+}
+
+/* ==================================================================== */
+/* MCP connection test (change add-secrets-and-mcp)                     */
+/*                                                                      */
+/* Workflow-safe types only: no Node APIs, no Temporal worker imports.  */
+/* ==================================================================== */
+
+export interface McpTestWorkflowInput {
+  factory: string;
+  factoryRoot: string;
+  /** Declared server name (`mcp.servers[].name`). */
+  server: string;
+  /** Probe timeout in ms; defaults to 5s. */
+  timeoutMs?: number;
+}
+
+export interface McpTestWorkflowOutcome {
+  factory: string;
+  server: string;
+  transport: string;
+  ok: boolean;
+  latencyMs: number;
+  error: string | null;
+  /** Where the probe executed (always the runner/worker host, never the API — ADR-010). */
+  executor: string;
+}
+
+/** One workflow per probe; the id includes a timestamp so repeated tests are distinct. */
+export function mcpTestWorkflowId(factory: string, server: string, at: string): string {
+  return `mcp-test-${factory}-${server}-${at.replace(/[^0-9]/g, '')}`;
 }

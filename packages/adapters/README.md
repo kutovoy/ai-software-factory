@@ -48,18 +48,20 @@ Rules the implementation must honour:
    `harness_unreachable`, `harness_error`, `unsupported_capability`, `session_not_found`,
    `permission_not_found`, `invalid_response`, `aborted`.
 6. **Capabilities are declared, not guessed.** Consumers degrade: no resume → fresh session;
-   no structured output → reject the request with `unsupported_capability`.
+   no structured output → reject the request with `unsupported_capability`; no MCP → the requested
+   wiring is recorded as capability flags (`{supported:false, mode:"recorded", servers, permissions}`)
+   instead of being silently dropped.
 
 ## Capability matrix
 
-| Adapter | streaming | toolCalls | permissions | resume | fork | usage | structuredOutput |
-|---|---|---|---|---|---|---|---|
-| `opencode` (v2 server) | ✅ | ✅ | `interactive` | ✅ | ✅ | ✅ | ❌ |
-| `fake` | ✅ | ✅ | `interactive` | ❌ | ❌ | ✅ | ✅ |
-| `claude-code` (planned) | ✅ | ✅ | `static` | ✅ | ❌ | ✅ | ❌ |
-| `codex` (planned) | ✅ | ✅ | `static` | ✅ | ❌ | ⚠️ | ❌ |
-| `gemini` / ACP (planned) | ✅ | ✅ | `interactive` | ✅ | ❌ | ⚠️ | ❌ |
-| `generic-cli` (planned) | ❌ | ❌ | `none` | ❌ | ❌ | ❌ | ❌ |
+| Adapter | streaming | toolCalls | permissions | resume | fork | usage | structuredOutput | mcp |
+|---|---|---|---|---|---|---|---|---|
+| `opencode` (v2 server) | ✅ | ✅ | `interactive` | ✅ | ✅ | ✅ | ❌ | ✅ |
+| `fake` | ✅ | ✅ | `interactive` | ❌ | ❌ | ✅ | ✅ | ❌ (recorded) |
+| `claude-code` (planned) | ✅ | ✅ | `static` | ✅ | ❌ | ✅ | ❌ | ❌ (recorded) |
+| `codex` (planned) | ✅ | ✅ | `static` | ✅ | ❌ | ⚠️ | ❌ | ❌ (recorded) |
+| `gemini` / ACP (planned) | ✅ | ✅ | `interactive` | ✅ | ❌ | ⚠️ | ❌ | ❌ (recorded) |
+| `generic-cli` (planned) | ❌ | ❌ | `none` | ❌ | ❌ | ❌ | ❌ | ❌ (recorded) |
 
 ## `opencode` adapter
 
@@ -70,7 +72,7 @@ CLI, `opencode v2.0.26`, and against `v2.2.0` inside the runner image
 | Purpose | Endpoint |
 |---|---|
 | readiness probe | `GET /api/info` (backoff → `harness_unreachable`) |
-| create session | `POST /api/session` `{title, agent?, model?}` |
+| create session | `POST /api/session` `{title, agent?, model?, config?}` (`config` carries `mcp` + per-agent `permission` globs; credentials are `{env:NAME}` templates) |
 | send prompt (async) | `POST /api/session/:id/prompt` `{text, files?, agent?, model?, resume:true}` |
 | stream events | `GET /api/event` (SSE; first frame `server.connected`, then bus events) |
 | cancel | `POST /api/session/:id/interrupt` |

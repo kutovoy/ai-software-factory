@@ -81,6 +81,9 @@ export interface AgentDoc extends InferenceDoc {
   runner?: string;
   tools?: { allow?: string[]; deny?: string[] };
   secrets?: string[];
+  /** MCP servers this agent may use (spec `mcp-integration`). */
+  mcp?: string[];
+  /** @deprecated Legacy allow list; prefer `mcp`. */
   mcpServers?: string[];
   spawnableBy?: string[];
   idleTimeoutMinutes?: number;

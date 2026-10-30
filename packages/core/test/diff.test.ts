@@ -77,13 +77,17 @@ describe('semantic diff', () => {
   it('reports gates, mergePolicy and improvement authority between the two reference factories', () => {
     const diff = diffDefinitions(loadOrThrow(EXAMPLE), loadOrThrow(LIGHTS_OFF));
     // `example` also declares the nightly schedule automation, which `example-lights-off`
-    // does not; everything else is a factory-level change.
+    // does not, and binds its `implement` agent to the `github` MCP server.
     expect(diff.added).toEqual([]);
     expect(diff.removed).toEqual([{ kind: 'automation', name: 'nightly' }]);
-    expect(diff.changed).toHaveLength(1);
-    expect(diff.changed[0].kind).toBe('factory');
+    expect(diff.changed.map((entry) => `${entry.kind}:${entry.name}`)).toEqual([
+      'agent:implement',
+      'factory:example',
+    ]);
 
-    const pointers = diff.changed[0].changes.map((change) => change.pointer);
+    const factory = diff.changed.find((entry) => entry.kind === 'factory');
+    expect(factory).toBeDefined();
+    const pointers = factory?.changes.map((change) => change.pointer);
     expect(pointers).toEqual([
       '/gates/plan',
       '/gates/pr_review',
@@ -91,8 +95,15 @@ describe('semantic diff', () => {
       '/improvement/authority',
       '/improvement/canaryPercent',
       '/improvement/rollbackThreshold',
+      // `example` declares `mcp.servers`; `example-lights-off` still uses the legacy
+      // `mcpServers` map, so the MCP block differs (change `add-secrets-and-mcp`).
+      '/mcp',
+      '/mcpServers',
       '/mergePolicy',
     ]);
+
+    const implement = diff.changed.find((entry) => entry.kind === 'agent');
+    expect(implement?.changes.map((change) => change.pointer)).toEqual(['/mcp']);
 
     const text = renderDiffText(diff);
     expect(text).toContain('~ factory:example /mergePolicy: "human" -> "auto_on_green"');

@@ -3,7 +3,14 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { FakeAdapter, type SessionHandle, type UsageReport } from '@factory/adapters';
-import { appendWorkItemEvent } from '@factory/core';
+import {
+  appendWorkItemEvent,
+  collectSecretReferences,
+  envSecretResolver,
+  loadDefinition,
+  recordRunSecrets,
+  type AgentDef,
+} from '@factory/core';
 import {
   DEFAULT_HARNESS_COMMAND,
   DockerRunnerBackend,
@@ -55,6 +62,43 @@ function backendFor(input: RunInput): RunnerBackend {
   return kind === 'docker' ? new DockerRunnerBackend() : new LocalRunnerBackend();
 }
 
+/**
+ * Records the secret *names* a run resolved (spec `secrets` › usage audit). Reads the
+ * definition the run is pinned to, checks presence through the env provider (never the
+ * value) and upserts `run_secrets` + `secret_usage`. Best effort: a missing definition
+ * must not block the lease.
+ */
+async function recordRunSecretNames(input: RunInput): Promise<string[]> {
+  let names: string[] = [];
+  try {
+    const { definition } = loadDefinition(input.factoryRoot);
+    if (!definition) return names;
+    const agents = definition.resources
+      .filter((resource) => resource.kind === 'agent')
+      .map((resource) => ({ name: resource.name, doc: resource.doc as AgentDef }));
+    names = [...new Set(collectSecretReferences(definition.manifest, agents).map((ref) => ref.name))];
+  } catch {
+    return names;
+  }
+
+  if (names.length === 0) return names;
+
+  const resolves = envSecretResolver(process.env);
+  try {
+    await recordRunSecrets(getSql(), {
+      runId: input.runId,
+      secrets: names.map((name) => ({ name, resolved: resolves(name) })),
+    });
+  } catch (error) {
+    console.warn(
+      `[runner] secret usage not recorded for ${input.runId}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+  return names;
+}
+
 export async function leaseRunner(args: {
   input: RunInput;
   /** Env for the harness process only — proxy base URL + per-run token, never a provider key. */
@@ -63,6 +107,11 @@ export async function leaseRunner(args: {
   const config = loadConfig();
   const existing = ephemeralLeases.get(args.input.runId);
   if (existing) return existing;
+
+  // Secrets by name only (spec `secrets` › usage audit, ADR-026): the lease records which
+  // names the run resolved so the Secrets page can show usage. A retried lease is
+  // idempotent per `(runId, name)`.
+  const secretNames = await recordRunSecretNames(args.input);
 
   const ephemeral = args.input.harness === 'fake' || args.input.runner === 'fake';
   const workspace = join(runDir(config.runsDir, args.input.runId), 'workspace');
@@ -82,7 +131,7 @@ export async function leaseRunner(args: {
       stepId: 'lease-runner',
       kind: 'runner',
       status: 'ok',
-      detail: { ...lease, backend: 'ephemeral', envKeys: [] },
+      detail: { ...lease, backend: 'ephemeral', envKeys: [], secretNames },
     });
     return lease;
   }
@@ -124,6 +173,7 @@ export async function leaseRunner(args: {
       // Only key names are recorded — never values (ADR-009 / secret boundary).
       envKeys: Object.keys(args.harnessEnv ?? {}),
       envChannel: 'harness-command',
+      secretNames,
       ...(handle.sandbox ? { sandbox: handle.sandbox } : {}),
       networkPolicy: args.input.networkPolicy ?? 'denied',
     },

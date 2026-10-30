@@ -6,6 +6,8 @@ harness:
     source: managedSecret
   model: openai/gpt-5
   type: opencode
+mcp:
+  - github
 role: implement
 runner: local-docker
 spawnableBy:

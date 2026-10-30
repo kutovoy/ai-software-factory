@@ -130,6 +130,19 @@ export interface FactoryManifest {
   gates: Record<string, string>;
   mergePolicy: string;
   secrets: string[];
+  /** Declared MCP servers (spec `mcp-integration`). */
+  mcp?: {
+    servers?: {
+      name: string;
+      transport: string;
+      command?: string;
+      args?: string[];
+      env?: Record<string, string>;
+      url?: string;
+      headers?: Record<string, string>;
+    }[];
+  };
+  /** @deprecated Legacy server map; prefer `mcp.servers`. */
   mcpServers?: Record<string, unknown>;
   integrations?: string[];
   selfImprovement?: {
@@ -1052,8 +1065,114 @@ export interface AuthorityChangeWire {
   prNumber?: number | null;
 }
 
-/* ------------------------------------------------ integrations (Phase 3b) */
+/* -------------------------------------------- secrets registry (Phase 6) */
 
+export type SecretStatusWire = 'resolved' | 'unresolved';
+
+export interface SecretViewWire {
+  name: string;
+  provider: string;
+  scope: string;
+  description: string | null;
+  /** `resolved` when the name currently resolves in the runtime environment. */
+  status: SecretStatusWire;
+  lastRotatedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  useCount: number;
+  lastRunId: string | null;
+  lastUsedAt: string | null;
+}
+
+export interface UnregisteredSecretWire {
+  name: string;
+  references: SecretReferenceWire[];
+}
+
+export interface SecretsResponseWire {
+  secrets: SecretViewWire[];
+  /** Names a definition references but the registry does not know. */
+  unregistered: UnregisteredSecretWire[];
+}
+
+export interface SecretReferenceWire {
+  name: string;
+  kind: 'factory' | 'agent' | 'agentDefaults' | 'mcp';
+  resource: string;
+  pointer: string;
+}
+
+export interface SecretUsageResponseWire {
+  name: string;
+  registered: boolean;
+  status: SecretStatusWire;
+  useCount: number;
+  lastRunId: string | null;
+  lastUsedAt: string | null;
+  runs: { runId: string; resolved: boolean; recordedAt: string | null }[];
+  references: SecretReferenceWire[];
+}
+
+/* ------------------------------------------------- MCP registry (Phase 6) */
+
+export interface McpLastTestWire {
+  ok: boolean;
+  transport: string;
+  latencyMs: number | null;
+  error: string | null;
+  runnerId: string | null;
+  createdAt: string | null;
+}
+
+export interface McpServerViewWire {
+  name: string;
+  transport: 'stdio' | 'http';
+  command: string | null;
+  args: string[];
+  /** Environment key -> secret name (never a value). */
+  env: Record<string, string>;
+  url: string | null;
+  /** Header name -> secret name (never a value). */
+  headers: Record<string, string>;
+  status: 'untested' | 'healthy' | 'unhealthy';
+  /** True once the server is present in the registry index (registerable/testable). */
+  registered: boolean;
+  description: string | null;
+  /** Tool glob the server contributes (`"<server>*"`). */
+  toolGlob: string;
+  agents: string[];
+  deniedAgents: string[];
+  lastTest: McpLastTestWire | null;
+}
+
+export interface McpAgentViewWire {
+  agent: string;
+  servers: string[];
+  allow: string[];
+  deny: string[];
+  declared: boolean;
+}
+
+export interface McpProjectionWire {
+  factory: string;
+  servers: McpServerViewWire[];
+  agents: McpAgentViewWire[];
+}
+
+export interface McpTestResponseWire {
+  factory: string;
+  server: string;
+  workflowId: string;
+  result: {
+    ok: boolean;
+    transport: string;
+    latencyMs: number;
+    error: string | null;
+    executor: string;
+  };
+}
+
+/* ------------------------------------------------ integrations (Phase 3b) */
 export interface IntegrationRepoWire {
   owner: string;
   name: string;
