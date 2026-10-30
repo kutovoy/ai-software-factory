@@ -11,6 +11,7 @@ import {
 import type * as activities from '../activities';
 import type {
   AutonomyPausedSignal,
+  CancelWorkItemSignal,
   FactoryWorkflowInput,
   FactoryWorkflowOutcome,
   FactoryWorkflowResume,
@@ -81,7 +82,7 @@ const forge = proxyActivities<typeof activities>({
 export const autonomyPausedSignal = defineSignal<[AutonomyPausedSignal]>('autonomyPaused');
 
 /** Graceful cancellation of a work item (the API records the reason in the read model). */
-export const cancelWorkItemSignal = defineSignal<[string?]>('cancelWorkItem');
+export const cancelWorkItemSignal = defineSignal<[CancelWorkItemSignal]>('cancelWorkItem');
 
 const UNATTENDED_MERGE_POLICIES = new Set(['auto_on_green', 'auto_after_n_approvals']);
 
@@ -110,6 +111,7 @@ export async function FactoryWorkflow(
   let pauseReason: string | null = null;
   let cancelled = false;
   let cancelReason: string | undefined;
+  let cancelActor: string | undefined;
 
   /** The scope wrapping the current stage child, so the kill switch can stop it. */
   let stageScope: CancellationScope | null = null;
@@ -121,9 +123,10 @@ export async function FactoryWorkflow(
     stageScope?.cancel();
   });
 
-  setHandler(cancelWorkItemSignal, (reason?: string) => {
+  setHandler(cancelWorkItemSignal, (payload?: CancelWorkItemSignal) => {
     cancelled = true;
-    cancelReason = reason ?? 'cancelled';
+    cancelActor = payload?.actor;
+    cancelReason = payload?.reason ?? 'cancelled';
     stageScope?.cancel();
   });
 
@@ -164,6 +167,25 @@ export async function FactoryWorkflow(
       reason,
     });
     return finish('blocked', stage, reason);
+  };
+
+  /**
+   * Cooperative cancellation (task 1.3): the read model is written once, the in-flight
+   * stage child is cancelled by the Signal, and the item ends `cancelled` with exactly one
+   * `work_item.cancelled` event.
+   */
+  const finishCancelled = async (
+    stage: string,
+    actor: string | null,
+    reason: string,
+  ): Promise<FactoryWorkflowOutcome> => {
+    await workItems.cancelWorkItem({
+      workItemId: input.workItemId,
+      stage,
+      actor: actor ?? 'human',
+      reason,
+    });
+    return finish('cancelled', stage, reason);
   };
 
   /* ------------------------------------------------ entry judgement call */
@@ -213,13 +235,21 @@ export async function FactoryWorkflow(
 
   while (stageIndex < order.length) {
     if (cancelled) {
-      await workItems.setWorkItemStatusActivity({
-        workItemId: input.workItemId,
-        status: 'cancelled',
-        actor: 'human',
-        reason: cancelReason ?? 'cancelled',
-      });
-      return finish('cancelled', currentStage, cancelReason ?? 'cancelled');
+      return await finishCancelled(
+        currentStage,
+        cancelActor ?? 'human',
+        cancelReason ?? 'cancelled',
+      );
+    }
+
+    // A recorded request whose Signal never arrived still cancels the item.
+    const cancelState = await workItems.readWorkItemCancel({ workItemId: input.workItemId });
+    if (cancelState.requested) {
+      return await finishCancelled(
+        currentStage,
+        cancelState.actor,
+        cancelState.reason ?? 'cancelled',
+      );
     }
 
     const stage = order[stageIndex] as LoopStageName;
@@ -387,13 +417,11 @@ export async function FactoryWorkflow(
     } catch (error) {
       if (isCancellation(error)) {
         if (cancelled) {
-          await workItems.setWorkItemStatusActivity({
-            workItemId: input.workItemId,
-            status: 'cancelled',
-            actor: 'human',
-            reason: cancelReason ?? 'cancelled',
-          });
-          return finish('cancelled', currentStage, cancelReason ?? 'cancelled');
+          return await finishCancelled(
+            currentStage,
+            cancelActor ?? 'human',
+            cancelReason ?? 'cancelled',
+          );
         }
         return await blockForPause(currentStage, pauseReason ?? 'autonomy paused');
       }
@@ -420,13 +448,7 @@ export async function FactoryWorkflow(
     }
 
     if (result.status === 'cancelled') {
-      await workItems.setWorkItemStatusActivity({
-        workItemId: input.workItemId,
-        status: 'cancelled',
-        actor: 'foreman',
-        reason: 'stage run cancelled',
-      });
-      return finish('cancelled', stage, 'stage run cancelled');
+      return await finishCancelled(stage, 'foreman', 'stage run cancelled');
     }
 
     // implement: branch + commit + PR referencing the work item (forge abstraction).

@@ -13,12 +13,15 @@ import {
   getIntegration,
   getPendingGate,
   getWorkItem,
+  latestAutonomyEvent,
   listGateDecisions,
+  markWorkItemCancelled,
   listWorkItemEvents,
   listWorkItems,
   loadDefinition,
   newWorkItemId,
   recordGateDecision,
+  requestWorkItemCancel,
   resolveAllGates,
   resolveStageConfigs,
   setAutonomyState,
@@ -28,9 +31,11 @@ import {
   type GateDecisionRequest,
   type LoopStage,
   type WorkItem,
+  type WorkItemEvent,
   type WorkItemVersion,
 } from '@factory/core';
 import {
+  cancelWorkItem,
   getSql,
   pauseWorkItemAutonomy,
   startFactoryWorkflow,
@@ -52,6 +57,7 @@ import {
   gateNotFound,
   invalidStageGraph,
   invalidRequest,
+  invalidState,
   spawnNotAllowed,
   workItemNotFound,
 } from './errors';
@@ -137,6 +143,9 @@ export interface WorkItemSummary {
   prUrl: string | null;
   prNumber: number | null;
   loopCount: number;
+  cancelRequestedAt: string | null;
+  cancelActor: string | null;
+  cancelReason: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -158,6 +167,9 @@ function summarize(item: WorkItem): WorkItemSummary {
     prUrl: item.prUrl,
     prNumber: item.prNumber,
     loopCount: item.loopCount,
+    cancelRequestedAt: item.cancelRequestedAt ?? null,
+    cancelActor: item.cancelActor ?? null,
+    cancelReason: item.cancelReason ?? null,
     createdAt: item.createdAt ?? null,
     updatedAt: item.updatedAt ?? null,
   };
@@ -656,5 +668,236 @@ export async function setAutonomyForApi(
     benchmarkAttestationSatisfied: gate.satisfied,
     benchmarkAttestationCode: gate.code,
     signaled,
+  };
+}
+
+/* ------------------------------------------------ autonomy read model (1.1) */
+
+export interface AutonomyReadModel {
+  factory: string;
+  /** The declared policy, resolved from git (never inferred from events). */
+  declared: {
+    stages: Record<string, { gate: string; source: string }>;
+    mergePolicy: string;
+    fullyAutonomous: boolean;
+    benchmarkGateRequired: boolean;
+  };
+  enabled: boolean;
+  paused: boolean;
+  actor: string | null;
+  reason: string | null;
+  /** Null when autonomy was never changed: no timestamp is invented. */
+  updatedAt: string | null;
+  overrideActor: string | null;
+  overrideReason: string | null;
+  /** True once an autonomy_state row exists (enabled or paused at least once). */
+  everEnabled: boolean;
+  benchmarkAttestation: {
+    required: boolean;
+    satisfied: boolean;
+    code: 'benchmark_attestation_missing' | null;
+    reason: string | null;
+  };
+  /** Newest `autonomy.*` work-item event, as evidence for the read state. */
+  lastEvent: {
+    type: string;
+    actor: string | null;
+    reason: string | null;
+    at: string | null;
+    payload: Record<string, unknown>;
+  } | null;
+}
+
+function autonomyEvidence(event: WorkItemEvent | null): AutonomyReadModel['lastEvent'] {
+  if (!event) return null;
+  const reason = typeof event.payload.reason === 'string' ? event.payload.reason : null;
+  return {
+    type: event.type,
+    actor: event.actor,
+    reason,
+    at: event.createdAt,
+    payload: event.payload,
+  };
+}
+
+/**
+ * `GET /autonomy` (task 1.1): the declared policy + the live kill-switch state + the newest
+ * `autonomy.*` event as evidence. The console no longer derives autonomy from work-item
+ * events. When autonomy was never enabled the response says so (`enabled: false` with a
+ * reason) and leaves `updatedAt` null rather than inventing a timestamp.
+ */
+export async function getAutonomyForApi(
+  config: ApiConfig,
+  factory: string,
+): Promise<AutonomyReadModel> {
+  const dir = resolveFactoryDir(config, factory);
+  const { definition, errors } = loadDefinition(dir);
+  if (!definition) throw definitionInvalid(factory, errors);
+
+  const resolution = resolveAllGates(definition.manifest);
+  const sql = getSql();
+  const [state, gate, lastEvent] = await Promise.all([
+    getAutonomyState(sql, factory),
+    benchmarkGateStatus(config, factory),
+    latestAutonomyEvent(sql, factory),
+  ]);
+
+  return {
+    factory,
+    declared: {
+      stages: Object.fromEntries(
+        Object.entries(resolution.stages).map(([stage, entry]) => [
+          stage,
+          { gate: entry.gate, source: entry.source },
+        ]),
+      ),
+      mergePolicy: resolution.mergePolicy,
+      fullyAutonomous: resolution.fullyAutonomous,
+      benchmarkGateRequired: resolution.benchmarkGateRequired,
+    },
+    enabled: state?.enabled ?? false,
+    paused: state?.paused ?? false,
+    actor: state?.actor ?? null,
+    reason: state?.reason ?? (state ? null : 'autonomy has never been enabled for this factory'),
+    updatedAt: state?.updatedAt ?? null,
+    overrideActor: state?.overrideActor ?? null,
+    overrideReason: state?.overrideReason ?? null,
+    everEnabled: state !== null,
+    benchmarkAttestation: {
+      required: gate.required,
+      satisfied: gate.satisfied,
+      code: gate.code,
+      reason: gate.reason,
+    },
+    lastEvent: autonomyEvidence(lastEvent),
+  };
+}
+
+/* --------------------------------------------- work item cancel (1.2) */
+
+export const cancelWorkItemBodySchema = z
+  .object({
+    actor: z.string().min(1).max(120),
+    reason: z.string().min(1).max(2000),
+  })
+  .strict();
+
+export type CancelWorkItemBody = z.infer<typeof cancelWorkItemBodySchema>;
+
+export interface CancelWorkItemResult {
+  workItem: WorkItemSummary;
+  cancelled: boolean;
+  /** True when the item was already `cancelled` (idempotent repeat). */
+  alreadyCancelled: boolean;
+  /** True when a cancellation request was already recorded by an earlier call. */
+  alreadyRequested: boolean;
+  cancelRequestedAt: string | null;
+  /** Whether the workflow Signal reached Temporal (the read model is the truth regardless). */
+  delivery: 'signal' | 'none';
+  /** True only for the call that recorded the request. */
+  eventRecorded: boolean;
+}
+
+/**
+ * `POST /work-items/:id/cancel` (task 1.2). Cooperative and idempotent: record the actor +
+ * reason + timestamp once, Signal `cancelWorkItem`, and let `FactoryWorkflow` cancel the
+ * in-flight stage child and end `cancelled`. A repeat returns the same state and emits no
+ * second event; a terminal (`done`) item is refused with `invalid_state`.
+ */
+export async function cancelWorkItemForApi(
+  config: ApiConfig,
+  workItemId: string,
+  body: CancelWorkItemBody,
+): Promise<CancelWorkItemResult> {
+  const sql = getSql();
+  const item = await getWorkItem(sql, workItemId);
+  if (!item) throw workItemNotFound(workItemId);
+
+  if (item.status === 'done') {
+    throw invalidState(
+      `work item "${workItemId}" is done; only an in-flight item can be cancelled`,
+      { workItemId, status: item.status },
+    );
+  }
+
+  if (item.status === 'cancelled') {
+    return {
+      workItem: summarize(item),
+      cancelled: true,
+      alreadyCancelled: true,
+      alreadyRequested: false,
+      cancelRequestedAt: item.cancelRequestedAt ?? null,
+      delivery: 'none',
+      eventRecorded: false,
+    };
+  }
+
+  const recorded = await requestWorkItemCancel(sql, {
+    workItemId,
+    actor: body.actor,
+    reason: body.reason,
+    stage: item.stage,
+  });
+
+  // `blocked`/`escalated` items have no live workflow to cancel (it already ended); the
+  // read model is the only authority left, so record the terminal state directly. The
+  // event is deduped, so a late Signal/activity cannot add a second one.
+  if (item.status === 'blocked' || item.status === 'escalated') {
+    const cancelled = await markWorkItemCancelled(sql, {
+      workItemId,
+      stage: item.stage,
+      actor: body.actor,
+      reason: body.reason,
+    });
+    log('info', 'work_item_cancel_requested', {
+      workItemId,
+      factory: item.factory,
+      actor: body.actor,
+      recorded: recorded.requested,
+      delivery: 'none',
+      terminal: true,
+    });
+    return {
+      workItem: summarize(cancelled),
+      cancelled: true,
+      alreadyCancelled: false,
+      alreadyRequested: recorded.alreadyRequested,
+      cancelRequestedAt: cancelled.cancelRequestedAt ?? null,
+      delivery: 'none',
+      eventRecorded: recorded.requested,
+    };
+  }
+
+  let delivery: CancelWorkItemResult['delivery'] = 'none';
+  try {
+    const signaled = await cancelWorkItem(
+      workItemWorkflowId(workItemId),
+      { actor: body.actor, reason: body.reason },
+      toOrchestrationConfig(config),
+    );
+    delivery = signaled.delivered ? 'signal' : 'none';
+  } catch (error) {
+    log('error', 'work_item_cancel_delivery_failed', {
+      workItemId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  log('info', 'work_item_cancel_requested', {
+    workItemId,
+    factory: item.factory,
+    actor: body.actor,
+    recorded: recorded.requested,
+    delivery,
+  });
+
+  return {
+    workItem: summarize(recorded.item),
+    cancelled: recorded.item.status === 'cancelled',
+    alreadyCancelled: false,
+    alreadyRequested: recorded.alreadyRequested,
+    cancelRequestedAt: recorded.item.cancelRequestedAt ?? null,
+    delivery,
+    eventRecorded: recorded.requested,
   };
 }

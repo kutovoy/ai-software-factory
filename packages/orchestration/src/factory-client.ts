@@ -100,11 +100,20 @@ export async function pauseWorkItemAutonomy(
 /** Graceful cancellation of a work item (best effort; the read model is the truth). */
 export async function cancelWorkItem(
   workflowId: string,
-  reason?: string,
+  payload: { actor: string; reason: string },
   config: OrchestrationConfig = loadConfig(),
-): Promise<void> {
-  const client = await getClient(config);
-  await client.workflow.getHandle(workflowId).signal('cancelWorkItem', reason ?? 'cancelled');
+): Promise<{ delivered: boolean }> {
+  try {
+    const client = await getClient(config);
+    await client.workflow
+      .getHandle(workflowId)
+      .signal('cancelWorkItem', { actor: payload.actor, reason: payload.reason });
+    return { delivered: true };
+  } catch {
+    // The workflow may already be finished; the read model + pre-dispatch read remain
+    // the truth, so a lost Signal does not resurrect the item.
+    return { delivered: false };
+  }
 }
 
 /** Diagnostics only; Postgres remains the read model for the UI. */

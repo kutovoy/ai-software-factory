@@ -79,6 +79,10 @@ export const workItemNotFound = (workItemId: string): ApiError =>
     workItemId,
   });
 
+/** A request cannot apply in the resource's current state (e.g. cancelling a done item). */
+export const invalidState = (message: string, details?: unknown): ApiError =>
+  new ApiError('invalid_state', 409, message, details);
+
 export const gateNotFound = (workItemId: string, stage: string): ApiError =>
   new ApiError(
     'gate_not_found',

@@ -97,7 +97,7 @@ export async function insertRun(row: CreateRunRow): Promise<void> {
     ) values (
       ${row.runId}, ${row.factory}, ${row.definitionCommit}, ${row.definitionDirty},
       ${row.harness}, ${row.model ?? null}, ${row.runner}, ${row.kind}, ${row.title ?? null},
-      ${JSON.stringify(row.input)}::jsonb, 'pending', ${row.workflowId},
+      ${row.input}::jsonb, 'pending', ${row.workflowId},
       ${row.temporalRunId ?? null}, now()
     )
     on conflict (id) do nothing
@@ -116,7 +116,7 @@ export async function markRunRunning(input: RunInput, workflowId: string): Promi
     ) values (
       ${input.runId}, ${input.factory}, ${input.definitionCommit}, ${input.definitionDirty},
       ${input.harness}, ${input.model ?? null}, ${input.runner}, ${input.kind},
-      ${input.title ?? null}, ${JSON.stringify(input)}::jsonb, 'running', ${workflowId}, now()
+      ${input.title ?? null}, ${input}::jsonb, 'running', ${workflowId}, now()
     )
     on conflict (id) do update set
       status = case when runs.status in ('ok','error','cancelled') then runs.status else 'running' end,
@@ -166,7 +166,7 @@ export async function finishRun(params: {
       cost_usd = coalesce(${params.costUsd ?? null}, cost_usd),
       input_tokens = coalesce(${params.inputTokens ?? null}, input_tokens),
       output_tokens = coalesce(${params.outputTokens ?? null}, output_tokens),
-      artifacts = coalesce(${params.artifacts ? JSON.stringify(params.artifacts) : null}::jsonb, artifacts)
+      artifacts = coalesce(${params.artifacts ?? null}::jsonb, artifacts)
     where id = ${params.runId}
   `;
 }
@@ -186,7 +186,7 @@ export async function upsertStep(params: {
     insert into run_steps (run_id, step_id, kind, status, detail, error, started_at, ended_at)
     values (
       ${params.runId}, ${params.stepId}, ${params.kind}, ${params.status},
-      ${params.detail === undefined ? null : JSON.stringify(params.detail)}::jsonb,
+      ${params.detail === undefined ? null : params.detail}::jsonb,
       ${params.error ?? null}, now(),
       ${params.status === 'running' ? null : new Date()}
     )
@@ -293,7 +293,7 @@ export async function upsertPermissionRequest(params: {
   await sql`
     insert into run_permissions (run_id, request_id, action, detail, decision, requested_at)
     values (${params.runId}, ${params.requestId}, ${params.action},
-            ${JSON.stringify(params.detail)}::jsonb, null, now())
+            ${params.detail}::jsonb, null, now())
     on conflict (run_id, request_id) do update set
       action = excluded.action,
       detail = excluded.detail
@@ -363,7 +363,7 @@ export async function issueProxyToken(params: {
   await sql`
     insert into proxy_tokens (token_hash, token_id, run_id, models, created_at)
     values (${hashToken(token)}, ${tokenId}, ${params.runId},
-            ${JSON.stringify(params.models)}::jsonb, now())
+            ${params.models}::jsonb, now())
   `;
   return { token, tokenId };
 }

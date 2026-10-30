@@ -2,8 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { AutonomyEventView } from '@/lib/work-items';
-import type { AutonomyState } from '@/lib/types';
+import type { AutonomyReadWire, AutonomyState } from '@/lib/types';
 
 /**
  * Kill switch + lights-off control (spec: autonomy policy and kill switch, ADR-018).
@@ -22,6 +21,7 @@ export function AutonomyControl({
   fullyAutonomous,
   mergePolicy,
   initialEvent,
+  initialState,
 }: {
   factory: string;
   benchmarkGateRequired: boolean;
@@ -29,7 +29,8 @@ export function AutonomyControl({
   benchmarkAttestationCode: 'benchmark_attestation_missing' | null;
   fullyAutonomous: boolean;
   mergePolicy: string;
-  initialEvent: AutonomyEventView | null;
+  initialEvent: AutonomyReadWire['lastEvent'];
+  initialState: AutonomyReadWire | null;
 }) {
   const router = useRouter();
   const [actor, setActor] = useState('local-user');
@@ -138,18 +139,52 @@ export function AutonomyControl({
         </div>
       ) : null}
 
+      {initialState ? (
+        <div
+          data-testid="autonomy-read-state"
+          data-enabled={initialState.enabled ? 'true' : 'false'}
+          data-paused={initialState.paused ? 'true' : 'false'}
+          data-updated-at={initialState.updatedAt ?? ''}
+          className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700"
+        >
+          <p>
+            <span className="font-semibold">Read model:</span>{' '}
+            <span className="font-mono">
+              {initialState.paused ? 'paused' : initialState.enabled ? 'enabled' : 'disabled'}
+            </span>
+            {initialState.everEnabled
+              ? ` · last change by ${initialState.actor ?? 'unknown'} at ${initialState.updatedAt ?? 'an unrecorded time'}`
+              : ' · autonomy was never enabled for this factory (no timestamp is invented)'}
+          </p>
+          <p data-testid="autonomy-read-reason" className="mt-1 text-slate-600">
+            {initialState.reason ?? 'no reason recorded'}
+          </p>
+          {initialState.overrideActor ? (
+            <p className="mt-1 text-amber-900">
+              benchmark override by <span className="font-mono">{initialState.overrideActor}</span> —{' '}
+              {initialState.overrideReason ?? 'no reason'}
+            </p>
+          ) : null}
+        </div>
+      ) : (
+        <p data-testid="autonomy-read-unavailable" className="text-xs text-slate-500">
+          The autonomy read model is unavailable (<span className="font-mono">GET /autonomy</span> could
+          not be read). The controls below report the state the API returns after a change.
+        </p>
+      )}
+
       {initialEvent ? (
-        <p data-testid="autonomy-last-event" className="text-xs text-slate-600">
-          Last recorded autonomy event:{' '}
+        <p data-testid="autonomy-last-event" data-type={initialEvent.type} className="text-xs text-slate-600">
+          Newest autonomy event:{' '}
           <span className="font-mono">{initialEvent.type.replace('autonomy.', '')}</span> by{' '}
-          <span className="font-mono">{initialEvent.actor ?? 'unknown'}</span> —{' '}
+          <span className="font-mono">{initialEvent.actor ?? 'unknown'}</span>
+          {initialEvent.at ? ` at ${initialEvent.at}` : ' (no timestamp recorded)'} —{' '}
           {initialEvent.reason ?? 'no reason recorded'}
         </p>
       ) : (
         <p data-testid="autonomy-last-event-empty" className="text-xs text-slate-500">
-          No autonomy change is recorded in the work-item event log yet. The API exposes the kill switch
-          as <span className="font-mono">POST /autonomy</span> and does not yet project a read model, so
-          the controls below report the state they set.
+          No <span className="font-mono">autonomy.*</span> event has been recorded yet, so there is no
+          evidence beyond the declared policy above.
         </p>
       )}
 

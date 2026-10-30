@@ -43,35 +43,27 @@ export async function cleanupRuns(request: APIRequestContext): Promise<void> {
 }
 
 /**
- * Best-effort work-item cleanup. There is no cancel endpoint for a work item yet, so a
- * pending gate is rejected (which ends the loop as `cancelled`). An item parked in a stage
- * run without a gate is polled briefly; if no gate appears we record the id and move on —
- * the test itself is expected to drive its items to a terminal state.
+ * Best-effort work-item cleanup through `POST /work-items/:id/cancel` (harden-runtime,
+ * task 1.4): no gate is rejected to clean up anymore. Cancellation is idempotent, so a
+ * second call is harmless; a `done` item is refused with `invalid_state` and ignored.
  */
 export async function cleanupWorkItems(request: APIRequestContext): Promise<void> {
   for (const workItemId of createdWorkItems.splice(0)) {
-    for (let attempt = 0; attempt < 8; attempt += 1) {
+    await request
+      .post(`/api/work-items/${workItemId}/cancel`, {
+        data: { actor: 'e2e-cleanup', reason: 'e2e cleanup' },
+      })
+      .catch(() => undefined);
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
       const response = await request
         .get(`/api/work-items/${workItemId}`)
         .catch(() => undefined);
       if (!response || !response.ok()) break;
-      const detail = (await response.json()) as {
-        workItem?: { status?: string };
-        pendingGate?: { stage?: string } | null;
-      };
+      const detail = (await response.json()) as { workItem?: { status?: string } };
       const status = detail.workItem?.status;
       if (status === 'done' || status === 'cancelled') break;
-      const stage = detail.pendingGate?.stage;
-      if (!stage) {
-        await new Promise((resolve) => setTimeout(resolve, 2_000));
-        continue;
-      }
-      await request
-        .post(`/api/work-items/${workItemId}/gates/${stage}`, {
-          data: { decision: 'reject', actor: 'e2e-cleanup', reason: 'e2e cleanup' },
-        })
-        .catch(() => undefined);
-      break;
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
     }
   }
 }

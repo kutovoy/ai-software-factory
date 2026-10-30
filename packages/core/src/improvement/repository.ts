@@ -150,7 +150,7 @@ export async function finishImprovementRun(
   const rows = (await sql`
     update improvement_runs set
       status = ${args.status},
-      eligibility = coalesce(${args.eligibility === undefined ? null : JSON.stringify(args.eligibility)}::jsonb, eligibility),
+      eligibility = coalesce(${args.eligibility === undefined ? null : args.eligibility}::jsonb, eligibility),
       proposals = ${args.proposals ?? 0},
       lessons = ${args.lessons ?? 0},
       decision = ${args.decision ?? null},
@@ -268,8 +268,8 @@ export async function createProposal(
       ${args.id}, ${args.improvementRunId ?? null}, ${args.factory},
       ${args.kind ?? 'improvement'}, ${args.authority}, ${args.status ?? 'open'},
       ${args.title}, ${args.summary ?? ''}, ${args.impact},
-      ${JSON.stringify(args.evidence ?? {})}::jsonb, ${args.failureSignature ?? ''},
-      ${JSON.stringify(args.files ?? [])}::jsonb, ${JSON.stringify(args.diff ?? [])}::jsonb,
+      ${args.evidence ?? {}}::jsonb, ${args.failureSignature ?? ''},
+      ${args.files ?? []}::jsonb, ${args.diff ?? []}::jsonb,
       ${args.candidateHash ?? null}, ${args.clusterKey ?? args.id}
     )
     on conflict (id) do update set
@@ -302,7 +302,7 @@ export async function updateProposal(
   const rows = (await sql`
     update proposals set
       status = coalesce(${args.status ?? null}, status),
-      diff = coalesce(${args.diff === undefined ? null : JSON.stringify(args.diff)}::jsonb, diff),
+      diff = coalesce(${args.diff === undefined ? null : args.diff}::jsonb, diff),
       candidate_hash = coalesce(${args.candidateHash ?? null}, candidate_hash),
       pr_url = coalesce(${args.prUrl ?? null}, pr_url),
       pr_number = coalesce(${args.prNumber ?? null}, pr_number),
@@ -399,7 +399,7 @@ export async function recordProposalEdit(
     ) values (
       ${args.id}, ${args.proposalId}, ${args.kind}, ${args.path}, ${args.rationale ?? ''},
       ${args.content}, ${args.scope}, ${args.rejected ?? false}, ${args.rejectionCode ?? null},
-      ${args.contrast === undefined || args.contrast === null ? null : JSON.stringify(args.contrast)}::jsonb
+      ${args.contrast === undefined || args.contrast === null ? null : args.contrast}::jsonb
     )
     on conflict (proposal_id, kind, path) do update set
       rationale = excluded.rationale,
@@ -431,7 +431,7 @@ export async function rejectProposalEdit(
     update proposal_edits set
       rejected = true,
       rejection_code = ${args.rejectionCode},
-      contrast = coalesce(${args.contrast === undefined || args.contrast === null ? null : JSON.stringify(args.contrast)}::jsonb, contrast)
+      contrast = coalesce(${args.contrast === undefined || args.contrast === null ? null : args.contrast}::jsonb, contrast)
     where id = ${args.id}
     returning *
   `) as ProposalEditRow[];
@@ -490,7 +490,7 @@ export async function recordProbe(sql: SQL, args: RecordProbeArgs): Promise<Prob
       candidate_score, delta, winner
     ) values (
       ${args.id}, ${args.proposalId}, ${args.editId}, ${args.workItemId ?? null},
-      ${args.runId ?? null}, ${JSON.stringify(args.matchedInputs ?? {})}::jsonb,
+      ${args.runId ?? null}, ${args.matchedInputs ?? {}}::jsonb,
       ${args.baselineScore ?? null}, ${args.candidateScore ?? null}, ${args.delta ?? null},
       ${args.winner}
     )
@@ -563,7 +563,7 @@ export async function recordLesson(sql: SQL, args: RecordLessonArgs): Promise<Le
       id, factory, cue, lesson, evidence, confidence, proposal_id, origin_factory
     ) values (
       ${args.id}, ${args.factory}, ${args.cue}, ${args.lesson},
-      ${JSON.stringify(args.evidence ?? {})}::jsonb, ${args.confidence},
+      ${args.evidence ?? {}}::jsonb, ${args.confidence},
       ${args.proposalId ?? null}, ${args.factory}
     )
     on conflict (id) do nothing
@@ -613,9 +613,9 @@ export async function promoteLesson(
       promoted = true,
       promoted_by = ${args.actor},
       promoted_at = coalesce(promoted_at, now()),
-      evidence = evidence || ${JSON.stringify({
+      evidence = evidence || ${{
         promotion: { actor: args.actor, reason: args.reason ?? null },
-      })}::jsonb
+      }}::jsonb
     where id = ${args.id}
     returning *
   `) as LessonRow[];
@@ -660,7 +660,7 @@ export async function recordImprovementEvent(
     insert into improvement_events (improvement_run_id, factory, type, subject, payload)
     values (
       ${args.improvementRunId}, ${args.factory}, ${args.type}, ${args.subject ?? ''},
-      ${JSON.stringify(args.payload ?? {})}::jsonb
+      ${args.payload ?? {}}::jsonb
     )
     on conflict (improvement_run_id, type, subject) do nothing
     returning *
@@ -702,6 +702,10 @@ interface CanaryRow {
   pr_number: number | string | null;
   actor: string | null;
   evidence: unknown;
+  deployment_status: string | null;
+  deployed_at: unknown;
+  deploy_hook: string | null;
+  deploy_error: string | null;
   started_at: unknown;
   ended_at: unknown;
 }
@@ -725,6 +729,10 @@ function mapCanary(row: CanaryRow): CanaryRolloutRecord {
     prNumber: row.pr_number === null || row.pr_number === undefined ? null : Number(row.pr_number),
     actor: row.actor ?? null,
     evidence: parseJsonb<Record<string, unknown>>(row.evidence, {}),
+    deploymentStatus: (row.deployment_status ?? null) as CanaryRolloutRecord['deploymentStatus'],
+    deployedAt: iso(row.deployed_at),
+    deployHook: row.deploy_hook ?? null,
+    deployError: row.deploy_error ?? null,
     startedAt: iso(row.started_at),
     endedAt: iso(row.ended_at),
   };
@@ -748,6 +756,8 @@ export interface CreateCanaryRolloutArgs {
   prNumber?: number | null;
   actor?: string | null;
   evidence?: Record<string, unknown>;
+  deploymentStatus?: CanaryRolloutRecord['deploymentStatus'];
+  deployHook?: string | null;
 }
 
 export async function createCanaryRollout(
@@ -758,14 +768,16 @@ export async function createCanaryRollout(
     insert into canary_rollouts (
       id, factory, proposal_id, candidate_version, stable_version, candidate_commit,
       stable_commit, candidate_root, canary_percent, rollback_threshold,
-      observation_window_hours, status, reason, pr_url, pr_number, actor, evidence
+      observation_window_hours, status, reason, pr_url, pr_number, actor, evidence,
+      deployment_status, deploy_hook
     ) values (
       ${args.id}, ${args.factory}, ${args.proposalId}, ${args.candidateVersion},
       ${args.stableVersion}, ${args.candidateCommit ?? null}, ${args.stableCommit ?? null},
       ${args.candidateRoot ?? null}, ${args.canaryPercent}, ${args.rollbackThreshold},
       ${args.observationWindowHours}, ${args.status ?? 'pending'}, ${args.reason ?? null},
       ${args.prUrl ?? null}, ${args.prNumber ?? null}, ${args.actor ?? null},
-      ${JSON.stringify(args.evidence ?? {})}::jsonb
+      ${(args.evidence ?? {})}::jsonb,
+      ${args.deploymentStatus ?? null}, ${args.deployHook ?? null}
     )
     on conflict (id) do nothing
     returning *
@@ -831,6 +843,9 @@ export interface UpdateCanaryRolloutArgs {
   prUrl?: string | null;
   prNumber?: number | null;
   evidence?: Record<string, unknown> | null;
+  deploymentStatus?: CanaryRolloutRecord['deploymentStatus'] | null;
+  deployHook?: string | null;
+  deployError?: string | null;
   ended?: boolean;
 }
 
@@ -854,7 +869,11 @@ export async function updateCanaryRollout(
       candidate_root = coalesce(${args.candidateRoot ?? null}, candidate_root),
       pr_url = coalesce(${args.prUrl ?? null}, pr_url),
       pr_number = coalesce(${args.prNumber ?? null}, pr_number),
-      evidence = coalesce(${args.evidence === undefined || args.evidence === null ? null : JSON.stringify(args.evidence)}::jsonb, evidence),
+      evidence = coalesce(${args.evidence === undefined || args.evidence === null ? null : args.evidence}::jsonb, evidence),
+      deployment_status = coalesce(${args.deploymentStatus ?? null}, deployment_status),
+      deployed_at = case when ${args.deploymentStatus === 'deployed'} then coalesce(deployed_at, now()) else deployed_at end,
+      deploy_hook = coalesce(${args.deployHook ?? null}, deploy_hook),
+      deploy_error = coalesce(${args.deployError ?? null}, deploy_error),
       ended_at = case when ${args.ended === true} then coalesce(ended_at, now()) else ended_at end
     where id = ${args.id}
       and (${fromCsv}::text is null or status = any(string_to_array(${fromCsv}, ',')))
@@ -917,7 +936,7 @@ export async function recordCanaryEvent(
     insert into canary_events (rollout_id, factory, type, subject, payload)
     values (
       ${args.rolloutId}, ${args.factory}, ${args.type}, ${args.subject ?? ''},
-      ${JSON.stringify(args.payload ?? {})}::jsonb
+      ${args.payload ?? {}}::jsonb
     )
     on conflict (rollout_id, type, subject) do nothing
     returning *

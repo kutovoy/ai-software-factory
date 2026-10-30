@@ -47,6 +47,7 @@ import {
 } from './factories';
 import {
   authorityChangeBodySchema,
+  canaryPruneBodySchema,
   canaryPromoteBodySchema,
   canaryRollbackBodySchema,
   canaryStartBodySchema,
@@ -60,6 +61,7 @@ import {
   improvementRunBodySchema,
   listLessonsForApi,
   listProposalsForApi,
+  pruneCanaryForApi,
   promoteCanaryForApi,
   promoteLessonBodySchema,
   promoteLessonForApi,
@@ -69,6 +71,7 @@ import {
   startCanaryForApi,
   startImprovementForApi,
   type AuthorityChangeBody,
+  type CanaryPruneBody,
   type CanaryPromoteBody,
   type CanaryRollbackBody,
   type CanaryStartBody,
@@ -117,14 +120,18 @@ import { registerWebhooks } from './webhooks';
 import { getSql } from '@factory/orchestration';
 import {
   autonomyBodySchema,
+  cancelWorkItemBodySchema,
+  cancelWorkItemForApi,
   createWorkItemBodySchema,
   createWorkItemForApi,
+  getAutonomyForApi,
   gateDecisionBodySchema,
   getWorkItemDetail,
   listWorkItemsForApi,
   setAutonomyForApi,
   submitGateDecisionForApi,
   type AutonomyBody,
+  type CancelWorkItemBody,
   type CreateWorkItemBody,
 } from './work-items';
 import type { GateDecisionRequest } from '@factory/core';
@@ -422,6 +429,11 @@ export function createApp(config: ApiConfig): Hono {
     return c.json(await promoteCanaryForApi(config, body));
   });
 
+  app.post('/factories/:name/canary/prune', async (c) => {
+    const body = await json<CanaryPruneBody>(c, canaryPruneBodySchema);
+    return c.json(await pruneCanaryForApi(config, c.req.param('name'), body));
+  });
+
   /* ------------------------------------------------------- integrations */
   app.get('/factories/:name/integrations', async (c) =>
     c.json(await getIntegrationsForApi(config, c.req.param('name'))),
@@ -624,6 +636,11 @@ export function createApp(config: ApiConfig): Hono {
 
   app.get('/work-items/:id', async (c) => c.json(await getWorkItemDetail(c.req.param('id'))));
 
+  app.post('/work-items/:id/cancel', async (c) => {
+    const body = await json<CancelWorkItemBody>(c, cancelWorkItemBodySchema);
+    return c.json(await cancelWorkItemForApi(config, c.req.param('id'), body));
+  });
+
   app.post('/work-items/:id/gates/:stage', async (c) => {
     const body = await json<GateDecisionRequest>(c, gateDecisionBodySchema);
     const result = await submitGateDecisionForApi(
@@ -636,6 +653,12 @@ export function createApp(config: ApiConfig): Hono {
   });
 
   /* ------------------------------------------------------------- autonomy */
+
+  app.get('/autonomy', async (c) =>
+    c.json({
+      autonomy: await getAutonomyForApi(config, c.req.query('factory') ?? config.defaultFactory),
+    }),
+  );
 
   app.post('/autonomy', async (c) => {
     const body = await json<AutonomyBody>(c, autonomyBodySchema);

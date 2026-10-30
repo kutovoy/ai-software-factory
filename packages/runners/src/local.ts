@@ -1,6 +1,14 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { RunnerError } from './errors';
+import {
+  buildSandboxProfile,
+  sandboxAvailability,
+  sandboxCommand,
+  sandboxModeFromEnv,
+  type SandboxMode,
+} from './sandbox';
 import {
   DEFAULT_HARNESS_COMMAND,
   normalizeRunnerSpec,
@@ -39,6 +47,10 @@ export interface LocalRunnerOptions {
   /** Extra env for the harness process. */
   harnessEnv?: Record<string, string>;
   shell?: string;
+  /** `exec` confines the harness with macOS sandbox-exec; defaults to `RUNNER_SANDBOX`. */
+  sandbox?: SandboxMode;
+  /** Test hook: pretend to run on another platform (fallback path). */
+  platform?: NodeJS.Platform;
 }
 
 interface LocalLease {
@@ -49,15 +61,21 @@ interface LocalLease {
   child?: ChildProcess;
   startedAt: number;
   stderr: string;
+  profilePath: string | null;
+  sandbox: { mode: SandboxMode; active: boolean; reason: string | null };
 }
 
 /**
  * Process-based fallback: same protocol as the docker backend, no Docker.
  *
- * Used for fast tests and dev machines without Docker. It is **not** a security
- * boundary: the process runs on the host, so inference credentials are stripped from
- * the inherited environment and only allowlisted execution secrets are injected.
- * macOS `sandbox-exec` isolation is not implemented yet (see README).
+ * Used for fast tests and dev machines without Docker. Inference credentials are stripped
+ * from the inherited environment and only allowlisted execution secrets are injected.
+ *
+ * With `RUNNER_SANDBOX=exec` (ADR-025) the harness runs under a generated macOS
+ * `sandbox-exec` profile: deny by default, read system + workspace, write only the
+ * workspace, the run directory and `/private/tmp`, and no network unless the stage grants
+ * it. Any other platform falls back to the unsandboxed process and records
+ * `runner.sandbox_unavailable` on the lease step.
  */
 export class LocalRunnerBackend implements RunnerBackend {
   readonly kind = 'local' as const;
@@ -67,6 +85,8 @@ export class LocalRunnerBackend implements RunnerBackend {
   private readonly readyTimeoutMs: number;
   private readonly harnessEnv: Record<string, string>;
   private readonly shell: string;
+  private readonly sandboxMode: SandboxMode;
+  private readonly platform: NodeJS.Platform;
   private readonly leases = new Map<string, LocalLease>();
 
   constructor(options: LocalRunnerOptions = {}) {
@@ -75,6 +95,8 @@ export class LocalRunnerBackend implements RunnerBackend {
     this.readyTimeoutMs = options.readyTimeoutMs ?? 30_000;
     this.harnessEnv = options.harnessEnv ?? {};
     this.shell = options.shell ?? '/bin/sh';
+    this.sandboxMode = options.sandbox ?? sandboxModeFromEnv(process.env.RUNNER_SANDBOX);
+    this.platform = options.platform ?? process.platform;
   }
 
   async lease(input: RunnerSpec): Promise<RunnerHandle> {
@@ -103,7 +125,26 @@ export class LocalRunnerBackend implements RunnerBackend {
     for (const secret of secrets) env[secret.name] = secret.value;
 
     const command = this.harnessCommand(spec.harness.command, port);
-    const child = spawn(this.shell, ['-c', command], {
+    const runDir = spec.runDir ?? dirname(workspace);
+    const availability = sandboxAvailability(this.sandboxMode, this.platform);
+    let profilePath: string | null = null;
+    let argv = [this.shell, '-c', command];
+    if (availability.active) {
+      await mkdir(runDir, { recursive: true });
+      profilePath = join(runDir, '.sandbox.sb');
+      await writeFile(
+        profilePath,
+        buildSandboxProfile({
+          workspace,
+          runDir,
+          network: spec.networkPolicy ?? 'denied',
+        }),
+        'utf8',
+      );
+      argv = sandboxCommand(profilePath, this.shell, command);
+    }
+
+    const child = spawn(argv[0] as string, argv.slice(1), {
       cwd: workspace,
       env: env as NodeJS.ProcessEnv,
       detached: true,
@@ -116,6 +157,11 @@ export class LocalRunnerBackend implements RunnerBackend {
       stderr = `${stderr}${chunk.toString('utf8')}`.slice(-4000);
     });
 
+    const sandbox = {
+      mode: this.sandboxMode,
+      active: availability.active,
+      reason: availability.reason,
+    };
     const handle: RunnerHandle = {
       runnerId: spec.runnerId,
       kind: this.kind,
@@ -123,6 +169,7 @@ export class LocalRunnerBackend implements RunnerBackend {
       harnessUrl: `http://127.0.0.1:${port}`,
       port,
       pid: child.pid,
+      sandbox,
     };
 
     try {
@@ -149,6 +196,8 @@ export class LocalRunnerBackend implements RunnerBackend {
       child,
       startedAt: Date.now(),
       stderr,
+      profilePath,
+      sandbox,
     });
 
     return handle;
@@ -167,9 +216,13 @@ export class LocalRunnerBackend implements RunnerBackend {
     for (const secret of lease.secrets) env[secret.name] = secret.value;
     Object.assign(env, req.env ?? {});
 
-    const command = Array.isArray(req.command)
-      ? [this.shell, '-c', req.command.map(shellQuote).join(' ')]
-      : [this.shell, '-c', req.command];
+    const commandString = Array.isArray(req.command)
+      ? req.command.map(shellQuote).join(' ')
+      : req.command;
+    const command =
+      lease.sandbox.active && lease.profilePath
+        ? sandboxCommand(lease.profilePath, this.shell, commandString)
+        : [this.shell, '-c', commandString];
 
     for await (const event of streamCommand(command, {
       cwd: req.cwd ?? lease.workspace,

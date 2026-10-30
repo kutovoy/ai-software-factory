@@ -2,6 +2,8 @@ import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { CanaryActions } from '@/components/improvement/CanaryActions';
 import { CanaryCountdown } from '@/components/improvement/CanaryCountdown';
+import { CanaryPruneButton } from '@/components/improvement/CanaryPruneButton';
+import { CanarySeriesChart } from '@/components/improvement/CanarySeriesChart';
 import {
   canaryStatusLabel,
   canaryStatusTone,
@@ -54,6 +56,8 @@ export function CanaryPanel({
           </p>
         </div>
       )}
+
+      <CanaryPruneButton factory={factory} />
 
       <div>
         <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -119,7 +123,7 @@ export function CanaryPanel({
 }
 
 function RolloutView({ view, active }: { view: CanaryRolloutViewWire; active: boolean }) {
-  const { rollout, split, window, metrics } = view;
+  const { rollout, split, window, metrics, series } = view;
   return (
     <div
       data-testid="canary-active"
@@ -185,6 +189,31 @@ function RolloutView({ view, active }: { view: CanaryRolloutViewWire; active: bo
             {metrics?.detail ?? 'no metrics yet'}
           </p>
         </div>
+      </div>
+
+      <div
+        data-testid="canary-deployment"
+        data-status={rollout.deploymentStatus ?? 'none'}
+        className="rounded border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
+      >
+        <p className="font-semibold text-slate-800">Promotion / deployment</p>
+        <p className="mt-0.5">
+          {rollout.deploymentStatus === 'deployed'
+            ? `the deploy hook ran successfully${rollout.deployHook ? ` (${rollout.deployHook})` : ''}`
+            : rollout.deploymentStatus === 'promoted_pending_deploy'
+              ? `promotion merged, but the deploy hook failed: ${rollout.deployError ?? 'no error recorded'}`
+              : rollout.deploymentStatus === 'promotion_pending_deploy'
+                ? 'promotion merged; no deployHook is declared, so the local checkout was NOT updated'
+                : 'not promoted yet'}
+        </p>
+        {rollout.deployedAt ? (
+          <p className="font-mono text-[11px] text-slate-500">deployed at {rollout.deployedAt}</p>
+        ) : null}
+      </div>
+
+      <div data-testid="canary-series-section">
+        <p className="text-xs font-semibold text-slate-800">Hourly series</p>
+        <CanarySeriesChart series={series} />
       </div>
 
       <div data-testid="canary-metrics">

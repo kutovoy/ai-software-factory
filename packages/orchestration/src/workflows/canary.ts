@@ -113,7 +113,9 @@ export async function CanaryWorkflow(input: CanaryWorkflowInput): Promise<Canary
         ...base,
         status: observation.status === 'promoted' ? 'promoted' : 'rolled_back',
         reason: observation.reason ?? observation.status,
-        actor: input.actor,
+        // A manual decision finalised by the API is recorded in the evidence; report that
+        // actor rather than the rollout's start actor (flake: Signal vs observation race).
+        actor: observation.actor ?? input.actor,
         observation,
       };
     }

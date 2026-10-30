@@ -72,6 +72,8 @@ export interface LeaseInfo {
   harnessUrl?: string;
   /** True when the run uses the in-process scripted adapter (no sandbox process). */
   ephemeral: boolean;
+  /** Local sandbox state (ADR-025); absent for docker/ephemeral leases. */
+  sandbox?: { mode: 'exec' | 'none'; active: boolean; reason: string | null };
 }
 
 export interface ProxyCredentials {
@@ -322,6 +324,12 @@ export interface GateDecisionAck {
 
 /** Payload of the `autonomyPaused` kill-switch signal. */
 export interface AutonomyPausedSignal {
+  actor: string;
+  reason: string;
+}
+
+/** Payload of the `cancelWorkItem` signal (harden-runtime, task 1.3). */
+export interface CancelWorkItemSignal {
   actor: string;
   reason: string;
 }
@@ -722,6 +730,8 @@ export interface CanaryObservationSummary {
   rolloutId: string;
   status: string;
   reason: string | null;
+  /** Actor that finalised the rollout (manual rollback/promotion), when recorded. */
+  actor?: string | null;
   startedAt: string | null;
   endedAt: string | null;
   canaryPercent: number;
@@ -749,6 +759,33 @@ export interface CanaryStatsSummary {
   runs: number;
   failedRuns: number;
   failureRate: number | null;
+}
+
+/**
+ * One hourly bucket of the rollout time series (harden-runtime, task 5.2). Derived from
+ * `scores` + `runs`; an empty bucket is `null` with a reason, never zero.
+ */
+export interface CanarySeriesBucket {
+  bucketStart: string;
+  bucketEnd: string;
+  version: 'stable' | 'candidate';
+  scores: number;
+  passing: number;
+  passRate: number | null;
+  runs: number;
+  failedRuns: number;
+  errorRate: number | null;
+  /** `no_runs_in_bucket` when the bucket is empty; otherwise null. */
+  reason: string | null;
+}
+
+export interface CanarySeriesSummary {
+  rolloutId: string;
+  bucketHours: number;
+  from: string;
+  to: string;
+  stable: CanarySeriesBucket[];
+  candidate: CanarySeriesBucket[];
 }
 
 export interface CanaryWorkflowOutcome {

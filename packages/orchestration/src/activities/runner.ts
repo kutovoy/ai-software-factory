@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { FakeAdapter, type SessionHandle, type UsageReport } from '@factory/adapters';
+import { appendWorkItemEvent } from '@factory/core';
 import {
   DEFAULT_HARNESS_COMMAND,
   DockerRunnerBackend,
@@ -12,7 +13,7 @@ import {
 } from '@factory/runners';
 import { loadConfig } from '../config';
 import { heartbeat } from '../heartbeat';
-import { upsertStep } from '../db';
+import { getSql, upsertStep } from '../db';
 import { artifactsDir, ensureRunDir, patchPath, runDir } from '../run-dir';
 import { createAdapter, dropSession, getSession } from '../sessions';
 import type { LeaseInfo, RunArtifact, RunInput } from '../types';
@@ -73,6 +74,7 @@ export async function leaseRunner(args: {
       kind: 'local',
       workspace,
       ephemeral: true,
+      sandbox: { mode: 'none', active: false, reason: 'ephemeral adapter (in-process)' },
     };
     ephemeralLeases.set(args.input.runId, lease);
     await upsertStep({
@@ -95,6 +97,9 @@ export async function leaseRunner(args: {
     },
     harness: { command: harnessCommandWithProxyEnv(args.harnessEnv) },
     keepWorkspace: false,
+    runDir: runDir(config.runsDir, args.input.runId),
+    // The local sandbox denies network unless the stage/factory grants it (task 6).
+    networkPolicy: args.input.networkPolicy ?? 'denied',
   });
 
   const lease: LeaseInfo = {
@@ -103,6 +108,7 @@ export async function leaseRunner(args: {
     workspace: handle.workspace,
     harnessUrl: handle.harnessUrl,
     ephemeral: false,
+    ...(handle.sandbox ? { sandbox: handle.sandbox } : {}),
   };
 
   await upsertStep({
@@ -118,8 +124,44 @@ export async function leaseRunner(args: {
       // Only key names are recorded — never values (ADR-009 / secret boundary).
       envKeys: Object.keys(args.harnessEnv ?? {}),
       envChannel: 'harness-command',
+      ...(handle.sandbox ? { sandbox: handle.sandbox } : {}),
+      networkPolicy: args.input.networkPolicy ?? 'denied',
     },
   });
+
+  // `RUNNER_SANDBOX=exec` was requested but this host has no sandbox backend: the run
+  // proceeds unconfined and the lease step records `runner.sandbox_unavailable` explicitly
+  // (task 6.2). The adapter event union is harness-owned, so this lives on the runner step.
+  if (handle.sandbox && handle.sandbox.mode === 'exec' && !handle.sandbox.active) {
+    const detail = {
+      event: 'runner.sandbox_unavailable',
+      mode: handle.sandbox.mode,
+      active: false,
+      platform: process.platform,
+      reason: handle.sandbox.reason,
+      runId: args.input.runId,
+    };
+    await upsertStep({
+      runId: args.input.runId,
+      stepId: 'sandbox',
+      kind: 'runner',
+      status: 'ok',
+      detail,
+    });
+    // Stage runs carry the work item ULID in their run id; record the fallback in the loop
+    // event log too, so the item detail shows why it ran unconfined.
+    const workItemMatch = /^run_([0-9A-HJKMNP-TV-Z]{26})(?:_|$)/.exec(args.input.runId);
+    if (workItemMatch) {
+      await appendWorkItemEvent(getSql(), {
+        workItemId: `wi_${workItemMatch[1]}`,
+        type: 'runner.sandbox_unavailable',
+        actor: 'runner',
+        payload: detail,
+      }).catch(() => undefined);
+    }
+    console.warn(`[runner] runner.sandbox_unavailable ${JSON.stringify(detail)}`);
+  }
+
   return lease;
 }
 

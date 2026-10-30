@@ -108,7 +108,7 @@ export async function recordWebhookDelivery(
       ${args.provider}, ${args.deliveryId}, ${args.event ?? null}, ${args.action ?? null},
       ${args.factory ?? null}, ${args.status}, ${args.reason ?? null},
       ${args.workItemId ?? null}, ${args.sender ?? null},
-      ${JSON.stringify(args.payload ?? {})}::jsonb, ${args.payloadBytes ?? 0}
+      ${(args.payload ?? {})}::jsonb, ${args.payloadBytes ?? 0}
     )
     on conflict (provider, delivery_id) do nothing
     returning *

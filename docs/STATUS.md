@@ -1,16 +1,106 @@
 # Project status
 
-Last updated: 2026-10-29
+Last updated: 2026-10-30
 
 ## Phase
 
-**Phase 3b — GitHub forge, merge queue and webhook automations: complete** (2026-10-29). The loop can now
-run against a real repository backend (`GitHubForge`, credential by reference, ETag cache, backoff, dry run),
-land several PRs safely (`packages/merge` + `MergeQueueWorkflow`: serialized batches, merge-train gating,
-bisect-to-offender, revert on red), and take work in from verified GitHub webhooks and cron automations
-(Temporal schedules). CI stays credential-free: the GitHub contract runs against a recorded `fetch` stub.
+**Phase 3c — runtime hardening: complete** (2026-10-30). Six known gaps are closed without credentials:
+the console reads autonomy and cancels work items through real routes (no event-log inference, no
+gate-rejection cleanup), automations resolve the benchmark attestation exactly like manual items, the
+Postgres read model is rebuildable from the canonical JSONL log, jsonb values are encoded once (with a
+normalising migration), canary trees are collected with an hourly series and a promotion deploy hook, and
+the local runner can confine itself with `RUNNER_SANDBOX=exec`. The tracked canary flake was reproduced by
+a 50× loop, its signature identified, and fixed.
 
 Next: **Phase 6** (multi-tenant/ops, auth/users, MCP wiring).
+
+### Phase 3c — runtime hardening (ADR-024/ADR-025, 2026-10-30)
+
+Routes (`apps/api`): `GET /autonomy?factory=` returns the declared policy (resolved gates, merge policy,
+fully-autonomous + benchmark-gate flags), the live `enabled`/`paused` state with actor/reason/`updatedAt`,
+the attestation status and the newest `autonomy.*` work-item event as evidence. A factory that was never
+enabled reports `enabled: false` with a reason and a `null` timestamp (nothing is invented).
+`POST /work-items/:id/cancel` takes `{actor, reason}`, records `cancel_requested_at`/actor/reason once,
+Signals `cancelWorkItem`, and `FactoryWorkflow` cancels the in-flight stage child, ends `cancelled` and
+writes exactly one `work_item.cancelled` event. A repeat returns the same terminal state and emits no
+second event; a `done` item is refused with `invalid_state`. The workflow also re-reads the recorded
+request before every dispatch, so a lost Signal cannot resurrect a cancelled item. The Gates page reads
+`GET /autonomy` directly; the E2E cleanup cancels work items instead of rejecting a gate.
+
+Automation attestation parity (`activities/automation.ts`): a scheduled fire resolves autonomy through the
+same `benchmarkGateRequired` + `findBenchmarkAttestation(commit, configHash)` check the API uses. When the
+gate cannot be satisfied (and there is no override) the item's `benchmarkGate.satisfied` is false, so only
+human gates apply, and an `autonomy.attestation_missing` event records why. There is no silent downgrade.
+
+Read-model rebuild (`packages/core/src/read-model/rebuild.ts` + `factory rebuild`): replays every
+`runs/<runId>/events.jsonl` in `(runId, seq)` order, validates the sequence (must start at 1 and be
+contiguous; a gap/duplicate/invalid line fails with `event_log_corrupt` naming the run and sequence before
+any write), and upserts runs, the boundary steps (`persist-run`, `finish-run`) and events idempotently. The
+diff reports missing/divergent rows and `orphaned` projection rows, which are never deleted. `--dry-run`
+reports the same diff and writes nothing; a second run writes 0 rows. The log does not carry the factory or
+definition commit, so an inserted run inherits them from the linked work item when the id encodes one and
+otherwise records `unknown` rather than inventing values (ADR-024).
+
+jsonb hygiene: repositories bind objects directly (Bun encodes a `jsonb` parameter once); the old
+`JSON.stringify(...)::jsonb` path double-encoded every object. `011_jsonb_normalise.sql` rewrites legacy
+double-encoded objects/arrays via `jsonb_typeof` detection and leaves plain strings/unparsable values alone.
+`012_work_item_cancel.sql` and `013_canary_deployment.sql` add the cancellation and deployment columns.
+
+Canary follow-ups: terminal rollouts keep the newest `CANARY_KEEP_TREES` (default 3) candidate trees; older
+trees are removed and audited with `canary.gc`, and an in-flight rollout's tree is never removed. The canary
+panel also has a manual prune control (`POST /factories/:name/canary/prune`). Metrics include an hourly
+series per version (pass rate, runs, error rate) derived from `scores`/`runs`; empty buckets are `null` with
+`no_runs_in_bucket` (or `no_scores_in_bucket`) and are drawn as gaps, not 0%. Promotion runs the optional
+`improvement.deployHook` against a staged copy of the promoted definition: success records `deployed`, a
+failing hook records `promoted_pending_deploy` with the error, and no hook records
+`promotion_pending_deploy` (the local checkout was not updated). The rollout status stays `promoted` so
+routing/readers are unchanged.
+
+Local runner sandbox (`packages/runners/src/sandbox.ts`, ADR-025): `RUNNER_SANDBOX=exec` runs the harness
+under a generated SBPL profile — `(deny default)`, reads of system paths + workspace, writes only to the
+workspace, the run directory and `/private/tmp`, loopback bind/inbound allowed for the harness protocol, and
+`network-outbound` denied unless the stage grants `networkPolicy: allowed`. A non-macOS host (or a missing
+`sandbox-exec`) runs unconfined and records `runner.sandbox_unavailable` on the runner step (and in the
+work-item event log for stage runs) with the platform and reason. The default stays `none`.
+
+Flake hunt: the canary + improvement suites were looped 50× (integration + unit). The loop reproduced one
+failure signature: the `CanaryWorkflow` could observe the terminal rollout written by a manual
+rollback/promotion before processing its Signal, and then reported the rollout's *start* actor
+(`itest`) instead of the decision actor (`grace`). The observation now reads the finalising actor from the
+rollout evidence (`evidence.rollback`/`evidence.promotion`), so the outcome matches the audit event. A
+second signature was test isolation: the canary integration suite reused a constant factory name, so prior
+runs' scored runs leaked into the next observation window (a "no regression" rollout was auto-rolled back).
+The suite now uses a per-process factory name and cleans its rows. After both fixes the 50× loop was green
+(see verification).
+
+Verification (2026-10-30):
+
+```
+bun run ci                     → typecheck clean; 415 pass / 106 skip / 0 fail
+bun run test                   → 415 pass / 106 skip / 0 fail (521 tests across 60 files)
+canary integration             → 4 pass (promote, pass-rate regression auto rollback, manual
+                                 rollback race fixed, second start refused)
+improvement integration        → 4 pass
+factory-loop integration       → 9 pass (7 existing + cancel-while-gated + lost-Signal cancel)
+automation integration         → 6 pass (4 existing + attestation missing + attestation present)
+canary follow-ups              → 6 pass (GC keep N/protect active, hourly series + null buckets,
+                                 deploy hook success/failure/no-hook)
+jsonb hygiene (PG)             → 3 pass (round-trip + ->>, legacy row normalised, plain string kept)
+flake loop (50×)               → 50/50 iterations (150 suite runs: canary + improvement integration,
+                                 canary/improve unit): 0 fail (Temporal dev server restarted every
+                                 5 iterations to bound its in-memory history)
+docker compose up -d --build   → api, worker, web, postgres, temporal healthy
+bash scripts/smoke.sh          → SMOKE PASSED incl. §17 (autonomy read, work-item cancel + repeat,
+                                 rebuild --dry-run)
+cd apps/web && bunx playwright test → 25 passed (23 existing + runtime-hardening: cancel from the
+                                 board, Gates reads autonomy)
+```
+
+Caveats: the rebuild cannot reconstruct coarse steps other than the two boundaries and reports them as
+orphaned; the deploy hook runs on the API/worker host with the staged tree path in `FACTORY_DEPLOY_STAGE`
+(the hook decides how to install it), and the sandbox is macOS-only and deprecated by Apple (behind the
+flag). `RUNNER_SANDBOX=exec` is not exercised in compose (Linux containers have no `sandbox-exec`); the
+fallback path is recorded on the lease step.
 
 ### Phase 3b — GitHub forge + merge queue + automations (ADR-022/ADR-023, 2026-10-29)
 
@@ -93,15 +183,18 @@ Caveats: the compose stack runs the fake forge, so a "merge commit" is a content
 integration sets `harness: fake`/`runner: fake` (a real GitHub connection needs a PAT in `GITHUB_TOKEN`, a
 `GITHUB_WEBHOOK_SECRET`, and the factory's own harness/model). The GitHub REST path is wired but only
 exercised offline (`RUN_GITHUB=1` opts in). A merged PR cannot be merged twice, so bisect is a merge train
-rather than "revert the batch and re-merge"; a requeued PR would need a new PR. Cron automation work items
-fall back to human gates (the automation path does not consult the benchmark attestation — deferred).
-`source_ref`/`input` jsonb values are double-encoded by the Bun SQL driver (pre-existing); the API reads
-them through `parseJsonb`, so only ad-hoc `->>` SQL is affected.
+rather than "revert the batch and re-merge"; a requeued PR would need a new PR. *(Phase 3c closed the two
+caveats that used to follow here: automation items now consult the benchmark attestation exactly like
+manual items, and `source_ref`/`input` are encoded once at the repository boundary — legacy double-encoded
+rows are normalised by `011_jsonb_normalise.sql`.)*
 
-**Observed flake (tracked):** one intermittent test failure was seen once during Phase 5b (a canary
-integration assertion) and three reruns were green; it has not reproduced since (including the Phase 3b
-runs). Root cause not identified — treat a single failure in the canary/improvement suites as suspect
-first, and re-run before investigating.
+**Observed flake (resolved):** the Phase-5b note (a canary integration assertion that did not reproduce)
+was hunted with a 50× loop in Phase 3c. Two signatures were found and fixed: (1) a manual rollback race in
+`CanaryWorkflow` where the workflow observed the terminal rollout before the Signal and reported the start
+actor instead of the decision actor; (2) canary integration test isolation (a constant factory name let
+prior runs' scores leak into the next observation window, auto-rolling back a "no regression" rollout).
+Evidence: 50 consecutive loops of the canary + improvement suites (integration + unit) green after the
+fixes; see the Phase 3c section.
 
 ### Phase 5b — canary rollout (ADR-021, 2026-10-29) A `canary` authority now starts a real
 rollout: `CanaryWorkflow` publishes the composed candidate as a candidate version (materialised tree +
@@ -458,6 +551,26 @@ isolation yet.
 - [x] Tests: forge contract (offline), merge engine, merge-queue/automation/webhook integrations, the full
       webhook → loop → PR → merge queue chain, smoke §15/§16, Playwright merge-queue spec
 
+### Phase 3c — runtime hardening (2026-10-30)
+
+- [x] `apps/api`: `GET /autonomy` (declared policy + live state + newest event, no invented timestamps) and
+      `POST /work-items/:id/cancel` (actor/reason, idempotent, `invalid_state` for terminal items);
+      `FactoryWorkflow` cancels the stage child and writes one `work_item.cancelled`
+- [x] Gates page reads `GET /autonomy`; E2E cleanup cancels work items instead of rejecting gates
+- [x] Automation attestation parity: same benchmark-attestation resolution; `autonomy.attestation_missing`
+      when the gate cannot be satisfied (human gates, no silent downgrade)
+- [x] `packages/core/src/read-model/rebuild.ts` + `factory rebuild --from runs/ [--dry-run]`: replay in
+      `(runId, seq)` order, idempotent upserts, missing/divergent/orphaned diff, `event_log_corrupt` refusal
+- [x] jsonb: single encode at the repository boundary; `011_jsonb_normalise.sql` rewrites legacy rows
+- [x] Canary: candidate-tree GC (keep last `CANARY_KEEP_TREES`, never an active tree), hourly series with
+      null buckets, `deployHook` promotion (deployed / promoted_pending_deploy / promotion_pending_deploy),
+      UI series chart + prune control + deployment state
+- [x] Local runner: generated SBPL profile behind `RUNNER_SANDBOX=exec`, per-stage network grant,
+      `runner.sandbox_unavailable` fallback on unsupported hosts
+- [x] Flake hunt: 50× canary + improvement loop; fixed the manual-rollback actor race and canary suite
+      isolation; STATUS note replaced with evidence
+- [x] Smoke §17, Playwright runtime-hardening spec, ADR-024/ADR-025, `openspec validate harden-runtime`
+
 ### Phase 2b — web console (2026-10-29)
 
 - [x] `apps/web` shell: sidebar (top-level + per-factory nav), factory switcher, account/usage footer;
@@ -663,15 +776,12 @@ both accepted; `benchmarkGateRequired` is true exactly when `fullyAutonomous`; k
 
 ## Next
 
-1. Phase 6: multi-tenant/ops, auth/users, and the MCPs & apps page (per-agent MCP wiring). Also: an
-   autonomy read endpoint (`GET /autonomy`) and a work-item cancel route, so the console no longer
-   derives state from the event log or cleans up by rejecting a gate.
-2. Canary follow-ups: garbage-collect `runs/canary/<rolloutId>` trees, expose rollout metrics as a
-   time series (not just the window aggregate), and wire promotion to the local checkout/deploy.
-3. Rebuild tool for the read model (replay JSONL → Postgres) before benchmarks rely on it.
-4. Real runner path: build `factory-runner:local`, verify `opencode serve` readiness + proxy env inside
+1. Phase 6: multi-tenant/ops, auth/users, and the MCPs & apps page (per-agent MCP wiring).
+2. Real runner path: build `factory-runner:local`, verify `opencode serve` readiness + proxy env inside
    the container against a live model endpoint. Run a real (non-fake) benchmark once calibration and a
-   model endpoint exist.
+   model endpoint exist. Exercise `RUNNER_SANDBOX=exec` on a macOS host with a real harness.
+3. Replace `sandbox-exec` behind the same `RUNNER_SANDBOX` flag when Apple removes it; consider a
+   `seatbelt`-free fallback (e.g. a per-run macOS user or Docker-only default).
 
 ## Open questions
 

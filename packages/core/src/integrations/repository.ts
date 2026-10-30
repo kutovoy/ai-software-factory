@@ -103,7 +103,7 @@ export async function upsertIntegration(
     ) values (
       ${integrationId(args.factory, args.provider)}, ${args.factory}, ${args.provider},
       ${args.secretRef}, ${args.webhookSecretRef ?? null},
-      ${JSON.stringify(args.repos ?? [])}::jsonb, ${JSON.stringify(args.config ?? {})}::jsonb,
+      ${(args.repos ?? [])}::jsonb, ${(args.config ?? {})}::jsonb,
       ${args.dryRun ?? false}, ${args.enabled ?? true}, now()
     )
     on conflict (factory, provider) do update set

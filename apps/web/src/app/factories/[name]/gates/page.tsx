@@ -7,15 +7,13 @@ import { Table } from '@/components/ui/Table';
 import { safeGet } from '@/lib/api';
 import { GATE_STAGES, docOf, gateMeaning, type AutomationDoc } from '@/lib/definition';
 import type {
+  AutonomyReadWire,
   BenchmarkGateStatusWire,
   CanaryOverviewWire,
   FactoryDetail,
   FactoryResources,
   GateStage,
-  WorkItemDetail,
-  WorkItemSummary,
 } from '@/lib/types';
-import { lastAutonomyEvent, type AutonomyEventView } from '@/lib/work-items';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,26 +39,14 @@ export default async function GatesPage({ params }: { params: Promise<{ name: st
   );
   const canary = await safeGet<CanaryOverviewWire | null>(`/factories/${encoded}/canary`, null);
 
-  // There is no `GET /autonomy` read endpoint yet: the newest `autonomy.*` event in this
-  // factory's work-item log is the only durable projection of a kill-switch change.
-  const workItems = await safeGet<{ workItems: WorkItemSummary[] }>(
-    `/work-items?factory=${encoded}&limit=40`,
-    { workItems: [] },
+  // `GET /autonomy` is the read model (task 1.4): declared policy + enabled/paused +
+  // actor/reason/updatedAt + the newest `autonomy.*` event. The page no longer scans
+  // work-item events to infer the kill-switch state.
+  const autonomy = await safeGet<{ autonomy: AutonomyReadWire } | null>(
+    `/autonomy?factory=${encoded}`,
+    null,
   );
-  const itemDetails = await Promise.all(
-    workItems.workItems.map((item) =>
-      safeGet<WorkItemDetail | null>(`/work-items/${encodeURIComponent(item.id)}`, null),
-    ),
-  );
-  let autonomyEvent: AutonomyEventView | null = null;
-  for (const item of itemDetails) {
-    if (!item) continue;
-    const candidate = lastAutonomyEvent(item.events);
-    if (!candidate?.at) continue;
-    if (!autonomyEvent?.at || Date.parse(candidate.at) > Date.parse(autonomyEvent.at)) {
-      autonomyEvent = candidate;
-    }
-  }
+  const autonomyRead = autonomy?.autonomy ?? null;
 
   const gates = detail?.factory.gates ?? null;
   const stageRows: GateStage[] = gates
@@ -246,12 +232,17 @@ export default async function GatesPage({ params }: { params: Promise<{ name: st
           {gates ? (
             <AutonomyControl
               factory={factory}
-              benchmarkGateRequired={gates.benchmarkGateRequired}
-              benchmarkAttestationSatisfied={benchmarkGate?.satisfied ?? false}
-              benchmarkAttestationCode={benchmarkGate?.code ?? null}
-              fullyAutonomous={gates.fullyAutonomous}
-              mergePolicy={gates.mergePolicy}
-              initialEvent={autonomyEvent}
+              benchmarkGateRequired={autonomyRead?.declared.benchmarkGateRequired ?? gates.benchmarkGateRequired}
+              benchmarkAttestationSatisfied={
+                autonomyRead?.benchmarkAttestation.satisfied ?? benchmarkGate?.satisfied ?? false
+              }
+              benchmarkAttestationCode={
+                autonomyRead?.benchmarkAttestation.code ?? benchmarkGate?.code ?? null
+              }
+              fullyAutonomous={autonomyRead?.declared.fullyAutonomous ?? gates.fullyAutonomous}
+              mergePolicy={autonomyRead?.declared.mergePolicy ?? gates.mergePolicy}
+              initialEvent={autonomyRead?.lastEvent ?? null}
+              initialState={autonomyRead}
             />
           ) : (
             <EmptyState

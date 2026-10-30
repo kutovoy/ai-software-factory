@@ -2,6 +2,8 @@ import {
   appendWorkItemEvent,
   attachPullRequest,
   getAutonomyState,
+  getWorkItemCancel,
+  markWorkItemCancelled,
   recordGateDecision,
   requestGateDecision,
   setWorkItemStatus,
@@ -9,6 +11,7 @@ import {
   type AutonomyState,
   type GateDecisionValue,
   type LoopStage,
+  type WorkItemCancelState,
   type WorkItemStatus,
 } from '@factory/core';
 import { getSql } from '../db';
@@ -102,4 +105,21 @@ export function emptyAutonomyState(factory: string): AutonomyState {
 /** Read-model autonomy snapshot (kill switch + lights-off policy). */
 export async function readAutonomyState(args: { factory: string }): Promise<AutonomyState> {
   return (await getAutonomyState(getSql(), args.factory)) ?? emptyAutonomyState(args.factory);
+}
+
+/** Recorded cancellation request, checked before every dispatch (task 1.3). */
+export async function readWorkItemCancel(args: {
+  workItemId: string;
+}): Promise<WorkItemCancelState> {
+  return await getWorkItemCancel(getSql(), args.workItemId);
+}
+
+/** Terminal cancellation write: `cancelled` + exactly one `work_item.cancelled` event. */
+export async function cancelWorkItem(args: {
+  workItemId: string;
+  stage?: string | null;
+  actor?: string | null;
+  reason?: string | null;
+}): Promise<void> {
+  await markWorkItemCancelled(getSql(), args);
 }

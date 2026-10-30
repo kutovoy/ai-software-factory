@@ -10,9 +10,11 @@ import {
   listCanaryRollouts,
   loadDefinition,
   recordCanaryEvent,
+  resolveImprovement,
   serializeDefinition,
   updateCanaryRollout,
   updateProposal,
+  type CanaryDeploymentStatus,
   type CanaryRolloutRecord,
   type ProposalRecord,
 } from '@factory/core';
@@ -445,6 +447,150 @@ export async function publishCanaryCandidate(
   }
 }
 
+/* ------------------------------------------------------- artefact lifecycle */
+
+export interface CanaryGcResult {
+  keep: number;
+  /** Terminal rollout ids whose trees were kept (newest first, capped at `keep`). */
+  kept: string[];
+  /** Terminal rollout ids whose trees were removed. */
+  removed: string[];
+  /** In-flight (pending/active) rollout ids: never removed. */
+  protected: string[];
+}
+
+/**
+ * Candidate-tree GC (task 5.1). Terminal rollouts keep the newest `keep` trees; older
+ * trees are removed. A tree that belongs to a pending/active rollout is never removed,
+ * even when it is older than the cut-off. Orphaned trees on disk (no rollout row) are left
+ * alone: this only collects what the read model can explain.
+ */
+export async function collectCanaryTrees(
+  sql: ReturnType<typeof getSql>,
+  args: { factory: string; keep?: number; actor?: string; reason?: string },
+): Promise<CanaryGcResult> {
+  const keep = Math.max(0, args.keep ?? loadConfig().canaryKeepTrees);
+  const rollouts = await listCanaryRollouts(sql, { factory: args.factory, limit: 200 });
+
+  const protectedRollouts = rollouts.filter(
+    (rollout) => rollout.status === 'pending' || rollout.status === 'active',
+  );
+  const terminal = rollouts
+    .filter((rollout) => rollout.status !== 'pending' && rollout.status !== 'active')
+    .sort((left, right) => {
+      const leftAt = Date.parse(left.endedAt ?? left.startedAt ?? '') || 0;
+      const rightAt = Date.parse(right.endedAt ?? right.startedAt ?? '') || 0;
+      return rightAt - leftAt;
+    });
+
+  const kept = terminal.slice(0, keep).map((rollout) => rollout.id);
+  const candidates = terminal.slice(keep);
+  const removed: string[] = [];
+
+  for (const rollout of candidates) {
+    if (!rollout.candidateRoot) continue;
+    const tree = dirname(rollout.candidateRoot);
+    try {
+      rmSync(tree, { recursive: true, force: true });
+      removed.push(rollout.id);
+      await recordCanaryEvent(sql, {
+        rolloutId: rollout.id,
+        factory: args.factory,
+        type: 'canary.gc',
+        subject: rollout.id,
+        payload: {
+          rolloutId: rollout.id,
+          factory: args.factory,
+          path: tree,
+          keep,
+          actor: args.actor ?? 'system',
+          reason: args.reason ?? 'terminal rollout; candidate tree pruned',
+        },
+      });
+    } catch {
+      // A failed removal is not fatal: the tree stays and the next prune retries.
+    }
+  }
+
+  return {
+    keep,
+    kept,
+    removed,
+    protected: protectedRollouts.map((rollout) => rollout.id),
+  };
+}
+
+/* ------------------------------------------------------------- promotion hook */
+
+export interface CanaryDeployment {
+  status: CanaryDeploymentStatus;
+  hook: string | null;
+  /** Where the promoted definition tree was staged (null when it could not be copied). */
+  stagedPath: string | null;
+  error: string | null;
+}
+
+/** Writes the promoted definition to a staging path the deploy hook can install from. */
+export function stagePromotedDefinition(rollout: CanaryRolloutRecord): string | null {
+  const config = loadConfig();
+  const staged = join(config.runsDir, 'deploy', rollout.factory, rollout.id, 'definition');
+  if (!rollout.candidateRoot || !existsSync(rollout.candidateRoot)) return null;
+  try {
+    rmSync(staged, { recursive: true, force: true });
+    mkdirSync(dirname(staged), { recursive: true });
+    cpSync(rollout.candidateRoot, staged, { recursive: true });
+    return staged;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Applies the promoted candidate to the local checkout via the declared `deployHook`
+ * (task 5.3). No hook means the checkout was NOT updated, so the rollout records
+ * `promotion_pending_deploy` instead of pretending; a failing hook records
+ * `promoted_pending_deploy` with the error (the merge already happened).
+ */
+export function deployPromotion(rollout: CanaryRolloutRecord): CanaryDeployment {
+  const config = loadConfig();
+  const definitionRoot =
+    rollout.candidateRoot && existsSync(rollout.candidateRoot)
+      ? rollout.candidateRoot
+      : join(config.factoryRoot, rollout.factory);
+  const { definition } = loadDefinition(definitionRoot);
+  const hook = definition
+    ? resolveImprovement(definition.manifest.improvement).deployHook
+    : null;
+  const stagedPath = stagePromotedDefinition(rollout);
+
+  if (!hook) {
+    return { status: 'promotion_pending_deploy', hook: null, stagedPath, error: null };
+  }
+
+  try {
+    execFileSync('/bin/sh', ['-c', hook], {
+      cwd: stagedPath ?? definitionRoot,
+      timeout: config.canaryDeployTimeoutMs,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        FACTORY_NAME: rollout.factory,
+        CANARY_ROLLOUT_ID: rollout.id,
+        CANARY_CANDIDATE_COMMIT: rollout.candidateCommit ?? '',
+        FACTORY_DEPLOY_STAGE: stagedPath ?? '',
+      },
+    });
+    return { status: 'deployed', hook, stagedPath, error: null };
+  } catch (error) {
+    return {
+      status: 'promoted_pending_deploy',
+      hook,
+      stagedPath,
+      error: message(error),
+    };
+  }
+}
+
 /* ---------------------------------------------------------------- promote */
 
 export interface CanaryFinishArgs {
@@ -524,6 +670,17 @@ export async function promoteCanaryRollout(
     decided: true,
   });
 
+  // The merge changed the definition repo, not the local checkout (ADR-012). Record what
+  // actually happened: deployed / promoted_pending_deploy / promotion_pending_deploy.
+  const deployment = deployPromotion(rollout);
+  const deployedRow = await updateCanaryRollout(sql, {
+    id: rollout.id,
+    deploymentStatus: deployment.status,
+    deployHook: deployment.hook,
+    deployError: deployment.error,
+    evidence: { ...evidence, deployment },
+  });
+
   await recordCanaryEvent(sql, {
     rolloutId: rollout.id,
     factory: rollout.factory,
@@ -542,12 +699,40 @@ export async function promoteCanaryRollout(
       reason: args.reason,
       automatic: args.automatic ?? false,
       evidence: args.observation?.evidence ?? {},
+      deployment: {
+        status: deployment.status,
+        hook: deployment.hook,
+        stagedPath: deployment.stagedPath,
+        error: deployment.error,
+      },
       prUrl: rollout.prUrl,
       prNumber: rollout.prNumber,
     },
   });
 
-  return { rollout: updated, changed: true, mergedCommit };
+  if (deployment.status === 'promoted_pending_deploy') {
+    await recordCanaryEvent(sql, {
+      rolloutId: rollout.id,
+      factory: rollout.factory,
+      type: 'canary.deploy_failed',
+      payload: {
+        rolloutId: rollout.id,
+        factory: rollout.factory,
+        hook: deployment.hook,
+        error: deployment.error,
+        actor: args.actor,
+      },
+    });
+  }
+
+  // Terminal state: keep the last N candidate trees (task 5.1).
+  await collectCanaryTrees(sql, {
+    factory: rollout.factory,
+    actor: args.actor,
+    reason: 'promotion terminal',
+  });
+
+  return { rollout: deployedRow ?? updated, changed: true, mergedCommit };
 }
 
 /* --------------------------------------------------------------- rollback */
@@ -624,6 +809,13 @@ export async function rollbackCanaryRollout(
       prUrl: rollout.prUrl,
       prNumber: rollout.prNumber,
     },
+  });
+
+  // Terminal state: keep the last N candidate trees (task 5.1).
+  await collectCanaryTrees(sql, {
+    factory: rollout.factory,
+    actor: args.actor,
+    reason: 'rollback terminal',
   });
 
   // Best effort: leave an audit trail on the candidate PR. A forge failure must not undo

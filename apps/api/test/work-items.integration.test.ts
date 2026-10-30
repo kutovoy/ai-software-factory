@@ -249,4 +249,142 @@ suite('work item API', () => {
     expect(body.code).toBe('spawn_not_allowed');
     expect(body.details?.agent).toBe('spec');
   }, 30_000);
+
+  test('GET /autonomy returns the declared policy, live state and no invented timestamp', async () => {
+    const sql = getSql();
+    await sql`delete from autonomy_state where factory = 'example'`;
+
+    const initial = await app.request('/autonomy?factory=example');
+    expect(initial.status).toBe(200);
+    const initialBody = (await initial.json()) as {
+      autonomy: {
+        factory: string;
+        declared: {
+          stages: Record<string, { gate: string }>;
+          mergePolicy: string;
+          fullyAutonomous: boolean;
+          benchmarkGateRequired: boolean;
+        };
+        enabled: boolean;
+        paused: boolean;
+        updatedAt: string | null;
+        everEnabled: boolean;
+        reason: string | null;
+        lastEvent: { type: string; at: string | null } | null;
+      };
+    };
+    const read = initialBody.autonomy;
+    expect(read.factory).toBe('example');
+    expect(read.declared.stages.spec?.gate).toBe('human');
+    expect(read.declared.mergePolicy).toBe('human');
+    expect(read.declared.fullyAutonomous).toBe(false);
+    expect(read.enabled).toBe(false);
+    expect(read.paused).toBe(false);
+    expect(read.everEnabled).toBe(false);
+    expect(read.updatedAt).toBeNull();
+    expect(read.reason).toContain('never');
+    // A prior kill-switch action may have left an `autonomy.*` event on a work item; the
+    // read model reports it as evidence. It never invents one.
+    if (read.lastEvent) expect(read.lastEvent.type.startsWith('autonomy.')).toBe(true);
+
+    const enabled = await postJson(app, '/autonomy', {
+      factory: 'example',
+      enabled: true,
+      actor: 'ada',
+      reason: 'itest: autonomy read',
+    });
+    expect(enabled.status).toBe(200);
+
+    const after = await app.request('/autonomy?factory=example');
+    const afterBody = (await after.json()) as {
+      autonomy: {
+        enabled: boolean;
+        paused: boolean;
+        actor: string | null;
+        reason: string | null;
+        updatedAt: string | null;
+        everEnabled: boolean;
+        benchmarkAttestation: { required: boolean; satisfied: boolean };
+      };
+    };
+    expect(afterBody.autonomy.enabled).toBe(true);
+    expect(afterBody.autonomy.paused).toBe(false);
+    expect(afterBody.autonomy.actor).toBe('ada');
+    expect(afterBody.autonomy.reason).toBe('itest: autonomy read');
+    expect(afterBody.autonomy.updatedAt).toBeTruthy();
+    expect(afterBody.autonomy.everEnabled).toBe(true);
+    expect(afterBody.autonomy.benchmarkAttestation.required).toBe(false);
+    expect(afterBody.autonomy.benchmarkAttestation.satisfied).toBe(true);
+  }, 60_000);
+
+  test('POST /work-items/:id/cancel records once, is idempotent and refuses a done item', async () => {
+    const created = await postJson(app, '/work-items', {
+      factory: 'example',
+      title: 'itest: cancellable item',
+      harness: 'fake',
+    });
+    const { workItem } = (await created.json()) as { workItem: { id: string } };
+
+    const first = await postJson(app, `/work-items/${workItem.id}/cancel`, {
+      actor: 'ada',
+      reason: 'itest: cancel',
+    });
+    expect(first.status).toBe(200);
+    const firstBody = (await first.json()) as {
+      cancelled: boolean;
+      alreadyCancelled: boolean;
+      eventRecorded: boolean;
+      cancelRequestedAt: string | null;
+      workItem: { status: string; cancelActor: string | null; cancelReason: string | null };
+    };
+    expect(firstBody.eventRecorded).toBe(true);
+    expect(firstBody.alreadyCancelled).toBe(false);
+    expect(firstBody.cancelRequestedAt).toBeTruthy();
+    expect(firstBody.workItem.cancelActor).toBe('ada');
+    expect(firstBody.workItem.cancelReason).toBe('itest: cancel');
+
+    const repeat = await postJson(app, `/work-items/${workItem.id}/cancel`, {
+      actor: 'grace',
+      reason: 'itest: repeat',
+    });
+    expect(repeat.status).toBe(200);
+    const repeatBody = (await repeat.json()) as {
+      alreadyRequested: boolean;
+      eventRecorded: boolean;
+      cancelRequestedAt: string | null;
+    };
+    expect(repeatBody.alreadyRequested).toBe(true);
+    expect(repeatBody.eventRecorded).toBe(false);
+    expect(repeatBody.cancelRequestedAt).toBe(firstBody.cancelRequestedAt);
+
+    const detail = await app.request(`/work-items/${workItem.id}`);
+    const detailBody = (await detail.json()) as {
+      workItem: { cancelActor: string | null; cancelReason: string | null };
+      events: { type: string }[];
+    };
+    expect(detailBody.workItem.cancelActor).toBe('ada');
+    expect(detailBody.events.filter((event) => event.type === 'cancel.requested')).toHaveLength(1);
+
+    // Terminal item: a done item is refused with invalid_state.
+    const sql = getSql();
+    await sql`update work_items set status = 'done' where id = ${workItem.id}`;
+    const refused = await postJson(app, `/work-items/${workItem.id}/cancel`, {
+      actor: 'ada',
+      reason: 'itest: too late',
+    });
+    expect(refused.status).toBe(409);
+    const refusedBody = (await refused.json()) as { code: string };
+    expect(refusedBody.code).toBe('invalid_state');
+
+    // An already-cancelled item returns the same state without a second event.
+    await sql`update work_items set status = 'cancelled' where id = ${workItem.id}`;
+    const already = await postJson(app, `/work-items/${workItem.id}/cancel`, {
+      actor: 'ada',
+      reason: 'itest: already cancelled',
+    });
+    expect(already.status).toBe(200);
+    const alreadyBody = (await already.json()) as { alreadyCancelled: boolean; eventRecorded: boolean };
+    expect(alreadyBody.alreadyCancelled).toBe(true);
+    expect(alreadyBody.eventRecorded).toBe(false);
+  }, 60_000);
 });

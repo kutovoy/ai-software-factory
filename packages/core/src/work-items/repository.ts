@@ -41,6 +41,9 @@ interface WorkItemRow {
   pr_number: number | null;
   loop_count: number | string;
   workflow_id: string | null;
+  cancel_requested_at: unknown;
+  cancel_actor: string | null;
+  cancel_reason: string | null;
   created_at: unknown;
   updated_at: unknown;
 }
@@ -156,6 +159,9 @@ function mapWorkItem(row: WorkItemRow): WorkItem {
     prUrl: row.pr_url,
     prNumber: row.pr_number === null ? null : Number(row.pr_number),
     loopCount: Number(row.loop_count),
+    cancelRequestedAt: iso(row.cancel_requested_at),
+    cancelActor: row.cancel_actor ?? null,
+    cancelReason: row.cancel_reason ?? null,
     ...(iso(row.created_at) ? { createdAt: iso(row.created_at) as string } : {}),
     ...(iso(row.updated_at) ? { updatedAt: iso(row.updated_at) as string } : {}),
   };
@@ -234,10 +240,10 @@ export async function createWorkItem(sql: SQL, args: CreateWorkItemArgs): Promis
         workflow_id, input
       ) values (
         ${args.id}, ${args.factory}, ${args.type}, ${args.source},
-        ${JSON.stringify(args.sourceRef ?? {})}::jsonb, ${args.title}, ${args.stage}, 'active',
+        ${(args.sourceRef ?? {})}::jsonb, ${args.title}, ${args.stage}, 'active',
         ${args.parentId ?? null}, ${args.definitionCommit}, ${args.definitionDirty ?? false},
         ${args.canaryRolloutId ?? null}, ${args.definitionVersion ?? 'stable'},
-        ${args.workflowId ?? null}, ${JSON.stringify(args.input ?? {})}::jsonb
+        ${args.workflowId ?? null}, ${(args.input ?? {})}::jsonb
       )
       returning *
     `) as WorkItemRow[];
@@ -245,7 +251,7 @@ export async function createWorkItem(sql: SQL, args: CreateWorkItemArgs): Promis
     await tx`
       insert into work_item_events (work_item_id, type, stage, actor, payload)
       values (${args.id}, 'work_item.created', ${args.stage}, ${args.source},
-              ${JSON.stringify({
+              ${({
                 type: args.type,
                 source: args.source,
                 sourceRef: args.sourceRef ?? {},
@@ -284,10 +290,10 @@ export async function createWorkItemIdempotent(
         workflow_id, input
       ) values (
         ${args.id}, ${args.factory}, ${args.type}, ${args.source},
-        ${JSON.stringify(args.sourceRef ?? {})}::jsonb, ${args.title}, ${args.stage}, 'active',
+        ${(args.sourceRef ?? {})}::jsonb, ${args.title}, ${args.stage}, 'active',
         ${args.parentId ?? null}, ${args.definitionCommit}, ${args.definitionDirty ?? false},
         ${args.canaryRolloutId ?? null}, ${args.definitionVersion ?? 'stable'},
-        ${args.workflowId ?? null}, ${JSON.stringify(args.input ?? {})}::jsonb
+        ${args.workflowId ?? null}, ${(args.input ?? {})}::jsonb
       )
       on conflict (id) do nothing
       returning *
@@ -298,7 +304,7 @@ export async function createWorkItemIdempotent(
     await tx`
       insert into work_item_events (work_item_id, type, stage, actor, payload)
       values (${args.id}, 'work_item.created', ${args.stage}, ${args.source},
-              ${JSON.stringify({
+              ${({
                 type: args.type,
                 source: args.source,
                 sourceRef: args.sourceRef ?? {},
@@ -390,7 +396,7 @@ export async function transitionWorkItem(
     await tx`
       insert into work_item_events (work_item_id, type, stage, actor, payload)
       values (${args.workItemId}, 'stage.changed', ${args.to}, ${args.by},
-              ${JSON.stringify({
+              ${({
                 from: args.from,
                 to: args.to,
                 by: args.by,
@@ -427,7 +433,7 @@ export async function attachPullRequest(
     await tx`
       insert into work_item_events (work_item_id, type, stage, actor, payload)
       values (${args.workItemId}, 'pr.opened', ${current[0].stage}, 'forge',
-              ${JSON.stringify({ prUrl: args.prUrl, prNumber: args.prNumber ?? null })}::jsonb)
+              ${({ prUrl: args.prUrl, prNumber: args.prNumber ?? null })}::jsonb)
     `;
 
     return mapWorkItem(updated[0] as WorkItemRow);
@@ -449,7 +455,7 @@ export async function setWorkItemStatus(
     await tx`
       insert into work_item_events (work_item_id, type, stage, actor, payload)
       values (${args.workItemId}, 'work_item.status', ${updated[0].stage}, ${args.actor ?? 'foreman'},
-              ${JSON.stringify({ status: args.status, reason: args.reason ?? null })}::jsonb)
+              ${({ status: args.status, reason: args.reason ?? null })}::jsonb)
     `;
 
     return mapWorkItem(updated[0] as WorkItemRow);
@@ -471,7 +477,7 @@ export async function appendWorkItemEvent(
   await sql`
     insert into work_item_events (work_item_id, type, stage, actor, payload)
     values (${args.workItemId}, ${args.type}, ${args.stage ?? null}, ${args.actor ?? null},
-            ${JSON.stringify(args.payload ?? {})}::jsonb)
+            ${(args.payload ?? {})}::jsonb)
   `;
 }
 
@@ -528,7 +534,7 @@ export async function requestGateDecision(
       await tx`
         insert into work_item_events (work_item_id, type, stage, actor, payload)
         values (${args.workItemId}, 'gate.requested', ${args.stage}, 'foreman',
-                ${JSON.stringify({
+                ${({
                   gate: args.gate,
                   attempt: args.attempt,
                   workflowId: args.workflowId,
@@ -590,7 +596,7 @@ export async function recordGateDecision(
     await tx`
       insert into work_item_events (work_item_id, type, stage, actor, payload)
       values (${args.workItemId}, 'gate.decided', ${args.stage}, ${args.actor},
-              ${JSON.stringify({
+              ${({
                 decision: args.decision,
                 actor: args.actor,
                 reason: args.reason ?? null,
@@ -651,6 +657,140 @@ export interface SetAutonomyStateArgs {
   overrideActor?: string | null;
   overrideReason?: string | null;
   benchmarkGateRequired?: boolean;
+}
+
+/* ------------------------------------------------------ cancellation (1.2) */
+
+export interface WorkItemCancelState {
+  requested: boolean;
+  requestedAt: string | null;
+  actor: string | null;
+  reason: string | null;
+}
+
+/**
+ * Reads the recorded cancellation request. The workflow checks this before every
+ * dispatch, so a lost Signal cannot resurrect a cancelled item (ADR-013 pattern).
+ */
+export async function getWorkItemCancel(
+  sql: SQL,
+  workItemId: string,
+): Promise<WorkItemCancelState> {
+  const rows = (await sql`
+    select cancel_requested_at, cancel_actor, cancel_reason
+    from work_items where id = ${workItemId} limit 1
+  `) as Pick<WorkItemRow, 'cancel_requested_at' | 'cancel_actor' | 'cancel_reason'>[];
+  const row = rows[0];
+  if (!row) throw new Error(`work item ${workItemId} does not exist`);
+  return {
+    requested: row.cancel_requested_at !== null && row.cancel_requested_at !== undefined,
+    requestedAt: iso(row.cancel_requested_at),
+    actor: row.cancel_actor ?? null,
+    reason: row.cancel_reason ?? null,
+  };
+}
+
+export interface RequestWorkItemCancelArgs {
+  workItemId: string;
+  actor: string;
+  reason: string;
+  stage?: string | null;
+}
+
+/**
+ * Records the cancellation request once (actor + reason + timestamp) and appends
+ * `cancel.requested`. A repeat call is a no-op that returns the current row and
+ * `requested: false`, so the audit log never gains a second request.
+ */
+export async function requestWorkItemCancel(
+  sql: SQL,
+  args: RequestWorkItemCancelArgs,
+): Promise<{ item: WorkItem; requested: boolean; alreadyRequested: boolean }> {
+  return await sql.begin(async (tx) => {
+    const updated = (await tx`
+      update work_items set
+        cancel_requested_at = now(),
+        cancel_actor = ${args.actor},
+        cancel_reason = ${args.reason},
+        updated_at = now()
+      where id = ${args.workItemId} and cancel_requested_at is null
+      returning *
+    `) as WorkItemRow[];
+
+    if (!updated[0]) {
+      const current = (await tx`
+        select * from work_items where id = ${args.workItemId} limit 1
+      `) as WorkItemRow[];
+      if (!current[0]) throw new Error(`work item ${args.workItemId} does not exist`);
+      return { item: mapWorkItem(current[0]), requested: false, alreadyRequested: true };
+    }
+
+    await tx`
+      insert into work_item_events (work_item_id, type, stage, actor, payload)
+      values (${args.workItemId}, 'cancel.requested', ${args.stage ?? updated[0].stage}, ${args.actor},
+              ${({
+                actor: args.actor,
+                reason: args.reason,
+                requestedAt: iso(updated[0].cancel_requested_at),
+              })}::jsonb)
+    `;
+
+    return { item: mapWorkItem(updated[0]), requested: true, alreadyRequested: false };
+  });
+}
+
+/**
+ * Terminal write for a cancellation. Sets the item `cancelled` and appends exactly one
+ * `work_item.cancelled` event (a retried activity is a no-op). Called by the workflow
+ * when the Signal arrives or when the pre-dispatch read sees a recorded request.
+ */
+export async function markWorkItemCancelled(
+  sql: SQL,
+  args: { workItemId: string; stage?: string | null; actor?: string | null; reason?: string | null },
+): Promise<WorkItem> {
+  return await sql.begin(async (tx) => {
+    const updated = (await tx`
+      update work_items set status = 'cancelled', updated_at = now()
+      where id = ${args.workItemId}
+      returning *
+    `) as WorkItemRow[];
+    if (!updated[0]) throw new Error(`work item ${args.workItemId} does not exist`);
+
+    const inserted = (await tx`
+      insert into work_item_events (work_item_id, type, stage, actor, payload)
+      select ${args.workItemId}, 'work_item.cancelled', ${args.stage ?? updated[0].stage},
+             ${args.actor ?? 'human'},
+             ${({
+               actor: args.actor ?? null,
+               reason: args.reason ?? null,
+               cancelledAt: iso(updated[0].updated_at),
+             })}::jsonb
+      where not exists (
+        select 1 from work_item_events
+        where work_item_id = ${args.workItemId} and type = 'work_item.cancelled'
+      )
+      returning id
+    `) as { id: number }[];
+    void inserted;
+
+    return mapWorkItem(updated[0]);
+  });
+}
+
+/** Newest `autonomy.*` event for a factory, across every work item it owns (task 1.1). */
+export async function latestAutonomyEvent(
+  sql: SQL,
+  factory: string,
+): Promise<WorkItemEvent | null> {
+  const rows = (await sql`
+    select e.*
+    from work_item_events e
+    join work_items w on w.id = e.work_item_id
+    where w.factory = ${factory} and e.type like 'autonomy.%'
+    order by e.id desc
+    limit 1
+  `) as WorkItemEventRow[];
+  return rows[0] ? mapEvent(rows[0]) : null;
 }
 
 export async function setAutonomyState(

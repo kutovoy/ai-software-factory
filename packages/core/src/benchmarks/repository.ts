@@ -126,8 +126,8 @@ export async function createBenchmarkRun(
       matrix, estimate_usd, max_cost_usd, partial, workflow_id, temporal_run_id, started_at
     ) values (
       ${args.id}, ${args.factory}, ${args.suite}, ${args.definitionCommit}, ${args.configHash},
-      'queued', ${JSON.stringify(args.tasks)}::jsonb, ${JSON.stringify(args.configurations)}::jsonb,
-      ${JSON.stringify(args.matrix)}::jsonb, ${args.estimateUsd ?? null}, ${args.maxCostUsd},
+      'queued', ${args.tasks}::jsonb, ${args.configurations}::jsonb,
+      ${args.matrix}::jsonb, ${args.estimateUsd ?? null}, ${args.maxCostUsd},
       ${args.partial}, ${args.workflowId ?? null}, ${args.temporalRunId ?? null}, now()
     )
     on conflict (id) do nothing
@@ -288,7 +288,7 @@ export async function recordBenchmarkTrial(
       ${args.id}, ${args.benchmarkRunId}, ${args.factory}, ${args.suite}, ${args.configuration},
       ${args.task}, ${args.runId ?? null}, ${args.status}, ${args.errorCode ?? null},
       ${args.score ?? null}, ${args.passing ?? false}, ${args.costUsd ?? 0},
-      ${args.uncalibrated ?? false}, ${JSON.stringify(args.startingRepoRefs ?? [])}::jsonb,
+      ${args.uncalibrated ?? false}, ${(args.startingRepoRefs ?? [])}::jsonb,
       ${args.repo ?? null}, ${args.definitionCommit}, ${args.configHash},
       ${args.startedAt ?? new Date().toISOString()}::timestamptz,
       ${args.endedAt ?? null}::timestamptz
@@ -402,7 +402,7 @@ export async function upsertBenchmarkResult(
     ) values (
       ${args.benchmarkRunId}, ${args.configuration}, ${args.passRate ?? null},
       ${args.weightedScore ?? null}, ${args.sampleSize}, ${args.passingCount}, ${args.costUsd},
-      ${args.errors}, ${args.skipped}, ${args.uncalibrated}, ${JSON.stringify(args.labels)}::jsonb,
+      ${args.errors}, ${args.skipped}, ${args.uncalibrated}, ${args.labels}::jsonb,
       ${args.frontier}, ${args.dominatedBy ?? null}
     )
     on conflict (benchmark_run_id, configuration) do update set
@@ -569,7 +569,7 @@ export async function recordBenchmarkEvent(
   const inserted = (await sql`
     insert into benchmark_events (benchmark_run_id, factory, type, payload)
     values (${args.benchmarkRunId}, ${args.factory}, ${args.type},
-            ${JSON.stringify(args.payload ?? {})}::jsonb)
+            ${(args.payload ?? {})}::jsonb)
     on conflict (benchmark_run_id, type) do nothing
     returning *
   `) as BenchmarkEventRow[];

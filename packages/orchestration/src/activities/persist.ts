@@ -88,7 +88,7 @@ export async function appendEvent(
     const inserted = (await tx`
       insert into events (run_id, seq, type, ts, payload, step_id)
       values (${args.runId}, ${event.seq}, ${event.type}, ${event.at},
-              ${JSON.stringify(event)}::jsonb, ${args.stepId})
+              ${event}::jsonb, ${args.stepId})
       on conflict (run_id, seq) do nothing
       returning seq
     `) as { seq: number }[];
@@ -144,7 +144,7 @@ export async function appendTerminalEvent(
     await tx`
       insert into events (run_id, seq, type, ts, payload, step_id)
       values (${args.runId}, ${event.seq}, ${event.type}, ${event.at},
-              ${JSON.stringify(event)}::jsonb, ${args.stepId})
+              ${event}::jsonb, ${args.stepId})
       on conflict (run_id, seq) do nothing
     `;
     await appendJsonl(args.runId, event);

@@ -4,12 +4,16 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Worker } from '@temporalio/worker';
 import {
+  createVersion,
   derivedWorkItemId,
   getAutomationSchedule,
   getWorkItem,
   listAutomationFires,
   listWorkItemEvents,
+  loadDefinition,
+  recordBenchmarkAttestation,
 } from '@factory/core';
+import { benchmarkConfigHash, loadBenchmarkSuites } from '@factory/evals';
 import { FakeForge } from '@factory/forge';
 import { WorkflowIdReusePolicy } from '@temporalio/client';
 import { closeClient, getClient } from '../src/client';
@@ -25,6 +29,7 @@ import {
   syncAutomationSchedules,
 } from '../src/automation-client';
 import { automationWorkflowId, type AutomationWorkflowInput } from '../src/types';
+import { fireAutomationActivity } from '../src/activities/automation';
 
 /**
  * Scheduled automations (spec `automations` › scheduled automations).
@@ -232,6 +237,80 @@ suite('scheduled automations', () => {
     const described = await describeAutomationSchedule(FACTORY, AUTOMATION, config);
     expect(described?.paused).toBe(true);
   }, 60_000);
+
+  test('an automation item without a benchmark attestation records autonomy.attestation_missing', async () => {
+    const factory = 'example-lights-off';
+    const factoryRoot = join(REPO_ROOT, 'factories', factory);
+    await getSql()`delete from benchmark_attestations where factory = ${factory}`;
+    const fireAt = new Date().toISOString();
+    const result = await fireAutomationActivity({
+      factory,
+      factoryRoot,
+      automation: 'intake',
+      scheduleId: `${factory}:intake`,
+      cron: '0 3 * * *',
+      fireAt,
+      harness: 'fake',
+      runner: 'fake',
+    });
+    expect(result.created).toBe(true);
+    const workItemId = result.workItemId as string;
+    const events = await listWorkItemEvents(getSql(), workItemId);
+    const missing = events.find((event) => event.type === 'autonomy.attestation_missing');
+    expect(missing).toBeDefined();
+    expect(missing?.payload).toMatchObject({ factory, automation: 'intake' });
+    expect(String(missing?.payload.reason)).toContain('human gates');
+
+    const rows = (await getSql()`
+      select input from work_items where id = ${workItemId}
+    `) as { input: unknown }[];
+    const input = rows[0]?.input as { benchmarkGate?: { required: boolean; satisfied: boolean } };
+    expect(input.benchmarkGate?.required).toBe(true);
+    expect(input.benchmarkGate?.satisfied).toBe(false);
+  }, 90_000);
+
+  test('an automation item with a matching attestation unlocks unattended gates', async () => {
+    const factory = 'example-lights-off';
+    const factoryRoot = join(REPO_ROOT, 'factories', factory);
+    const definition = loadDefinition(factoryRoot).definition;
+    expect(definition).toBeDefined();
+    const version = createVersion(factoryRoot, { allowDirty: true });
+    const suite = loadBenchmarkSuites(definition!)[0];
+    expect(suite).toBeDefined();
+    const configHash = benchmarkConfigHash(suite!, version.commit);
+    await recordBenchmarkAttestation(getSql(), {
+      id: `att_itest_${Date.now()}`,
+      factory,
+      definitionCommit: version.commit,
+      suite: suite!.name,
+      configHash,
+      passRate: 1,
+      calibrationOk: true,
+      passed: true,
+      partial: false,
+    });
+
+    const fireAt = new Date().toISOString();
+    const result = await fireAutomationActivity({
+      factory,
+      factoryRoot,
+      automation: 'intake',
+      scheduleId: `${factory}:intake`,
+      cron: '0 3 * * *',
+      fireAt,
+      harness: 'fake',
+      runner: 'fake',
+    });
+    expect(result.created).toBe(true);
+    const workItemId = result.workItemId as string;
+    const events = await listWorkItemEvents(getSql(), workItemId);
+    expect(events.some((event) => event.type === 'autonomy.attestation_missing')).toBe(false);
+    const rows = (await getSql()`
+      select input from work_items where id = ${workItemId}
+    `) as { input: unknown }[];
+    const input = rows[0]?.input as { benchmarkGate?: { required: boolean; satisfied: boolean } };
+    expect(input.benchmarkGate).toMatchObject({ required: true, satisfied: true });
+  }, 90_000);
 
   test('pausing one automation records the operator and reason', async () => {
     const row = await pauseAutomationSchedule(

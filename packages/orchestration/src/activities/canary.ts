@@ -76,10 +76,24 @@ export async function observeCanaryActivity(args: {
     observationWindowHours: rollout.observationWindowHours,
   });
 
+  // The API finalises a manual rollback/promotion in the read model before the Signal is
+  // processed. If the workflow observes the terminal status first, it must still report the
+  // actor that made the decision (from the evidence), not the rollout's start actor.
+  const evidence = rollout.evidence ?? {};
+  const rollback = evidence.rollback as { actor?: unknown } | undefined;
+  const promotion = evidence.promotion as { actor?: unknown } | undefined;
+  const finalActor =
+    typeof rollback?.actor === 'string'
+      ? rollback.actor
+      : typeof promotion?.actor === 'string'
+        ? promotion.actor
+        : null;
+
   return {
     ...observation,
     status: rollout.status,
     reason: rollout.reason,
+    actor: finalActor,
     startedAt: rollout.startedAt,
     endedAt: rollout.endedAt,
   };

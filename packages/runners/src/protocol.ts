@@ -49,6 +49,16 @@ export interface RunnerSpec {
   memoryMb?: number;
   /** Keep the workspace after `kill` (run directories are always retained). */
   keepWorkspace?: boolean;
+  /**
+   * The run directory (`runs/<runId>`), so the local sandbox can allow writes there
+   * (harden-runtime, task 6). Defaults to the workspace's parent.
+   */
+  runDir?: string;
+  /**
+   * Network grant for the sandbox. Absent means `denied`: the local sandbox denies
+   * `network*` unless the factory grants it to the stage.
+   */
+  networkPolicy?: 'allowed' | 'denied';
   /** Readiness timeout in ms. Defaults to 60_000. */
   readyTimeoutMs?: number;
 }
@@ -64,6 +74,12 @@ export interface RunnerHandle {
   containerName?: string;
   port?: number;
   pid?: number;
+  /** Local sandbox state (macOS `sandbox-exec`); absent for the docker backend. */
+  sandbox?: {
+    mode: 'exec' | 'none';
+    active: boolean;
+    reason: string | null;
+  };
 }
 
 export interface ExecRequest {

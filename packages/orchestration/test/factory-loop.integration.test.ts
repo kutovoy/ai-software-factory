@@ -14,6 +14,7 @@ import {
   listWorkItemEvents,
   loadOrThrow,
   newWorkItemId,
+  requestWorkItemCancel,
   resolveStageConfigs,
   setAutonomyState,
   stageDeclarationsFromDefinition,
@@ -32,6 +33,7 @@ import { setJudgementModel } from '../src/models/judgement';
 import { clearSessions } from '../src/sessions';
 import { createWorker } from '../src/worker';
 import {
+  cancelWorkItem,
   pauseWorkItemAutonomy,
   startFactoryWorkflow,
   submitGateDecision,
@@ -472,6 +474,74 @@ suite('factory loop on the fake forge + fake harness', () => {
     expect(paused?.actor).toBe('grace');
     expect(paused?.payload.reason).toBe('incident 42');
   }, 120_000);
+
+  test('cancel while gated cancels the stage child and ends cancelled (idempotent)', async () => {
+    const workItemId = await newItem({ gateSlaMs: 60_000 });
+    const gate = await pendingGate(workItemId, 'triage');
+    expect(gate.workflowId).toBeTruthy();
+
+    // The API records the request once, then Signals the workflow.
+    const recorded = await requestWorkItemCancel(getSql(), {
+      workItemId,
+      actor: 'ada',
+      reason: 'itest: cancel while gated',
+      stage: 'triage',
+    });
+    expect(recorded.requested).toBe(true);
+
+    const delivery = await cancelWorkItem(
+      workItemWorkflowId(workItemId),
+      { actor: 'ada', reason: 'itest: cancel while gated' },
+      config,
+    );
+    expect(delivery.delivered).toBe(true);
+
+    await waitForStatus(workItemId, 'cancelled');
+    const item = await getWorkItem(getSql(), workItemId);
+    expect(item?.cancelActor).toBe('ada');
+    expect(item?.cancelReason).toBe('itest: cancel while gated');
+
+    const events = await listWorkItemEvents(getSql(), workItemId);
+    const cancelledEvents = events.filter((event) => event.type === 'work_item.cancelled');
+    expect(cancelledEvents).toHaveLength(1);
+    expect(cancelledEvents[0]?.payload.reason).toBe('itest: cancel while gated');
+    expect(events.some((event) => event.type === 'cancel.requested')).toBe(true);
+
+    // Repeat: a second request/signal is a no-op and emits no second terminal event.
+    const repeat = await requestWorkItemCancel(getSql(), {
+      workItemId,
+      actor: 'grace',
+      reason: 'itest: repeat cancel',
+      stage: 'triage',
+    });
+    expect(repeat.alreadyRequested).toBe(true);
+    expect(repeat.requested).toBe(false);
+    await cancelWorkItem(workItemWorkflowId(workItemId), { actor: 'grace', reason: 'repeat' }, config);
+    await new Promise<void>((resolve) => setTimeout(resolve, 500));
+
+    const after = await listWorkItemEvents(getSql(), workItemId);
+    expect(after.filter((event) => event.type === 'work_item.cancelled')).toHaveLength(1);
+    expect((await getWorkItem(getSql(), workItemId))?.status).toBe('cancelled');
+  }, 90_000);
+
+  test('a recorded cancel is honoured even when the Signal is lost', async () => {
+    const workItemId = await newItem({ gateSlaMs: 60_000 });
+    await pendingGate(workItemId, 'triage');
+
+    // Record the request without delivering the Signal, then let the gate approve. The
+    // workflow re-reads the read model before the next dispatch and must cancel.
+    await requestWorkItemCancel(getSql(), {
+      workItemId,
+      actor: 'ada',
+      reason: 'itest: lost signal',
+      stage: 'triage',
+    });
+    await decide(workItemId, 'triage', 'approve');
+
+    await waitForStatus(workItemId, 'cancelled');
+    const events = await listWorkItemEvents(getSql(), workItemId);
+    expect(events.filter((event) => event.type === 'work_item.cancelled')).toHaveLength(1);
+  }, 90_000);
 
   test('reviewer disagreement escalates to a human review gate and never merges on a verdict', async () => {
     setJudgementModel(null);

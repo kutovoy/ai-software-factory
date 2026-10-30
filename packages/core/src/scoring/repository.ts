@@ -117,8 +117,8 @@ export async function upsertScorerDefinition(
       sampling_rate, self_improvement, checks, body, definition_commit, updated_at
     ) values (
       ${args.factory}, ${args.name}, ${args.scorerClass}, ${args.rubricHash},
-      ${args.judgeModel}, ${JSON.stringify(args.labels)}::jsonb, ${args.passingScore},
-      ${args.samplingRate}, ${args.selfImprovement}, ${JSON.stringify(args.checks)}::jsonb,
+      ${args.judgeModel}, ${args.labels}::jsonb, ${args.passingScore},
+      ${args.samplingRate}, ${args.selfImprovement}, ${args.checks}::jsonb,
       ${args.body}, ${args.definitionCommit ?? null}, now()
     )
     on conflict (factory, name, rubric_hash) do update set
@@ -372,7 +372,7 @@ export async function recordScore(sql: SQL, args: RecordScoreArgs): Promise<Reco
         ${args.workItemId ?? null}, ${args.stage ?? null}, ${args.scorer}, ${args.scorerClass},
         ${args.rubricHash}, ${args.status}, ${args.errorCode ?? null}, ${args.label ?? null},
         ${args.score ?? null}, ${args.passing ?? false}, ${args.rationale ?? null},
-        ${JSON.stringify(args.evidenceRefs ?? evidence.map((item) => item.ref))}::jsonb,
+        ${(args.evidenceRefs ?? evidence.map((item) => item.ref))}::jsonb,
         ${args.uncalibrated ?? false}, ${args.provenance?.judgeModel ?? null},
         ${args.provenance?.judgeModelVersion ?? null}, ${args.provenance?.promptHash ?? null},
         ${args.provenance?.inputTokens ?? null}, ${args.provenance?.outputTokens ?? null},
@@ -406,7 +406,7 @@ export async function recordScore(sql: SQL, args: RecordScoreArgs): Promise<Reco
       await tx`
         insert into score_evidence (score_id, kind, ref, detail)
         values (${row.id}, ${item.kind}, ${item.ref},
-                ${JSON.stringify(item.detail ?? {})}::jsonb)
+                ${(item.detail ?? {})}::jsonb)
         on conflict (score_id, kind, ref) do nothing
       `;
     }
@@ -415,7 +415,7 @@ export async function recordScore(sql: SQL, args: RecordScoreArgs): Promise<Reco
       insert into score_events (score_id, factory, run_id, type, payload)
       values (
         ${row.id}, ${args.factory}, ${args.runId}, ${eventType},
-        ${JSON.stringify({
+        ${({
           scoreId: row.id,
           runId: args.runId,
           factory: args.factory,
@@ -826,7 +826,7 @@ export async function recordCalibrationResult(
       ${args.setId}, ${args.factory}, ${args.scorer}, ${args.rubricHash}, ${args.judgeModel},
       ${args.judgeModelVersion ?? null}, ${args.sampleSize}, ${args.agreementExact ?? null},
       ${args.agreementWithinTolerance ?? null}, ${args.tolerance}, ${args.threshold},
-      ${JSON.stringify(args.confusion)}::jsonb, ${args.verdict}
+      ${args.confusion}::jsonb, ${args.verdict}
     )
     returning *
   `) as CalibrationResultRow[];

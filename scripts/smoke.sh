@@ -818,5 +818,88 @@ automations="$(api "$API_URL/factories/example/automations")"
 [ "$(printf '%s' "$automations" | jget webhook.url)" != "" ] || fail "automations has no webhook url"
 pass "automations projection exposes webhook url + cron status"
 
+# ------------------------------- 17. autonomy read + work-item cancel + rebuild
+log "checking the autonomy read model, work-item cancellation and the rebuild dry run"
+
+autonomy_read="$(api "$API_URL/autonomy?factory=example")"
+printf '%s' "$autonomy_read" | bun -e '
+  const d = JSON.parse(await Bun.stdin.text());
+  const a = d.autonomy;
+  if (!a) { console.error("no autonomy payload"); process.exit(1); }
+  if (a.factory !== "example") { console.error(`factory ${a.factory}`); process.exit(1); }
+  if (typeof a.enabled !== "boolean" || typeof a.paused !== "boolean") {
+    console.error("enabled/paused are not booleans"); process.exit(1);
+  }
+  const stages = a.declared?.stages ?? {};
+  if (!stages.spec?.gate) { console.error("no declared triage gate"); process.exit(1); }
+  if (!a.declared?.mergePolicy) { console.error("no declared merge policy"); process.exit(1); }
+  if (!a.everEnabled && a.updatedAt !== null) {
+    console.error("an unrecorded autonomy state invented a timestamp"); process.exit(1);
+  }
+  if (a.lastEvent && !String(a.lastEvent.type).startsWith("autonomy.")) {
+    console.error(`lastEvent is not autonomy.*: ${a.lastEvent.type}`); process.exit(1);
+  }
+' || fail "autonomy read assertions failed"
+pass "GET /autonomy returns the declared policy, live state and newest autonomy event"
+
+cancel_created="$(api -X POST "$API_URL/work-items" \
+  -H 'content-type: application/json' \
+  -d '{"factory":"example","title":"smoke: cancel me","harness":"fake"}')"
+cancel_id="$(printf '%s' "$cancel_created" | jget workItem.id)"
+[ -n "$cancel_id" ] || fail "no work item id for cancellation: $cancel_created"
+for _ in $(seq 1 120); do
+  cancel_detail="$(api "$API_URL/work-items/$cancel_id")"
+  cancel_gate="$(printf '%s' "$cancel_detail" | jget pendingGate.stage)"
+  [ -n "$cancel_gate" ] && break
+  sleep 0.5
+done
+[ -n "${cancel_gate:-}" ] || fail "work item $cancel_id never reached a gate"
+
+cancel_resp="$(api -X POST "$API_URL/work-items/$cancel_id/cancel" \
+  -H 'content-type: application/json' \
+  -d '{"actor":"smoke","reason":"smoke: cancel the parked item"}')"
+[ "$(printf '%s' "$cancel_resp" | jget eventRecorded)" = "true" ] \
+  || fail "cancel did not record the request: $cancel_resp"
+
+cancelled=0
+for _ in $(seq 1 120); do
+  cancel_detail="$(api "$API_URL/work-items/$cancel_id")"
+  [ "$(printf '%s' "$cancel_detail" | jget workItem.status)" = "cancelled" ] && { cancelled=1; break; }
+  sleep 0.5
+done
+[ "$cancelled" = "1" ] || fail "work item $cancel_id did not end cancelled"
+
+printf '%s' "$cancel_detail" | bun -e '
+  const d = JSON.parse(await Bun.stdin.text());
+  const events = d.events ?? [];
+  const cancelledEvents = events.filter((e) => e.type === "work_item.cancelled");
+  if (cancelledEvents.length !== 1) {
+    console.error(`expected exactly one work_item.cancelled, got ${cancelledEvents.length}`);
+    process.exit(1);
+  }
+  if (!events.some((e) => e.type === "cancel.requested")) {
+    console.error("no cancel.requested event"); process.exit(1);
+  }
+  if (d.workItem.cancelActor !== "smoke") { console.error("cancel actor not recorded"); process.exit(1); }
+  if (!d.workItem.cancelReason) { console.error("cancel reason not recorded"); process.exit(1); }
+' || fail "cancel event assertions failed"
+
+repeat_cancel="$(api -X POST "$API_URL/work-items/$cancel_id/cancel" \
+  -H 'content-type: application/json' \
+  -d '{"actor":"smoke","reason":"smoke: repeat cancel"}')"
+[ "$(printf '%s' "$repeat_cancel" | jget alreadyCancelled)" = "true" ] \
+  || fail "repeat cancel was not idempotent: $repeat_cancel"
+[ "$(printf '%s' "$repeat_cancel" | jget eventRecorded)" = "false" ] \
+  || fail "repeat cancel emitted a second event: $repeat_cancel"
+pass "work item $cancel_id cancelled cooperatively (one work_item.cancelled, repeat is a no-op)"
+
+rebuild_out="$(DATABASE_URL="$DATABASE_URL" bun packages/cli/src/index.ts rebuild --from runs --dry-run 2>&1)" \
+  || fail "factory rebuild --dry-run failed: $rebuild_out"
+printf '%s' "$rebuild_out" | grep -q 'dry run: no rows written' \
+  || fail "rebuild dry run did not report that it wrote nothing: $rebuild_out"
+printf '%s' "$rebuild_out" | grep -q 'orphaned:' \
+  || fail "rebuild dry run did not report the diff: $rebuild_out"
+pass "factory rebuild --from runs --dry-run replays the logs and reports the diff without writing"
+
 log "SMOKE PASSED"
 

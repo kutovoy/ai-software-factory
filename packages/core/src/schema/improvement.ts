@@ -33,6 +33,12 @@ export const improvementSchema = z
       .default(DEFAULT_IMPROVEMENT_OBSERVATION_WINDOW_HOURS),
     /** Maximum number of contrastive probes one improvement run may spend. */
     maxProbes: z.number().int().min(1).max(50).default(DEFAULT_IMPROVEMENT_MAX_PROBES),
+    /**
+     * Promotion hook (harden-runtime, task 5.3). Run after the candidate PR merges; a
+     * non-zero exit marks the rollout `promoted_pending_deploy`. Absent means the checkout
+     * is NOT updated and the rollout records `promotion_pending_deploy` (ADR-012).
+     */
+    deployHook: z.string().min(1).max(2000).optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -64,6 +70,8 @@ export interface ResolvedImprovementConfig {
   rollbackThreshold: number | null;
   observationWindowHours: number;
   maxProbes: number;
+  /** Command run after a promotion merge; null when not declared. */
+  deployHook: string | null;
   /** `declared` when factory.yaml carries the block, `default` otherwise. */
   source: 'declared' | 'default';
   /** True when the canary rollout workflow is available (Phase 5b shipped). */
@@ -80,6 +88,7 @@ export function resolveImprovement(
     observationWindowHours:
       improvement?.observationWindowHours ?? DEFAULT_IMPROVEMENT_OBSERVATION_WINDOW_HOURS,
     maxProbes: improvement?.maxProbes ?? DEFAULT_IMPROVEMENT_MAX_PROBES,
+    deployHook: improvement?.deployHook ?? null,
     source: improvement ? 'declared' : 'default',
     canaryAvailable: true,
   };

@@ -56,7 +56,10 @@ const suite = enabled ? describe : describe.skip;
 
 const REPO_ROOT = join(import.meta.dir, '..', '..', '..');
 const EXAMPLE = join(REPO_ROOT, 'factories', 'example');
-const FACTORY = 'canary-fixture';
+// A per-process factory name keeps the canary suite isolated: scores/runs/rollouts from a
+// previous run cannot leak into this run's observation window (the flake signature found by
+// the 50x hunt was exactly that accumulation).
+const FACTORY = `canary-fixture-${process.pid}-${Date.now()}`;
 const MIGRATIONS = join(REPO_ROOT, 'packages', 'core', 'migrations');
 const STABLE_COMMIT = 'b'.repeat(40);
 
@@ -233,6 +236,12 @@ suite('canary rollout on the fake forge', () => {
     await running?.catch(() => undefined);
     clearSessions();
     setForge('fake', null);
+    // Clean the read model rows this run created (the factory name is unique per process).
+    await sql`delete from canary_events where factory = ${FACTORY}`.catch(() => undefined);
+    await sql`delete from canary_rollouts where factory = ${FACTORY}`.catch(() => undefined);
+    await sql`delete from proposals where factory = ${FACTORY}`.catch(() => undefined);
+    await sql`delete from scores where factory = ${FACTORY}`.catch(() => undefined);
+    await sql`delete from runs where factory = ${FACTORY}`.catch(() => undefined);
     await closeSql();
     await closeClient();
     await sql?.close();

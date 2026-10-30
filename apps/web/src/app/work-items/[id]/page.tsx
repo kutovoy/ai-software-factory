@@ -188,9 +188,10 @@ export default async function WorkItemDetailPage({ params }: { params: Promise<{
             </div>
           ) : (
             <p data-testid="work-item-autonomy-empty" className="text-sm text-slate-500">
-              No autonomy change is recorded for this item. The API exposes the kill switch as{' '}
-              <span className="font-mono">POST /autonomy</span>; there is no autonomy read endpoint yet, so
-              this panel shows only what the event log proves.
+              No autonomy change is recorded for this item. The factory-level state (declared policy,
+              enabled/paused, newest event) is projected by the Gates page from{' '}
+              <span className="font-mono">GET /autonomy</span>; this panel shows only what the item's
+              event log proves.
             </p>
           )}
         </CardBody>

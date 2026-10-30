@@ -82,6 +82,9 @@ services:
       IMPROVEMENT_WINDOW_DAYS: ${IMPROVEMENT_WINDOW_DAYS:-30}
       IMPROVEMENT_MAX_PROPOSALS: ${IMPROVEMENT_MAX_PROPOSALS:-5}
       DEFINITION_REPO_OWNER: ${DEFINITION_REPO_OWNER:-factory}
+      # Canary follow-ups: keep the last N candidate trees; optional deploy hook timeout.
+      CANARY_KEEP_TREES: ${CANARY_KEEP_TREES:-3}
+      CANARY_DEPLOY_TIMEOUT_MS: ${CANARY_DEPLOY_TIMEOUT_MS:-60000}
       # Phase 3b: webhook HMAC (by secret reference), payload cap and the merge queue.
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-smoke-webhook-secret}
       WEBHOOK_PUBLIC_URL: ${WEBHOOK_PUBLIC_URL:-http://localhost:8080}
@@ -182,6 +185,10 @@ services:
       IMPROVEMENT_WINDOW_DAYS: ${IMPROVEMENT_WINDOW_DAYS:-30}
       IMPROVEMENT_MAX_PROPOSALS: ${IMPROVEMENT_MAX_PROPOSALS:-5}
       DEFINITION_REPO_OWNER: ${DEFINITION_REPO_OWNER:-factory}
+      CANARY_KEEP_TREES: ${CANARY_KEEP_TREES:-3}
+      CANARY_DEPLOY_TIMEOUT_MS: ${CANARY_DEPLOY_TIMEOUT_MS:-60000}
+      # Local runner sandbox (ADR-025): `exec` = macOS sandbox-exec, `none` = unconfined.
+      RUNNER_SANDBOX: ${RUNNER_SANDBOX:-none}
       # Phase 3b: merge queue (ADR-022). The queue workflow runs in this worker.
       MERGE_BATCH_SIZE: ${MERGE_BATCH_SIZE:-2}
       MERGE_CHECKS_TIMEOUT_MS: ${MERGE_CHECKS_TIMEOUT_MS:-600000}

@@ -52,6 +52,13 @@ export const workItemSchema = z
     prUrl: z.string().url().nullable().default(null),
     prNumber: z.number().int().min(1).nullable().default(null),
     loopCount: z.number().int().min(0).default(0),
+    /**
+     * Cooperative cancellation (harden-runtime). The request is recorded once; the
+     * workflow cancels the in-flight stage child and ends `cancelled`.
+     */
+    cancelRequestedAt: z.string().nullable().default(null),
+    cancelActor: z.string().nullable().default(null),
+    cancelReason: z.string().nullable().default(null),
     createdAt: z.string().optional(),
     updatedAt: z.string().optional(),
   })
@@ -121,6 +128,11 @@ export const WORK_ITEM_EVENT_TYPES = [
   'autonomy.paused',
   'autonomy.enabled',
   'autonomy.refused',
+  /** An automation could not satisfy the benchmark attestation; it runs with human gates. */
+  'autonomy.attestation_missing',
+  'cancel.requested',
+  'work_item.cancelled',
+  'runner.sandbox_unavailable',
   'work_item.status',
   'work_item.spawned',
 ] as const;

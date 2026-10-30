@@ -75,6 +75,10 @@ export interface OrchestrationConfig {
   mergeIdleIntervalMs: number;
   /** Empty waits allowed before the queue workflow completes. */
   mergeIdleCycles: number;
+  /** Candidate definition trees kept after a terminal rollout (harden-runtime, task 5.1). */
+  canaryKeepTrees: number;
+  /** Timeout for the optional promotion `deployHook` command. */
+  canaryDeployTimeoutMs: number;
 }
 
 function intFromEnv(value: string | undefined, fallback: number): number {
@@ -129,5 +133,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): OrchestrationC
     mergeMaxBatches: intFromEnv(env.MERGE_MAX_BATCHES, 25),
     mergeIdleIntervalMs: intFromEnv(env.MERGE_IDLE_INTERVAL_MS, 30_000),
     mergeIdleCycles: intFromEnv(env.MERGE_IDLE_CYCLES, 2),
+    canaryKeepTrees: intFromEnv(env.CANARY_KEEP_TREES, 3),
+    canaryDeployTimeoutMs: intFromEnv(env.CANARY_DEPLOY_TIMEOUT_MS, 60_000),
   };
 }

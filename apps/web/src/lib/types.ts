@@ -232,6 +232,9 @@ export interface WorkItemSummary {
   prUrl: string | null;
   prNumber: number | null;
   loopCount: number;
+  cancelRequestedAt?: string | null;
+  cancelActor?: string | null;
+  cancelReason?: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -273,6 +276,38 @@ export interface WorkItemDetail {
 export interface CreatedWorkItem {
   workItem: WorkItemSummary;
   workflow: { workflowId: string; temporalRunId: string } | null;
+}
+
+/** `GET /autonomy?factory=` — the declared policy + live state + newest event. */
+export interface AutonomyReadWire {
+  factory: string;
+  declared: {
+    stages: Record<string, { gate: string; source: string }>;
+    mergePolicy: string;
+    fullyAutonomous: boolean;
+    benchmarkGateRequired: boolean;
+  };
+  enabled: boolean;
+  paused: boolean;
+  actor: string | null;
+  reason: string | null;
+  updatedAt: string | null;
+  overrideActor: string | null;
+  overrideReason: string | null;
+  everEnabled: boolean;
+  benchmarkAttestation: {
+    required: boolean;
+    satisfied: boolean;
+    code: 'benchmark_attestation_missing' | null;
+    reason: string | null;
+  };
+  lastEvent: {
+    type: string;
+    actor: string | null;
+    reason: string | null;
+    at: string | null;
+    payload: Record<string, unknown>;
+  } | null;
 }
 
 export interface AutonomyState {
@@ -888,8 +923,34 @@ export interface CanaryRolloutWire {
   prNumber: number | null;
   actor: string | null;
   evidence: Record<string, unknown>;
+  deploymentStatus: 'deployed' | 'promoted_pending_deploy' | 'promotion_pending_deploy' | null;
+  deployedAt: string | null;
+  deployHook: string | null;
+  deployError: string | null;
   startedAt: string | null;
   endedAt: string | null;
+}
+
+export interface CanarySeriesBucketWire {
+  bucketStart: string;
+  bucketEnd: string;
+  version: 'stable' | 'candidate';
+  scores: number;
+  passing: number;
+  passRate: number | null;
+  runs: number;
+  failedRuns: number;
+  errorRate: number | null;
+  reason: string | null;
+}
+
+export interface CanarySeriesWire {
+  rolloutId: string;
+  bucketHours: number;
+  from: string;
+  to: string;
+  stable: CanarySeriesBucketWire[];
+  candidate: CanarySeriesBucketWire[];
 }
 
 export interface CanaryStatsWire {
@@ -943,7 +1004,16 @@ export interface CanaryRolloutViewWire {
     totalItems: number;
   };
   metrics: CanaryMetricsWire | null;
+  series: CanarySeriesWire | null;
   events: { type: string; payload: Record<string, unknown>; createdAt: string | null }[];
+}
+
+export interface CanaryPruneResponseWire {
+  factory: string;
+  keep: number;
+  kept: string[];
+  removed: string[];
+  protected: string[];
 }
 
 export interface CanaryOverviewWire {

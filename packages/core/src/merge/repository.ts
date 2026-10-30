@@ -334,8 +334,8 @@ export async function updateMergeBatch(
       status = coalesce(${args.status ?? null}, status),
       base_sha = coalesce(${args.baseSha ?? null}, base_sha),
       merge_sha = coalesce(${args.mergeSha ?? null}, merge_sha),
-      checks = coalesce(${args.checks ? JSON.stringify(args.checks) : null}::jsonb, checks),
-      evidence = coalesce(${args.evidence ? JSON.stringify(args.evidence) : null}::jsonb, evidence),
+      checks = coalesce(${args.checks ?? null}::jsonb, checks),
+      evidence = coalesce(${args.evidence ?? null}::jsonb, evidence),
       actor = coalesce(${args.actor ?? null}, actor),
       reason = coalesce(${args.reason ?? null}, reason),
       started_at = case when ${args.started === true} then coalesce(started_at, now()) else started_at end,
@@ -362,7 +362,7 @@ export async function updateMergeBatchItem(
     update merge_batch_items set
       status = coalesce(${args.status ?? null}, status),
       commit_sha = coalesce(${args.commitSha ?? null}, commit_sha),
-      evidence = coalesce(${args.evidence ? JSON.stringify(args.evidence) : null}::jsonb, evidence),
+      evidence = coalesce(${args.evidence ?? null}::jsonb, evidence),
       batch_id = coalesce(${args.batchId ?? null}, batch_id),
       updated_at = now()
     where id = ${args.id}
@@ -410,7 +410,7 @@ export async function recordMergeEvent(
   const rows = (await sql`
     insert into merge_events (batch_id, factory, type, subject, payload)
     values (${args.batchId}, ${args.factory}, ${args.type}, ${args.subject ?? ''},
-            ${JSON.stringify(args.payload ?? {})}::jsonb)
+            ${(args.payload ?? {})}::jsonb)
     on conflict (batch_id, type, subject) do nothing
     returning *
   `) as EventRow[];

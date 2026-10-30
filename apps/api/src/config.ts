@@ -67,6 +67,10 @@ export interface ApiConfig {
   mergeMaxBatches: number;
   mergeIdleIntervalMs: number;
   mergeIdleCycles: number;
+  /** Candidate trees kept after a terminal rollout (harden-runtime). */
+  canaryKeepTrees: number;
+  /** Timeout for the optional promotion deploy hook. */
+  canaryDeployTimeoutMs: number;
   /**
    * Webhooks (ADR-023): hard cap on a delivery body. Anything larger is rejected with
    * `payload_too_large` before parsing.
@@ -149,6 +153,8 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     mergeMaxBatches: intFromEnv(env.MERGE_MAX_BATCHES, 25),
     mergeIdleIntervalMs: intFromEnv(env.MERGE_IDLE_INTERVAL_MS, 30_000),
     mergeIdleCycles: intFromEnv(env.MERGE_IDLE_CYCLES, 2),
+    canaryKeepTrees: intFromEnv(env.CANARY_KEEP_TREES, 3),
+    canaryDeployTimeoutMs: intFromEnv(env.CANARY_DEPLOY_TIMEOUT_MS, 60_000),
     webhookMaxBytes: intFromEnv(env.WEBHOOK_MAX_BYTES, 1_000_000),
     webhookSecretRef: env.GITHUB_WEBHOOK_SECRET_REF ?? 'GITHUB_WEBHOOK_SECRET',
     githubBaseUrl: env.GITHUB_API_BASE_URL ?? 'https://api.github.com',
@@ -202,5 +208,7 @@ export function toOrchestrationConfig(config: ApiConfig): OrchestrationConfig {
     mergeMaxBatches: config.mergeMaxBatches,
     mergeIdleIntervalMs: config.mergeIdleIntervalMs,
     mergeIdleCycles: config.mergeIdleCycles,
+    canaryKeepTrees: config.canaryKeepTrees,
+    canaryDeployTimeoutMs: config.canaryDeployTimeoutMs,
   };
 }

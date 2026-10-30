@@ -1,9 +1,11 @@
 import { ApplicationFailure } from '@temporalio/activity';
 import {
+  appendWorkItemEvent,
   compileStageGraph,
   createVersion,
   createWorkItemIdempotent,
   derivedWorkItemId,
+  findBenchmarkAttestation,
   foremanAgentName,
   getAutonomyState,
   loadDefinition,
@@ -16,6 +18,7 @@ import {
   type LoopStage,
   type WorkItemVersion,
 } from '@factory/core';
+import { benchmarkConfigHash, loadBenchmarkSuites } from '@factory/evals';
 import { getSql } from '../db';
 import { loadConfig } from '../config';
 import { startFactoryWorkflow } from '../factory-client';
@@ -155,6 +158,35 @@ export async function fireAutomationActivity(
   const autonomy = await getAutonomyState(sql, args.factory);
   const definitionVersion: WorkItemVersion = 'stable';
 
+  // Automation attestation parity (task 2.1): an automation-created item resolves autonomy
+  // through exactly the same benchmark-attestation check as a manual item. When the gate
+  // cannot be satisfied the item runs with human gates and records why (no silent downgrade).
+  const resolution = resolveAllGates(definition.manifest);
+  let benchmarkAttestationSatisfied = true;
+  const suites: { suite: string; configHash: string; attested: boolean }[] = [];
+  if (resolution.benchmarkGateRequired) {
+    benchmarkAttestationSatisfied = false;
+    for (const suite of loadBenchmarkSuites(definition)) {
+      const configHash = benchmarkConfigHash(suite, version.commit);
+      const attestation = await findBenchmarkAttestation(sql, {
+        factory: args.factory,
+        definitionCommit: version.commit,
+        configHash,
+      });
+      const eligible =
+        attestation?.passed === true &&
+        attestation.calibrationOk === true &&
+        attestation.partial === false;
+      suites.push({ suite: suite.name, configHash, attested: eligible });
+      if (eligible) benchmarkAttestationSatisfied = true;
+    }
+  }
+  const override = Boolean(autonomy?.overrideActor && autonomy?.overrideReason);
+  const benchmarkGateSatisfied =
+    !resolution.benchmarkGateRequired || benchmarkAttestationSatisfied || override;
+  const attestationMissing =
+    resolution.benchmarkGateRequired && !benchmarkAttestationSatisfied && !override;
+
   const input: FactoryWorkflowInput = {
     workItemId,
     factory: args.factory,
@@ -171,9 +203,9 @@ export async function fireAutomationActivity(
     autonomy: {
       enabled: autonomy?.enabled ?? false,
       paused: autonomy?.paused ?? false,
-      // The automation path does not consult the benchmark attestation (deferred): an
-      // unattended gate only auto-approves with an explicit human override on record.
-      benchmarkGateSatisfied: Boolean(autonomy?.overrideActor && autonomy?.overrideReason),
+      // Same resolution as the API: a passing, calibrated attestation for this commit +
+      // config hash (or an explicit override) unlocks unattended gates.
+      benchmarkGateSatisfied,
       actor: autonomy?.actor ?? null,
       reason: autonomy?.reason ?? null,
     },
@@ -203,8 +235,34 @@ export async function fireAutomationActivity(
     definitionDirty: version.dirty,
     definitionVersion,
     workflowId,
-    input: { stageGraph: stageGraph.order, gates, mergePolicy: definition.manifest.mergePolicy },
+    input: {
+      stageGraph: stageGraph.order,
+      gates,
+      mergePolicy: definition.manifest.mergePolicy,
+      benchmarkGate: {
+        required: resolution.benchmarkGateRequired,
+        satisfied: benchmarkGateSatisfied,
+      },
+    },
   });
+
+  if (attestationMissing && created.created) {
+    await appendWorkItemEvent(sql, {
+      workItemId,
+      type: 'autonomy.attestation_missing',
+      stage: firstStage,
+      actor: 'automation',
+      payload: {
+        factory: args.factory,
+        automation: args.automation,
+        definitionCommit: version.commit,
+        suites,
+        override,
+        reason:
+          'no passing, calibrated benchmark attestation matches this automation item\'s definition commit and configuration hash; the item runs with human gates',
+      },
+    });
+  }
 
   await setAutomationFireWorkItem(sql, {
     scheduleId: args.scheduleId,

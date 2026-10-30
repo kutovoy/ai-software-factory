@@ -472,3 +472,52 @@ factory name wins, deterministically.
 console has to show a secret *name* plus `configured: true/false` rather than the value. A
 GitHub App installation flow (short-lived tokens, per-installation signatures) can replace the
 PAT/secret pair behind the same interface.
+
+---
+
+## ADR-024 — Rebuild is replay, not repair
+
+**Status:** accepted, implemented (2026-10-30, harden-runtime)
+**Context:** Postgres is a projection of Temporal execution; the canonical per-run log is
+`runs/<runId>/events.jsonl`. A drifted projection (a lost write, a restored database, a
+schema experiment) had no recovery path short of deleting rows by hand.
+**Options:** treat Postgres as the source of truth and back it up · regenerate rows from
+Temporal history · replay the canonical JSONL log.
+**Decision:** `factory rebuild --from runs/ [--dry-run]` reads every `events.jsonl`, validates
+the sequence (it must start at 1 and be contiguous), and replays the logs in `(runId, seq)`
+order. Runs, the boundary steps the workflow always writes (`persist-run`, `finish-run`) and
+events are upserted idempotently; a second run reports no changes. Divergent rows are
+overwritten from the log (the log wins) and reported. Rows that exist in Postgres but not in
+the log are reported as `orphaned` and **never deleted** — a run whose directory was removed
+is not silently resurrected or erased. A gap or duplicate `seq` fails the whole rebuild with
+`event_log_corrupt` naming the run and sequence before any write. `--dry-run` reports the same
+diff and writes nothing. The log does not carry the run's factory/definition commit (those
+are API/Temporal inputs, not harness events): a run row that must be inserted inherits them
+from the linked work item when the id encodes one, otherwise records `unknown` rather than
+inventing a value.
+**Consequences:** recovery is a command, and the diff is auditable. Cost: coarse steps other
+than the two boundaries are not reconstructable from the log and stay reported as orphaned;
+the rebuild does not repair Temporal history, only the read model.
+
+---
+
+## ADR-025 — sandbox-exec is an opt-in jail for the local runner
+
+**Status:** accepted, implemented (2026-10-30, harden-runtime)
+**Context:** the `local-process` runner executes the harness on the host with only env
+filtering; the docker backend is the real isolation boundary, but cheap dev/CI runs use the
+local one. macOS still ships `sandbox-exec`, which is deprecated but functional.
+**Options:** leave the local backend unconfined · require Docker everywhere · generate an
+SBPL profile for `sandbox-exec` behind a flag.
+**Decision:** `RUNNER_SANDBOX=exec` makes the local backend run the harness (and its exec
+commands) under a generated profile: `(deny default)`, reads allowed for system paths and the
+workspace, writes allowed only to the workspace, the run directory and `/private/tmp`
+(plus the `/dev` character devices), and `network*` denied unless the stage/factory grants
+`networkPolicy: allowed`. A host without a sandbox backend (non-macOS, or no
+`/usr/bin/sandbox-exec`) runs unconfined and records `runner.sandbox_unavailable` on the
+runner step with the platform and reason. The default stays `none`, so existing behaviour is
+unchanged.
+**Consequences:** cheap runs can be confined without Docker; escapes fail at the OS level and
+surface as tool errors, not crashed runs. Cost: sandbox-exec is deprecated (a replacement will
+sit behind the same flag), the profile is macOS-only, and secrets still reach the process by
+name — the sandbox is a filesystem/network boundary, not a credential boundary.

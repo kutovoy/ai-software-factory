@@ -1,15 +1,19 @@
 #!/usr/bin/env bun
+import { SQL } from 'bun';
 import {
   DefinitionValidationError,
+  EventLogCorruptError,
   checkFiles,
   createVersion,
   diffDefinitions,
   isCanonical,
   loadDefinition,
+  rebuildReadModel,
   renderDiffText,
   resolveImprovement,
   serializeDefinition,
   writeFiles,
+  type RebuildReport,
   type ValidationError,
 } from '@factory/core';
 
@@ -85,8 +89,9 @@ Usage:
   factory diff <a> <b> [--json] [--exit-code]
   factory fmt <dir>
   factory version <dir> [--allow-dirty]
+  factory rebuild --from <runs-dir> [--dry-run] [--json]
 
-Exit codes: 0 ok, 1 validation/diff failure, 2 usage error.
+Exit codes: 0 ok, 1 validation/diff/corrupt-log failure, 2 usage error.
 `;
 
 function cmdValidate(positionals: string[], flags: Flags): void {
@@ -213,7 +218,83 @@ function cmdVersion(positionals: string[], flags: Flags): void {
   }
 }
 
-function main(): void {
+function printRebuildReport(report: RebuildReport): void {
+  const { diff, scanned, written } = report;
+  const counts = (values: string[]): string => String(values.length);
+  process.stdout.write(`scanned ${scanned.runs} run(s), ${scanned.events} event(s)\n`);
+  process.stdout.write(
+    `missing:   runs ${counts(diff.missing.runs)}, steps ${counts(diff.missing.steps)}, events ${counts(diff.missing.events)}\n`,
+  );
+  process.stdout.write(
+    `divergent: runs ${counts(diff.divergent.runs)}, steps ${counts(diff.divergent.steps)}, events ${counts(diff.divergent.events)}\n`,
+  );
+  process.stdout.write(
+    `orphaned:  runs ${counts(diff.orphaned.runs)}, steps ${counts(diff.orphaned.steps)}, events ${counts(diff.orphaned.events)} (kept, never deleted)\n`,
+  );
+
+  for (const [label, entries] of [
+    ['missing run', diff.missing.runs],
+    ['missing step', diff.missing.steps],
+    ['missing event', diff.missing.events],
+    ['divergent run', diff.divergent.runs],
+    ['divergent step', diff.divergent.steps],
+    ['divergent event', diff.divergent.events],
+    ['orphaned run', diff.orphaned.runs],
+    ['orphaned step', diff.orphaned.steps],
+    ['orphaned event', diff.orphaned.events],
+  ] as const) {
+    for (const entry of entries.slice(0, 20)) process.stdout.write(`  ${label} ${entry}\n`);
+    if (entries.length > 20) process.stdout.write(`  … and ${entries.length - 20} more ${label}(s)\n`);
+  }
+
+  if (report.dryRun) {
+    process.stdout.write('dry run: no rows written\n');
+    return;
+  }
+  process.stdout.write(
+    `wrote ${written.runs} run(s), ${written.steps} step(s), ${written.events} event(s)\n`,
+  );
+}
+
+async function cmdRebuild(flags: Flags): Promise<void> {
+  const from = typeof flags.from === 'string' ? flags.from : 'runs';
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    process.stderr.write('factory rebuild: DATABASE_URL is required\n');
+    process.exit(2);
+  }
+
+  const sql = new SQL(databaseUrl, { max: 1 });
+  try {
+    const report = await rebuildReadModel(sql, {
+      runsDir: from,
+      dryRun: flags['dry-run'] === true,
+      ...(typeof flags.run === 'string' ? { runId: flags.run } : {}),
+    });
+    if (flags.json === true) {
+      process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    } else {
+      printRebuildReport(report);
+    }
+  } catch (error) {
+    if (error instanceof EventLogCorruptError) {
+      for (const log of error.logs) {
+        process.stderr.write(
+          `event_log_corrupt ${log.runId} seq ${log.seq} (${log.reason}): ${log.detail}\n`,
+        );
+      }
+      process.exit(1);
+    }
+    process.stderr.write(
+      `factory rebuild: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
+    process.exit(1);
+  } finally {
+    await sql.close();
+  }
+}
+
+async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
 
   if (!command || command === 'help' || command === '--help') {
@@ -242,10 +323,13 @@ function main(): void {
     case 'version':
       cmdVersion(positionals, flags);
       return;
+    case 'rebuild':
+      await cmdRebuild(flags);
+      return;
     default:
       process.stderr.write(`factory: unknown command "${command}"\n\n${HELP}`);
       process.exit(2);
   }
 }
 
-main();
+await main();

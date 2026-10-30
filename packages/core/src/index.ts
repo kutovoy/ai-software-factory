@@ -24,6 +24,7 @@ export * from './autonomy/policy';
 export * from './work-items/types';
 export * from './work-items/id';
 export * from './work-items/repository';
+export * from './read-model/rebuild';
 export * from './scoring/index';
 export * from './benchmarks/index';
 export * from './improvement/index';

@@ -137,6 +137,16 @@ export interface ImprovementEventRecord {
  */
 export type CanaryStatus = 'pending' | 'active' | 'promoted' | 'rolled_back' | 'unavailable';
 
+/**
+ * Whether a promoted rollout actually reached a deployment (harden-runtime, task 5.3).
+ * `deployed` = the deploy hook ran; `promoted_pending_deploy` = hook failed (error
+ * recorded); `promotion_pending_deploy` = no hook, the local checkout was NOT updated.
+ */
+export type CanaryDeploymentStatus =
+  | 'deployed'
+  | 'promoted_pending_deploy'
+  | 'promotion_pending_deploy';
+
 export interface CanaryRolloutRecord {
   id: string;
   factory: string;
@@ -158,6 +168,11 @@ export interface CanaryRolloutRecord {
   prNumber: number | null;
   actor: string | null;
   evidence: Record<string, unknown>;
+  /** Deployment state after promotion; null until the rollout is promoted. */
+  deploymentStatus: CanaryDeploymentStatus | null;
+  deployedAt: string | null;
+  deployHook: string | null;
+  deployError: string | null;
   startedAt: string | null;
   endedAt: string | null;
 }

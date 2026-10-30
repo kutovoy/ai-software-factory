@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { CancelWorkItemButton } from '@/components/work-items/CancelWorkItemButton';
 import { CreateWorkItemForm } from '@/components/work-items/CreateWorkItemForm';
 import { SlaCountdown } from '@/components/work-items/SlaCountdown';
 import { getOrError, safeGet } from '@/lib/api';
@@ -260,6 +261,12 @@ export default async function WorkItemsPage({
                             No runs recorded yet.
                           </p>
                         )}
+
+                        <CancelWorkItemButton
+                          workItemId={item.id}
+                          status={item.status}
+                          cancelRequestedAt={item.cancelRequestedAt ?? null}
+                        />
 
                         {item.prUrl ? (
                           <a

@@ -50,10 +50,12 @@ import {
 } from '@factory/core';
 import {
   applyImprovementDecision,
+  collectCanaryTrees,
   getForge,
   getSql,
   promoteCanaryRollout,
   readCanaryObservation,
+  readCanarySeries,
   resolveCanaryRollout,
   rollbackCanaryRollout,
   signalCanaryPromote,
@@ -61,6 +63,7 @@ import {
   startCanaryRollout,
   startImprovementWorkflow,
   type CanaryObservationSummary,
+  type CanarySeriesSummary,
   type ImprovementWorkflowInput,
 } from '@factory/orchestration';
 import { FakeForge, type FileChange } from '@factory/forge';
@@ -181,6 +184,17 @@ export const canaryStartBodySchema = z
   .strict();
 
 export type CanaryStartBody = z.infer<typeof canaryStartBodySchema>;
+
+/** Manual candidate-tree GC (task 5.4): prune keeps the newest `keep` terminal trees. */
+export const canaryPruneBodySchema = z
+  .object({
+    actor: z.string().min(1).max(120),
+    reason: z.string().min(1).max(2000),
+    keep: z.number().int().min(0).max(100).optional(),
+  })
+  .strict();
+
+export type CanaryPruneBody = z.infer<typeof canaryPruneBodySchema>;
 
 interface LoadedFactory {
   dir: string;
@@ -473,6 +487,8 @@ export interface CanaryRolloutView {
   window: CanaryWindow;
   split: CanarySplit;
   metrics: CanaryObservationSummary | null;
+  /** Hourly pass-rate/run/error series per version; null buckets carry a reason. */
+  series: CanarySeriesSummary | null;
   events: { type: string; payload: Record<string, unknown>; createdAt: string | null }[];
 }
 
@@ -565,15 +581,35 @@ async function canaryMetricsFor(
   }
 }
 
+async function canarySeriesFor(
+  rollout: CanaryRolloutRecord,
+  definitionCommit: string,
+): Promise<CanarySeriesSummary | null> {
+  if (rollout.status === 'unavailable') return null;
+  try {
+    return await readCanarySeries({
+      factory: rollout.factory,
+      rolloutId: rollout.id,
+      stableCommit: rollout.stableCommit ?? definitionCommit,
+      candidateCommit: rollout.candidateCommit,
+      startedAt: rollout.startedAt,
+      until: rollout.endedAt,
+    });
+  } catch {
+    return null;
+  }
+}
+
 async function canaryView(
   rollout: CanaryRolloutRecord,
   definitionCommit: string,
   options: { metrics?: boolean } = {},
 ): Promise<CanaryRolloutView> {
   const sql = getSql();
-  const [split, metrics, events] = await Promise.all([
+  const [split, metrics, series, events] = await Promise.all([
     canarySplitFor(rollout.factory, rollout),
     options.metrics === false ? Promise.resolve(null) : canaryMetricsFor(rollout, definitionCommit),
+    options.metrics === false ? Promise.resolve(null) : canarySeriesFor(rollout, definitionCommit),
     listCanaryEvents(sql, { rolloutId: rollout.id }),
   ]);
   return {
@@ -581,6 +617,7 @@ async function canaryView(
     window: canaryWindowFor(rollout),
     split,
     metrics,
+    series,
     events: events.map((event: CanaryEventRecord) => ({
       type: event.type,
       payload: event.payload,
@@ -773,6 +810,40 @@ export async function promoteCanaryForApi(
     mergedCommit: result.mergedCommit ?? null,
     delivery: delivery.delivered,
   };
+}
+
+export interface CanaryPruneResponse {
+  factory: string;
+  keep: number;
+  kept: string[];
+  removed: string[];
+  protected: string[];
+}
+
+/**
+ * Prunes candidate trees on demand (task 5.4). Terminal rollouts keep the newest `keep`
+ * trees (default `CANARY_KEEP_TREES`); an in-flight rollout's tree is never removed.
+ */
+export async function pruneCanaryForApi(
+  config: ApiConfig,
+  factory: string,
+  body: CanaryPruneBody,
+): Promise<CanaryPruneResponse> {
+  loadFactory(config, factory); // validates the factory before touching disk
+  const result = await collectCanaryTrees(getSql(), {
+    factory,
+    ...(body.keep === undefined ? {} : { keep: body.keep }),
+    actor: body.actor,
+    reason: body.reason,
+  });
+  log('info', 'canary_trees_pruned', {
+    factory,
+    keep: result.keep,
+    removed: result.removed.length,
+    protected: result.protected.length,
+    actor: body.actor,
+  });
+  return { factory, ...result };
 }
 
 export interface CanaryRollbackResponse {
