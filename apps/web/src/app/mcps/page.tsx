@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { getOrError, safeGet } from '@/lib/api';
+import { countLabel } from '@/lib/factory';
 import type { FactoryListItem, McpProjectionWire } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -67,7 +68,7 @@ export default async function McpsPage({
           action={
             projection.data ? (
               <Badge tone="neutral" testId="mcp-server-count">
-                {projection.data.servers.length} servers
+                {countLabel(projection.data.servers.length, 'server', 'servers')}
               </Badge>
             ) : null
           }

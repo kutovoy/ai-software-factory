@@ -19,6 +19,8 @@ services:
       - '5433:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Creates `factory_test` on first init so integration suites never mix demo rows.
+      - ./scripts/postgres-init.sql:/docker-entrypoint-initdb.d/10-factory-test.sql:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U factory -d factory']
       interval: 3s
@@ -51,6 +53,11 @@ services:
       REPO_ROOT: /repo
       RUNS_DIR: /app/runs
       DEFAULT_FACTORY: ${DEFAULT_FACTORY:-example}
+      # Model references (ADR-028): definitions declare env:FACTORY_* and these values
+      # decide which model the operator's provider serves. Never hardcoded in git.
+      FACTORY_MODEL: ${FACTORY_MODEL:-best_llm}
+      FACTORY_SMALL_MODEL: ${FACTORY_SMALL_MODEL:-best_llm}
+      FACTORY_REVIEW_MODEL: ${FACTORY_REVIEW_MODEL:-best_llm}
       API_PORT: '8080'
       FACTORY_VERSION: ${FACTORY_VERSION:-0.0.0-dev}
       # Sandbox-facing URL of this API's proxy (Docker Desktop resolves this to the host).
@@ -169,6 +176,10 @@ services:
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://127.0.0.1:8080/internal/stub-model/v1}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-provider-secret}
       RUNNER_BACKEND: ${RUNNER_BACKEND:-docker}
+      # Model references (ADR-028): the worker resolves env:FACTORY_* at dispatch time.
+      FACTORY_MODEL: ${FACTORY_MODEL:-best_llm}
+      FACTORY_SMALL_MODEL: ${FACTORY_SMALL_MODEL:-best_llm}
+      FACTORY_REVIEW_MODEL: ${FACTORY_REVIEW_MODEL:-best_llm}
       WORKER_HEARTBEAT_FILE: /app/runs/.worker-heartbeat
       PERMISSION_TIMEOUT_MS: ${PERMISSION_TIMEOUT_MS:-1800000}
       # Scoring (Phase 4a): deterministic checks are free; judges are sampled and capped.

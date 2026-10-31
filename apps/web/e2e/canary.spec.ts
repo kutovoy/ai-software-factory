@@ -257,3 +257,16 @@ test.describe('Canary rollout', () => {
     expect(stableItem.canaryRolloutId).toBeNull();
   });
 });
+
+
+test('self-improvement reports canary authority separately from an active rollout', async ({ page }) => {
+  await page.goto(`/factories/${FACTORY}/self-improvement`);
+  const note = page.getByTestId('improvement-canary-note');
+  await expect(note).toBeVisible();
+  await expect(note).toContainText('Canary authority is enabled');
+  await expect(note).not.toContainText('Canary rollout is live');
+  // Active-rollout state lives in the canary panel, which says so explicitly.
+  await expect(
+    page.getByTestId('canary-panel').or(page.getByTestId('canary-unavailable')),
+  ).toBeVisible();
+});

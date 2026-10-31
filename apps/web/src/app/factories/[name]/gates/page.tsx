@@ -14,6 +14,7 @@ import type {
   FactoryResources,
   GateStage,
 } from '@/lib/types';
+import { factoryHeading } from '@/lib/factory';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,7 +70,7 @@ export default async function GatesPage({ params }: { params: Promise<{ name: st
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-slate-900">
-            {detail?.factory.alias ?? factory} <span className="text-slate-400">›</span> Gates
+            {factoryHeading(detail?.factory.alias, factory, 'Gates')}
           </h1>
           <p className="text-sm text-slate-500">
             Every stage resolves through <span className="font-mono">automation → factory → global</span>.
@@ -144,9 +145,11 @@ export default async function GatesPage({ params }: { params: Promise<{ name: st
                 <span className="font-semibold">
                   {benchmarkGate.required ? 'Required' : 'Not required'}:
                 </span>{' '}
-                {benchmarkGate.satisfied
-                  ? 'a passing, calibrated attestation matches this version.'
-                  : benchmarkGate.reason ?? 'no attestation matches this version.'}
+                {!benchmarkGate.required
+                  ? 'human gates remain, so a benchmark attestation is not required to merge. The suite rows below report the current attestation state.'
+                  : benchmarkGate.satisfied
+                    ? 'a passing, calibrated attestation matches this version.'
+                    : benchmarkGate.reason ?? 'no attestation matches this version.'}
               </p>
               <ul className="space-y-1">
                 {benchmarkGate.suites.map((entry) => (

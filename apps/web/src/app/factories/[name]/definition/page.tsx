@@ -14,6 +14,7 @@ import type {
   FactoryVersionEntry,
   GateStage,
 } from '@/lib/types';
+import { factoryHeading } from '@/lib/factory';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,7 +62,7 @@ export default async function DefinitionPage({
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-slate-900">
-            {detail?.factory.alias ?? factory} <span className="text-slate-400">›</span> Definition
+            {factoryHeading(detail?.factory.alias, factory, 'Definition')}
           </h1>
           <p className="text-sm text-slate-500">
             Resource tree, resolved gates, version and a semantic diff — read straight from{' '}
@@ -398,11 +399,17 @@ export default async function DefinitionPage({
                                 <li
                                   key={`${change.pointer}-${describeValue(change.old)}`}
                                   data-testid="definition-diff-change"
-                                  className="grid gap-1 text-xs sm:grid-cols-[14rem,1fr,1fr]"
+                                  className="grid min-w-0 gap-1 text-xs sm:grid-cols-[14rem,1fr,1fr]"
                                 >
-                                  <span className="font-mono text-slate-500">{change.pointer || '/'}</span>
-                                  <span className="font-mono text-red-700">{describeValue(change.old)}</span>
-                                  <span className="font-mono text-emerald-700">{describeValue(change.new)}</span>
+                                  <span className="min-w-0 break-all font-mono text-slate-500">
+                                    {change.pointer || '/'}
+                                  </span>
+                                  <span className="min-w-0 break-all font-mono text-red-700">
+                                    {describeValue(change.old)}
+                                  </span>
+                                  <span className="min-w-0 break-all font-mono text-emerald-700">
+                                    {describeValue(change.new)}
+                                  </span>
                                 </li>
                               ))}
                             </ul>

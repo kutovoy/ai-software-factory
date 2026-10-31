@@ -1,21 +1,21 @@
 default:
   harness:
-    model: openai/gpt-5
+    model: env:FACTORY_MODEL
     type: opencode
 stages:
   implement:
     harness:
-      model: openai/gpt-5
+      model: env:FACTORY_MODEL
       type: opencode
   plan:
     harness:
-      model: openai/gpt-5
+      model: env:FACTORY_MODEL
       type: opencode
   review:
     harness:
-      model: anthropic/claude-sonnet-4-5
+      model: env:FACTORY_REVIEW_MODEL
       type: opencode
   spec:
     harness:
-      model: openai/gpt-5
+      model: env:FACTORY_MODEL
       type: opencode

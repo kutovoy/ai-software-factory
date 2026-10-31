@@ -153,7 +153,7 @@ import {
   type CancelWorkItemBody,
   type CreateWorkItemBody,
 } from './work-items';
-import type { GateDecisionRequest } from '@factory/core';
+import { modelSchema, type GateDecisionRequest } from '@factory/core';
 
 const TERMINAL = new Set(['ok', 'error', 'cancelled']);
 
@@ -176,7 +176,7 @@ const runBodySchema = z
     prompt: z.string().optional(),
     files: z.array(z.string()).optional(),
     harness: harnessEnum.optional(),
-    model: z.string().min(1).optional(),
+    model: modelSchema.optional(),
     agent: z.string().min(1).optional(),
     runner: runnerEnum.optional(),
     title: z.string().min(1).optional(),

@@ -20,7 +20,7 @@ describe('semantic diff', () => {
     expect(diff.changed[0].changes).toEqual([
       {
         pointer: '/harness/model',
-        old: 'anthropic/claude-sonnet-4-5',
+        old: 'env:FACTORY_REVIEW_MODEL',
         new: 'openai/gpt-5-mini',
       },
     ]);
@@ -75,7 +75,12 @@ describe('semantic diff', () => {
   });
 
   it('reports gates, mergePolicy and improvement authority between the two reference factories', () => {
-    const diff = diffDefinitions(loadOrThrow(EXAMPLE), loadOrThrow(LIGHTS_OFF));
+    // The lights-off demo now has its own manifest identity (task 2.2), so align the
+    // identity before diffing: the point is the policy/field diff, not the rename.
+    const lightsOff = structuredClone(loadOrThrow(LIGHTS_OFF));
+    lightsOff.manifest.name = 'example';
+    lightsOff.manifest.alias = 'Example';
+    const diff = diffDefinitions(loadOrThrow(EXAMPLE), lightsOff);
     // `example` also declares the nightly schedule automation, which `example-lights-off`
     // does not, and binds its `implement` agent to the `github` MCP server.
     expect(diff.added).toEqual([]);

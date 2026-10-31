@@ -1,7 +1,7 @@
 ---
 description: Verifies the change with deterministic checks before merge.
 harness:
-  model: openai/gpt-5-mini
+  model: env:FACTORY_SMALL_MODEL
   type: opencode
 role: verify
 runner: local-docker

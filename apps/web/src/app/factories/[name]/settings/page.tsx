@@ -6,6 +6,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Table } from '@/components/ui/Table';
 import { getOrError, safeGet } from '@/lib/api';
 import type { FactoryDetail, IntegrationsResponseWire } from '@/lib/types';
+import { factoryHeading } from '@/lib/factory';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +28,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ name:
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-slate-900">
-            {detail?.factory.alias ?? factory} <span className="text-slate-400">›</span> Settings
+            {factoryHeading(detail?.factory.alias, factory, 'Settings')}
           </h1>
           <p className="text-sm text-slate-500">
             Factory-level manifest: repositories, agent defaults, secrets (names only) and integrations.

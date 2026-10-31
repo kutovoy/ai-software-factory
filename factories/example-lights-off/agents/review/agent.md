@@ -1,7 +1,7 @@
 ---
 description: Reviews the pull request against the spec and posts findings.
 harness:
-  model: anthropic/claude-sonnet-4-5
+  model: env:FACTORY_REVIEW_MODEL
   type: opencode
 role: review
 runner: local-docker

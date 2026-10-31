@@ -1,9 +1,9 @@
 agentDefaults:
   harness:
-    model: openai/gpt-5
+    model: env:FACTORY_MODEL
     type: opencode
   runner: local-docker
-alias: Example
+alias: Example — lights off
 description: "Reference factory exercising every resource type: a foreman routes work items through triage, spec, implement, review and verify agents."
 gates:
   deploy: agent
@@ -24,7 +24,7 @@ mcpServers:
   github:
     command: github-mcp
 mergePolicy: auto_on_green
-name: example
+name: example-lights-off
 repositories:
   - name: api-service
     owner: acme

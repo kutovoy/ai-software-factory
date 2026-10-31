@@ -143,7 +143,14 @@ export function collectAllSecretReferences(config: ApiConfig): SecretReference[]
       const agents = definition.resources
         .filter((resource) => resource.kind === 'agent')
         .map((resource) => ({ name: resource.name, doc: resource.doc as AgentDef }));
-      references.push(...collectSecretReferences(definition.manifest, agents));
+      // Attribute every reference to its factory directory (path-is-identity): the same
+      // name at the same pointer in two factories must not collapse into one row.
+      references.push(
+        ...collectSecretReferences(definition.manifest, agents).map((reference) => ({
+          ...reference,
+          factory,
+        })),
+      );
     } catch {
       // An unreadable definition cannot reference anything this process can see.
     }

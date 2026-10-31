@@ -172,6 +172,8 @@ export interface FactoryDetail {
   gates: GateResolution;
   fullyAutonomous: boolean;
   benchmarkGateRequired: boolean;
+  /** Default model resolved from `env:` if needed; `null` when the reference is unset. */
+  defaultModel: string | null;
 }
 
 export interface ResourceSummary {
@@ -642,6 +644,7 @@ export interface BenchmarkRunWire {
 
 export interface BenchmarkSuiteListResponse {
   factory: string;
+  alias: string | null;
   definitionCommit: string;
   definitionDirty: boolean;
   suites: BenchmarkSuiteEntryWire[];
@@ -889,6 +892,7 @@ export interface LessonWire {
 
 export interface ImprovementOverviewWire {
   factory: string;
+  alias: string | null;
   definitionCommit: string;
   definitionDirty: boolean;
   authority: ImprovementAuthorityWire;
@@ -1097,6 +1101,8 @@ export interface SecretsResponseWire {
 
 export interface SecretReferenceWire {
   name: string;
+  /** Factory directory the reference comes from (path-is-identity). */
+  factory?: string;
   kind: 'factory' | 'agent' | 'agentDefaults' | 'mcp';
   resource: string;
   pointer: string;

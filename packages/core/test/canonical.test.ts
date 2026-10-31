@@ -33,7 +33,7 @@ describe('canonical snapshot', () => {
       .map((line) => line.slice(0, line.indexOf(':')));
     expect(topLevelKeys).toEqual([...topLevelKeys].sort());
 
-    expect(manifest.content).toContain('\n  harness:\n    model: openai/gpt-5\n    type: opencode\n');
+    expect(manifest.content).toContain('\n  harness:\n    model: env:FACTORY_MODEL\n    type: opencode\n');
   });
 
   it('preserves Markdown frontmatter delimiters and bodies', () => {

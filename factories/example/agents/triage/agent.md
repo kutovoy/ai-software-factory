@@ -1,7 +1,7 @@
 ---
 description: Classifies incoming issues and decides whether the factory can take them.
 harness:
-  model: openai/gpt-5-mini
+  model: env:FACTORY_SMALL_MODEL
   type: opencode
 role: triage
 runner: local-docker

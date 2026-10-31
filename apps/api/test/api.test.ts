@@ -118,4 +118,39 @@ describe('run defaults', () => {
     expect(defaults.model).toBe('openai/gpt-5-mini');
     expect(defaults.runner).toBe('local-process');
   });
+
+  const envManifest = factorySchema.parse({
+    schemaVersion: 'v1alpha1',
+    name: 'env-fixture',
+    repositories: [{ owner: 'acme', name: 'api' }],
+    agentDefaults: { harness: { type: 'opencode', model: 'env:FACTORY_MODEL' }, runner: 'local-docker' },
+    gates: { spec: 'human' },
+    mergePolicy: 'human',
+  });
+
+  test('an env model reference resolves to the environment value', () => {
+    const defaults = resolveRunDefaults(envManifest, {}, { FACTORY_MODEL: 'best_llm' });
+    expect(defaults.model).toBe('best_llm');
+  });
+
+  test('an unresolved env model refuses run creation with model_unresolved', () => {
+    let error: unknown;
+    try {
+      resolveRunDefaults(envManifest, {}, {});
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(ApiError);
+    expect(toEnvelope(error).status).toBe(422);
+    expect(toEnvelope(error).body.code).toBe('model_unresolved');
+    expect(toEnvelope(error).body.details).toEqual({
+      ref: 'env:FACTORY_MODEL',
+      env: 'FACTORY_MODEL',
+    });
+  });
+
+  test('the fake harness never needs a resolved model', () => {
+    const defaults = resolveRunDefaults(envManifest, { harness: 'fake' }, {});
+    expect(defaults.model).toBe('fake/fake-model');
+  });
 });

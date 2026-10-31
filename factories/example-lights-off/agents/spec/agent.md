@@ -1,7 +1,7 @@
 ---
 description: Turns a triaged work item into a reviewable specification.
 harness:
-  model: openai/gpt-5
+  model: env:FACTORY_MODEL
   type: opencode
 role: spec
 runner: local-docker

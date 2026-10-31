@@ -264,6 +264,8 @@ async function eligibilityPreview(
 
 export interface ImprovementOverview {
   factory: string;
+  /** Display alias from the manifest, falling back to the directory name in the UI. */
+  alias: string | null;
   definitionCommit: string;
   definitionDirty: boolean;
   authority: ReturnType<typeof resolveImprovement>['authority'];
@@ -307,6 +309,7 @@ export async function getImprovementForApi(
 
   return {
     factory,
+    alias: definition.manifest.alias ?? null,
     definitionCommit: commit,
     definitionDirty: dirty,
     authority: resolved.authority,

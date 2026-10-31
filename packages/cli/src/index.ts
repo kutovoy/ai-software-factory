@@ -4,6 +4,7 @@ import {
   DefinitionValidationError,
   EventLogCorruptError,
   checkFiles,
+  collectModelRefSites,
   createVersion,
   diffDefinitions,
   isCanonical,
@@ -11,6 +12,7 @@ import {
   rebuildReadModel,
   renderDiffText,
   resolveImprovement,
+  resolveModelRef,
   serializeDefinition,
   writeFiles,
   type RebuildReport,
@@ -94,12 +96,35 @@ Usage:
 Exit codes: 0 ok, 1 validation/diff/corrupt-log failure, 2 usage error.
 `;
 
+/** Every declared model, resolved against the environment (ADR-028). */
+function resolvedModels(definition: {
+  manifest: unknown;
+  resources: { path: string; doc: unknown }[];
+}): Array<{ file: string; pointer: string; ref: string; value: string | null; source: string }> {
+  const sites = collectModelRefSites([
+    { file: 'factory.yaml', doc: definition.manifest },
+    ...definition.resources.map((resource) => ({ file: resource.path, doc: resource.doc })),
+  ]);
+  return sites.map((site) => {
+    const resolved = resolveModelRef(site.ref);
+    return {
+      file: site.file,
+      pointer: site.pointer,
+      ref: resolved.ref,
+      value: resolved.value,
+      source: resolved.source,
+    };
+  });
+}
+
 function cmdValidate(positionals: string[], flags: Flags): void {
   const dir = requireDir(positionals, 'validate');
   const json = flags.json === true;
-  const { definition, errors } = loadDefinition(dir);
+  const { definition, errors, warnings } = loadDefinition(dir);
 
   if (!definition) fail(errors, json);
+
+  const models = resolvedModels(definition);
 
   if (json) {
     process.stdout.write(
@@ -109,6 +134,8 @@ function cmdValidate(positionals: string[], flags: Flags): void {
           factory: definition.manifest.name,
           resources: definition.resources.length,
           improvement: resolveImprovement(definition.manifest.improvement),
+          models,
+          warnings,
         },
         null,
         2,
@@ -126,6 +153,18 @@ function cmdValidate(positionals: string[], flags: Flags): void {
           : ''
       } maxProbes=${improvement.maxProbes}\n`,
     );
+    for (const model of models) {
+      process.stdout.write(
+        `model ${model.file} ${model.pointer}: ${model.ref} -> ${
+          model.value ?? 'UNRESOLVED (set the environment variable)'
+        } (${model.source})\n`,
+      );
+    }
+    for (const warning of warnings) {
+      process.stdout.write(
+        `warning ${warning.code} ${warning.file} ${warning.pointer}: ${warning.message}\n`,
+      );
+    }
   }
 }
 

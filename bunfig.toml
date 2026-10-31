@@ -1,0 +1,4 @@
+# Integration suites default to a separate database (ADR-029) so smoke/e2e/demo rows
+# never mix with test rows. `RUN_INTEGRATION=1` alone is enough; DATABASE_URL overrides.
+[test]
+preload = ["./scripts/test-preload.ts"]

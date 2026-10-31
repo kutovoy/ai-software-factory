@@ -110,4 +110,10 @@ test('gates page keeps a lights-on factory explicit about human touchpoints', as
   await expect(note).toBeVisible();
   await expect(note).toContainText(/of 6 stages wait for a human/);
   await expect(page.getByTestId('gates-autonomy-badge')).toContainText('lights on');
+
+  // A human-gated factory does not require an attestation: the copy must say why, and
+  // must never claim an attestation matches the version when the suite row says none.
+  const status = page.getByTestId('gates-attestation-status');
+  await expect(status).toContainText('human gates remain');
+  await expect(status).not.toContainText('a passing, calibrated attestation matches this version');
 });

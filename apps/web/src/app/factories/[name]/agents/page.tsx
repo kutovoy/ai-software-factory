@@ -5,6 +5,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { safeGet } from '@/lib/api';
 import { docOf, inference, type AgentDoc, type InferenceDoc } from '@/lib/definition';
 import type { FactoryDetail, FactoryResources } from '@/lib/types';
+import { factoryHeading } from '@/lib/factory';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,7 +51,7 @@ export default async function AgentsPage({ params }: { params: Promise<{ name: s
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-slate-900">
-            {detail?.factory.alias ?? factory} <span className="text-slate-400">›</span> Agents
+            {factoryHeading(detail?.factory.alias, factory, 'Agents')}
           </h1>
           <p className="text-sm text-slate-500">
             Role, harness/model, runner, tool allow/deny lists, secret names and who may spawn each agent.

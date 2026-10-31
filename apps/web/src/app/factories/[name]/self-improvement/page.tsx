@@ -14,6 +14,7 @@ import type {
   LessonWire,
   ProposalWire,
 } from '@/lib/types';
+import { factoryHeading } from '@/lib/factory';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,7 +44,7 @@ export default async function SelfImprovementPage({ params }: { params: Promise<
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-slate-900">
-            {factory} <span className="text-slate-400">›</span> Self-improvement
+            {factoryHeading(overview?.alias, factory, 'Self-improvement')}
           </h1>
           <p className="text-sm text-slate-500">
             Observer agents read the scored corpus, propose file-scoped edits, probe them against the
@@ -98,10 +99,14 @@ export default async function SelfImprovementPage({ params }: { params: Promise<
               <>
                 <AuthoritySelector factory={factory} resolved={resolved} />
                 <div data-testid="improvement-canary-note" className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
-                  <p className="font-semibold">Canary rollout is live.</p>
+                  <p className="font-semibold">
+                    {resolved.authority === 'canary'
+                      ? 'Canary authority is enabled.'
+                      : 'Canary authority is not enabled.'}
+                  </p>
                   <p className="mt-1">
                     {resolved.authority === 'canary'
-                      ? `Configured: ${resolved.canaryPercent ?? 'unset'}% of new work, rollback above ${resolved.rollbackThreshold ?? 'unset'}, ${resolved.observationWindowHours}h window. Applying an accepted proposal publishes a candidate version and routes new work by a deterministic hash of the work-item id.`
+                      ? `Configured: ${resolved.canaryPercent ?? 'unset'}% of new work, rollback above ${resolved.rollbackThreshold ?? 'unset'}, ${resolved.observationWindowHours}h window. Applying an accepted proposal publishes a candidate version and routes new work by a deterministic hash of the work-item id. Whether a rollout is actually running is reported separately in the canary panel below.`
                       : 'A canary rollout requires authority "canary": the candidate version is published, a configured percentage of new work runs it, and the observation window promotes or rolls it back.'}
                   </p>
                 </div>

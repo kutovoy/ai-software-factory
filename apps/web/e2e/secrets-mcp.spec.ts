@@ -78,6 +78,8 @@ test.describe('secrets and MCPs', () => {
 
     await page.goto(`/mcps?factory=${FACTORY}`);
     await expect(page.getByTestId('mcp-registry')).toBeVisible();
+    // `factories/example` declares one server: the count must read `1 server`.
+    await expect(page.getByTestId('mcp-server-count')).toHaveText('1 server');
 
     const rows = page.getByTestId('mcp-server-row');
     if ((await rows.count()) === 0) {
@@ -125,4 +127,50 @@ test.describe('secrets and MCPs', () => {
     expect(body.agents.find((entry) => entry.agent === 'implement')?.servers).toEqual(['github']);
     expect(body.agents.find((entry) => entry.agent === 'review')?.deny).toEqual(['github*']);
   });
+});
+
+
+test('unregistered secret references name their factory', async ({ page, request }) => {
+  const response = await request.get('/api/secrets');
+  expect(response.ok()).toBeTruthy();
+  const body = (await response.json()) as {
+    unregistered: {
+      name: string;
+      references: { factory?: string; kind: string; resource: string; pointer: string }[];
+    }[];
+  };
+
+  // Every reference is attributable; two factories referencing the same name at the same
+  // pointer must not collapse into an indistinguishable row.
+  for (const entry of body.unregistered) {
+    for (const reference of entry.references) {
+      expect(reference.factory, `${entry.name} at ${reference.pointer}`).toBeTruthy();
+    }
+  }
+
+  const shared = body.unregistered.find((entry) => entry.name === 'OPENCODE_API_KEY');
+  if (shared) {
+    const factories = new Set(shared.references.map((reference) => reference.factory));
+    expect(factories).toContain('example');
+    expect(factories).toContain('example-lights-off');
+
+    await page.goto('/secrets');
+    const rows = page
+      .getByTestId('secrets-unregistered-reference')
+      .filter({ hasText: 'OPENCODE_API_KEY' });
+    await expect(rows).toHaveCount(shared.references.length);
+
+    // One row per reference, each naming its factory. The separator avoids matching
+    // `example` inside `example-lights-off`.
+    const perFactory = new Map<string, number>();
+    for (const reference of shared.references) {
+      const factory = reference.factory as string;
+      perFactory.set(factory, (perFactory.get(factory) ?? 0) + 1);
+    }
+    for (const [factory, count] of perFactory) {
+      await expect(
+        rows.filter({ hasText: new RegExp(`from ${factory} ·`) }),
+      ).toHaveCount(count);
+    }
+  }
 });

@@ -9,8 +9,10 @@ import {
   foremanAgentName,
   getAutonomyState,
   loadDefinition,
+  modelEnvName,
   recordAutomationFire,
   resolveAllGates,
+  resolveModelRef,
   resolveStageConfigs,
   setAutomationFireWorkItem,
   stageDeclarationsFromDefinition,
@@ -126,6 +128,30 @@ export async function fireAutomationActivity(
   const gates: Record<string, string> = {};
   for (const node of graph.nodes) gates[node.name] = configs[node.name].gate;
 
+  // Model references are configuration (ADR-028). A schedule fire is run creation: refuse
+  // an unresolved env reference instead of forwarding the literal `env:...` upstream. The
+  // fake harness needs no model, so it falls back to the fake model.
+  const defaultHarness =
+    args.harness ?? (definition.manifest.agentDefaults.harness?.type as never) ?? 'fake';
+  const declaredDefault =
+    args.model ??
+    definition.manifest.agentDefaults.harness?.model ??
+    definition.manifest.agentDefaults.model;
+  const resolvedDefault = declaredDefault ? resolveModelRef(declaredDefault) : null;
+  if (defaultHarness !== 'fake' && resolvedDefault?.value === null) {
+    return asFailure(
+      new Error(
+        `model reference "${resolvedDefault.ref}" is unresolved: environment variable "${
+          modelEnvName(resolvedDefault.ref) ?? resolvedDefault.ref
+        }" is not set`,
+      ),
+      'model_unresolved',
+      { factory: args.factory, ref: resolvedDefault.ref },
+    );
+  }
+  const defaultModel =
+    resolvedDefault?.value ?? (defaultHarness === 'fake' ? 'fake/fake-model' : undefined);
+
   const workItemId = derivedWorkItemId(`${args.scheduleId}@${args.fireAt}`);
   const workflowId = workItemWorkflowId(workItemId);
   const firstStage = graph.order[0] as LoopStageName;
@@ -212,10 +238,8 @@ export async function fireAutomationActivity(
     loopLimit: config.loopLimit,
     gateSlaMs: config.gateSlaMs,
     maxStagesPerRun: config.maxStagesPerRun,
-    defaultHarness: args.harness ?? (definition.manifest.agentDefaults.harness?.type as never) ?? 'fake',
-    ...(args.model ?? definition.manifest.agentDefaults.model
-      ? { defaultModel: (args.model ?? definition.manifest.agentDefaults.model) as string }
-      : {}),
+    defaultHarness,
+    ...(defaultModel ? { defaultModel } : {}),
     defaultRunner:
       args.runner ??
       ((definition.manifest.agentDefaults.runner as StageNodeSummary['runner']) ?? 'local-docker'),

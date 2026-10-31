@@ -47,7 +47,7 @@ export type ErrorCode = (typeof ERROR_CODES)[number];
  * Non-fatal validation findings (spec `secrets` › definition validation). A warning never
  * makes a definition invalid: a fresh checkout has no registry to compare against.
  */
-export const WARNING_CODES = ['secret_unregistered'] as const;
+export const WARNING_CODES = ['secret_unregistered', 'model_env_unresolved'] as const;
 export type WarningCode = (typeof WARNING_CODES)[number];
 
 export interface ValidationWarning {

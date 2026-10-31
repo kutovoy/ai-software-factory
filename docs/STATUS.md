@@ -12,6 +12,37 @@ database, events, logs, API responses or definitions.
 Next: **Phase 6b** (auth/users, multi-tenant/ops, a managed secret provider behind the same
 registry).
 
+### UI audit + model configuration (ADR-028/ADR-029, 2026-10-30)
+
+A 33-route UI audit found seven defects; all are fixed and asserted in Playwright. Gates copy
+now distinguishes "not required because human gates remain" from "a passing attestation
+matches", so it can no longer contradict the suite rows. Every factory page renders one
+heading source (`alias` → directory name), including Benchmarks and Self-improvement, and the
+lights-off demo has its own `name`/`alias` (`example-lights-off`, "Example — lights off").
+The Definition page wraps long config values (`break-all` + `min-w-0`) so the 1280px viewport
+no longer overflows (audit: 33 routes, zero overflow, zero console errors). MCP counts
+pluralise (`1 server`), Self-improvement says "Canary authority is enabled" and leaves
+active-rollout state to the canary panel, and `GET /secrets` attributes every reference to its
+factory so two factories referencing the same name render as separate rows.
+
+Models are now configuration (ADR-028): `model` accepts `env:[A-Z_][A-Z0-9_]*`; validation
+refuses a malformed name with `invalid_value`; resolved configs report `{ref, value, source}`;
+an unset variable is the non-fatal warning `model_env_unresolved`; run creation refuses it
+with `model_unresolved` instead of forwarding `env:...`. The example factories declare
+`env:FACTORY_MODEL` (foreman/spec/implement), `env:FACTORY_SMALL_MODEL` (triage/verify) and
+`env:FACTORY_REVIEW_MODEL` (review); `.env`/`.env.example` set them to the operator's model.
+`factory validate` prints every resolved model, and the chat composer's default comes from the
+API's resolved factory default.
+
+Dev-data hygiene (ADR-029): `scripts/smoke.sh` prints its target database, pauses the nightly
+schedule it syncs and deletes the throwaway secret it registers; `scripts/reset-dev.sh
+--yes` clears smoke/e2e/demo rows; integration suites default to `factory_test` (created by
+`scripts/postgres-init.sql`, supplied by a Bun test preload), so demo and test rows no longer
+mix.
+
+Verification: `bun run ci` green (460 unit/integration-off tests, 122 skipped opt-in), compose
+smoke green, 31 Playwright flows green, deep audit 33 routes / 0 overflow / 0 console errors.
+
 ### Phase 6a — secrets registry + MCP wiring (ADR-026/ADR-027, 2026-10-30)
 
 Schema (`packages/core`): `mcp.servers` on `factory.yaml` (name, `transport: stdio|http`,

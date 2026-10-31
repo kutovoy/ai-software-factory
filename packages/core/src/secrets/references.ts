@@ -11,6 +11,12 @@ import type { McpServerDef } from '../schema/mcp';
 
 export interface SecretReference {
   name: string;
+  /**
+   * Factory directory the reference comes from (path-is-identity). Filled in by callers
+   * that scan several definitions, so two factories referencing the same name are not
+   * shown as one indistinguishable row.
+   */
+  factory?: string;
   /** Where the reference lives: `factory`, `agent`, `agentDefaults` or `mcp`. */
   kind: 'factory' | 'agent' | 'agentDefaults' | 'mcp';
   /** Resource identity (`factory.yaml`, the agent name, or `mcp:<server>`). */

@@ -169,8 +169,12 @@ test.describe('Integrations, merge queue and automations', () => {
       'paused',
     );
 
-    // Re-sync from the definition (enabled) resumes it for later runs.
+    // Leave the dev stack quiet: a re-sync would reactivate the nightly cron from the
+    // definition, so pause it again for the next test/operator. Smoke re-syncs on demand.
     await request.post('/api/automations/sync', { data: { factory: FACTORY } });
+    await request.post(`/api/automations/${FACTORY}/nightly/pause`, {
+      data: { actor: 'e2e-cleanup', reason: 'e2e: leave the dev stack quiet' },
+    });
   });
 });
 

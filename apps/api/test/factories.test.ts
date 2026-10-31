@@ -41,6 +41,13 @@ describe('GET /factories', () => {
     expect(example.version.commit).toMatch(/^[0-9a-f]{40}$/);
     expect(example.version.shortCommit).toHaveLength(8);
     expect(example.version.contentHash).toMatch(/^[0-9a-f]{64}$/);
+
+    // The two demo factories must be distinguishable: distinct manifest name and alias.
+    const lightsOff = body.factories.find(
+      (factory: { name: string }) => factory.name === 'example-lights-off',
+    );
+    expect(lightsOff.alias).toBe('Example — lights off');
+    expect(lightsOff.manifestName).toBe('example-lights-off');
   });
 });
 

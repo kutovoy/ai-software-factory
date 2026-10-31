@@ -14,6 +14,7 @@ export function Sidebar({ factories }: { factories: FactoryListItem[] }) {
   const pathname = usePathname() ?? '/';
   const router = useRouter();
   const activeFactory = factoryFromPathname(pathname) ?? factories[0]?.name ?? 'example';
+  const activeFactoryEntry = factories.find((factory) => factory.name === activeFactory) ?? null;
 
   const isActive = (href: string): boolean =>
     pathname === href || (href !== '/chat' && pathname.startsWith(`${href}/`));
@@ -75,7 +76,7 @@ export function Sidebar({ factories }: { factories: FactoryListItem[] }) {
           </span>
         </div>
         <p data-testid="nav-factory-name" className="px-3 text-sm font-medium text-slate-800">
-          {activeFactory}
+          {activeFactoryEntry?.alias ?? activeFactory}
         </p>
         <ul className="mt-1 space-y-0.5">
           {FACTORY_NAV.map((item) => {

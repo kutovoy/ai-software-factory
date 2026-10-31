@@ -25,6 +25,7 @@ import {
   listBenchmarkTrials,
   loadDefinition,
   markBenchmarkRunning,
+  modelSchema,
   resolveAllGates,
   type BenchmarkAttestationRecord,
   type BenchmarkEventRecord,
@@ -78,7 +79,7 @@ export const benchmarkRunBodySchema = z
     /** Hard cap; remaining trials are skipped with `budget_exhausted`. */
     maxCostUsd: z.number().min(0).max(10_000).optional(),
     harness: z.enum(HARNESSES).optional(),
-    model: z.string().min(1).optional(),
+    model: modelSchema.optional(),
     runner: z.enum(RUNNERS).optional(),
   })
   .strict();
@@ -111,6 +112,8 @@ export interface BenchmarkGateStatus {
 
 export interface BenchmarkSuiteListResponse {
   factory: string;
+  /** Display alias from the manifest, falling back to the directory name in the UI. */
+  alias: string | null;
   definitionCommit: string;
   definitionDirty: boolean;
   suites: BenchmarkSuiteApiEntry[];
@@ -224,6 +227,7 @@ export async function getBenchmarkSuitesForApi(
 
   return {
     factory,
+    alias: definition.manifest.alias ?? null,
     definitionCommit: commit,
     definitionDirty: dirty,
     suites: entries,

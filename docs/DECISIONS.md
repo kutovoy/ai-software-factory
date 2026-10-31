@@ -572,3 +572,54 @@ only, and a contract test asserts a value set in the environment never appears i
 cannot reach a server by accident. Cost: globs are opencode-specific, so another harness only records
 the intent (best effort) until it grows an equivalent; and adding a server is a two-file edit
 (factory + agent) before it can be registered and tested.
+
+---
+
+## ADR-028 — Models are configuration references, resolved from the environment
+
+**Status:** accepted, implemented (2026-10-30, fix-ui-audit-and-model-config)
+**Context:** the example definitions hardcoded `openai/gpt-5`, a model that exists on one
+vendor's account and not on the operator's LiteLLM proxy (which serves `best_llm`). A model
+name is 12-factor configuration: baking it into a definition makes the definition portable
+in schema but not in practice, and every operator has to edit git before the first run.
+**Options:** hardcode the operator's model · add a per-provider model mapping file · allow an
+environment reference on the existing `model` field.
+**Decision:** `model` (and `harness.model`) accepts either a literal or `env:[A-Z_][A-Z0-9_]*`.
+An invalid `env:` name is `invalid_value` at validation time. Resolution happens at load/run
+time: the resolved config reports `{ref, value, source: literal|env}`, an unset variable is a
+non-fatal warning (`model_env_unresolved`) so a fresh checkout still validates, and run
+creation refuses an unresolved model with `model_unresolved` rather than sending the literal
+`env:...` string upstream. The fake harness needs no model and falls back to
+`fake/fake-model`. Example factories use `env:FACTORY_MODEL` (foreman/spec/implement),
+`env:FACTORY_SMALL_MODEL` (triage/verify) and `env:FACTORY_REVIEW_MODEL` (review); `.env`
+supplies the operator's values. The chat composer's default comes from the API's resolved
+factory default, never a literal.
+**Consequences:** the same definition runs against OpenAI, LiteLLM, or a local proxy by
+changing environment, and the console shows the resolved value rather than the reference.
+Cost: a run can fail late if the worker's environment differs from the API's (the refusal
+names the variable), and benchmark suite configuration pins remain literals because a
+benchmark compares named models.
+
+---
+
+## ADR-029 — Integration tests use a separate database
+
+**Status:** accepted, implemented (2026-10-30, fix-ui-audit-and-model-config)
+**Context:** the integration suites and the compose smoke/e2e flows shared the `factory`
+database. Smoke/e2e rows, nightly schedule syncs and demo proposals accumulated in the same
+tables the tests queried, so a test could observe another flow's residue and a failed run
+could leave parked work items behind.
+**Options:** truncate tables before every suite · give tests their own schema · give tests
+their own database.
+**Decision:** integration suites default to `factory_test`, created by
+`scripts/postgres-init.sql` when the compose Postgres volume is first initialised (an
+existing volume needs `create database factory_test owner factory` once). A Bun test preload
+(`scripts/test-preload.ts`) supplies that default when `DATABASE_URL` is absent, so
+`RUN_INTEGRATION=1` alone is enough; an explicit URL still wins. `scripts/smoke.sh` prints the
+database it targets and, on exit, pauses the nightly schedule it synced and deletes the
+throwaway secret it registered. `scripts/reset-dev.sh` removes smoke/e2e/demo rows from the
+demo database and refuses without `--yes`.
+**Consequences:** a test run cannot corrupt demo data, and a failed smoke leaves no nightly
+schedule firing work items. Cost: a fresh dev volume needs the init SQL (or one manual
+`create database`) before integration tests run, and reset-dev is a destructive command that
+must stay explicit.

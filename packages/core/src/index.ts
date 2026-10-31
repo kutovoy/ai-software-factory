@@ -1,4 +1,5 @@
 export * from './errors';
+export * from './model/ref';
 export * from './schema/common';
 export * from './schema/mcp';
 export * from './schema/factory';

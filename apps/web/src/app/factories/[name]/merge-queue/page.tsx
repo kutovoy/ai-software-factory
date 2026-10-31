@@ -11,6 +11,7 @@ import type {
   MergeBatchWire,
   MergeQueueResponseWire,
 } from '@/lib/types';
+import { factoryHeading } from '@/lib/factory';
 
 export const dynamic = 'force-dynamic';
 
@@ -79,7 +80,7 @@ export default async function MergeQueuePage({ params }: { params: Promise<{ nam
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-slate-900">
-            {detail?.factory.alias ?? factory} <span className="text-slate-400">›</span> Merge queue
+            {factoryHeading(detail?.factory.alias, factory, 'Merge queue')}
           </h1>
           <p className="text-sm text-slate-500">
             Agents open pull requests; the queue owns merges. Batches are serialized, the merged stack is

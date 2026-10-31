@@ -1,7 +1,7 @@
 ---
 description: Routes work items across the factory and keeps humans in the loop.
 harness:
-  model: openai/gpt-5
+  model: env:FACTORY_MODEL
   type: opencode
 role: foreman
 runner: local-docker

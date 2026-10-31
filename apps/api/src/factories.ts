@@ -9,6 +9,7 @@ import {
   loadDefinition,
   renderDiffText,
   resolveAllGates,
+  resolveModelRef,
   type DefinitionDiff,
   type FactoryDefinition,
   type FactoryManifest,
@@ -25,8 +26,8 @@ import { ApiError, definitionInvalid, factoryNotFound, invalidRequest } from './
  * "Factory pages are read-only projections"). Nothing here writes to a definition.
  *
  * Path-is-identity: the factory key is the directory name under `FACTORY_ROOT`, so
- * `factories/example-lights-off` is addressed as `example-lights-off` even though its
- * manifest declares `name: example`.
+ * `factories/example-lights-off` is addressed as `example-lights-off`; its manifest name
+ * matches the directory, and its alias is the display label.
  */
 
 const FACTORY_NAME_RE = /^[a-z0-9][a-z0-9._-]*$/;
@@ -64,6 +65,11 @@ export interface FactoryDetail {
   gates: GateResolution;
   fullyAutonomous: boolean;
   benchmarkGateRequired: boolean;
+  /**
+   * The factory's default model, resolved from `env:` if needed (ADR-028). `null` when
+   * the default is an unset reference; clients must not render the literal `env:...`.
+   */
+  defaultModel: string | null;
 }
 
 export interface ResourceSummary {
@@ -214,6 +220,8 @@ export function getFactory(config: ApiConfig, factory: string): FactoryDetail {
   const dir = resolveFactoryDir(config, factory);
   const definition = loadOrThrow(dir, factory);
   const gates = resolveAllGates(definition.manifest);
+  const declaredDefault =
+    definition.manifest.agentDefaults.harness?.model ?? definition.manifest.agentDefaults.model;
 
   return {
     name: factory,
@@ -227,6 +235,7 @@ export function getFactory(config: ApiConfig, factory: string): FactoryDetail {
     gates,
     fullyAutonomous: gates.fullyAutonomous,
     benchmarkGateRequired: gates.benchmarkGateRequired,
+    defaultModel: declaredDefault ? (resolveModelRef(declaredDefault).value ?? null) : null,
   };
 }
 

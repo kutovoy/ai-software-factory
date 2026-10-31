@@ -68,6 +68,18 @@ export const invalidRequest = (message: string, details?: unknown): ApiError =>
 export const unauthorized = (message: string, details?: unknown): ApiError =>
   new ApiError('unauthorized', 401, message, details);
 
+/**
+ * A definition declares `model: env:NAME` but the variable is unset (ADR-028). Starting
+ * the run would send the literal `env:...` string upstream, so it is refused instead.
+ */
+export const modelUnresolved = (ref: string, envName: string): ApiError =>
+  new ApiError(
+    'model_unresolved',
+    422,
+    `model reference "${ref}" is unresolved: environment variable "${envName}" is not set`,
+    { ref, env: envName },
+  );
+
 export const modelNotAllowed = (model: string, allowed: string[]): ApiError =>
   new ApiError('model_not_allowed', 403, `model "${model}" is not allowed for this run`, {
     model,

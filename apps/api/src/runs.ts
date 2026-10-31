@@ -5,6 +5,8 @@ import {
   DefinitionValidationError,
   createVersion,
   loadDefinition,
+  modelEnvName,
+  resolveModelRef,
   type FactoryDefinition,
   type FactoryManifest,
   type RunnerDef,
@@ -29,6 +31,7 @@ import {
   definitionInvalid,
   factoryNotFound,
   invalidRequest,
+  modelUnresolved,
   runNotFound,
 } from './errors';
 import { log } from './logger';
@@ -116,21 +119,30 @@ export interface RunDefaults {
 export function resolveRunDefaults(
   manifest: FactoryManifest,
   body: RunDefaultsBody,
+  env: NodeJS.ProcessEnv = process.env,
 ): RunDefaults {
   const harness = body.harness ?? manifest.agentDefaults.harness?.type ?? 'opencode';
-  const model =
+  const declared =
     body.model ??
     manifest.agentDefaults.harness?.model ??
     manifest.agentDefaults.model ??
     (harness === 'fake' ? 'fake/fake-model' : undefined);
 
-  if (harness !== 'fake' && !model) {
+  if (!declared) {
     throw invalidRequest(
       'this factory declares no model and no harness model; pass `model` explicitly',
       { factory: manifest.name },
     );
   }
 
+  // `env:NAME` is resolved here (ADR-028). The literal reference is never passed upstream:
+  // an unresolved model is a refusal, except on the fake harness, which needs no model.
+  const resolved = resolveModelRef(declared, env);
+  if (resolved.value === null && harness !== 'fake') {
+    throw modelUnresolved(resolved.ref, modelEnvName(resolved.ref) ?? resolved.ref);
+  }
+
+  const model = resolved.value ?? 'fake/fake-model';
   const runner = harness === 'fake' ? 'fake' : (body.runner ?? mapRunnerName(manifest.agentDefaults.runner));
 
   return { harness, model, runner };

@@ -45,9 +45,24 @@ cleanup() {
   if [ -n "$SSE_PID" ] && kill -0 "$SSE_PID" 2>/dev/null; then
     kill "$SSE_PID" 2>/dev/null || true
   fi
+  # Dev-data hygiene (also re-run on failure): pause the cron schedule this smoke syncs
+  # and delete the throwaway secret it registers, so the dev stack is not polluted
+  # nightly. GITHUB_TOKEN stays: the definition references it, and the registry refuses
+  # to delete an in-use name by design.
+  if [ -n "${API_URL:-}" ]; then
+    curl -sS -X POST "$API_URL/factories/example/automations/nightly/pause" \
+      -H 'content-type: application/json' \
+      -d '{"actor":"smoke","reason":"smoke: pause the synced nightly schedule"}' \
+      >/dev/null 2>&1 || true
+    curl -sS -X DELETE "$API_URL/secrets/SMOKE_UNRESOLVED_TOKEN" \
+      >/dev/null 2>&1 || true
+  fi
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
+
+log "database: $DATABASE_URL"
+log "targets: api=$API_URL web=$WEB_URL runs=$RUNS_DIR"
 
 # Reads JSON from stdin and prints a dotted path ("" when missing).
 jget() {
@@ -122,9 +137,23 @@ pass "proxy token minted for run"
 proxy_body="{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}]}"
 proxy_resp="$(api -X POST "$API_URL/v1/chat/completions" \
   -H "authorization: Bearer $token" -H 'content-type: application/json' -d "$proxy_body")"
-printf '%s' "$proxy_resp" | grep -q 'stub model response' \
-  || fail "proxy stub call failed: $proxy_resp"
-pass "proxy forwards a stub model call"
+# The stub upstream returns a canned reply; a real configured upstream returns its own.
+# Assert a well-formed, non-empty completion instead of a specific vendor string, so the
+# smoke is green both credential-free (stub) and against a real LiteLLM.
+printf '%s' "$proxy_resp" | EXPECTED_MODEL="$model" bun -e '
+  const raw = await Bun.stdin.text();
+  const body = JSON.parse(raw || "{}");
+  const content = body?.choices?.[0]?.message?.content;
+  if (typeof content !== "string" || content.length === 0) {
+    console.error("proxy response has no assistant content");
+    process.exit(1);
+  }
+  if (body?.model !== process.env.EXPECTED_MODEL) {
+    console.error(`proxy model ${body?.model} != ${process.env.EXPECTED_MODEL}`);
+    process.exit(1);
+  }
+' || fail "proxy model call failed: $proxy_resp"
+pass "proxy forwards a model call (model=$model)"
 
 stream_resp="$(api -N -X POST "$API_URL/v1/chat/completions" \
   -H "authorization: Bearer $token" -H 'content-type: application/json' \
@@ -1039,6 +1068,20 @@ inline_out="$(bun packages/cli/src/index.ts validate "$inline_dir" 2>&1)" && \
 printf '%s' "$inline_out" | grep -q 'secret_inline_rejected' \
   || fail "inline credential literal was not reported as secret_inline_rejected: $inline_out"
 pass "an inline credential literal in an MCP declaration fails with secret_inline_rejected"
+
+# ------------------------------- 19. dev-data hygiene (leave no nightly residue)
+log "pausing the synced nightly schedule and deleting the throwaway secret"
+pause_resp="$(api -X POST "$API_URL/factories/example/automations/nightly/pause" \
+  -H 'content-type: application/json' \
+  -d '{"actor":"smoke","reason":"smoke: pause the synced nightly schedule"}')"
+[ "$(printf '%s' "$pause_resp" | jget status)" = "paused" ] \
+  || fail "the nightly schedule was not paused: $pause_resp"
+pass "nightly schedule paused (it will not create work items overnight)"
+
+delete_hygiene="$(api -X DELETE "$API_URL/secrets/SMOKE_UNRESOLVED_TOKEN")"
+[ "$(printf '%s' "$delete_hygiene" | jget deleted)" = "true" ] \
+  || fail "the throwaway secret was not deleted: $delete_hygiene"
+pass "throwaway secret SMOKE_UNRESOLVED_TOKEN deleted (GITHUB_TOKEN stays: definitions reference it)"
 
 log "SMOKE PASSED"
 

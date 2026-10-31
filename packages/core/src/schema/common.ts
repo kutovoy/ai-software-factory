@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isEnvModelRef, modelEnvName } from '../model/ref';
 
 export const SCHEMA_VERSION = 'v1alpha1';
 export const SUPPORTED_SCHEMA_VERSIONS = [SCHEMA_VERSION] as const;
@@ -117,16 +118,28 @@ export const harnessAuthSchema = z
     }
   });
 
+/**
+ * A model is a literal string or an environment reference (`env:NAME`, ADR-028).
+ * `env:` with no valid POSIX variable name is an `invalid_value`, not a literal.
+ */
+export const modelSchema = z.string().min(1).superRefine((value, ctx) => {
+  if (!isEnvModelRef(value)) return;
+  if (modelEnvName(value) !== null) return;
+  addIssue(
+    ctx,
+    'invalid_value',
+    'model env reference must be "env:" followed by [A-Z_][A-Z0-9_]*',
+  );
+});
+
 export const harnessSchema = z
   .object({
     type: z.enum(HARNESS_TYPES),
-    model: z.string().min(1),
+    model: modelSchema,
     reasoningLevel: z.enum(['low', 'medium', 'high']).optional(),
     auth: harnessAuthSchema.optional(),
   })
   .strict();
-
-export const modelSchema = z.string().min(1);
 
 function refineInference(
   value: { model?: string; harness?: unknown },

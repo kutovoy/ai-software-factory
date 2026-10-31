@@ -9,6 +9,7 @@ import type {
   BenchmarkRunDetailResponse,
   BenchmarkSuiteListResponse,
 } from '@/lib/types';
+import { factoryHeading } from '@/lib/factory';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,7 +52,7 @@ export default async function BenchmarksPage({ params }: { params: Promise<{ nam
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-slate-900">
-            {factory} <span className="text-slate-400">›</span> Benchmarks
+            {factoryHeading(response?.alias, factory, 'Benchmarks')}
           </h1>
           <p className="text-sm text-slate-500">
             Task sets pinned to full repo SHAs and a definition commit, replayed hermetically on the

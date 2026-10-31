@@ -116,4 +116,21 @@ test('deep audit every page', async ({ page }) => {
   // eslint-disable-next-line no-console
   console.log(`DEEP AUDIT: ${report.length} routes, ${problems.length} with problems`);
   expect(report.length).toBeGreaterThan(0);
+  // The audit is only useful if it fails: no overflow, console errors or bad responses.
+  // `pageErrors` stay in the JSON report: React's minified hydration warning (#418) can
+  // appear once on a time-formatted page and is not a rendered defect.
+  const hardProblems = report.filter(
+    (row) =>
+      (row.suspicious as string[]).length > 0 ||
+      (row.consoleErrors as string[]).length > 0 ||
+      (row.badResponses as string[]).length > 0,
+  );
+  expect(
+    hardProblems.map((row) => ({
+      route: row.route,
+      suspicious: row.suspicious,
+      consoleErrors: row.consoleErrors,
+      badResponses: row.badResponses,
+    })),
+  ).toEqual([]);
 });

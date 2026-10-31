@@ -87,9 +87,13 @@ test('every nav item renders and stubs name their phase', async ({ page }) => {
   );
   const other = options.find((value) => value !== 'example');
   if (other) {
+    const optionLabel = (await switcher.locator(`option[value="${other}"]`).textContent())?.trim() ?? '';
+    // The switcher shows `alias (name)`; the sidebar label is the alias, falling back to
+    // the directory name — never the manifest name, which is not path-is-identity.
+    const expectedLabel = optionLabel.replace(/\s*\([^)]*\)$/, '') || other;
     await switcher.selectOption(other);
     await expect(page).toHaveURL(new RegExp(`/factories/${other}/dashboard`));
-    await expect(page.getByTestId('nav-factory-name')).toHaveText(other);
+    await expect(page.getByTestId('nav-factory-name')).toHaveText(expectedLabel);
     await expect(page.getByTestId('dashboard-empty').or(page.getByTestId('dashboard-counts'))).toBeVisible();
   }
 
@@ -107,4 +111,44 @@ test('nav is operable with the keyboard only', async ({ page }) => {
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(/\/runs$/);
   await expect(page.getByTestId('runs-filters')).toBeVisible();
+});
+
+
+/**
+ * One heading source (alias → directory name) and no horizontal overflow at 1280px.
+ * Every factory page must agree with the switcher; the two demo factories must be
+ * distinguishable.
+ */
+test('factory pages share the heading prefix and fit 1280px', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+
+  const pages = [
+    '/dashboard',
+    '/agents',
+    '/automations',
+    '/benchmarks',
+    '/definition',
+    '/gates',
+    '/merge-queue',
+    '/scorers',
+    '/self-improvement',
+    '/settings',
+  ];
+
+  for (const factory of ['example', 'example-lights-off']) {
+    const expected = factory === 'example' ? 'Example' : 'Example — lights off';
+    for (const segment of pages) {
+      await page.goto(`/factories/${factory}${segment}`);
+      const h1 = page.locator('h1').first();
+      await expect(h1, `${factory}${segment} heading`).toContainText(expected);
+      await expect(h1).toContainText('›');
+
+      const overflow = await page.evaluate(() => {
+        const width = document.documentElement.scrollWidth;
+        const viewport = document.documentElement.clientWidth;
+        return width > viewport + 1 ? width - viewport : 0;
+      });
+      expect(overflow, `${factory}${segment} overflows by ${overflow}px`).toBe(0);
+    }
+  }
 });

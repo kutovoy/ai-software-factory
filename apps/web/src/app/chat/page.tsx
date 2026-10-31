@@ -20,7 +20,9 @@ export default async function ChatPage({
 
   const manifest = detail?.factory.manifest;
   const defaultHarness = manifest?.agentDefaults.harness?.type ?? 'opencode';
-  const defaultModel = manifest?.agentDefaults.harness?.model ?? manifest?.agentDefaults.model ?? '';
+  // The API resolves `env:` model references (ADR-028); the composer must never show the
+  // literal `env:FACTORY_MODEL` — an unresolved default stays empty for an explicit choice.
+  const defaultModel = detail?.factory.defaultModel ?? '';
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 px-6 py-6">

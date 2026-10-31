@@ -11,6 +11,7 @@ import type {
   RunSummary,
   StageCostWire,
 } from '@/lib/types';
+import { factoryHeading } from '@/lib/factory';
 
 export const dynamic = 'force-dynamic';
 
@@ -136,7 +137,7 @@ export default async function DashboardPage({
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-slate-900">
-            {factory?.alias ?? factoryName} <span className="text-slate-400">›</span> Dashboard
+            {factoryHeading(factory?.alias, factoryName, 'Dashboard')}
           </h1>
           <p className="text-sm text-slate-500">
             Read-only projection of <span className="font-mono">factories/{factoryName}</span>.

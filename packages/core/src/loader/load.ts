@@ -27,6 +27,7 @@ import { scorerFrontmatterSchema } from '../schema/scorer';
 import { skillFrontmatterSchema } from '../schema/skill';
 import { StageGraphError, compileStageGraph, isLoopStage, stageDeclarationsFromDefinition } from '../stage-graph/graph';
 import type { AgentDef } from '../schema/agent';
+import { collectModelRefSites, modelEnvName, resolveModelRef } from '../model/ref';
 import { collectSecretReferences, declaredMcpServers } from '../secrets/references';
 import { normalizeBody, splitFrontmatter } from './frontmatter';
 import { ALLOWED_LOCATIONS, classify, walk, type ResourceKind } from './walk';
@@ -62,6 +63,11 @@ export interface LoadResult {
 export interface LoadOptions {
   /** Names currently registered. When omitted, no `secret_unregistered` warning is made. */
   registeredSecrets?: Iterable<string>;
+  /**
+   * Environment used to resolve `env:` model references (ADR-028). Defaults to
+   * `process.env`; tests pass an explicit map so they never depend on the host.
+   */
+  env?: NodeJS.ProcessEnv;
 }
 
 const SCHEMAS: Record<Exclude<ResourceKind, 'factory'>, z.ZodTypeAny> = {
@@ -238,6 +244,28 @@ export function loadDefinition(root: string, options: LoadOptions = {}): LoadRes
   }
 
   if (manifest) crossValidate(manifest, resources, push);
+
+  if (manifest) {
+    // `env:` model references are configuration (ADR-028): an unset name is a warning,
+    // never a validation error, so a fresh checkout still loads. Run creation refuses
+    // the unresolved model instead of sending the literal `env:...` upstream.
+    const env = options.env ?? process.env;
+    const documents = [
+      { file: 'factory.yaml', doc: manifest },
+      ...resources.map((resource) => ({ file: resource.path, doc: resource.doc })),
+    ];
+    for (const site of collectModelRefSites(documents)) {
+      const resolved = resolveModelRef(site.ref, env);
+      if (resolved.source !== 'env' || resolved.value !== null) continue;
+      const name = modelEnvName(site.ref) ?? site.ref;
+      warn(
+        'model_env_unresolved',
+        site.file,
+        site.pointer,
+        `model reference "${site.ref}" is unresolved: environment variable "${name}" is not set; a run cannot start until it is`,
+      );
+    }
+  }
 
   if (manifest && options.registeredSecrets) {
     const registered = new Set(options.registeredSecrets);

@@ -19,6 +19,7 @@ import {
   listWorkItemEvents,
   listWorkItems,
   loadDefinition,
+  modelSchema,
   newWorkItemId,
   recordGateDecision,
   requestWorkItemCancel,
@@ -90,7 +91,7 @@ export const createWorkItemBodySchema = z
     /** Seed prompt for stage runs; defaults to the title. */
     prompt: z.string().max(8000).optional(),
     harness: z.enum(['opencode', 'claude-code', 'codex', 'gemini', 'generic-cli', 'fake']).optional(),
-    model: z.string().min(1).optional(),
+    model: modelSchema.optional(),
     runner: z.enum(['local-docker', 'local-process', 'fake']).optional(),
     /**
      * ADR-022: hand the pull request to the merge queue instead of merging it in `ship`.

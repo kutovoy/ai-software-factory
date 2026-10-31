@@ -2,27 +2,27 @@
   "files": [
     {
       "path": "agents/foreman/agent.md",
-      "content": "---\ndescription: Routes work items across the factory and keeps humans in the loop.\nharness:\n  model: openai/gpt-5\n  type: opencode\nrole: foreman\nrunner: local-docker\nspawnableBy: []\ntools:\n  allow:\n    - read\n    - grep\n    - run_agents\n---\n\n# Foreman\n\nYou are the foreman of this factory. Read the incoming work item, decide which\nstages it needs, and dispatch the right agents. You never write code yourself.\n\nAsk a human before you widen scope. When a stage gate resolves to `human`, stop\nand wait for the approval instead of guessing.\n"
+      "content": "---\ndescription: Routes work items across the factory and keeps humans in the loop.\nharness:\n  model: env:FACTORY_MODEL\n  type: opencode\nrole: foreman\nrunner: local-docker\nspawnableBy: []\ntools:\n  allow:\n    - read\n    - grep\n    - run_agents\n---\n\n# Foreman\n\nYou are the foreman of this factory. Read the incoming work item, decide which\nstages it needs, and dispatch the right agents. You never write code yourself.\n\nAsk a human before you widen scope. When a stage gate resolves to `human`, stop\nand wait for the approval instead of guessing.\n"
     },
     {
       "path": "agents/implement/agent.md",
-      "content": "---\ndescription: Implements a scoped issue on the opencode harness and opens a pull request.\nharness:\n  auth:\n    secretName: OPENCODE_API_KEY\n    source: managedSecret\n  model: openai/gpt-5\n  type: opencode\nmcp:\n  - github\nrole: implement\nrunner: local-docker\nspawnableBy:\n  - foreman\ntools:\n  allow:\n    - read\n    - grep\n    - edit\n    - bash\n  deny:\n    - git_push_force\n---\n\n# Implementation\n\nMake the change the approved spec describes, prove it works with the repository's\nown tests, and deliver it as a pull request. Never merge and never approve.\n"
+      "content": "---\ndescription: Implements a scoped issue on the opencode harness and opens a pull request.\nharness:\n  auth:\n    secretName: OPENCODE_API_KEY\n    source: managedSecret\n  model: env:FACTORY_MODEL\n  type: opencode\nmcp:\n  - github\nrole: implement\nrunner: local-docker\nspawnableBy:\n  - foreman\ntools:\n  allow:\n    - read\n    - grep\n    - edit\n    - bash\n  deny:\n    - git_push_force\n---\n\n# Implementation\n\nMake the change the approved spec describes, prove it works with the repository's\nown tests, and deliver it as a pull request. Never merge and never approve.\n"
     },
     {
       "path": "agents/review/agent.md",
-      "content": "---\ndescription: Reviews the pull request against the spec and posts findings.\nharness:\n  model: anthropic/claude-sonnet-4-5\n  type: opencode\nrole: review\nrunner: local-docker\nspawnableBy:\n  - foreman\n---\n\n# Review\n\nReview the diff against the approved spec, not against the PR description. Report\nscope creep, missing tests and risky changes. Your verdict is advisory: post it as\na plain review comment and let the review gate decide.\n"
+      "content": "---\ndescription: Reviews the pull request against the spec and posts findings.\nharness:\n  model: env:FACTORY_REVIEW_MODEL\n  type: opencode\nrole: review\nrunner: local-docker\nspawnableBy:\n  - foreman\n---\n\n# Review\n\nReview the diff against the approved spec, not against the PR description. Report\nscope creep, missing tests and risky changes. Your verdict is advisory: post it as\na plain review comment and let the review gate decide.\n"
     },
     {
       "path": "agents/spec/agent.md",
-      "content": "---\ndescription: Turns a triaged work item into a reviewable specification.\nharness:\n  model: openai/gpt-5\n  type: opencode\nrole: spec\nrunner: local-docker\nspawnableBy:\n  - foreman\n---\n\n# Spec\n\nWrite the smallest specification that makes the work item testable: scope,\nnon-goals, acceptance criteria and the files you expect to touch. Post it on the\nissue and wait for the spec gate.\n"
+      "content": "---\ndescription: Turns a triaged work item into a reviewable specification.\nharness:\n  model: env:FACTORY_MODEL\n  type: opencode\nrole: spec\nrunner: local-docker\nspawnableBy:\n  - foreman\n---\n\n# Spec\n\nWrite the smallest specification that makes the work item testable: scope,\nnon-goals, acceptance criteria and the files you expect to touch. Post it on the\nissue and wait for the spec gate.\n"
     },
     {
       "path": "agents/triage/agent.md",
-      "content": "---\ndescription: Classifies incoming issues and decides whether the factory can take them.\nharness:\n  model: openai/gpt-5-mini\n  type: opencode\nrole: triage\nrunner: local-docker\nspawnableBy:\n  - foreman\n---\n\n# Triage\n\nRestate the issue in one paragraph, name the affected repository paths, and mark\nit `factory-ready` or `needs-human`. Do not implement anything in this stage.\n"
+      "content": "---\ndescription: Classifies incoming issues and decides whether the factory can take them.\nharness:\n  model: env:FACTORY_SMALL_MODEL\n  type: opencode\nrole: triage\nrunner: local-docker\nspawnableBy:\n  - foreman\n---\n\n# Triage\n\nRestate the issue in one paragraph, name the affected repository paths, and mark\nit `factory-ready` or `needs-human`. Do not implement anything in this stage.\n"
     },
     {
       "path": "agents/verify/agent.md",
-      "content": "---\ndescription: Verifies the change with deterministic checks before merge.\nharness:\n  model: openai/gpt-5-mini\n  type: opencode\nrole: verify\nrunner: local-docker\nspawnableBy:\n  - foreman\ntools:\n  allow:\n    - read\n    - bash\n---\n\n# Verify\n\nRun the deterministic checks first: tests, lint, build, typecheck. Only then judge\nthe softer criteria. Report a single go/no-go verdict with the exact commands and\ntheir output.\n"
+      "content": "---\ndescription: Verifies the change with deterministic checks before merge.\nharness:\n  model: env:FACTORY_SMALL_MODEL\n  type: opencode\nrole: verify\nrunner: local-docker\nspawnableBy:\n  - foreman\ntools:\n  allow:\n    - read\n    - bash\n---\n\n# Verify\n\nRun the deterministic checks first: tests, lint, build, typecheck. Only then judge\nthe softer criteria. Report a single go/no-go verdict with the exact commands and\ntheir output.\n"
     },
     {
       "path": "automations/intake/automation.md",
@@ -46,11 +46,11 @@
     },
     {
       "path": "factory.yaml",
-      "content": "agentDefaults:\n  harness:\n    model: openai/gpt-5\n    type: opencode\n  runner: local-docker\nalias: Example\ndescription: \"Reference factory exercising every resource type: a foreman routes work items through triage, spec, implement, review and verify agents.\"\ngates:\n  deploy: agent\n  implement: agent\n  plan: human\n  pr_review: human\n  review: agent\n  spec: human\nimprovement:\n  authority: propose_only\n  maxProbes: 3\n  observationWindowHours: 24\nintegrations:\n  - github\nmcp:\n  servers:\n    - args:\n        - --stdio\n      command: github-mcp\n      env:\n        GITHUB_TOKEN: GITHUB_TOKEN\n      name: github\n      transport: stdio\nmergePolicy: human\nname: example\nrepositories:\n  - name: api-service\n    owner: acme\nschemaVersion: v1alpha1\nsecrets:\n  - OPENCODE_API_KEY\nselfImprovement:\n  enabled: true\n  failedRunThreshold: 3\n  requireBenchmarkWin: true\n  reviewerType: humans\n"
+      "content": "agentDefaults:\n  harness:\n    model: env:FACTORY_MODEL\n    type: opencode\n  runner: local-docker\nalias: Example\ndescription: \"Reference factory exercising every resource type: a foreman routes work items through triage, spec, implement, review and verify agents.\"\ngates:\n  deploy: agent\n  implement: agent\n  plan: human\n  pr_review: human\n  review: agent\n  spec: human\nimprovement:\n  authority: propose_only\n  maxProbes: 3\n  observationWindowHours: 24\nintegrations:\n  - github\nmcp:\n  servers:\n    - args:\n        - --stdio\n      command: github-mcp\n      env:\n        GITHUB_TOKEN: GITHUB_TOKEN\n      name: github\n      transport: stdio\nmergePolicy: human\nname: example\nrepositories:\n  - name: api-service\n    owner: acme\nschemaVersion: v1alpha1\nsecrets:\n  - OPENCODE_API_KEY\nselfImprovement:\n  enabled: true\n  failedRunThreshold: 3\n  requireBenchmarkWin: true\n  reviewerType: humans\n"
     },
     {
       "path": "routing.yaml",
-      "content": "default:\n  harness:\n    model: openai/gpt-5\n    type: opencode\nstages:\n  implement:\n    harness:\n      model: openai/gpt-5\n      type: opencode\n  plan:\n    harness:\n      model: openai/gpt-5\n      type: opencode\n  review:\n    harness:\n      model: anthropic/claude-sonnet-4-5\n      type: opencode\n  spec:\n    harness:\n      model: openai/gpt-5\n      type: opencode\n"
+      "content": "default:\n  harness:\n    model: env:FACTORY_MODEL\n    type: opencode\nstages:\n  implement:\n    harness:\n      model: env:FACTORY_MODEL\n      type: opencode\n  plan:\n    harness:\n      model: env:FACTORY_MODEL\n      type: opencode\n  review:\n    harness:\n      model: env:FACTORY_REVIEW_MODEL\n      type: opencode\n  spec:\n    harness:\n      model: env:FACTORY_MODEL\n      type: opencode\n"
     },
     {
       "path": "runners/local-docker.yaml",

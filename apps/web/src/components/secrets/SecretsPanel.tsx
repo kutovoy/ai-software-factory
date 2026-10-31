@@ -137,14 +137,18 @@ export function SecretsPanel({
       const body = (await response.json().catch(() => ({}))) as {
         message?: string;
         code?: string;
-        details?: { references?: { kind: string; resource: string; pointer: string }[] };
+        details?: {
+          references?: { factory?: string; kind: string; resource: string; pointer: string }[];
+        };
       };
       if (!response.ok) {
         const references = body.details?.references ?? [];
         const detail =
           body.code === 'secret_in_use' && references.length > 0
             ? ` (referenced by ${references
-                .map((reference) => `${reference.kind}:${reference.resource}`)
+                .map((reference) =>
+                  `${reference.factory ? `${reference.factory} › ` : ''}${reference.kind}:${reference.resource}`,
+                )
                 .join(', ')})`
             : '';
         throw new Error(
@@ -275,14 +279,21 @@ export function SecretsPanel({
             Registering a name only records the metadata — it does not create the value.
           </p>
           <ul className="mt-1 space-y-0.5">
-            {unregistered.map((entry) => (
-              <li key={entry.name}>
-                <span className="font-mono">{entry.name}</span>{' '}
-                <span className="text-amber-700">
-                  ({entry.references.map((reference) => reference.resource).join(', ')})
-                </span>
-              </li>
-            ))}
+            {unregistered.flatMap((entry) =>
+              entry.references.map((reference, index) => (
+                <li
+                  key={`${entry.name}:${reference.factory ?? ''}:${reference.resource}:${reference.pointer}:${index}`}
+                  data-testid="secrets-unregistered-reference"
+                  data-factory={reference.factory ?? ''}
+                >
+                  <span className="font-mono">{entry.name}</span>{' '}
+                  <span className="text-amber-700">
+                    {reference.factory ? `from ${reference.factory}` : 'factory'} ·{' '}
+                    {reference.kind}:{reference.resource} · {reference.pointer}
+                  </span>
+                </li>
+              )),
+            )}
           </ul>
         </div>
       ) : null}

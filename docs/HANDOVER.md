@@ -26,11 +26,16 @@ cd apps/web && bunx playwright test   # 23 E2E flows
 bun run ci                        # typecheck + unit/integration-off + factory validation
 ```
 
-Integration suites (need compose up):
+Integration suites (need compose up) default to the separate `factory_test` database
+(created by `scripts/postgres-init.sql`; on an existing volume run
+`create database factory_test owner factory` once):
 ```bash
-DATABASE_URL=postgres://factory:factory@localhost:5433/factory \
 TEMPORAL_ADDRESS=localhost:7233 RUN_INTEGRATION=1 bun test <file>
+# DATABASE_URL=postgres://... overrides the factory_test default.
 ```
+`scripts/smoke.sh` prints its target database, pauses the nightly schedule it syncs and
+deletes the throwaway secret it registers. `bash scripts/reset-dev.sh --yes` clears
+smoke/e2e/demo rows explicitly.
 
 ## Point it at your own model
 
@@ -39,7 +44,14 @@ The sandbox never sees provider credentials (ADR-011). Set in `.env`:
 ```
 OPENAI_BASE_URL=http://host.docker.internal:4000/v1   # your LiteLLM
 OPENAI_API_KEY=sk-...                                 # provider key, stays in api/worker
+FACTORY_MODEL=best_llm                                # foreman/spec/implement
+FACTORY_SMALL_MODEL=best_llm                          # triage/verify
+FACTORY_REVIEW_MODEL=best_llm                         # review
 ```
+
+The example definitions declare `model: env:FACTORY_*` (ADR-028), so the concrete model is
+configuration. `factory validate` prints every resolved model; an unset variable is a warning,
+and starting a run with it is refused with `model_unresolved`.
 
 The API mints a per-run `rsk_…` token, injects the real key only outside the sandbox, and revokes it at run
 end. Harnesses receive `OPENAI_BASE_URL=<proxy>/v1` + the run token.

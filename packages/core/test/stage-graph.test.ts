@@ -135,16 +135,29 @@ describe('per-stage config resolution', () => {
     .filter((resource) => resource.kind === 'agent')
     .map((resource) => ({ name: resource.name, doc: resource.doc as AgentDef }));
   const graph = compileStageGraph(stageDeclarationsFromDefinition(definition.manifest, agents));
+  // The example definitions reference models through the environment (ADR-028), so the
+  // tests pin their own values and never depend on the host's `.env`.
+  const MODEL_ENV = {
+    FACTORY_MODEL: 'test/model',
+    FACTORY_SMALL_MODEL: 'test/small-model',
+    FACTORY_REVIEW_MODEL: 'test/review-model',
+  };
 
   it('resolves agent, harness/model, runner and tools per stage', () => {
     const configs = resolveStageConfigs(graph, {
       manifest: definition.manifest,
       agents,
       spawner: foremanAgentName(agents),
+      env: MODEL_ENV,
     });
 
     expect(configs.triage.agent).toBe('triage');
-    expect(configs.triage.model).toBe('openai/gpt-5-mini');
+    expect(configs.triage.model).toBe('test/small-model');
+    expect(configs.triage.modelRef).toEqual({
+      ref: 'env:FACTORY_SMALL_MODEL',
+      value: 'test/small-model',
+      source: 'env',
+    });
     expect(configs.triage.runner).toBe('local-docker');
 
     expect(configs.implement.agent).toBe('implement');
@@ -153,21 +166,22 @@ describe('per-stage config resolution', () => {
       deny: ['git_push_force'],
     });
 
-    expect(configs.review.model).toBe('anthropic/claude-sonnet-4-5');
+    expect(configs.review.model).toBe('test/review-model');
     expect(configs.review.reviewers).toBe(2);
 
-    // `ship` has no agent: it is the forge/merge stage.
+    // `ship` has no agent: it is the forge/merge stage, so it inherits the factory default.
     expect(configs.ship.agent).toBeNull();
-    expect(configs.ship.model).toBe('openai/gpt-5');
+    expect(configs.ship.model).toBe('test/model');
   });
 
   it('inherits factory defaults when an agent declares no inference', () => {
     const configs = resolveStageConfigs(compileStageGraph([{ name: 'spec', agent: 'plain' }]), {
       manifest: definition.manifest,
       agents: [agent('plain', { role: 'spec' })],
+      env: MODEL_ENV,
     });
-    expect(configs.spec.model).toBe('openai/gpt-5');
-    expect(configs.spec.harness).toEqual({ type: 'opencode', model: 'openai/gpt-5' });
+    expect(configs.spec.model).toBe('test/model');
+    expect(configs.spec.harness).toEqual({ type: 'opencode', model: 'test/model' });
   });
 
   it('enforces spawnableBy: the foreman may spawn, another agent may not', () => {

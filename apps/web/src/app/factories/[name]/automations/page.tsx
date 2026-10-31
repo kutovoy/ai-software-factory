@@ -12,6 +12,7 @@ import type {
   FactoryDetail,
   FactoryResources,
 } from '@/lib/types';
+import { factoryHeading } from '@/lib/factory';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,7 +39,7 @@ export default async function AutomationsPage({ params }: { params: Promise<{ na
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-slate-900">
-            {detail?.factory.alias ?? factory} <span className="text-slate-400">›</span> Automations
+            {factoryHeading(detail?.factory.alias, factory, 'Automations')}
           </h1>
           <p className="text-sm text-slate-500">
             First-class entry points: which events start work, which agent handles it, and which gates it

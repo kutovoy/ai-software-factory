@@ -4,7 +4,7 @@ harness:
   auth:
     secretName: OPENCODE_API_KEY
     source: managedSecret
-  model: openai/gpt-5
+  model: env:FACTORY_MODEL
   type: opencode
 role: implement
 runner: local-docker

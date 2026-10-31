@@ -12,6 +12,7 @@ import type {
   ScorersResponse,
   ScoresResponse,
 } from '@/lib/types';
+import { factoryHeading } from '@/lib/factory';
 
 export const dynamic = 'force-dynamic';
 
@@ -179,7 +180,7 @@ export default async function ScorersPage({ params }: { params: Promise<{ name: 
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-slate-900">
-            {detail?.factory.alias ?? factory} <span className="text-slate-400">›</span> Scorers
+            {factoryHeading(detail?.factory.alias, factory, 'Scorers')}
           </h1>
           <p className="text-sm text-slate-500">
             Real scores over real runs: deterministic checks are free and always run; judges are
