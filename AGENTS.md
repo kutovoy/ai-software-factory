@@ -60,10 +60,21 @@ docs/               STATUS, DECISIONS, ARCHITECTURE, GLOSSARY
 - **Events:** every run emits an append-only event log (JSONL) — this is the audit trail and the raw
   material for scorers/self-improvement.
 - **Secrets:** referenced by name in definitions, resolved at run time, never written to logs.
+- **Versioned API:** every public HTTP endpoint lives under `/api/v1` (the liveness probe `/health` is the only
+  unversioned route; `/api/v1/health` also exists). `apps/api/openapi.json` is the source of truth: any route
+  added, changed or removed must update the spec in the same change, and the contract test fails when the route
+  table and the spec diverge. Breaking changes bump the prefix; never silently change a v1 shape.
 - **Help stays current:** any feature, page or route change must update the matching help entry in
   `apps/web/src/lib/help.ts`, the menu reference, and the quick start when the first-run flow changes —
   in the same OpenSpec change. Help is part of the product, not an afterthought; `apps/web/src/lib/help.test.ts`
   fails when a nav item loses its entry, and `openspec validate` must list the help update in `tasks.md`.
+
+## Delegation
+
+- Prefer **2–3 subagents** for large workstreams instead of doing everything in the main agent. Split by layer
+  (backend / console / docs) and run sequentially when they touch overlapping files; give each a self-contained
+  prompt with file pointers, rules and a verification command. Keep the main agent for decisions, specs,
+  verification and small edits — that is what keeps its context usable.
 
 ## Research rules
 
