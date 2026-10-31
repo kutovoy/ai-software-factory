@@ -763,7 +763,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     section: 'menu',
     status: 'Shipped — path-versioned `/api/v1` (ADR-030)',
     summary:
-      'Every endpoint in one place, rendered from the served OpenAPI document: method, path, purpose, parameters and response codes.',
+      'Every endpoint in one place, rendered from the served OpenAPI document: read it here, or execute it with “Try it out” through the console’s same-origin /api/v1 proxy.',
     renderer: 'api-reference',
     blocks: [
       {
@@ -781,14 +781,14 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'prose',
         text:
-          'The raw document is a standard OpenAPI 3.1 file: point Swagger UI at it, or import it in Postman (Import → Link) to get a request collection. Authentication is not modelled yet — the API runs as a single implicit local user (Phase 6b adds auth), so no security scheme is declared.',
+          'The raw document is a standard OpenAPI 3.1 file: point Swagger UI at it, or import it in Postman (Import → Link) to get a request collection. The live explorer at the top of this page is Swagger UI itself, loaded from that document: open an operation, press “Try it out”, edit the parameters and execute it — the status and response body come back inline. Requests go to this console’s origin (`/api/v1/…`) and are proxied server-side to the API, so the browser never talks to the API host and CORS never applies. Authentication is not modelled yet — the API runs as a single implicit local user (Phase 6b adds auth), so no security scheme is declared and try-it-out needs no credentials.',
       },
       {
         kind: 'callout',
         tone: 'warning',
         title: 'When the API is down',
         text:
-          'The reference is fetched at page load. If the API is unreachable the page says so with the error code and a reload link instead of showing an empty or invented list; `/health` tells you whether the API and Temporal are up.',
+          'The explorer and the reference are both fetched at page load. If the API is unreachable the explorer says so with the error and a retry control instead of rendering an empty shell, and the static reference below stays readable (or explains why it cannot be read); `/health` tells you whether the API and Temporal are up.',
       },
     ],
     related: [

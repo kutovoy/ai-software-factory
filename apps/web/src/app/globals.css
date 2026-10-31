@@ -30,3 +30,38 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Live API explorer (`/help/api`): Swagger UI ships a fixed 1460px wrapper that would
+   overflow the help column. Constrain it to the page width and keep code samples from
+   widening the document (the UI audit fails on horizontal overflow). */
+.api-explorer-shell .swagger-ui .wrapper {
+  max-width: 100%;
+  padding: 0;
+}
+
+.api-explorer-shell .swagger-ui .info {
+  margin: 16px 0;
+}
+
+.api-explorer-shell .swagger-ui .opblock-tag-section,
+.api-explorer-shell .swagger-ui .opblock-body pre.microlight,
+.api-explorer-shell .swagger-ui .highlight-code {
+  min-width: 0;
+}
+
+.api-explorer-shell .swagger-ui .opblock-body pre.microlight,
+.api-explorer-shell .swagger-ui .responses-inner pre {
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.api-explorer-shell .swagger-ui table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.api-explorer-shell .swagger-ui .parameters-col_description,
+.api-explorer-shell .swagger-ui .response-col_description {
+  word-break: break-word;
+}

@@ -151,6 +151,86 @@ test('the API nav opens the reference generated from the served document', async
 });
 
 /**
+ * `web-console` spec: "Executable API explorer", "Same-origin API proxy". The explorer is
+ * Swagger UI over the served document; "Try it out" goes to the console origin and is proxied
+ * server-side, so the browser never hits the API host (no CORS). The static reference stays
+ * below as the no-JS fallback.
+ */
+test('the API help page renders a live explorer that executes through the proxy', async ({ page }) => {
+  await page.goto('/help/api');
+
+  // The banner is explicit about blast radius: real actions, no auth on the local API.
+  const banner = page.getByTestId('api-explorer-banner');
+  await expect(banner).toBeVisible();
+  await expect(banner).toContainText('Actions run against this stack');
+  await expect(banner).toContainText('no authentication');
+
+  // Swagger UI renders operations from the served document (bundle is client-only).
+  // Tags start collapsed (`docExpansion: 'none'`), so expand one before looking for operations.
+  await expect(page.getByTestId('api-explorer')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('.swagger-ui')).toBeVisible();
+
+  const healthTag = page.locator('.swagger-ui .opblock-tag[data-tag="health"]');
+  await expect(healthTag).toBeVisible({ timeout: 30_000 });
+  await healthTag.click();
+
+  await expect(page.locator('.swagger-ui .opblock').first()).toBeVisible({ timeout: 30_000 });
+  expect(await page.locator('.swagger-ui .opblock').count()).toBeGreaterThan(0);
+
+  // Same-origin proxy: the versioned probe is reachable from the console origin, and an
+  // unknown path returns the backend's own 404 envelope (not a console 404 page).
+  const health = await page.request.get('/api/v1/health');
+  expect(health.status()).toBe(200);
+  expect(((await health.json()) as { status?: string }).status).toBe('ok');
+
+  const unknown = await page.request.get('/api/v1/no-such-route');
+  expect(unknown.status()).toBe(404);
+  const unknownBody = (await unknown.json()) as { code?: string; message?: string };
+  expect(unknownBody.code).toBe('not_found');
+  expect(unknownBody.message).toContain('no route for GET /api/v1/no-such-route');
+
+  // "Try it out" is present and really executes. `tryItOutEnabled` opens an expanded
+  // operation directly in try-it-out mode (Execute/Cancel); leaving it reveals the control.
+  const healthOperation = page
+    .locator('.swagger-ui .opblock')
+    .filter({ has: page.locator('.opblock-summary-path', { hasText: '/api/v1/health' }) })
+    .first();
+  await expect(healthOperation).toBeVisible();
+  await healthOperation.locator('.opblock-summary').click();
+
+  await expect(healthOperation.getByRole('button', { name: 'Cancel' })).toBeVisible();
+  await healthOperation.getByRole('button', { name: 'Cancel' }).click();
+
+  const tryItOut = healthOperation.getByRole('button', { name: 'Try it out' });
+  await expect(tryItOut).toBeVisible();
+  await tryItOut.click();
+
+  const executed: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/api/v1/health')) executed.push(request.url());
+  });
+  await healthOperation.getByRole('button', { name: 'Execute' }).click();
+  await expect(healthOperation.locator('.live-responses-table')).toContainText('200', { timeout: 30_000 });
+  await expect(healthOperation.locator('.live-responses-table')).toContainText('ok');
+
+  // The executed request stayed on the console origin — the spec's server URL is rewritten.
+  expect(executed.length).toBeGreaterThan(0);
+  const consoleOrigin = new URL(page.url()).origin;
+  for (const url of executed) expect(new URL(url).origin).toBe(consoleOrigin);
+
+  // The static reference is still there, below the explorer, and lists the same endpoints.
+  const staticReference = page.getByTestId('api-static-reference');
+  await expect(staticReference).toBeVisible();
+  await expect(page.getByTestId('api-reference')).toBeVisible();
+  expect(await page.getByTestId('api-endpoint').count()).toBeGreaterThan(0);
+  const explorerBox = await page.getByTestId('api-explorer-section').boundingBox();
+  const staticBox = await staticReference.boundingBox();
+  expect(explorerBox).not.toBeNull();
+  expect(staticBox).not.toBeNull();
+  expect(explorerBox!.y).toBeLessThan(staticBox!.y);
+});
+
+/**
  * `web-console` spec: "Pinned sidebar footer". The quick start is far longer than the
  * viewport; the footer must still be visible without scrolling.
  */

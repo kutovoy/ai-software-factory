@@ -1,6 +1,9 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import './globals.css';
+// Swagger UI's stylesheet is global; App Router only allows global CSS in the root layout.
+// Loaded after the Tailwind layers so the explorer's own rules win where they overlap.
+import 'swagger-ui-react/swagger-ui.css';
 import { ContextHelp } from '@/components/help/ContextHelp';
 import { Sidebar } from '@/components/nav/Sidebar';
 import { safeGet } from '@/lib/api';

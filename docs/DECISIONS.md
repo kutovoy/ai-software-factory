@@ -655,3 +655,31 @@ tooling, and the document cannot drift from the routes without a red test. Cost:
 bump is mechanical but wide (every caller, smoke script and help example), a route change
 must edit `openapi.json` in the same commit, and a browser-facing handler cannot live at
 `/api/v1/...` without colliding with the backend convention.
+
+---
+
+## ADR-031 — Executable API explorer through a same-origin catch-all proxy
+
+**Status:** accepted, implemented (2026-10-31, add-live-api-explorer)
+**Context:** `/help/api` rendered the OpenAPI document but could not execute it. Swagger UI's
+"Try it out" runs in the browser, and the document declares `http://localhost:8080` as its
+server — a cross-origin call that the browser blocks. Two options were on the table: enable CORS
+on the API, or keep every request on the console origin and proxy it server-side.
+**Options:** permissive CORS on `apps/api` · a browser-side rewrite to `/api/v1/...` plus a
+catch-all route handler · a separate explorer service.
+**Decision:** a **catch-all same-origin proxy**. `apps/web/src/app/api/v1/[...path]/route.ts`
+forwards every method to `${API_BASE_URL}/api/v1/<path>` with query, body and headers, returns
+status/content-type/body unchanged, streams the response (SSE stays incremental) and drops
+hop-by-hop headers in both directions. Swagger UI itself is client-only
+(`dynamic(..., { ssr: false })`) and rewrites the spec's absolute server URL to the console
+origin through `requestInterceptor`; the server-rendered reference stays below as the no-JS
+fallback. Because `swagger-ui-react`'s native `tree-sitter` transitive dependencies cannot build
+in `oven/bun` (no Python, no libstdc++ for the prebuilds), the root `package.json` sets
+`"trustedDependencies": []` so install-time lifecycle scripts are blocked — nothing in the repo
+needs them, and the explorer uses Swagger UI's prebuilt browser bundle.
+**Consequences:** no CORS surface on the API, one origin for the browser, and the explorer
+executes exactly what the served document declares. Cost: the proxy accepts every method and
+path under `/api/v1`, so it must stay a transparent forwarder (no console-side auth or
+filtering), and a new backend route is reachable through the console the moment it is served.
+Blocking dependency scripts means a future package that genuinely needs a postinstall must be
+added to `trustedDependencies` deliberately.

@@ -12,6 +12,55 @@ database, events, logs, API responses or definitions.
 Next: **Phase 6b** (auth/users, multi-tenant/ops, a managed secret provider behind the same
 registry).
 
+### Live API explorer with a same-origin proxy (2026-10-31)
+
+`/help/api` is now executable. A client-only Swagger UI (`swagger-ui-react` 5.34.1, imported
+with `dynamic(..., { ssr: false })`, stylesheet loaded once in the root layout) renders the
+served OpenAPI document with "Try it out" enabled, deep links on, persisted auth and
+`docExpansion: 'none'`. It has explicit loading, error (with retry) and render-failure states,
+so a broken document never leaves an empty shell. A banner above it states that actions run
+against this stack — including destructive POST/PUT/PATCH/DELETE calls — and that the local API
+has no authentication. The existing server-rendered reference stays below as the no-JS fallback.
+
+The document declares `http://localhost:8080` as its server, which a browser cannot call
+cross-origin. Every explorer request is therefore rewritten to the console origin and forwarded
+by a new catch-all handler, `apps/web/src/app/api/v1/[...path]/route.ts`: GET/POST/PUT/PATCH/
+DELETE/HEAD/OPTIONS with query, body and headers, status/content-type/body returned unchanged,
+the response body streamed (SSE stays incremental), and hop-by-hop headers (`host`,
+`connection`, `content-length`, `transfer-encoding`, …) dropped in both directions. The
+upstream is asked for an identity encoding because the runtime decodes compressed bodies.
+This is the documented Swagger UI CORS workaround and keeps the browser on the console origin
+(ADR-012); the backend prefix is applied server-side by `apiUrl` (ADR-030).
+
+`swagger-ui-react` pulls `@swagger-api/apidom-parser-adapter-{json,yaml}`, whose native
+`tree-sitter` builds ship prebuilds that need libstdc++ (absent from `oven/bun`), so Bun fell
+back to `node-gyp rebuild` and the images failed without Python. Root `package.json` now sets
+`"trustedDependencies": []`: dependency lifecycle scripts are blocked at install time. Nothing
+in the repo needs one (checked: the only scripts are tree-sitter builds, `@scarf/scarf`
+telemetry, `@swc/core`'s optional-binding probe, protobufjs's cosmetic postinstall and
+core-js's donation banner), and the explorer uses Swagger UI's prebuilt browser bundle, not
+the native parsers.
+
+Verification (2026-10-31):
+
+```
+bun run ci                     → typecheck clean; 481 pass / 126 skip / 0 fail
+docker compose up -d --build   → api, worker, web, postgres, temporal healthy
+bash scripts/smoke.sh          → SMOKE PASSED
+cd apps/web && bunx playwright test → 39 passed (38 existing + explorer: banner, operations
+                                 render after expanding a tag, Try it out → Execute GET
+                                 /api/v1/health → 200 on the console origin, proxy unknown
+                                 path → backend 404 envelope, static fallback below)
+UI_AUDIT=1 bunx playwright test audit-deep.spec.ts → 36 routes, /help/api clean
+                                 (0 overflow, 0 console errors, 0 bad responses)
+curl localhost:3000/api/v1/health → 200
+```
+
+Caveats: the explorer shows the document's declared server (`http://localhost:8080`) in its
+Servers dropdown even though requests are rewritten to the console origin (the banner and the
+mutated-request snippet explain this). Try-it-out can mutate the local stack; auth is still
+not modelled (Phase 6b).
+
 ### Versioned API, in-product reference, supported projects, pinned sidebar (ADR-030, 2026-10-31)
 
 The HTTP surface is now path-versioned and documented inside the product. Every public

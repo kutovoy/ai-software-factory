@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { ApiExplorer } from '@/components/help/ApiExplorer';
 import { ApiReference } from '@/components/help/ApiReference';
 import { HelpBlocks, RelatedLinks } from '@/components/help/HelpBlocks';
 import { Badge } from '@/components/ui/Badge';
@@ -71,8 +72,50 @@ export default async function HelpEntryPage({ params }: HelpPageProps) {
       </header>
 
       <article data-testid="help-entry" data-slug={entry.slug} className="space-y-5">
+        {entry.renderer === 'api-reference' ? (
+          <>
+            <div
+              data-testid="api-explorer-banner"
+              className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+            >
+              <p className="font-semibold">Actions run against this stack</p>
+              <p className="mt-1 max-w-prose text-xs leading-5">
+                &ldquo;Try it out&rdquo; sends real requests — including <span className="font-mono">POST</span>,{' '}
+                <span className="font-mono">PUT</span>, <span className="font-mono">PATCH</span> and{' '}
+                <span className="font-mono">DELETE</span> calls that change runs, work items, gates, secrets and
+                factories. The local API has <strong>no authentication</strong>: it runs as a single implicit local
+                user, so anything you can read here you can also change. Requests go to the console origin
+                (<span className="font-mono">/api/v1/…</span>) and are proxied server-side to the API — no CORS, and
+                the API host never appears in the browser.
+              </p>
+            </div>
+
+            <section data-testid="api-explorer-section" className="space-y-2">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h2 className="text-sm font-semibold text-slate-900">Live explorer</h2>
+                <p className="text-xs text-slate-500">
+                  Swagger UI · execute against this stack · same-origin proxy
+                </p>
+              </div>
+              <ApiExplorer />
+            </section>
+          </>
+        ) : null}
+
         <HelpBlocks blocks={entry.blocks} />
-        {entry.renderer === 'api-reference' ? <ApiReference /> : null}
+
+        {entry.renderer === 'api-reference' ? (
+          <section data-testid="api-static-reference" className="space-y-3">
+            <div className="space-y-1">
+              <h2 className="text-sm font-semibold text-slate-900">Static reference (no-JS fallback)</h2>
+              <p className="max-w-prose text-xs leading-5 text-slate-500">
+                Server-rendered from the same document, so it stays readable when JavaScript is unavailable or the
+                explorer cannot start. It lists what is served; the explorer is where you execute it.
+              </p>
+            </div>
+            <ApiReference />
+          </section>
+        ) : null}
       </article>
 
       <RelatedLinks links={entry.related} />
