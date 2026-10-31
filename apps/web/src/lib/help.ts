@@ -784,6 +784,15 @@ export const HELP_ENTRIES: HelpEntry[] = [
           'The raw document is a standard OpenAPI 3.1 file: point Swagger UI at it, or import it in Postman (Import → Link) to get a request collection. The live explorer at the top of this page is Swagger UI itself, loaded from that document: open an operation, press “Try it out”, edit the parameters and execute it — the status and response body come back inline. Requests go to this console’s origin (`/api/v1/…`) and are proxied server-side to the API, so the browser never talks to the API host and CORS never applies. Authentication is not modelled yet — the API runs as a single implicit local user (Phase 6b adds auth), so no security scheme is declared and try-it-out needs no credentials.',
       },
       {
+        kind: 'list',
+        items: [
+          'Filter: the box above the operations narrows the list by path, method or summary as you type — useful with 61 paths on one page.',
+          'Tags: groups are alphabetical and each carries a one-line description of the resource it covers, so `runs` and `work-items` are not just labels.',
+          'Servers: the selector shows the console origin (`/`), which is where “Try it out” really sends requests. The raw document still advertises the direct API host (`http://localhost:8080`) for Postman and other Swagger UI imports — add `?servers=console` to `/api/openapi.json` to get the console-targeted copy.',
+          'Request duration: every executed request reports how long it took, and expanded operations show their extensions and common extensions.',
+        ],
+      },
+      {
         kind: 'callout',
         tone: 'warning',
         title: 'When the API is down',

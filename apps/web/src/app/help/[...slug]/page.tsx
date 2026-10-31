@@ -28,9 +28,16 @@ export default async function HelpEntryPage({ params }: HelpPageProps) {
   if (!entry) notFound();
 
   const section = HELP_SECTIONS.find((meta) => meta.id === entry.section);
+  // The API page carries a full-width explorer (Swagger UI is unusable in a 4xl column);
+  // its prose blocks and callouts keep their own `max-w-prose` reading measure.
+  const isApiReference = entry.renderer === 'api-reference';
 
   return (
-    <div className="mx-auto max-w-4xl space-y-5 px-6 py-6">
+    <div
+      data-testid="help-page"
+      data-width={isApiReference ? 'full' : 'narrow'}
+      className={`mx-auto ${isApiReference ? 'max-w-none' : 'max-w-4xl'} space-y-5 px-6 py-6`}
+    >
       <div className="flex flex-wrap items-center gap-3 text-xs">
         <Link
           href="/help"

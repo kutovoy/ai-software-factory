@@ -146,8 +146,23 @@ test('the API nav opens the reference generated from the served document', async
   await expect(rawLink).toHaveAttribute('href', '/api/openapi.json');
   const raw = await page.request.get('/api/openapi.json');
   expect(raw.ok()).toBeTruthy();
-  const document = (await raw.json()) as { paths?: Record<string, unknown> };
+  const document = (await raw.json()) as {
+    info?: { description?: string };
+    tags?: Array<{ name?: string; description?: string }>;
+    paths?: Record<string, unknown>;
+  };
   expect(Object.keys(document.paths ?? {}).length).toBeGreaterThan(0);
+
+  // Tag metadata: every group carries a description, so the explorer renders context.
+  const tags = document.tags ?? [];
+  expect(tags.length).toBe(18);
+  expect(tags.filter((tag) => (tag.description ?? '').trim().length === 0)).toEqual([]);
+
+  // The document explains versioning, both base URLs and the missing authentication.
+  const description = document.info?.description ?? '';
+  expect(description).toContain('http://localhost:8080');
+  expect(description).toContain('servers=console');
+  expect(description).toContain('no authentication');
 });
 
 /**
@@ -157,6 +172,7 @@ test('the API nav opens the reference generated from the served document', async
  * below as the no-JS fallback.
  */
 test('the API help page renders a live explorer that executes through the proxy', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('/help/api');
 
   // The banner is explicit about blast radius: real actions, no auth on the local API.
@@ -165,17 +181,44 @@ test('the API help page renders a live explorer that executes through the proxy'
   await expect(banner).toContainText('Actions run against this stack');
   await expect(banner).toContainText('no authentication');
 
-  // Swagger UI renders operations from the served document (bundle is client-only).
-  // Tags start collapsed (`docExpansion: 'none'`), so expand one before looking for operations.
+  // The toolbar replaces Swagger UI's Standalone topbar: version, base URL, no auth.
+  const toolbar = page.getByTestId('api-explorer-toolbar');
+  await expect(toolbar).toBeVisible();
+  await expect(page.getByTestId('api-explorer-version')).toContainText('v1.0.0');
+  await expect(page.getByTestId('api-explorer-base-url')).toContainText('/api/v1');
+  await expect(page.getByTestId('api-explorer-no-auth')).toContainText('No authentication');
+
+  // Full width: the page is no longer clamped to a 4xl column (1280px viewport, 256px sidebar).
+  await expect(page.getByTestId('help-page')).toHaveAttribute('data-width', 'full');
   await expect(page.getByTestId('api-explorer')).toBeVisible({ timeout: 60_000 });
   await expect(page.locator('.swagger-ui')).toBeVisible();
+  const explorerShellBox = await page.getByTestId('api-explorer').boundingBox();
+  expect(explorerShellBox).not.toBeNull();
+  expect(explorerShellBox!.width).toBeGreaterThan(900);
 
+  // Filter box: presentation parity with the classic Swagger UI page.
+  const filter = page.locator('.swagger-ui .filter .operation-filter-input');
+  await expect(filter).toBeVisible({ timeout: 30_000 });
+  await filter.fill('health');
+  await expect(page.locator('.swagger-ui .opblock-tag[data-tag="work-items"]')).toBeHidden();
+  await expect(page.locator('.swagger-ui .opblock-tag[data-tag="health"]')).toBeVisible();
+  await filter.fill('');
+  await expect(page.locator('.swagger-ui .opblock-tag[data-tag="work-items"]')).toBeVisible();
+
+  // Tag context: every group carries the description from the document's top-level `tags`.
   const healthTag = page.locator('.swagger-ui .opblock-tag[data-tag="health"]');
   await expect(healthTag).toBeVisible({ timeout: 30_000 });
-  await healthTag.click();
+  await expect(healthTag).toContainText('Liveness probes');
 
+  // `docExpansion: 'list'` lists every operation without expanding a tag first.
   await expect(page.locator('.swagger-ui .opblock').first()).toBeVisible({ timeout: 30_000 });
   expect(await page.locator('.swagger-ui .opblock').count()).toBeGreaterThan(0);
+
+  // Servers selector: the document loaded with `?servers=console` names the console origin.
+  const servers = page.locator('.swagger-ui .servers select');
+  await expect(servers).toBeVisible();
+  await expect(servers).toHaveValue('/');
+  await expect(servers).toContainText('Console origin');
 
   // Same-origin proxy: the versioned probe is reachable from the console origin, and an
   // unknown path returns the backend's own 404 envelope (not a console 404 page).
@@ -210,8 +253,13 @@ test('the API help page renders a live explorer that executes through the proxy'
     if (request.url().includes('/api/v1/health')) executed.push(request.url());
   });
   await healthOperation.getByRole('button', { name: 'Execute' }).click();
-  await expect(healthOperation.locator('.live-responses-table')).toContainText('200', { timeout: 30_000 });
-  await expect(healthOperation.locator('.live-responses-table')).toContainText('ok');
+  const liveResponse = healthOperation.locator('.live-responses-table');
+  await expect(liveResponse).toContainText('200', { timeout: 30_000 });
+  await expect(liveResponse).toContainText('ok');
+
+  // Every executed request reports its duration (`displayRequestDuration`).
+  await expect(liveResponse).toContainText('Request duration');
+  await expect(liveResponse).toContainText(/\d+ ms/);
 
   // The executed request stayed on the console origin — the spec's server URL is rewritten.
   expect(executed.length).toBeGreaterThan(0);
@@ -228,6 +276,36 @@ test('the API help page renders a live explorer that executes through the proxy'
   expect(explorerBox).not.toBeNull();
   expect(staticBox).not.toBeNull();
   expect(explorerBox!.y).toBeLessThan(staticBox!.y);
+});
+
+/**
+ * `web-console` spec: "Truthful server selector". The explorer document names the console
+ * origin; the canonical document keeps the direct API server for Postman/Swagger UI imports.
+ */
+test('the console-targeted spec names the console origin while the raw document keeps the API host', async ({
+  page,
+}) => {
+  const consoleSpec = await page.request.get('/api/openapi.json?servers=console');
+  expect(consoleSpec.ok()).toBeTruthy();
+  const consoleDocument = (await consoleSpec.json()) as {
+    servers?: Array<{ url?: string; description?: string }>;
+  };
+  expect(consoleDocument.servers).toEqual([
+    { url: '/', description: 'Console origin (same-origin proxy)' },
+  ]);
+
+  // The default console view is the served document, untouched.
+  const proxied = await page.request.get('/api/openapi.json');
+  expect(proxied.ok()).toBeTruthy();
+  const proxiedDocument = (await proxied.json()) as { servers?: Array<{ url?: string }> };
+  expect(proxiedDocument.servers?.[0]?.url).toBe('http://localhost:8080');
+
+  // The backend document (the direct server) still advertises the API host.
+  const apiBase = process.env.API_BASE_URL ?? 'http://localhost:8080';
+  const direct = await page.request.get(`${apiBase}/api/v1/openapi.json`);
+  expect(direct.ok()).toBeTruthy();
+  const directDocument = (await direct.json()) as { servers?: Array<{ url?: string }> };
+  expect(directDocument.servers?.[0]?.url).toBe('http://localhost:8080');
 });
 
 /**

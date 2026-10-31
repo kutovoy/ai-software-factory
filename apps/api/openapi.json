@@ -4,7 +4,7 @@
     "title": "Software Factory API",
     "version": "1.0.0",
     "summary": "Versioned HTTP surface for runs, work items, factories, scoring, benchmarks, self-improvement, secrets, integrations and webhooks.",
-    "description": "Every public resource route lives under `/api/v1`. Breaking changes bump the prefix and the old version keeps serving until it is removed deliberately. `GET /health` stays unversioned for probes. This document is the source of truth: `apps/api/test/openapi.test.ts` fails when the served routes and this spec diverge."
+    "description": "Every public resource route lives under `/api/v1`. Breaking changes bump the prefix and the old version keeps serving until it is removed deliberately. `GET /health` stays unversioned for probes.\n\n**Servers.** The canonical document declares the direct API origin, `http://localhost:8080` — use it from Swagger UI, Postman or a script. The console serves the same document at `/api/openapi.json`, and `/api/openapi.json?servers=console` rewrites `servers` to the console origin (`/`): the browser then calls `/api/v1/…` same-origin and the console proxies those requests server-side, so the API host never appears in the browser and CORS never applies.\n\n**Authentication.** The API has no authentication yet: it runs as a single implicit local user, so no security scheme is declared and try-it-out needs no credentials — anything you can read here you can also change.\n\nThis document is the source of truth: `apps/api/test/openapi.test.ts` fails when the served routes and this spec diverge."
   },
   "servers": [
     {
@@ -14,58 +14,76 @@
   ],
   "tags": [
     {
-      "name": "automations"
+      "name": "automations",
+      "description": "Automation schedules declared by a factory, plus pause and sync controls."
     },
     {
-      "name": "autonomy"
+      "name": "autonomy",
+      "description": "The factory autonomy level: how far a run may proceed without a human decision."
     },
     {
-      "name": "benchmarks"
+      "name": "benchmarks",
+      "description": "Benchmark suites, their runs, attestations and the benchmark gate."
     },
     {
-      "name": "chat"
+      "name": "chat",
+      "description": "New Chat: a conversational run that streams harness turns."
     },
     {
-      "name": "events"
+      "name": "events",
+      "description": "The append-only run event log, streamed as SSE."
     },
     {
-      "name": "factories"
+      "name": "factories",
+      "description": "Factory definitions as code: listing, detail, versions, diffs, metrics and resources."
     },
     {
-      "name": "health"
+      "name": "health",
+      "description": "Liveness probes for the API and its dependencies (`/health` and `/api/v1/health`)."
     },
     {
-      "name": "improvement"
+      "name": "improvement",
+      "description": "Self-improvement: proposals, lessons, canary rollouts and the authority level."
     },
     {
-      "name": "integrations"
+      "name": "integrations",
+      "description": "Forge integrations (GitHub) configured per factory."
     },
     {
-      "name": "mcp"
+      "name": "mcp",
+      "description": "MCP servers bound to a factory’s agents, plus connection tests."
     },
     {
-      "name": "merge-queue"
+      "name": "merge-queue",
+      "description": "The factory merge queue: queued batches and reverts."
     },
     {
-      "name": "meta"
+      "name": "meta",
+      "description": "The API’s own metadata: this OpenAPI document."
     },
     {
-      "name": "permissions"
+      "name": "permissions",
+      "description": "Pending tool-permission requests raised by a run."
     },
     {
-      "name": "runs"
+      "name": "runs",
+      "description": "Runs through the SDLC pipeline: create, read, cancel, and their events."
     },
     {
-      "name": "scoring"
+      "name": "scoring",
+      "description": "Scoring passes, individual scores and scorer calibration."
     },
     {
-      "name": "secrets"
+      "name": "secrets",
+      "description": "Secret names referenced by definitions; values resolve at run time and never appear in logs."
     },
     {
-      "name": "webhooks"
+      "name": "webhooks",
+      "description": "Provider webhook ingestion and outbound delivery records."
     },
     {
-      "name": "work-items"
+      "name": "work-items",
+      "description": "Work items (issues and tasks) entering the pipeline, and their stage gates."
     }
   ],
   "paths": {

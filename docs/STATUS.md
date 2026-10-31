@@ -56,10 +56,46 @@ UI_AUDIT=1 bunx playwright test audit-deep.spec.ts → 36 routes, /help/api clea
 curl localhost:3000/api/v1/health → 200
 ```
 
-Caveats: the explorer shows the document's declared server (`http://localhost:8080`) in its
-Servers dropdown even though requests are rewritten to the console origin (the banner and the
-mutated-request snippet explain this). Try-it-out can mutate the local stack; auth is still
-not modelled (Phase 6b).
+Caveats: the explorer now shows the console origin (`/`) in its Servers dropdown, because it
+loads the `?servers=console` variant of the document; the raw document still advertises
+`http://localhost:8080` for Postman and other Swagger UI imports. Try-it-out can mutate the
+local stack; auth is still not modelled (Phase 6b).
+
+### API explorer presentation parity (2026-10-31)
+
+`/help/api` now uses the content width instead of a 4xl column (prose and callouts keep their
+`max-w-prose` reading measure) and enables what the classic Swagger UI page has: filter box,
+`tagsSorter: 'alpha'`, `operationsSorter: 'alpha'`, request durations, extensions and common
+extensions, `docExpansion: 'list'`, `defaultModelsExpandDepth: -1`, deep links, try-it-out and
+persisted authorization. A toolbar above the explorer carries the API version, the
+console-proxied base URL (`/api/v1`) and the no-auth warning — the part of Swagger UI's
+Standalone topbar that matters here.
+
+`apps/api/openapi.json` gained a description for each of its 18 tags and an `info.description`
+that states the versioning rule, both base URLs (direct and console-proxied) and the missing
+authentication. The console spec proxy (`apps/web/src/app/api/openapi.json/route.ts`) accepts
+`?servers=console` and rewrites `servers` to
+`[{url: '/', description: 'Console origin (same-origin proxy)'}]`, so the Servers dropdown names
+the origin requests actually use; the default response stays byte-identical to the served
+document (direct API server) for Postman/Swagger UI imports. The upstream fetch is cached
+in-process for 30s. The explorer loads the console-targeted document; the request interceptor
+stays as a safety net for a stale cached document.
+
+Verification (2026-10-31):
+
+```
+bun run ci                        → typecheck clean; 481 pass / 126 skip / 0 fail
+docker compose up -d --build      → api, worker, web, postgres, temporal healthy
+bash scripts/smoke.sh             → SMOKE PASSED (65 ok)
+cd apps/web && bunx playwright test → 40 passed (help: toolbar, filter narrows tags, tag
+                                    descriptions, Servers = console origin, Execute GET
+                                    /api/v1/health → 200 + Request duration, raw document keeps
+                                    http://localhost:8080)
+UI_AUDIT=1 bunx playwright test audit-deep.spec.ts → 36 routes, 0 with problems
+                                    (/help/api: overflowX 0, 0 console errors, 0 bad responses)
+curl localhost:8080/api/v1/openapi.json → servers [{"url":"http://localhost:8080",…}]
+curl localhost:3000/api/openapi.json?servers=console → servers [{"url":"/",…}]
+```
 
 ### Versioned API, in-product reference, supported projects, pinned sidebar (ADR-030, 2026-10-31)
 

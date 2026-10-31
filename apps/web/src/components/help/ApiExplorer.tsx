@@ -1,7 +1,14 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { Component, useCallback, useEffect, useState, type ReactNode } from 'react';
+import {
+  Component,
+  useCallback,
+  useEffect,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from 'react';
 
 /**
  * Live API explorer for `/help/api` (`web-console` spec: "Executable API explorer").
@@ -11,13 +18,19 @@ import { Component, useCallback, useEffect, useState, type ReactNode } from 'rea
  * is the one the console already proxies (`/api/openapi.json`), so the explorer cannot drift
  * from what the API serves.
  *
- * "Try it out" must not hit CORS: the spec declares `http://localhost:8080` as its server, so
- * every request is rewritten to the console origin (`/api/v1/...`) and reaches the backend
- * through the catch-all proxy at `src/app/api/v1/[...path]/route.ts` — the documented way to
- * run Swagger UI without CORS (<https://swagger.io/docs/open-source-tools/swagger-ui/usage/cors/>).
+ * The explorer loads `?servers=console`, so the Servers selector names the origin requests
+ * actually use. "Try it out" must not hit CORS: that variant declares the console origin (`/`)
+ * as its server, and every request reaches the backend through the catch-all proxy at
+ * `src/app/api/v1/[...path]/route.ts` — the documented way to run Swagger UI without CORS
+ * (<https://swagger.io/docs/open-source-tools/swagger-ui/usage/cors/>). The request
+ * interceptor stays as a safety net for a stale cached document that still names the API host.
+ *
+ * Presentation follows the classic Swagger UI layout: full width, filter box, alphabetical
+ * tags/operations, request durations, extensions and tag descriptions
+ * (<https://swagger.io/docs/open-source-tools/swagger-ui/usage/configuration/>).
  */
 
-const SPEC_URL = '/api/openapi.json';
+const SPEC_URL = '/api/openapi.json?servers=console';
 const HTTP_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'trace']);
 
 const SwaggerUI = dynamic(() => import('swagger-ui-react'), {
@@ -54,6 +67,7 @@ function sameOriginRequest(request: InterceptedRequest): InterceptedRequest {
 }
 
 interface OpenApiDocument {
+  info?: { version?: string };
   paths?: Record<string, Record<string, unknown>>;
 }
 
@@ -69,7 +83,7 @@ function countOperations(document: OpenApiDocument): number {
 
 type Probe =
   | { state: 'loading' }
-  | { state: 'ready'; operations: number }
+  | { state: 'ready'; operations: number; version: string }
   | { state: 'error'; message: string };
 
 const TONES = {
@@ -131,6 +145,60 @@ class ExplorerBoundary extends Component<{ children: ReactNode }, { failed: bool
   }
 }
 
+/**
+ * Swagger UI reads `tagsSorter`/`operationsSorter`, but `@types/swagger-ui-react@5.18` does not
+ * declare them; extending the derived prop type keeps every other flag checked.
+ */
+interface ExplorerUiProps extends ComponentProps<typeof SwaggerUI> {
+  tagsSorter: 'alpha';
+  operationsSorter: 'alpha';
+}
+
+/** What LiteLLM's page has and ours did not: search, sorting, metadata and tag context. */
+const EXPLORER_UI: ExplorerUiProps = {
+  url: SPEC_URL,
+  filter: true,
+  tagsSorter: 'alpha',
+  operationsSorter: 'alpha',
+  displayRequestDuration: true,
+  showExtensions: true,
+  showCommonExtensions: true,
+  docExpansion: 'list',
+  defaultModelsExpandDepth: -1,
+  deepLinking: true,
+  tryItOutEnabled: true,
+  persistAuthorization: true,
+  showMutatedRequest: true,
+  requestInterceptor: sameOriginRequest,
+};
+
+/**
+ * The part of Swagger UI's Standalone topbar that matters here: what is versioned, where
+ * requests actually go, and that nothing is authenticated.
+ */
+function ExplorerToolbar({ version }: { version?: string }) {
+  return (
+    <div
+      data-testid="api-explorer-toolbar"
+      className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs text-slate-600"
+    >
+      <span data-testid="api-explorer-version">
+        API version <span className="font-mono text-slate-900">{version ? `v${version}` : '—'}</span>
+      </span>
+      <span data-testid="api-explorer-base-url">
+        Base URL <span className="font-mono text-slate-900">/api/v1</span> on the console origin, proxied
+        server-side to the API
+      </span>
+      <span
+        data-testid="api-explorer-no-auth"
+        className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-900"
+      >
+        No authentication — try-it-out runs as the single local user
+      </span>
+    </div>
+  );
+}
+
 export function ApiExplorer() {
   const [probe, setProbe] = useState<Probe>({ state: 'loading' });
   const [attempt, setAttempt] = useState(0);
@@ -152,7 +220,7 @@ export function ApiExplorer() {
       .then((document) => {
         const operations = countOperations(document);
         if (operations === 0) throw new Error('the document lists no operations');
-        setProbe({ state: 'ready', operations });
+        setProbe({ state: 'ready', operations, version: document.info?.version ?? '' });
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
@@ -162,43 +230,45 @@ export function ApiExplorer() {
     return () => controller.abort();
   }, [attempt]);
 
+  const version = probe.state === 'ready' ? probe.version : undefined;
+
   if (probe.state === 'loading') {
     return (
-      <ExplorerNotice
-        testId="api-explorer-loading"
-        tone="loading"
-        title="Loading the live explorer"
-        text="Fetching the served OpenAPI document; the explorer appears when the document is available."
-      />
+      <div className="space-y-3">
+        <ExplorerToolbar version={version} />
+        <ExplorerNotice
+          testId="api-explorer-loading"
+          tone="loading"
+          title="Loading the live explorer"
+          text="Fetching the served OpenAPI document; the explorer appears when the document is available."
+        />
+      </div>
     );
   }
 
   if (probe.state === 'error') {
     return (
-      <ExplorerNotice
-        testId="api-explorer-error"
-        tone="error"
-        title="The live explorer is unavailable right now"
-        text={`The explorer could not read GET ${SPEC_URL} (${probe.message}). Nothing is invented here — start the stack or check GET /health, then retry. The static reference below still lists what the API serves.`}
-        onRetry={retry}
-      />
+      <div className="space-y-3">
+        <ExplorerToolbar version={version} />
+        <ExplorerNotice
+          testId="api-explorer-error"
+          tone="error"
+          title="The live explorer is unavailable right now"
+          text={`The explorer could not read GET ${SPEC_URL} (${probe.message}). Nothing is invented here — start the stack or check GET /health, then retry. The static reference below still lists what the API serves.`}
+          onRetry={retry}
+        />
+      </div>
     );
   }
 
   return (
-    <div data-testid="api-explorer" data-operations={probe.operations} className="api-explorer-shell">
-      <ExplorerBoundary>
-        <SwaggerUI
-          url={SPEC_URL}
-          tryItOutEnabled
-          docExpansion="none"
-          deepLinking
-          persistAuthorization
-          defaultModelsExpandDepth={-1}
-          showMutatedRequest
-          requestInterceptor={sameOriginRequest}
-        />
-      </ExplorerBoundary>
+    <div className="space-y-3">
+      <ExplorerToolbar version={version} />
+      <div data-testid="api-explorer" data-operations={probe.operations} className="api-explorer-shell">
+        <ExplorerBoundary>
+          <SwaggerUI {...EXPLORER_UI} />
+        </ExplorerBoundary>
+      </div>
     </div>
   );
 }
