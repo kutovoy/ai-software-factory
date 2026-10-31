@@ -41,6 +41,8 @@ test('deep audit every page', async ({ page }) => {
     '/secrets',
     '/mcps',
     '/users',
+    '/help',
+    '/help/quick-start',
     ...(runId ? [`/runs/${runId}`] : []),
     ...(workItemId ? [`/work-items/${workItemId}`] : []),
     ...(scoreId ? [`/scores/${scoreId}`] : []),

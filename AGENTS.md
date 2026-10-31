@@ -60,6 +60,10 @@ docs/               STATUS, DECISIONS, ARCHITECTURE, GLOSSARY
 - **Events:** every run emits an append-only event log (JSONL) — this is the audit trail and the raw
   material for scorers/self-improvement.
 - **Secrets:** referenced by name in definitions, resolved at run time, never written to logs.
+- **Help stays current:** any feature, page or route change must update the matching help entry in
+  `apps/web/src/lib/help.ts`, the menu reference, and the quick start when the first-run flow changes —
+  in the same OpenSpec change. Help is part of the product, not an afterthought; `apps/web/src/lib/help.test.ts`
+  fails when a nav item loses its entry, and `openspec validate` must list the help update in `tasks.md`.
 
 ## Research rules
 

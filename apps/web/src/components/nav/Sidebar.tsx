@@ -71,9 +71,15 @@ export function Sidebar({ factories }: { factories: FactoryListItem[] }) {
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
             Factories
           </span>
-          <span aria-hidden="true" className="text-sm text-slate-400" title="Creating factories is not wired yet">
-            +
-          </span>
+          <Link
+            href="/help/factories/add"
+            data-testid="nav-add-factory"
+            aria-label="Add a factory (git-backed)"
+            title="Add a factory (git-backed)"
+            className="flex h-5 w-5 items-center justify-center rounded-full text-sm leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
+          >
+            <span aria-hidden="true">+</span>
+          </Link>
         </div>
         <p data-testid="nav-factory-name" className="px-3 text-sm font-medium text-slate-800">
           {activeFactoryEntry?.alias ?? activeFactory}
@@ -98,6 +104,22 @@ export function Sidebar({ factories }: { factories: FactoryListItem[] }) {
             );
           })}
         </ul>
+      </div>
+
+      <div className="border-t border-slate-200 px-2 py-2">
+        <Link
+          href="/help"
+          data-testid="nav-help"
+          data-active={pathname === '/help' || pathname.startsWith('/help/') ? 'true' : 'false'}
+          aria-current={pathname === '/help' || pathname.startsWith('/help/') ? 'page' : undefined}
+          className={`block rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300 ${
+            pathname === '/help' || pathname.startsWith('/help/')
+              ? 'bg-slate-900 text-white'
+              : 'text-slate-700 hover:bg-slate-100'
+          }`}
+        >
+          Help
+        </Link>
       </div>
 
       <div className="border-t border-slate-200 px-4 py-3">

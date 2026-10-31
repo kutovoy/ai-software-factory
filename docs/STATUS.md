@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-10-30
+Last updated: 2026-10-31
 
 ## Phase
 
@@ -11,6 +11,58 @@ database, events, logs, API responses or definitions.
 
 Next: **Phase 6b** (auth/users, multi-tenant/ops, a managed secret provider behind the same
 registry).
+
+### In-product help centre (web-console, 2026-10-31)
+
+The console is now self-documenting. `apps/web/src/lib/help.ts` is a typed registry
+(`{slug, title, section, status, summary, pageHref?, blocks, related}`) with five Diátaxis
+sections: quick start, concepts, menu reference, setup how-tos and troubleshooting. 36 entries:
+one per top-level nav item (New Chat, Inbox, Work items, Runs, MCPs and apps, Secrets, Users) and
+per factory page (Dashboard, Agents, Automations, Scorers, Self-improvement, Benchmarks, Definition,
+Gates, Merge queue, Settings); eight concept entries (definitions as code, work-item lifecycle,
+gates and autonomy, runners and sandboxes, scoring and calibration, benchmarks and attestation,
+self-improvement and canary, merge queue); five how-tos (add a factory, connect GitHub, choose the
+model through the environment, register a secret, add an MCP server); five troubleshooting entries
+(run will not start, gate stuck, benchmark refused, canary rollback, secret unresolved). Every entry
+carries an honest status — Users says it is a Phase 6b stub, and compose's fake harness/forge/stub
+judge is stated wherever it changes the observable result.
+
+`/help` lists the sections with descriptions and a client-side filter over title/section/summary;
+`/help/<slug>` renders prose, ordered steps with copy-paste commands and an expected observable
+result per step, code blocks, callouts, checklists and related links, plus a link back to the page it
+describes. `/help/quick-start` carries three hand-built diagrams (inline SVG pipeline, CSS factory
+anatomy, CSS gate resolution — no diagram dependency), commands from `docker compose up` to a merged
+work item, and a "what success looks like" checklist.
+
+Contextual help: a shared sticky header (root layout) carries a `?` control on every page; the
+route→slug map lives in `help.ts`, factory routes default to Dashboard, and unknown routes fall back
+to `/help` instead of 404. The accessible name names the page ("Help for Gates"). The sidebar has a
+`Help` entry above the account footer, and the dead
+`<span title="Creating factories is not wired yet">+</span>` is now a link to `/help/factories/add`
+with the accessible name "Add a factory (git-backed)".
+
+Maintenance is enforced: `apps/web/src/lib/help.test.ts` fails when a `TOP_NAV`/`FACTORY_NAV` item
+loses its entry or a slug is duplicated, and AGENTS.md now requires a feature/page/route change to
+update the matching help entry, the menu reference and (when the first-run flow changes) the quick
+start in the same OpenSpec change.
+
+Verification (2026-10-31):
+
+```
+bun run ci                     → typecheck clean; 470 pass / 122 skip / 0 fail (incl. 10 help-registry
+                                 tests: nav parity, unique slugs, honest stub status, diagrams, routing)
+docker compose up -d --build   → api, worker, web, postgres, temporal healthy
+bash scripts/smoke.sh          → SMOKE PASSED (unchanged assertions; nav still renders)
+cd apps/web && bunx playwright test → 34 passed (31 existing + 3 help: nav → index → filter →
+                                 quick start diagrams/checklist; `?` on Chat/Gates/Self-improvement +
+                                 unknown-route fallback; `+` → add-factory how-to, dead span gone)
+UI_AUDIT=1 bunx playwright test audit-deep.spec.ts → 35 routes, 0 overflow, 0 console errors
+```
+
+Caveats: help content is prose checked against this document, not generated from code; the only
+automated freshness guard is nav parity (a capability can change without a failing test — the
+AGENTS.md rule is the process guard). The filter is client-side over 36 rows, no server index.
+
 
 ### UI audit + model configuration (ADR-028/ADR-029, 2026-10-30)
 
