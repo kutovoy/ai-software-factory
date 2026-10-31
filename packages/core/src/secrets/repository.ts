@@ -587,9 +587,19 @@ export async function recordMcpTest(sql: SQL, args: RecordMcpTestArgs): Promise<
     returning *
   `) as McpTestRow[];
 
+  // A probe may target a server that is declared in git but has not been synced into the
+  // projection yet (or was pruned). Upsert so the status flip cannot silently match zero rows.
   await sql`
-    update mcp_servers set status = ${args.ok ? 'healthy' : 'unhealthy'}, updated_at = now()
-    where factory = ${args.factory} and name = ${args.server}
+    insert into mcp_servers (
+      factory, name, transport, command, args, env, url, headers, status, updated_at
+    ) values (
+      ${args.factory}, ${args.server}, ${args.transport}, null,
+      '[]'::jsonb, '{}'::jsonb, null, '{}'::jsonb,
+      ${args.ok ? 'healthy' : 'unhealthy'}, now()
+    )
+    on conflict (factory, name) do update set
+      status = excluded.status,
+      updated_at = now()
   `;
 
   return mapTest(rows[0] as McpTestRow);
