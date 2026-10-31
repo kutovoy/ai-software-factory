@@ -22,6 +22,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 API_URL="${API_URL:-http://localhost:8080}"
+# Every public resource route is versioned (ADR-030); /health stays unversioned.
+API="${API_URL}/api/v1"
 TMP_DIR="$(mktemp -d)"
 BLOCKED=()
 
@@ -50,7 +52,7 @@ api() { curl -sS "$@"; }
 create_run() {
   local label="$1"
   local created run_id
-  created="$(api -X POST "$API_URL/chat" \
+  created="$(api -X POST "$API/chat" \
     -H 'content-type: application/json' \
     -d "{\"factory\":\"example\",\"harness\":\"fake\",\"prompt\":\"smoke-permissions: $label\"}")"
   run_id="$(printf '%s' "$created" | jget run.id)"
@@ -58,7 +60,7 @@ create_run() {
   printf '%s' "$run_id"
 }
 
-run_detail() { api "$API_URL/runs/$1"; }
+run_detail() { api "$API/runs/$1"; }
 
 # Waits until the run has a pending permission and prints the request id.
 wait_pending_permission() {
@@ -84,7 +86,7 @@ wait_status() {
 
 decide() {
   local run_id="$1" request_id="$2" decision="$3" response
-  response="$(api -X POST "$API_URL/runs/$run_id/permissions/$request_id" \
+  response="$(api -X POST "$API/runs/$run_id/permissions/$request_id" \
     -H 'content-type: application/json' -d "{\"decision\":\"$decision\"}")"
   [ "$(printf '%s' "$response" | jget decision)" = "$decision" ] \
     || fail "decision '$decision' for $run_id/$request_id failed: $response"
@@ -123,7 +125,7 @@ done
 pass "all eight blocked runs are still waiting and unaffected"
 
 # The canonical permission event must exist exactly once for the ninth run.
-events="$(api "$API_URL/runs/$ninth/events")"
+events="$(api "$API/runs/$ninth/events")"
 permission_events="$(printf '%s' "$events" | grep -c '^event: permission.requested' || true)"
 terminal_events="$(printf '%s' "$events" | grep -c '^event: run.completed' || true)"
 [ "$permission_events" -eq 1 ] || fail "expected one permission.requested event, got $permission_events"
@@ -133,12 +135,12 @@ pass "ninth run has exactly one permission.requested and one terminal event"
 # ------------------------------------------- 3. cancellation while waiting on a permission
 log "cancelling one permission-blocked run"
 cancelled="${BLOCKED[0]}"
-cancel_resp="$(api -X POST "$API_URL/runs/$cancelled/cancel" \
+cancel_resp="$(api -X POST "$API/runs/$cancelled/cancel" \
   -H 'content-type: application/json' -d '{"reason":"smoke-permissions"}')"
 [ "$(printf '%s' "$cancel_resp" | jget cancelled)" = "true" ] \
   || fail "cancel was not accepted: $cancel_resp"
 wait_status "$cancelled" "cancelled"
-cancelled_events="$(api "$API_URL/runs/$cancelled/events")"
+cancelled_events="$(api "$API/runs/$cancelled/events")"
 [ "$(printf '%s' "$cancelled_events" | grep -c '^event: run.completed')" -eq 1 ] \
   || fail "cancelled run did not emit exactly one terminal event"
 pass "cancellation while waiting ended $cancelled as cancelled"

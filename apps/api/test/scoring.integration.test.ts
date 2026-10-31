@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { req } from './helpers';
 import { SQL } from 'bun';
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
@@ -68,7 +69,7 @@ async function insertTerminalRun(runId: string): Promise<void> {
 }
 
 async function postCalibration(body: unknown): Promise<Response> {
-  return await app.request('/calibration', {
+  return await req(app, '/calibration', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -130,7 +131,7 @@ suite('calibration API', () => {
     expect(small.calibration.agreementExact).toBeNull();
     expect(small.calibration.reason).toContain('at least 5');
 
-    const before = await app.request(`/calibration/scope?factory=${FACTORY}`);
+    const before = await req(app, `/calibration/scope?factory=${FACTORY}`);
     expect(before.status).toBe(200);
     const beforeBody = (await before.json()) as {
       calibrated: boolean;
@@ -171,7 +172,7 @@ suite('calibration API', () => {
     expect(pass.items[0]?.judgeLabel).toBe('compliant');
     expect(pass.items[0]?.error).toBeNull();
 
-    const after = await app.request(`/calibration/scope?factory=${FACTORY}`);
+    const after = await req(app, `/calibration/scope?factory=${FACTORY}`);
     expect(after.status).toBe(200);
     const afterBody = (await after.json()) as {
       calibrated: boolean;

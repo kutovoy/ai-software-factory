@@ -25,7 +25,7 @@ type Finding = {
 
 async function firstId(path: string, key: string): Promise<string | null> {
   try {
-    const res = await fetch(`${API}${path}`);
+    const res = await fetch(`${API}/api/v1${path}`);
     if (!res.ok) return null;
     const json = (await res.json()) as Record<string, unknown>;
     const list = json[key] as Array<Record<string, unknown>> | undefined;

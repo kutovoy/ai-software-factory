@@ -36,5 +36,7 @@ factories/*/.factory-cache/
 *.webm
 *.m4a
 *.wav
-runs/
+# Only the run-artifact directory at the repo root; `apps/web/src/app/runs/**` and
+# `apps/web/src/app/api/runs/**` are source files and must stay tracked.
+/runs/
 .opencode/state/

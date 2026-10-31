@@ -13,7 +13,7 @@ State as of 2026-10-29. Everything below is committed and tagged.
 | Code forges | `packages/forge` | `CodeForge` contract, fake + GitHub (token by ref, dry-run, offline contract tests) |
 | Merge queue | `packages/merge` | serialized merge train, bisect on red, single-commit revert, manual revert |
 | Evals | `packages/evals` | scorers (deterministic + judge), calibration, benchmarks, Pareto, self-improvement, lessons |
-| API | `apps/api` | runs/SSE, permissions, chat, inference proxy, factories, work items, gates, autonomy, scores, benchmarks, proposals, canary, merge queue, integrations, webhooks |
+| API | `apps/api` | path-versioned under `/api/v1` (ADR-030); OpenAPI 3.1 at `GET /api/v1/openapi.json`; runs/SSE, permissions, chat, inference proxy, factories, work items, gates, autonomy, scores, benchmarks, proposals, canary, merge queue, integrations, webhooks |
 | Web console | `apps/web` | full nav parity; chat/runs/inbox/work-items/factory pages/benchmarks/self-improvement/settings |
 | Examples | `factories/example`, `factories/example-lights-off` | lights-on (spec/plan/PR human) vs canary authority |
 
@@ -24,6 +24,12 @@ docker compose up -d --build      # postgres + temporal + api + worker + web
 bash scripts/smoke.sh             # full credential-free smoke (16 sections)
 cd apps/web && bunx playwright test   # 23 E2E flows
 bun run ci                        # typecheck + unit/integration-off + factory validation
+
+# the API surface: one version prefix, /health stays unversioned
+curl -s localhost:8080/health                 # liveness probe
+curl -s localhost:8080/api/v1/health          # same body, versioned
+curl -s localhost:8080/api/v1/openapi.json    # the contract (Swagger UI / Postman)
+curl -s localhost:8080/api/v1/runs            # resources are versioned only
 ```
 
 Integration suites (need compose up) default to the separate `factory_test` database
@@ -59,8 +65,9 @@ end. Harnesses receive `OPENAI_BASE_URL=<proxy>/v1` + the run token.
 ## Real GitHub
 
 Set `GITHUB_TOKEN` (fine-grained PAT: repo, pull_request, checks) and enable the integration via
-`POST /integrations/github` or the Settings page; configure the webhook URL + secret name. `GITHUB_DRY_RUN=1`
-lets you validate wiring without touching a repo.
+`POST /api/v1/integrations/github` or the Settings page; configure the webhook URL + secret name. `GITHUB_DRY_RUN=1`
+lets you validate wiring without touching a repo. GitHub delivers to
+`${WEBHOOK_PUBLIC_URL}/api/v1/webhooks/github` (the Settings page shows the exact URL).
 
 ## Known gaps / next
 

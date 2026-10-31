@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { req } from './helpers';
 import { SQL } from 'bun';
 import { cp, mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -92,7 +93,7 @@ async function waitFor<T>(
 }
 
 async function getJson<T>(path: string): Promise<T> {
-  const response = await app.request(path);
+  const response = await req(app, path);
   if (!response.ok) throw new Error(`GET ${path} failed: ${response.status} ${await response.text()}`);
   return (await response.json()) as T;
 }
@@ -122,7 +123,7 @@ async function driveGates(workItemId: string): Promise<WorkItemDetail> {
     if (TERMINAL.has(detail.workItem.status)) return detail;
 
     const stage = detail.pendingGate!.stage;
-    const response = await app.request(`/work-items/${workItemId}/gates/${stage}`, {
+    const response = await req(app, `/work-items/${workItemId}/gates/${stage}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ decision: 'approve', actor: 'itest', reason: `approve ${stage}` }),
@@ -200,7 +201,7 @@ suite('webhook → loop → merge queue', () => {
 
   test('a signed issue is triaged, implemented, opened as a PR and merged by the queue', async () => {
 
-    const configured = await app.request('/integrations/github', {
+    const configured = await req(app, '/integrations/github', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -231,7 +232,7 @@ suite('webhook → loop → merge queue', () => {
       },
     });
     const deliveryId = `chain-${Date.now()}`;
-    const delivered = await app.request('/webhooks/github', {
+    const delivered = await req(app, '/webhooks/github', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',

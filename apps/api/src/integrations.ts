@@ -10,6 +10,7 @@ import { getSql } from '@factory/orchestration';
 import type { ApiConfig } from './config';
 import { ApiError, invalidRequest } from './errors';
 import { resolveFactoryDir } from './factories';
+import { API_PREFIX } from './routes';
 import { isSecretConfigured, looksLikeSecretValue } from './secrets';
 
 /**
@@ -86,7 +87,7 @@ export interface IntegrationsResponse {
 }
 
 function webhookUrlFor(config: ApiConfig): string {
-  return `${config.webhookPublicUrl.replace(/\/+$/, '')}/webhooks/github`;
+  return `${config.webhookPublicUrl.replace(/\/+$/, '')}${API_PREFIX}/webhooks/github`;
 }
 
 export function githubView(config: ApiConfig, factory: string, record: IntegrationRecord | null): GithubIntegrationView {

@@ -92,8 +92,10 @@ services:
       # Canary follow-ups: keep the last N candidate trees; optional deploy hook timeout.
       CANARY_KEEP_TREES: ${CANARY_KEEP_TREES:-3}
       CANARY_DEPLOY_TIMEOUT_MS: ${CANARY_DEPLOY_TIMEOUT_MS:-60000}
-      # Phase 3b: webhook HMAC (by secret reference), payload cap and the merge queue.
+      # Webhook HMAC (by secret reference), payload cap and the merge queue.
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-smoke-webhook-secret}
+      # Public base URL of the API; the console renders
+      # ${WEBHOOK_PUBLIC_URL}/api/v1/webhooks/github as the delivery target.
       WEBHOOK_PUBLIC_URL: ${WEBHOOK_PUBLIC_URL:-http://localhost:8080}
       WEBHOOK_MAX_BYTES: ${WEBHOOK_MAX_BYTES:-1000000}
       MERGE_BATCH_SIZE: ${MERGE_BATCH_SIZE:-2}
@@ -119,6 +121,7 @@ services:
       temporal:
         condition: service_healthy
     healthcheck:
+      # /health stays unversioned on purpose: a probe must not follow a version bump.
       test:
         [
           'CMD',

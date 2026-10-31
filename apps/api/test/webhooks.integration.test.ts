@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { req } from './helpers';
 import { SQL } from 'bun';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -88,7 +89,7 @@ async function deliver(
   const signature = options.signature === undefined ? signGithubPayload(raw, SECRET) : options.signature;
   if (signature) headers['x-hub-signature-256'] = signature;
 
-  const response = await app.request('/webhooks/github', {
+  const response = await req(app, '/webhooks/github', {
     method: 'POST',
     headers,
     body: raw,
@@ -109,7 +110,7 @@ suite('webhook ingestion', () => {
     config = loadApiConfig();
     app = createApp(config);
 
-    const configured = await app.request('/integrations/github', {
+    const configured = await req(app, '/integrations/github', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -173,7 +174,7 @@ suite('webhook ingestion', () => {
     expect(accepted.body.workItemId).toMatch(/^wi_/);
     createdWorkItems.push(accepted.body.workItemId);
 
-    const detail = await app.request(`/work-items/${accepted.body.workItemId}`);
+    const detail = await req(app, `/work-items/${accepted.body.workItemId}`);
     const body = (await detail.json()) as {
       workItem: {
         source: string;
@@ -196,7 +197,7 @@ suite('webhook ingestion', () => {
     });
 
     // The delivery row records the acceptance and the item it produced.
-    const delivery = await app.request(`/webhook-deliveries/${deliveryId}`);
+    const delivery = await req(app, `/webhook-deliveries/${deliveryId}`);
     const deliveryBody = (await delivery.json()) as {
       delivery: { status: string; workItemId: string; factory: string };
     };
@@ -229,7 +230,7 @@ suite('webhook ingestion', () => {
     // No second work item for the redelivery.
     expect(await forgeItems()).toBe(before + 1);
 
-    const delivery = await app.request(`/webhook-deliveries/${deliveryId}`);
+    const delivery = await req(app, `/webhook-deliveries/${deliveryId}`);
     const body = (await delivery.json()) as {
       delivery: { status: string; workItemId: string; factory: string };
     };
@@ -247,7 +248,7 @@ suite('webhook ingestion', () => {
     expect(result.body.status).toBe('ignored');
     expect(result.body.reason).toBe('bot_sender');
 
-    const delivery = await app.request(`/webhook-deliveries/${deliveryId}`);
+    const delivery = await req(app, `/webhook-deliveries/${deliveryId}`);
     const body = (await delivery.json()) as { delivery: { status: string; reason: string } };
     expect(body.delivery.status).toBe('ignored');
     expect(body.delivery.reason).toBe('bot_sender');
@@ -277,7 +278,7 @@ suite('webhook ingestion', () => {
   }, 30_000);
 
   test('the integration projection reports the connection by reference', async () => {
-    const response = await app.request(`/factories/${FACTORY}/integrations`);
+    const response = await req(app, `/factories/${FACTORY}/integrations`);
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       github: {
@@ -306,7 +307,7 @@ suite('webhook ingestion', () => {
   }, 30_000);
 
   test('a token value is refused as a secret reference', async () => {
-    const response = await app.request('/integrations/github', {
+    const response = await req(app, '/integrations/github', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -320,7 +321,7 @@ suite('webhook ingestion', () => {
   }, 30_000);
 
   test('the automations projection lists webhook and cron status', async () => {
-    const response = await app.request(`/factories/${FACTORY}/automations`);
+    const response = await req(app, `/factories/${FACTORY}/automations`);
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       automations: {

@@ -1,15 +1,15 @@
-import { apiBaseUrl } from '@/lib/api';
+import { apiUrl } from '@/lib/api';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-/** Creates a chat run through `POST /chat`; the client then subscribes to the run stream. */
+/** Creates a chat run through the versioned `POST /api/v1/chat`; the client then subscribes to the run stream. */
 export async function POST(request: Request): Promise<Response> {
   const body = await request.text();
 
   let upstream: Response;
   try {
-    upstream = await fetch(`${apiBaseUrl()}/chat`, {
+    upstream = await fetch(apiUrl('/chat'), {
       method: 'POST',
       headers: { accept: 'application/json', 'content-type': 'application/json' },
       body,

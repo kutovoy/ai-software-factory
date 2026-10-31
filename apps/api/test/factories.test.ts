@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test';
+import { req } from './helpers';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -18,7 +19,7 @@ const config = loadApiConfig({
 const app = createApp(config);
 
 async function get(path: string): Promise<{ status: number; body: any }> {
-  const response = await app.request(path);
+  const response = await req(app, path);
   return { status: response.status, body: await response.json() };
 }
 

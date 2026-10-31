@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { req } from './helpers';
 import { SQL } from 'bun';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -51,7 +52,7 @@ async function migrate(databaseUrl: string): Promise<void> {
 }
 
 async function postJson(path: string, body: unknown): Promise<Response> {
-  return await app.request(path, {
+  return await req(app, path, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -109,7 +110,7 @@ suite('benchmark API', () => {
   }, 30_000);
 
   test('GET /factories/:name/benchmarks projects suites, hash and gate', async () => {
-    const response = await app.request(`/factories/${FACTORY}/benchmarks`);
+    const response = await req(app, `/factories/${FACTORY}/benchmarks`);
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       factory: string;
@@ -211,7 +212,7 @@ suite('benchmark API', () => {
     await sql`delete from benchmark_attestations where factory = ${FACTORY}`;
     await sql`delete from autonomy_state where factory = ${FACTORY}`;
 
-    const gateResponse = await app.request(`/factories/${FACTORY}/benchmark-gate`);
+    const gateResponse = await req(app, `/factories/${FACTORY}/benchmark-gate`);
     expect(gateResponse.status).toBe(200);
     const gate = (await gateResponse.json()) as GateBody;
     expect(gate.required).toBe(true);
@@ -231,7 +232,7 @@ suite('benchmark API', () => {
       passed: true,
     });
 
-    const stillStale = (await (await app.request(`/factories/${FACTORY}/benchmark-gate`)).json()) as GateBody;
+    const stillStale = (await (await req(app, `/factories/${FACTORY}/benchmark-gate`)).json()) as GateBody;
     expect(stillStale.satisfied).toBe(false);
 
     const refused = await postJson('/autonomy', {
@@ -256,7 +257,7 @@ suite('benchmark API', () => {
       passed: true,
     });
 
-    const satisfied = (await (await app.request(`/factories/${FACTORY}/benchmark-gate`)).json()) as GateBody;
+    const satisfied = (await (await req(app, `/factories/${FACTORY}/benchmark-gate`)).json()) as GateBody;
     expect(satisfied.satisfied).toBe(true);
     expect(satisfied.code).toBeNull();
 
@@ -274,7 +275,7 @@ suite('benchmark API', () => {
     expect(enabledBody.autonomy.benchmarkGateSatisfied).toBe(true);
     expect(enabledBody.autonomy.benchmarkAttestationSatisfied).toBe(true);
 
-    const attestations = (await (await app.request(`/factories/${FACTORY}/attestations`)).json()) as {
+    const attestations = (await (await req(app, `/factories/${FACTORY}/attestations`)).json()) as {
       definitionCommit: string;
       attestations: { configHash: string; passed: boolean; calibrationOk: boolean }[];
       benchmarkGate: GateBody;

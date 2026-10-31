@@ -11,6 +11,7 @@ import { toOrchestrationConfig } from './config';
 import { ApiError, invalidRequest } from './errors';
 import { resolveFactoryDir } from './factories';
 import { log } from './logger';
+import { API_PREFIX } from './routes';
 
 /**
  * Merge queue projection (spec `merge-queue`, ADR-022).
@@ -208,7 +209,7 @@ export async function getAutomationsForApi(
     factory,
     automations,
     webhook: {
-      url: `${config.webhookPublicUrl.replace(/\/+$/, '')}/webhooks/github`,
+      url: `${config.webhookPublicUrl.replace(/\/+$/, '')}${API_PREFIX}/webhooks/github`,
       secretRef: integration?.webhookSecretRef ?? config.webhookSecretRef,
     },
     schedules,

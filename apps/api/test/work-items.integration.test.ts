@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { req } from './helpers';
 import { SQL } from 'bun';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -62,7 +63,7 @@ async function migrate(databaseUrl: string): Promise<void> {
 const JSON_HEADERS = { 'content-type': 'application/json' };
 
 async function postJson(target: Hono, path: string, body: unknown): Promise<Response> {
-  return await target.request(path, {
+  return await req(target, path, {
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify(body),
@@ -115,12 +116,12 @@ suite('work item API', () => {
     expect(body.workItem.sourceRef).toMatchObject({ kind: 'issue', id: '123' });
     expect(body.workflow?.workflowId).toBe(`factory-${body.workItem.id}`);
 
-    const list = await app.request('/work-items?factory=example&stage=triage&status=active');
+    const list = await req(app, '/work-items?factory=example&stage=triage&status=active');
     expect(list.status).toBe(200);
     const listed = (await list.json()) as { workItems: Array<{ id: string }> };
     expect(listed.workItems.some((item) => item.id === body.workItem.id)).toBe(true);
 
-    const detail = await app.request(`/work-items/${body.workItem.id}`);
+    const detail = await req(app, `/work-items/${body.workItem.id}`);
     expect(detail.status).toBe(200);
     const detailBody = (await detail.json()) as {
       workItem: { id: string };
@@ -133,7 +134,7 @@ suite('work item API', () => {
   }, 60_000);
 
   test('GET /work-items/:id returns 404 for an unknown item', async () => {
-    const response = await app.request('/work-items/wi_00000000000000000000000000');
+    const response = await req(app, '/work-items/wi_00000000000000000000000000');
     expect(response.status).toBe(404);
     const body = (await response.json()) as { code: string };
     expect(body.code).toBe('work_item_not_found');
@@ -254,7 +255,7 @@ suite('work item API', () => {
     const sql = getSql();
     await sql`delete from autonomy_state where factory = 'example'`;
 
-    const initial = await app.request('/autonomy?factory=example');
+    const initial = await req(app, '/autonomy?factory=example');
     expect(initial.status).toBe(200);
     const initialBody = (await initial.json()) as {
       autonomy: {
@@ -295,7 +296,7 @@ suite('work item API', () => {
     });
     expect(enabled.status).toBe(200);
 
-    const after = await app.request('/autonomy?factory=example');
+    const after = await req(app, '/autonomy?factory=example');
     const afterBody = (await after.json()) as {
       autonomy: {
         enabled: boolean;
@@ -357,7 +358,7 @@ suite('work item API', () => {
     expect(repeatBody.eventRecorded).toBe(false);
     expect(repeatBody.cancelRequestedAt).toBe(firstBody.cancelRequestedAt);
 
-    const detail = await app.request(`/work-items/${workItem.id}`);
+    const detail = await req(app, `/work-items/${workItem.id}`);
     const detailBody = (await detail.json()) as {
       workItem: { cancelActor: string | null; cancelReason: string | null };
       events: { type: string }[];

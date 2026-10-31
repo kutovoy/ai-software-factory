@@ -1,0 +1,294 @@
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
+import { Badge } from '@/components/ui/Badge';
+import { Card, CardBody, CardHeader } from '@/components/ui/Card';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Table } from '@/components/ui/Table';
+import { CancelRunButton } from '@/components/runs/CancelRunButton';
+import { RunLive } from '@/components/stream/RunLive';
+import { ApiClientError, apiGet, safeGet } from '@/lib/api';
+import {
+  formatCost,
+  formatDateTime,
+  formatDuration,
+  formatTokens,
+  statusTone,
+} from '@/lib/format';
+import type { RunArtifact, RunDetail, RunStep, ScoresResponse } from '@/lib/types';
+
+export const dynamic = 'force-dynamic';
+
+const TERMINAL = new Set(['ok', 'error', 'cancelled']);
+
+export default async function RunDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ focus?: string }>;
+}) {
+  const { id } = await params;
+  const { focus } = await searchParams;
+
+  let detail: RunDetail;
+  try {
+    detail = await apiGet<RunDetail>(`/runs/${encodeURIComponent(id)}`);
+  } catch (error) {
+    if (error instanceof ApiClientError && error.status === 404) notFound();
+    throw error;
+  }
+
+  const scores = await safeGet<ScoresResponse>(
+    `/scores?run=${encodeURIComponent(id)}&limit=50`,
+    { scores: [], aggregate: [] },
+  );
+
+  const { run, summary, steps, artifacts, permissions } = detail;
+  const artifactList = (artifacts ?? []) as RunArtifact[];
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-4 px-6 py-6">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-lg font-semibold text-slate-900">{run.title ?? run.id}</h1>
+            <Badge tone={statusTone(run.status)} testId="run-detail-status">
+              {run.status}
+            </Badge>
+            <Badge tone="neutral">{run.kind}</Badge>
+          </div>
+          <p className="font-mono text-xs text-slate-500" data-testid="run-id">
+            {run.id}
+          </p>
+        </div>
+        <CancelRunButton runId={run.id} disabled={TERMINAL.has(run.status)} />
+      </header>
+
+      <Card testId="run-meta">
+        <CardBody className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-400">Factory</p>
+            <Link
+              href={`/factories/${encodeURIComponent(run.factory)}/dashboard`}
+              className="font-mono text-sm text-slate-800 underline decoration-slate-300 underline-offset-2"
+            >
+              {run.factory}
+            </Link>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-400">Pinned commit</p>
+            <p data-testid="pinned-commit" className="font-mono text-sm text-slate-800">
+              {summary.definitionCommit}
+              {summary.definitionDirty ? ' (dirty)' : ''}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-400">Harness / model</p>
+            <p className="font-mono text-sm text-slate-800">
+              <span data-testid="run-harness">{run.harness}</span>
+              {' · '}
+              <span data-testid="run-model">{run.model ?? '—'}</span>
+            </p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-400">Runner</p>
+            <p className="font-mono text-sm text-slate-800" data-testid="run-runner">
+              {run.runner}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-400">Started</p>
+            <p className="text-sm text-slate-800" data-testid="run-started">
+              {formatDateTime(summary.startedAt)}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-400">Duration</p>
+            <p className="text-sm text-slate-800" data-testid="run-duration">
+              {formatDuration(summary.startedAt, summary.endedAt)}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-400">Cost</p>
+            <p className="text-sm text-slate-800" data-testid="run-cost">
+              {formatCost(summary.costUsd)}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-400">Tokens</p>
+            <p className="text-sm text-slate-800" data-testid="run-tokens">
+              in {formatTokens(summary.inputTokens)} · out {formatTokens(summary.outputTokens)}
+            </p>
+          </div>
+        </CardBody>
+        {run.error ? (
+          <CardBody className="border-t border-slate-100">
+            <p data-testid="run-error" className="text-sm text-red-700">
+              <span className="font-semibold">error:</span> {run.error}
+            </p>
+          </CardBody>
+        ) : null}
+      </Card>
+
+      <Card testId="run-scores-card">
+        <CardHeader
+          title="Scores"
+          hint="Deterministic checks and sampled judge scores attached to this run."
+          action={
+            <Badge tone="neutral" testId="run-scores-count">
+              {scores.scores.length}
+            </Badge>
+          }
+        />
+        {scores.scores.length === 0 ? (
+          <CardBody>
+            <EmptyState
+              testId="run-scores-empty"
+              title="No scores for this run yet"
+              description="Scoring runs after the run reaches a terminal state. On-demand scoring is available via POST /scoring."
+            />
+          </CardBody>
+        ) : (
+          <div className="overflow-x-auto">
+            <table data-testid="run-scores" className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  {['Scorer', 'Class', 'Status', 'Label', 'Score', 'Passing', 'Cost', ''].map((header) => (
+                    <th key={header} className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      {header}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {scores.scores.map((score) => (
+                  <tr key={score.id} data-testid="run-score-row" data-scorer={score.scorer}>
+                    <td className="px-4 py-2 font-medium text-slate-900">{score.scorer}</td>
+                    <td className="px-4 py-2">
+                      <Badge tone={score.scorerClass === 'deterministic' ? 'info' : 'neutral'}>
+                        {score.scorerClass}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-2">
+                      <Badge tone={score.status === 'ok' ? 'success' : score.status === 'skipped' ? 'warning' : 'danger'}>
+                        {score.status}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-2 font-mono text-xs text-slate-800" data-testid="run-score-label">
+                      {score.label ?? score.errorCode ?? '—'}
+                    </td>
+                    <td className="px-4 py-2 font-mono text-xs text-slate-800">
+                      {score.score ?? '—'}
+                    </td>
+                    <td className="px-4 py-2">
+                      {score.status === 'ok' ? (
+                        <Badge tone={score.passing ? 'success' : 'danger'}>
+                          {score.passing ? 'pass' : 'fail'}
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 font-mono text-xs text-slate-700">
+                      {formatCost(score.provenance.costUsd)}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      <Link
+                        href={`/scores/${encodeURIComponent(score.id)}`}
+                        data-testid="run-score-link"
+                        className="text-xs font-medium text-slate-700 underline decoration-slate-300 underline-offset-2"
+                      >
+                        Detail
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card testId="run-steps-card">
+          <CardHeader title="Steps" hint="Runner lease, harness session and the event pump." />
+          <Table
+            testId="run-steps"
+            rowTestId="run-step"
+            rows={steps}
+            rowKey={(step: RunStep) => step.step_id}
+            empty={<CardBody><EmptyState testId="run-steps-empty" title="No steps recorded yet" /></CardBody>}
+            columns={[
+              {
+                header: 'Step',
+                cell: (step: RunStep) => (
+                  <span className="font-mono text-xs text-slate-800">{step.step_id}</span>
+                ),
+              },
+              {
+                header: 'Kind',
+                cell: (step: RunStep) => (
+                  <span className="text-xs text-slate-600">{step.kind}</span>
+                ),
+              },
+              {
+                header: 'Status',
+                cell: (step: RunStep) => (
+                  <Badge tone={statusTone(step.status)}>{step.status}</Badge>
+                ),
+              },
+              {
+                header: 'Ended',
+                cell: (step: RunStep) => (
+                  <span className="text-xs text-slate-500">
+                    {step.ended_at ? formatDateTime(step.ended_at) : '—'}
+                  </span>
+                ),
+              },
+            ]}
+          />
+        </Card>
+
+        <Card testId="run-artifacts-card">
+          <CardHeader title="Artifacts" hint="Patches, logs and screenshots captured by the runner." />
+          {artifactList.length === 0 ? (
+            <CardBody>
+              <EmptyState testId="run-artifacts-empty" title="No artifacts for this run" />
+            </CardBody>
+          ) : (
+            <CardBody>
+              <ul data-testid="run-artifacts" className="space-y-1 text-sm">
+                {artifactList.map((artifact, index) => (
+                  <li
+                    key={`${artifact.path ?? index}`}
+                    className="flex items-center justify-between gap-2"
+                  >
+                    <span className="font-mono text-xs text-slate-700">
+                      {typeof artifact === 'string' ? artifact : artifact.path}
+                    </span>
+                    {typeof artifact === 'object' && artifact.bytes !== undefined ? (
+                      <span className="text-xs text-slate-400">{artifact.bytes} bytes</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </CardBody>
+          )}
+        </Card>
+      </div>
+
+      <Card testId="run-events-card">
+        <CardHeader
+          title="Event stream"
+          hint="Replayed from the persisted log, then tailed live — the same renderer New Chat uses."
+        />
+        <RunLive
+          runId={run.id}
+          initialStatus={run.status}
+          permissions={permissions}
+          focus={focus}
+        />
+      </Card>
+    </div>
+  );
+}

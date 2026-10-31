@@ -1,9 +1,10 @@
-import { apiBaseUrl } from './api';
+import { apiUrl } from './api';
 
 /**
  * Same-origin proxy for browser-side actions (ADR-012: the browser never talks to
  * `apps/api` directly). Route handlers forward verbatim and preserve the API's status and
- * error envelope so the client can branch on stable `code` strings.
+ * error envelope so the client can branch on stable `code` strings. `apiUrl` applies the
+ * `/api/v1` backend prefix; the browser-facing route stays `/api/*`.
  */
 export async function forwardToApi(
   path: string,
@@ -11,7 +12,7 @@ export async function forwardToApi(
 ): Promise<Response> {
   let upstream: Response;
   try {
-    upstream = await fetch(`${apiBaseUrl()}${path}`, {
+    upstream = await fetch(apiUrl(path), {
       method: init.method,
       headers: {
         accept: 'application/json',

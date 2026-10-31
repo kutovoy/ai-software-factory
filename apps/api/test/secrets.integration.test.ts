@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { req } from './helpers';
 import { SQL } from 'bun';
 import { mkdtempSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
@@ -70,7 +71,7 @@ async function migrate(databaseUrl: string): Promise<void> {
 }
 
 async function post(path: string, body: unknown): Promise<{ status: number; body: any }> {
-  const response = await app.request(path, {
+  const response = await req(app, path, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -143,7 +144,7 @@ suite('secrets + MCP integration', () => {
     const unresolved = await post('/secrets', { name: 'ITEST_MISSING_TOKEN' });
     expect(unresolved.body.secret.status).toBe('unresolved');
 
-    const list = await app.request('/secrets');
+    const list = await req(app, '/secrets');
     expect(list.status).toBe(200);
     const listed = (await list.json()) as { secrets: Array<{ name: string; status: string }> };
     expect(listed.secrets.find((secret) => secret.name === SECRET)?.status).toBe('resolved');
@@ -208,7 +209,7 @@ suite('secrets + MCP integration', () => {
   }, 60_000);
 
   test('GET /secrets/:name/usage returns the run and the referencing resources', async () => {
-    const response = await app.request(`/secrets/${SECRET}/usage`);
+    const response = await req(app, `/secrets/${SECRET}/usage`);
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       name: string;
@@ -225,7 +226,7 @@ suite('secrets + MCP integration', () => {
   });
 
   test('delete is refused while a definition references the name', async () => {
-    const response = await app.request(`/secrets/${SECRET}`, { method: 'DELETE' });
+    const response = await req(app, `/secrets/${SECRET}`, { method: 'DELETE' });
     expect(response.status).toBe(409);
     const body = (await response.json()) as { code: string };
     expect(body.code).toBe('secret_in_use');
@@ -255,7 +256,7 @@ suite('secrets + MCP integration', () => {
     });
 
     // GET is the same projection.
-    const fetched = await app.request('/factories/example/mcp');
+    const fetched = await req(app, '/factories/example/mcp');
     expect(fetched.status).toBe(200);
     expect(((await fetched.json()) as { servers: unknown[] }).servers.length).toBeGreaterThan(0);
   });
@@ -306,7 +307,7 @@ suite('secrets + MCP integration', () => {
   }, 60_000);
 
   test('a registered name that is not referenced can be deleted', async () => {
-    const response = await app.request('/secrets/ITEST_MISSING_TOKEN', { method: 'DELETE' });
+    const response = await req(app, '/secrets/ITEST_MISSING_TOKEN', { method: 'DELETE' });
     expect(response.status).toBe(200);
     const registered = await listSecrets(getSql(), { resolves: () => false });
     expect(registered.find((entry) => entry.secret.name === 'ITEST_MISSING_TOKEN')).toBeUndefined();

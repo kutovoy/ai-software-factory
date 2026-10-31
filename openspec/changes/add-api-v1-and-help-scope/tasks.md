@@ -2,22 +2,22 @@
 
 ## 1. API v1 (`apps/api`, `apps/web`)
 
-- [ ] 1.1 Register every route under `/api/v1` via one prefix constant; keep `GET /health` unversioned and add
+- [x] 1.1 Register every route under `/api/v1` via one prefix constant; keep `GET /health` unversioned and add
       `GET /api/v1/health`
-- [ ] 1.2 Update all server-side fetches (`apps/web/src/lib/api.ts` and pages), same-origin route handlers and
+- [x] 1.2 Update all server-side fetches (`apps/web/src/lib/api.ts` and pages), same-origin route handlers and
       `API_BASE_URL` usage
-- [ ] 1.3 Update `scripts/smoke.sh`, `scripts/smoke-permissions.sh`, docs/HANDOVER repro commands and any
+- [x] 1.3 Update `scripts/smoke.sh`, `scripts/smoke-permissions.sh`, docs/HANDOVER repro commands and any
       `curl` examples
-- [ ] 1.4 Update API tests and integration tests to the new paths; add a test asserting unversioned resource
+- [x] 1.4 Update API tests and integration tests to the new paths; add a test asserting unversioned resource
       paths return 404
-- [ ] 1.5 Webhook URL rendering and `WEBHOOK_PUBLIC_URL` examples use `/api/v1/webhooks/:provider`
+- [x] 1.5 Webhook URL rendering and `WEBHOOK_PUBLIC_URL` examples use `/api/v1/webhooks/:provider`
 
 ## 2. OpenAPI (`apps/api`)
 
-- [ ] 2.1 `apps/api/openapi.json` (OpenAPI 3.1): every route with method, path, summary, params, response codes
-- [ ] 2.2 Serve it at `GET /api/v1/openapi.json`
-- [ ] 2.3 Contract test: registered route table ↔ spec, failing on either direction with method + path
-- [ ] 2.4 Test: spec is valid JSON and every path starts with `/api/v1` (health documented as unversioned)
+- [x] 2.1 `apps/api/openapi.json` (OpenAPI 3.1): every route with method, path, summary, params, response codes
+- [x] 2.2 Serve it at `GET /api/v1/openapi.json`
+- [x] 2.3 Contract test: registered route table ↔ spec, failing on either direction with method + path
+- [x] 2.4 Test: spec is valid JSON and every path starts with `/api/v1` (health documented as unversioned)
 
 ## 3. Help: API section
 
@@ -55,5 +55,5 @@
 
 - [ ] 7.1 Playwright: API nav → reference lists endpoints; sidebar footer visible on help; `?` on `/help/api`
 - [ ] 7.2 UI audit still clean (35+ routes, no overflow, no console errors)
-- [ ] 7.3 `bun run ci`, smoke, Playwright green
+- [x] 7.3 `bun run ci`, smoke, Playwright green
 - [ ] 7.4 STATUS + ADR-030 (path-versioned API, spec parity) + `openspec validate`

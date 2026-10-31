@@ -30,6 +30,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 API_URL="${API_URL:-http://localhost:8080}"
+# Every public resource route is versioned (ADR-030); /health stays unversioned.
+API="${API_URL}/api/v1"
 WEB_URL="${WEB_URL:-http://localhost:3000}"
 DATABASE_URL="${DATABASE_URL:-postgres://factory:factory@localhost:5433/factory}"
 RUNS_DIR="${RUNS_DIR:-runs}"
@@ -50,11 +52,11 @@ cleanup() {
   # nightly. GITHUB_TOKEN stays: the definition references it, and the registry refuses
   # to delete an in-use name by design.
   if [ -n "${API_URL:-}" ]; then
-    curl -sS -X POST "$API_URL/factories/example/automations/nightly/pause" \
+    curl -sS -X POST "$API/factories/example/automations/nightly/pause" \
       -H 'content-type: application/json' \
       -d '{"actor":"smoke","reason":"smoke: pause the synced nightly schedule"}' \
       >/dev/null 2>&1 || true
-    curl -sS -X DELETE "$API_URL/secrets/SMOKE_UNRESOLVED_TOKEN" \
+    curl -sS -X DELETE "$API/secrets/SMOKE_UNRESOLVED_TOKEN" \
       >/dev/null 2>&1 || true
   fi
   rm -rf "$TMP_DIR"
@@ -92,6 +94,18 @@ done
 [ "$(printf '%s' "$health" | jget status)" = "ok" ] || fail "health is not ok: $health"
 pass "health ok ($(printf '%s' "$health" | jget checks.temporal.address))"
 
+# 1a. the versioned surface: /api/v1/health mirrors the probe, /api/v1/openapi.json is
+# served, and unversioned resource paths are gone (ADR-030).
+versioned_health="$(api "$API/health" || true)"
+[ "$(printf '%s' "$versioned_health" | jget status)" = "ok" ] \
+  || fail "GET /api/v1/health is not ok: $versioned_health"
+[ "$(api "$API/openapi.json" | jget openapi)" = "3.1.0" ] \
+  || fail "GET /api/v1/openapi.json did not return the OpenAPI 3.1 document"
+unversioned_code="$(curl -sS -o "$TMP_DIR/unversioned.json" -w '%{http_code}' "$API_URL/runs" || true)"
+[ "$unversioned_code" = "404" ] \
+  || fail "unversioned GET /runs must 404 (got ${unversioned_code:-none})"
+pass "versioned health + openapi served; unversioned /runs 404s"
+
 # ------------------------------------------------------------ 1b. web console
 log "waiting for $WEB_URL/"
 web_code=""
@@ -118,7 +132,7 @@ pass "migrations applied"
 
 # ------------------------------------------------------------- 3. chat run
 log "creating fake-harness chat run"
-created="$(api -X POST "$API_URL/chat" \
+created="$(api -X POST "$API/chat" \
   -H 'content-type: application/json' \
   -d '{"factory":"example","harness":"fake","fakeDelayMs":250,"prompt":"smoke: read the README"}')"
 run_id="$(printf '%s' "$created" | jget run.id)"
@@ -129,7 +143,7 @@ pass "run $run_id created (model=$model)"
 
 # --------------------------------------------------------- 4. proxy checks
 log "exercising the inference proxy"
-token_resp="$(api -X POST "$API_URL/runs/$run_id/proxy-token")"
+token_resp="$(api -X POST "$API/runs/$run_id/proxy-token")"
 token="$(printf '%s' "$token_resp" | jget token)"
 [ -n "$token" ] || fail "no proxy token (is EXPOSE_RUN_TOKEN=1?): $token_resp"
 pass "proxy token minted for run"
@@ -171,19 +185,19 @@ pass "proxy enforces the model allowlist"
 
 # ------------------------------------------------------ 5. SSE + permission
 log "streaming events and approving the permission request"
-api -N --max-time 120 "$API_URL/runs/$run_id/events" > "$TMP_DIR/sse.log" &
+api -N --max-time 120 "$API/runs/$run_id/events" > "$TMP_DIR/sse.log" &
 SSE_PID=$!
 
 request_id=""
 for _ in $(seq 1 120); do
-  detail="$(api "$API_URL/runs/$run_id")"
+  detail="$(api "$API/runs/$run_id")"
   request_id="$(printf '%s' "$detail" | jget pendingPermissions.0.request_id)"
   [ -n "$request_id" ] && break
   sleep 0.5
 done
 [ -n "$request_id" ] || fail "no pending permission request appeared"
 
-decision="$(api -X POST "$API_URL/runs/$run_id/permissions/$request_id" \
+decision="$(api -X POST "$API/runs/$run_id/permissions/$request_id" \
   -H 'content-type: application/json' -d '{"decision":"allow"}')"
 [ "$(printf '%s' "$decision" | jget decision)" = "allow" ] || fail "permission approval failed: $decision"
 pass "permission $request_id approved"
@@ -204,7 +218,7 @@ pass "SSE streamed $event_count events, exactly one terminal"
 detail=""
 run_status=""
 for _ in $(seq 1 120); do
-  detail="$(api "$API_URL/runs/$run_id")"
+  detail="$(api "$API/runs/$run_id")"
   run_status="$(printf '%s' "$detail" | jget run.status)"
   case "$run_status" in
     ok|error|cancelled) break ;;
@@ -216,7 +230,7 @@ pass "run reached status ok"
 
 # ------------------------------------------------------- 6b. scoring (4a)
 log "scoring the completed run (deterministic registry + stub judge)"
-scoring_resp="$(api -X POST "$API_URL/scoring" \
+scoring_resp="$(api -X POST "$API/scoring" \
   -H 'content-type: application/json' \
   -d "{\"factory\":\"example\",\"runId\":\"$run_id\",\"force\":true}")"
 score_workflow="$(printf '%s' "$scoring_resp" | jget workflow.workflowId)"
@@ -225,7 +239,7 @@ score_workflow="$(printf '%s' "$scoring_resp" | jget workflow.workflowId)"
 score_id=""
 score_status=""
 for _ in $(seq 1 120); do
-  scores_resp="$(api "$API_URL/scores?run=$run_id")"
+  scores_resp="$(api "$API/scores?run=$run_id")"
   score_id="$(printf '%s' "$scores_resp" | jget scores.0.id)"
   score_status="$(printf '%s' "$scores_resp" | jget scores.0.status)"
   [ -n "$score_id" ] && break
@@ -241,7 +255,7 @@ case "$score_uncalibrated" in
   *) fail "judge score has no uncalibrated flag (got '$score_uncalibrated')" ;;
 esac
 
-score_detail="$(api "$API_URL/scores/$score_id")"
+score_detail="$(api "$API/scores/$score_id")"
 [ "$(printf '%s' "$score_detail" | jget events.0.type)" = "score.completed" ] \
   || fail "score detail has no score.completed event"
 [ "$(printf '%s' "$score_detail" | jget score.rubricHash)" != "" ] \
@@ -271,7 +285,7 @@ pass "run detail contains no provider key (runner env is proxy-only)"
 
 # --------------------------------------------------------------- 7. replay
 log "checking Last-Event-ID replay"
-replay="$(api -H 'Last-Event-ID: 3' "$API_URL/runs/$run_id/events")"
+replay="$(api -H 'Last-Event-ID: 3' "$API/runs/$run_id/events")"
 first_id="$(printf '%s' "$replay" | grep -m1 '^id: ' | awk '{print $2}')"
 [ "$first_id" = "4" ] || fail "replay after Last-Event-ID: 3 started at id $first_id"
 if printf '%s' "$replay" | grep -q '^id: [123]$'; then fail "replay repeated an already-seen event"; fi
@@ -302,7 +316,7 @@ API_URL="$API_URL" bash scripts/smoke-permissions.sh \
 
 # ---------------------------------------- 11. factory loop (one stage, fake forge)
 log "running a one-stage factory loop (fake harness + fake forge)"
-loop_created="$(api -X POST "$API_URL/work-items" \
+loop_created="$(api -X POST "$API/work-items" \
   -H 'content-type: application/json' \
   -d '{"factory":"example","title":"smoke: loop stage","type":"task","source":"manual","harness":"fake","prompt":"smoke: fix the broken readme link"}')"
 loop_id="$(printf '%s' "$loop_created" | jget workItem.id)"
@@ -316,7 +330,7 @@ loop_id="$(printf '%s' "$loop_created" | jget workItem.id)"
 gate_stage=""
 detail=""
 for _ in $(seq 1 120); do
-  detail="$(api "$API_URL/work-items/$loop_id")"
+  detail="$(api "$API/work-items/$loop_id")"
   gate_stage="$(printf '%s' "$detail" | jget pendingGate.stage)"
   [ -n "$gate_stage" ] && break
   sleep 0.5
@@ -325,7 +339,7 @@ done
 [ "$(printf '%s' "$detail" | jget pendingGate.gate)" = "human" ] || fail "triage gate is not human"
 pass "work item $loop_id reached the triage gate"
 
-decision="$(api -X POST "$API_URL/work-items/$loop_id/gates/triage" \
+decision="$(api -X POST "$API/work-items/$loop_id/gates/triage" \
   -H 'content-type: application/json' \
   -d '{"decision":"approve","actor":"smoke","reason":"smoke: triage looks scoped"}')"
 [ "$(printf '%s' "$decision" | jget decision)" = "approve" ] \
@@ -335,7 +349,7 @@ decision="$(api -X POST "$API_URL/work-items/$loop_id/gates/triage" \
 
 transitioned=0
 for _ in $(seq 1 120); do
-  detail="$(api "$API_URL/work-items/$loop_id")"
+  detail="$(api "$API/work-items/$loop_id")"
   stage="$(printf '%s' "$detail" | jget workItem.stage)"
   if [ "$stage" != "triage" ]; then transitioned=1; break; fi
   sleep 0.5
@@ -363,13 +377,13 @@ pass "work item $loop_id: triage gate approved → spec (stage.changed + gate.de
 # Cleanup: reject the next pending gate so the smoke leaves no parked workflow.
 next_stage=""
 for _ in $(seq 1 60); do
-  detail="$(api "$API_URL/work-items/$loop_id")"
+  detail="$(api "$API/work-items/$loop_id")"
   next_stage="$(printf '%s' "$detail" | jget pendingGate.stage)"
   [ -n "$next_stage" ] && break
   sleep 0.5
 done
 if [ -n "$next_stage" ]; then
-  api -X POST "$API_URL/work-items/$loop_id/gates/$next_stage" \
+  api -X POST "$API/work-items/$loop_id/gates/$next_stage" \
     -H 'content-type: application/json' \
     -d '{"decision":"reject","actor":"smoke","reason":"smoke: cleanup"}' >/dev/null
 fi
@@ -377,14 +391,14 @@ pass "one-stage loop verified and cleaned up"
 
 # ---------------------------------------- 12. benchmarks (Phase 4b, fake stack)
 log "calibrating the judge, then running a tiny benchmark (1 task × 2 configs)"
-calibration_resp="$(api -X POST "$API_URL/calibration" \
+calibration_resp="$(api -X POST "$API/calibration" \
   -H 'content-type: application/json' \
   -d "{\"factory\":\"example\",\"scorer\":\"scope\",\"name\":\"smoke benchmark calibration\",\"minSize\":1,\"threshold\":1,\"items\":[{\"runId\":\"$run_id\",\"humanLabel\":\"compliant\"}]}")"
 [ "$(printf '%s' "$calibration_resp" | jget calibration.verdict)" = "pass" ] \
   || fail "calibration did not pass: $calibration_resp"
 pass "judge calibrated against the smoke run"
 
-benchmark_resp="$(api -X POST "$API_URL/factories/example/benchmarks/review/run" \
+benchmark_resp="$(api -X POST "$API/factories/example/benchmarks/review/run" \
   -H 'content-type: application/json' \
   -d '{"configurations":["Baseline","Candidate"],"tasks":["broken-doc-link"],"confirm":true,"maxCostUsd":10}')"
 benchmark_id="$(printf '%s' "$benchmark_resp" | jget benchmark.id)"
@@ -396,7 +410,7 @@ pass "benchmark $benchmark_id started (configHash ${benchmark_config_hash:0:12})
 benchmark_detail=""
 benchmark_status=""
 for _ in $(seq 1 240); do
-  benchmark_detail="$(api "$API_URL/benchmarks/$benchmark_id")"
+  benchmark_detail="$(api "$API/benchmarks/$benchmark_id")"
   benchmark_status="$(printf '%s' "$benchmark_detail" | jget benchmark.status)"
   started_event="$(printf '%s' "$benchmark_detail" | jget events.0.type)"
   completed_event="$(printf '%s' "$benchmark_detail" | jget events.1.type)"
@@ -447,7 +461,7 @@ printf '%s' "$benchmark_detail" | bun -e '
 ' || fail "benchmark matrix / attestation assertions failed"
 pass "benchmark $benchmark_id: 2 trials, 2 results, pass rate 1, attestation recorded"
 
-attestations_resp="$(api "$API_URL/factories/example/attestations")"
+attestations_resp="$(api "$API/factories/example/attestations")"
 printf '%s' "$attestations_resp" | bun -e '
   const d = JSON.parse(await Bun.stdin.text());
   const rows = d.attestations ?? [];
@@ -461,17 +475,17 @@ pass "attestation row is queryable by (factory, definitionCommit, configHash)"
 
 # ---------------------------------------- 13. self-improvement (Phase 5)
 log "creating a failed scored run for the improvement corpus"
-cancel_created="$(api -X POST "$API_URL/chat" \
+cancel_created="$(api -X POST "$API/chat" \
   -H 'content-type: application/json' \
   -d '{"factory":"example","harness":"fake","fakeDelayMs":8000,"prompt":"smoke: improvement corpus failure"}')"
 cancel_run_id="$(printf '%s' "$cancel_created" | jget run.id)"
 [ -n "$cancel_run_id" ] || fail "no cancelled-corpus run id: $cancel_created"
-api -X POST "$API_URL/runs/$cancel_run_id/cancel" \
+api -X POST "$API/runs/$cancel_run_id/cancel" \
   -H 'content-type: application/json' -d '{"reason":"smoke: improvement corpus failure"}' >/dev/null
 
 cancel_status=""
 for _ in $(seq 1 120); do
-  cancel_status="$(api "$API_URL/runs/$cancel_run_id" | jget run.status)"
+  cancel_status="$(api "$API/runs/$cancel_run_id" | jget run.status)"
   case "$cancel_status" in
     cancelled|error) break ;;
     ok) fail "corpus run completed before it could be cancelled" ;;
@@ -481,12 +495,12 @@ done
 [ "$cancel_status" = "cancelled" ] || fail "corpus run did not reach cancelled (got ${cancel_status:-none})"
 pass "corpus run $cancel_run_id cancelled"
 
-api -X POST "$API_URL/scoring" \
+api -X POST "$API/scoring" \
   -H 'content-type: application/json' \
   -d "{\"factory\":\"example\",\"runId\":\"$cancel_run_id\",\"force\":true}" >/dev/null
 corpus_score_id=""
 for _ in $(seq 1 120); do
-  corpus_scores="$(api "$API_URL/scores?run=$cancel_run_id")"
+  corpus_scores="$(api "$API/scores?run=$cancel_run_id")"
   corpus_score_id="$(printf '%s' "$corpus_scores" | jget scores.0.id)"
   [ -n "$corpus_score_id" ] && break
   sleep 0.5
@@ -495,7 +509,7 @@ done
 pass "cancelled corpus run scored ($corpus_score_id)"
 
 log "checking the authority-change preview (diff, no write)"
-authority_preview="$(api -X POST "$API_URL/factories/example/improvement/authority" \
+authority_preview="$(api -X POST "$API/factories/example/improvement/authority" \
   -H 'content-type: application/json' \
   -d '{"authority":"auto_merge_on_benchmark","actor":"smoke","reason":"smoke: preview only"}')"
 [ "$(printf '%s' "$authority_preview" | jget confirmationRequired)" = "true" ] \
@@ -505,7 +519,7 @@ printf '%s' "$authority_preview" | grep -q 'propose_only -> auto_merge_on_benchm
 pass "authority preview returns the diff and requires confirmation"
 
 log "running one improvement pass (eligibility → observe → probe → compose → decide)"
-improvement_resp="$(api -X POST "$API_URL/factories/example/improvement/run" \
+improvement_resp="$(api -X POST "$API/factories/example/improvement/run" \
   -H 'content-type: application/json' -d '{"trigger":"on_demand"}')"
 improvement_id="$(printf '%s' "$improvement_resp" | jget improvement.id)"
 [ -n "$improvement_id" ] || fail "improvement run did not start: $improvement_resp"
@@ -515,7 +529,7 @@ improvement_detail=""
 improvement_status=""
 improvement_decision=""
 for _ in $(seq 1 240); do
-  improvement_detail="$(api "$API_URL/improvements/$improvement_id")"
+  improvement_detail="$(api "$API/improvements/$improvement_id")"
   improvement_status="$(printf '%s' "$improvement_detail" | jget improvement.status)"
   improvement_decision="$(printf '%s' "$improvement_detail" | jget improvement.decision)"
   case "$improvement_status" in
@@ -565,7 +579,7 @@ printf '%s' "$improvement_detail" | bun -e '
 ' || fail "improvement proposal / probe / candidate / PR / lesson assertions failed"
 pass "improvement $improvement_id: proposal + probes + candidate + PR + lesson recorded"
 
-lessons_resp="$(api "$API_URL/lessons?factory=example")"
+lessons_resp="$(api "$API/lessons?factory=example")"
 printf '%s' "$lessons_resp" | bun -e '
   const d = JSON.parse(await Bun.stdin.text());
   const lessons = d.lessons ?? [];
@@ -579,17 +593,17 @@ pass "experience library lists per-factory lessons only (plus promoted)"
 # ------------------------------- 14. canary rollout + rollback (Phase 5b, ADR-021)
 CANARY_FACTORY="example-lights-off"
 log "creating a scored corpus for $CANARY_FACTORY"
-canary_created="$(api -X POST "$API_URL/chat" \
+canary_created="$(api -X POST "$API/chat" \
   -H 'content-type: application/json' \
   -d "{\"factory\":\"$CANARY_FACTORY\",\"harness\":\"fake\",\"fakeDelayMs\":8000,\"prompt\":\"smoke: canary corpus failure\"}")"
 canary_run_id="$(printf '%s' "$canary_created" | jget run.id)"
 [ -n "$canary_run_id" ] || fail "no canary corpus run id: $canary_created"
-api -X POST "$API_URL/runs/$canary_run_id/cancel" \
+api -X POST "$API/runs/$canary_run_id/cancel" \
   -H 'content-type: application/json' -d '{"reason":"smoke: canary corpus failure"}' >/dev/null
 
 canary_run_status=""
 for _ in $(seq 1 120); do
-  canary_run_status="$(api "$API_URL/runs/$canary_run_id" | jget run.status)"
+  canary_run_status="$(api "$API/runs/$canary_run_id" | jget run.status)"
   case "$canary_run_status" in
     cancelled|error) break ;;
     ok) fail "canary corpus run completed before it could be cancelled" ;;
@@ -598,12 +612,12 @@ for _ in $(seq 1 120); do
 done
 [ "$canary_run_status" = "cancelled" ] || fail "canary corpus run did not reach cancelled (got ${canary_run_status:-none})"
 
-api -X POST "$API_URL/scoring" \
+api -X POST "$API/scoring" \
   -H 'content-type: application/json' \
   -d "{\"factory\":\"$CANARY_FACTORY\",\"runId\":\"$canary_run_id\",\"force\":true}" >/dev/null
 canary_score_id=""
 for _ in $(seq 1 120); do
-  canary_score_id="$(api "$API_URL/scores?run=$canary_run_id" | jget scores.0.id)"
+  canary_score_id="$(api "$API/scores?run=$canary_run_id" | jget scores.0.id)"
   [ -n "$canary_score_id" ] && break
   sleep 0.5
 done
@@ -611,7 +625,7 @@ done
 
 # Calibration is per factory: the canary factory needs its own passing judge calibration
 # before the observer is eligible.
-canary_calibration="$(api -X POST "$API_URL/calibration" \
+canary_calibration="$(api -X POST "$API/calibration" \
   -H 'content-type: application/json' \
   -d "{\"factory\":\"$CANARY_FACTORY\",\"scorer\":\"scope\",\"name\":\"smoke canary calibration\",\"minSize\":1,\"threshold\":1,\"items\":[{\"runId\":\"$canary_run_id\",\"humanLabel\":\"compliant\"}]}")"
 [ "$(printf '%s' "$canary_calibration" | jget calibration.verdict)" = "pass" ] \
@@ -619,7 +633,7 @@ canary_calibration="$(api -X POST "$API_URL/calibration" \
 pass "canary corpus run scored and the judge calibrated for $CANARY_FACTORY"
 
 log "running an improvement pass that starts a 100% canary rollout"
-canary_improvement="$(api -X POST "$API_URL/factories/$CANARY_FACTORY/improvement/run" \
+canary_improvement="$(api -X POST "$API/factories/$CANARY_FACTORY/improvement/run" \
   -H 'content-type: application/json' \
   -d '{"trigger":"on_demand","canaryPercent":100}')"
 canary_improvement_id="$(printf '%s' "$canary_improvement" | jget improvement.id)"
@@ -628,7 +642,7 @@ canary_improvement_id="$(printf '%s' "$canary_improvement" | jget improvement.id
 canary_improvement_status=""
 canary_improvement_decision=""
 for _ in $(seq 1 240); do
-  canary_improvement_detail="$(api "$API_URL/improvements/$canary_improvement_id")"
+  canary_improvement_detail="$(api "$API/improvements/$canary_improvement_id")"
   canary_improvement_status="$(printf '%s' "$canary_improvement_detail" | jget improvement.status)"
   canary_improvement_decision="$(printf '%s' "$canary_improvement_detail" | jget improvement.decision)"
   case "$canary_improvement_status" in
@@ -646,7 +660,7 @@ canary_view=""
 canary_rollout_id=""
 canary_candidate_commit=""
 for _ in $(seq 1 120); do
-  canary_view="$(api "$API_URL/factories/$CANARY_FACTORY/canary")"
+  canary_view="$(api "$API/factories/$CANARY_FACTORY/canary")"
   canary_rollout_id="$(printf '%s' "$canary_view" | jget active.rollout.id)"
   canary_candidate_commit="$(printf '%s' "$canary_view" | jget active.rollout.candidateCommit)"
   if [ "$(printf '%s' "$canary_view" | jget active.rollout.status)" = "active" ] && [ -n "$canary_candidate_commit" ]; then break; fi
@@ -679,7 +693,7 @@ printf '%s' "$canary_view" | bun -e '
 pass "canary $canary_rollout_id active at 100% (candidate $canary_candidate_commit, window open)"
 
 log "routing one work item to the candidate version"
-canary_item="$(api -X POST "$API_URL/work-items" \
+canary_item="$(api -X POST "$API/work-items" \
   -H 'content-type: application/json' \
   -d "{\"factory\":\"$CANARY_FACTORY\",\"title\":\"smoke: canary routing\",\"harness\":\"fake\"}")"
 canary_item_id="$(printf '%s' "$canary_item" | jget workItem.id)"
@@ -693,7 +707,7 @@ canary_item_id="$(printf '%s' "$canary_item" | jget workItem.id)"
 pass "work item $canary_item_id routed to candidate $canary_candidate_commit"
 
 log "rolling the canary back manually"
-canary_rollback="$(api -X POST "$API_URL/canary/rollback" \
+canary_rollback="$(api -X POST "$API/canary/rollback" \
   -H 'content-type: application/json' \
   -d "{\"factory\":\"$CANARY_FACTORY\",\"rolloutId\":\"$canary_rollout_id\",\"actor\":\"smoke\",\"reason\":\"smoke: manual rollback\"}")"
 [ "$(printf '%s' "$canary_rollback" | jget rollout.status)" = "rolled_back" ] \
@@ -702,7 +716,7 @@ canary_rollback="$(api -X POST "$API_URL/canary/rollback" \
   || fail "rollback reason not recorded: $canary_rollback"
 pass "canary $canary_rollout_id rolled back (reason recorded)"
 
-canary_after="$(api "$API_URL/factories/$CANARY_FACTORY/canary")"
+canary_after="$(api "$API/factories/$CANARY_FACTORY/canary")"
 printf '%s' "$canary_after" | ROLLOUT_ID="$canary_rollout_id" bun -e '
   const d = JSON.parse(await Bun.stdin.text());
   if (d.active !== null) { console.error("an active rollout survived the rollback"); process.exit(1); }
@@ -722,7 +736,7 @@ printf '%s' "$canary_after" | ROLLOUT_ID="$canary_rollout_id" bun -e '
 pass "canary history records canary.started + canary.rolled_back with reason + evidence"
 
 log "asserting routing returned to stable"
-canary_stable_item="$(api -X POST "$API_URL/work-items" \
+canary_stable_item="$(api -X POST "$API/work-items" \
   -H 'content-type: application/json' \
   -d "{\"factory\":\"$CANARY_FACTORY\",\"title\":\"smoke: canary post-rollback\",\"harness\":\"fake\"}")"
 canary_stable_item_id="$(printf '%s' "$canary_stable_item" | jget workItem.id)"
@@ -736,12 +750,12 @@ pass "new work items route to stable after rollback"
 for item_id in "$canary_item_id" "$canary_stable_item_id"; do
   gate_stage=""
   for _ in $(seq 1 60); do
-    gate_stage="$(api "$API_URL/work-items/$item_id" | jget pendingGate.stage)"
+    gate_stage="$(api "$API/work-items/$item_id" | jget pendingGate.stage)"
     [ -n "$gate_stage" ] && break
     sleep 0.5
   done
   if [ -n "$gate_stage" ]; then
-    api -X POST "$API_URL/work-items/$item_id/gates/$gate_stage" \
+    api -X POST "$API/work-items/$item_id/gates/$gate_stage" \
       -H 'content-type: application/json' \
       -d '{"decision":"reject","actor":"smoke","reason":"smoke: canary cleanup"}' >/dev/null
   fi
@@ -751,7 +765,7 @@ pass "canary work items cleaned up"
 # ------------------------------- 15. webhooks (Phase 3b, ADR-023)
 WEBHOOK_SECRET="${GITHUB_WEBHOOK_SECRET:-smoke-webhook-secret}"
 log "configuring the GitHub integration and delivering a signed webhook"
-integration="$(api -X POST "$API_URL/integrations/github" \
+integration="$(api -X POST "$API/integrations/github" \
   -H 'content-type: application/json' \
   -d '{"factory":"example","secretRef":"GITHUB_TOKEN","webhookSecretRef":"GITHUB_WEBHOOK_SECRET","repos":[{"owner":"acme","name":"api-service"}],"events":["issues"],"labels":["factory-ready"],"dryRun":true,"mergeQueue":false,"harness":"fake","runner":"fake"}')"
 [ "$(printf '%s' "$integration" | jget github.configured)" = "true" ] \
@@ -766,7 +780,7 @@ JSON
 )"
 
 # Unsigned → 401 invalid_signature, no work item.
-unsigned_code="$(curl -sS -o "$TMP_DIR/webhook-unsigned.json" -w '%{http_code}' -X POST "$API_URL/webhooks/github" \
+unsigned_code="$(curl -sS -o "$TMP_DIR/webhook-unsigned.json" -w '%{http_code}' -X POST "$API/webhooks/github" \
   -H 'content-type: application/json' -H 'x-github-event: issues' \
   -H "x-github-delivery: smoke-unsigned-$(date +%s)" -d "$webhook_payload")"
 [ "$unsigned_code" = "401" ] || fail "expected 401 for an unsigned webhook, got $unsigned_code"
@@ -779,7 +793,7 @@ signature="$(SECRET="$WEBHOOK_SECRET" BODY="$webhook_payload" bun -e '
   process.stdout.write("sha256=" + createHmac("sha256", process.env.SECRET).update(process.env.BODY, "utf8").digest("hex"));
 ')"
 delivery_id="smoke-signed-$(date +%s)"
-webhook_resp="$(api -X POST "$API_URL/webhooks/github" \
+webhook_resp="$(api -X POST "$API/webhooks/github" \
   -H 'content-type: application/json' -H 'x-github-event: issues' \
   -H "x-github-delivery: $delivery_id" -H "x-hub-signature-256: $signature" \
   -d "$webhook_payload")"
@@ -788,7 +802,7 @@ webhook_resp="$(api -X POST "$API_URL/webhooks/github" \
 webhook_item="$(printf '%s' "$webhook_resp" | jget workItemId)"
 [ -n "$webhook_item" ] || fail "signed webhook created no work item: $webhook_resp"
 
-webhook_detail="$(api "$API_URL/work-items/$webhook_item")"
+webhook_detail="$(api "$API/work-items/$webhook_item")"
 [ "$(printf '%s' "$webhook_detail" | jget workItem.source)" = "forge" ] \
   || fail "webhook work item source is not forge"
 printf '%s' "$webhook_detail" | bun -e '
@@ -802,7 +816,7 @@ printf '%s' "$webhook_detail" | bun -e '
 pass "signed webhook created work item $webhook_item (source forge, sourceRef untrusted)"
 
 # Redelivery of the same delivery id is acknowledged and ignored.
-duplicate="$(api -X POST "$API_URL/webhooks/github" \
+duplicate="$(api -X POST "$API/webhooks/github" \
   -H 'content-type: application/json' -H 'x-github-event: issues' \
   -H "x-github-delivery: $delivery_id" -H "x-hub-signature-256: $signature" \
   -d "$webhook_payload")"
@@ -815,24 +829,24 @@ pass "duplicate delivery acknowledged and ignored"
 # Cleanup: the webhook item parks on the triage gate; reject it so nothing is left waiting.
 webhook_gate=""
 for _ in $(seq 1 120); do
-  webhook_gate="$(api "$API_URL/work-items/$webhook_item" | jget pendingGate.stage)"
+  webhook_gate="$(api "$API/work-items/$webhook_item" | jget pendingGate.stage)"
   [ -n "$webhook_gate" ] && break
   sleep 0.5
 done
 if [ -n "$webhook_gate" ]; then
-  api -X POST "$API_URL/work-items/$webhook_item/gates/$webhook_gate" \
+  api -X POST "$API/work-items/$webhook_item/gates/$webhook_gate" \
     -H 'content-type: application/json' \
     -d '{"decision":"reject","actor":"smoke","reason":"smoke: webhook cleanup"}' >/dev/null
 fi
 
 # ------------------------------- 16. merge queue + automations (Phase 3b)
 log "checking the merge queue and automation projections"
-merge_queue="$(api "$API_URL/factories/example/merge-queue")"
+merge_queue="$(api "$API/factories/example/merge-queue")"
 [ "$(printf '%s' "$merge_queue" | jget batchSize)" = "2" ] \
   || fail "merge queue batch size is not 2: $merge_queue"
 pass "merge queue projection returns batch size + batches"
 
-sync_resp="$(api -X POST "$API_URL/factories/example/automations/sync" \
+sync_resp="$(api -X POST "$API/factories/example/automations/sync" \
   -H 'content-type: application/json' -d '{"factory":"example"}')"
 printf '%s' "$sync_resp" | bun -e '
   const d = JSON.parse(await Bun.stdin.text());
@@ -843,14 +857,14 @@ printf '%s' "$sync_resp" | bun -e '
 ' || fail "automation schedule sync assertions failed"
 pass "nightly cron automation synced to a Temporal schedule (active)"
 
-automations="$(api "$API_URL/factories/example/automations")"
+automations="$(api "$API/factories/example/automations")"
 [ "$(printf '%s' "$automations" | jget webhook.url)" != "" ] || fail "automations has no webhook url"
 pass "automations projection exposes webhook url + cron status"
 
 # ------------------------------- 17. autonomy read + work-item cancel + rebuild
 log "checking the autonomy read model, work-item cancellation and the rebuild dry run"
 
-autonomy_read="$(api "$API_URL/autonomy?factory=example")"
+autonomy_read="$(api "$API/autonomy?factory=example")"
 printf '%s' "$autonomy_read" | bun -e '
   const d = JSON.parse(await Bun.stdin.text());
   const a = d.autonomy;
@@ -871,20 +885,20 @@ printf '%s' "$autonomy_read" | bun -e '
 ' || fail "autonomy read assertions failed"
 pass "GET /autonomy returns the declared policy, live state and newest autonomy event"
 
-cancel_created="$(api -X POST "$API_URL/work-items" \
+cancel_created="$(api -X POST "$API/work-items" \
   -H 'content-type: application/json' \
   -d '{"factory":"example","title":"smoke: cancel me","harness":"fake"}')"
 cancel_id="$(printf '%s' "$cancel_created" | jget workItem.id)"
 [ -n "$cancel_id" ] || fail "no work item id for cancellation: $cancel_created"
 for _ in $(seq 1 120); do
-  cancel_detail="$(api "$API_URL/work-items/$cancel_id")"
+  cancel_detail="$(api "$API/work-items/$cancel_id")"
   cancel_gate="$(printf '%s' "$cancel_detail" | jget pendingGate.stage)"
   [ -n "$cancel_gate" ] && break
   sleep 0.5
 done
 [ -n "${cancel_gate:-}" ] || fail "work item $cancel_id never reached a gate"
 
-cancel_resp="$(api -X POST "$API_URL/work-items/$cancel_id/cancel" \
+cancel_resp="$(api -X POST "$API/work-items/$cancel_id/cancel" \
   -H 'content-type: application/json' \
   -d '{"actor":"smoke","reason":"smoke: cancel the parked item"}')"
 [ "$(printf '%s' "$cancel_resp" | jget eventRecorded)" = "true" ] \
@@ -892,7 +906,7 @@ cancel_resp="$(api -X POST "$API_URL/work-items/$cancel_id/cancel" \
 
 cancelled=0
 for _ in $(seq 1 120); do
-  cancel_detail="$(api "$API_URL/work-items/$cancel_id")"
+  cancel_detail="$(api "$API/work-items/$cancel_id")"
   [ "$(printf '%s' "$cancel_detail" | jget workItem.status)" = "cancelled" ] && { cancelled=1; break; }
   sleep 0.5
 done
@@ -913,7 +927,7 @@ printf '%s' "$cancel_detail" | bun -e '
   if (!d.workItem.cancelReason) { console.error("cancel reason not recorded"); process.exit(1); }
 ' || fail "cancel event assertions failed"
 
-repeat_cancel="$(api -X POST "$API_URL/work-items/$cancel_id/cancel" \
+repeat_cancel="$(api -X POST "$API/work-items/$cancel_id/cancel" \
   -H 'content-type: application/json' \
   -d '{"actor":"smoke","reason":"smoke: repeat cancel"}')"
 [ "$(printf '%s' "$repeat_cancel" | jget alreadyCancelled)" = "true" ] \
@@ -932,7 +946,7 @@ pass "factory rebuild --from runs --dry-run replays the logs and reports the dif
 
 # ------------------------------- 18. secrets registry + MCP wiring (Phase 6)
 log "registering a secret name and checking presence (names only, never values)"
-secret_resp="$(api -X POST "$API_URL/secrets" \
+secret_resp="$(api -X POST "$API/secrets" \
   -H 'content-type: application/json' \
   -d '{"name":"GITHUB_TOKEN","provider":"env","scope":"factory","description":"smoke: MCP credential"}')"
 [ "$(printf '%s' "$secret_resp" | jget secret.name)" = "GITHUB_TOKEN" ] \
@@ -944,13 +958,13 @@ if printf '%s' "$secret_resp" | grep -q 'smoke-github-token'; then
 fi
 pass "secret GITHUB_TOKEN registered (status resolved, no value in the response)"
 
-unresolved_resp="$(api -X POST "$API_URL/secrets" \
+unresolved_resp="$(api -X POST "$API/secrets" \
   -H 'content-type: application/json' -d '{"name":"SMOKE_UNRESOLVED_TOKEN"}')"
 [ "$(printf '%s' "$unresolved_resp" | jget secret.status)" = "unresolved" ] \
   || fail "an absent name was not reported unresolved: $unresolved_resp"
 pass "an absent secret name is registered as unresolved (surfaced, not blocked)"
 
-value_code="$(curl -sS -o "$TMP_DIR/secret-value.json" -w '%{http_code}' -X POST "$API_URL/secrets" \
+value_code="$(curl -sS -o "$TMP_DIR/secret-value.json" -w '%{http_code}' -X POST "$API/secrets" \
   -H 'content-type: application/json' \
   -d '{"name":"SMOKE_VALUE_REJECTED","value":"ghp_abcdefghijklmnopqrstuvwxyz0123"}')"
 [ "$value_code" = "400" ] || fail "expected 400 for a submitted value, got $value_code"
@@ -958,7 +972,7 @@ value_code="$(curl -sS -o "$TMP_DIR/secret-value.json" -w '%{http_code}' -X POST
   || fail "wrong error code for a submitted secret value"
 pass "a submitted secret value is refused with secret_value_rejected"
 
-delete_code="$(curl -sS -o "$TMP_DIR/secret-in-use.json" -w '%{http_code}' -X DELETE "$API_URL/secrets/GITHUB_TOKEN")"
+delete_code="$(curl -sS -o "$TMP_DIR/secret-in-use.json" -w '%{http_code}' -X DELETE "$API/secrets/GITHUB_TOKEN")"
 [ "$delete_code" = "409" ] || fail "expected 409 deleting an in-use secret, got $delete_code"
 [ "$(jget code < "$TMP_DIR/secret-in-use.json")" = "secret_in_use" ] \
   || fail "wrong error code for deleting an in-use secret"
@@ -969,7 +983,7 @@ usage_resp=""
 usage_count=""
 usage_found=""
 for _ in $(seq 1 120); do
-  usage_resp="$(api "$API_URL/secrets/GITHUB_TOKEN/usage")"
+  usage_resp="$(api "$API/secrets/GITHUB_TOKEN/usage")"
   usage_count="$(printf '%s' "$usage_resp" | jget useCount)"
   usage_found="$(printf '%s' "$usage_resp" | RUN_ID="$run_id" bun -e '
     const d = JSON.parse(await Bun.stdin.text());
@@ -987,7 +1001,7 @@ fi
 pass "run $run_id resolved GITHUB_TOKEN by name; usage row recorded (count $usage_count)"
 
 log "registering the declared MCP server and checking the projection"
-mcp_registered="$(api -X POST "$API_URL/factories/example/mcp" \
+mcp_registered="$(api -X POST "$API/factories/example/mcp" \
   -H 'content-type: application/json' -d '{"servers":[{"name":"github"}]}')"
 printf '%s' "$mcp_registered" | bun -e '
   const d = JSON.parse(await Bun.stdin.text());
@@ -996,7 +1010,7 @@ printf '%s' "$mcp_registered" | bun -e '
   if (server.registered !== true) { console.error("github was not registered"); process.exit(1); }
 ' || fail "MCP server registration failed: $mcp_registered"
 
-mcp_view="$(api "$API_URL/factories/example/mcp")"
+mcp_view="$(api "$API/factories/example/mcp")"
 printf '%s' "$mcp_view" | bun -e '
   const d = JSON.parse(await Bun.stdin.text());
   const server = (d.servers ?? []).find((row) => row.name === "github");
@@ -1019,14 +1033,14 @@ printf '%s' "$mcp_view" | bun -e '
 ' || fail "MCP projection assertions failed"
 pass "MCP projection: github is stdio, implement allows github*, review denies github*"
 
-unknown_code="$(curl -sS -o "$TMP_DIR/mcp-unknown.json" -w '%{http_code}' -X POST "$API_URL/factories/example/mcp" \
+unknown_code="$(curl -sS -o "$TMP_DIR/mcp-unknown.json" -w '%{http_code}' -X POST "$API/factories/example/mcp" \
   -H 'content-type: application/json' -d '{"servers":[{"name":"not-declared"}]}')"
 [ "$unknown_code" = "422" ] || fail "expected 422 for an undeclared MCP server, got $unknown_code"
 [ "$(jget code < "$TMP_DIR/mcp-unknown.json")" = "unknown_mcp_server" ] \
   || fail "wrong error code for an undeclared MCP server"
 pass "an undeclared MCP server is refused with unknown_mcp_server"
 
-mcp_test_resp="$(api -X POST "$API_URL/factories/example/mcp/github/test")"
+mcp_test_resp="$(api -X POST "$API/factories/example/mcp/github/test")"
 printf '%s' "$mcp_test_resp" | bun -e '
   const d = JSON.parse(await Bun.stdin.text());
   const result = d.result ?? {};
@@ -1071,14 +1085,14 @@ pass "an inline credential literal in an MCP declaration fails with secret_inlin
 
 # ------------------------------- 19. dev-data hygiene (leave no nightly residue)
 log "pausing the synced nightly schedule and deleting the throwaway secret"
-pause_resp="$(api -X POST "$API_URL/factories/example/automations/nightly/pause" \
+pause_resp="$(api -X POST "$API/factories/example/automations/nightly/pause" \
   -H 'content-type: application/json' \
   -d '{"actor":"smoke","reason":"smoke: pause the synced nightly schedule"}')"
 [ "$(printf '%s' "$pause_resp" | jget status)" = "paused" ] \
   || fail "the nightly schedule was not paused: $pause_resp"
 pass "nightly schedule paused (it will not create work items overnight)"
 
-delete_hygiene="$(api -X DELETE "$API_URL/secrets/SMOKE_UNRESOLVED_TOKEN")"
+delete_hygiene="$(api -X DELETE "$API/secrets/SMOKE_UNRESOLVED_TOKEN")"
 [ "$(printf '%s' "$delete_hygiene" | jget deleted)" = "true" ] \
   || fail "the throwaway secret was not deleted: $delete_hygiene"
 pass "throwaway secret SMOKE_UNRESOLVED_TOKEN deleted (GITHUB_TOKEN stays: definitions reference it)"

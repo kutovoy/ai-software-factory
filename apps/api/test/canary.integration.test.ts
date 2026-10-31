@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { req } from './helpers';
 import { SQL } from 'bun';
 import { existsSync, rmSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
@@ -76,7 +77,7 @@ async function migrate(databaseUrl: string): Promise<void> {
 const JSON_HEADERS = { 'content-type': 'application/json' };
 
 async function postJson(path: string, body: unknown): Promise<Response> {
-  return await app.request(path, {
+  return await req(app, path, {
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify(body),
@@ -84,7 +85,7 @@ async function postJson(path: string, body: unknown): Promise<Response> {
 }
 
 async function getJson<T>(path: string): Promise<T> {
-  const response = await app.request(path);
+  const response = await req(app, path);
   expect(response.status).toBe(200);
   return (await response.json()) as T;
 }

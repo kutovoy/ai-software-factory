@@ -24,6 +24,20 @@ export function apiBaseUrl(): string {
   return configured.replace(/\/+$/, '');
 }
 
+/**
+ * Every backend resource lives under one version prefix (ADR-030). Browser-facing
+ * same-origin routes stay `/api/*` — this prefix is only applied server-side.
+ */
+export const API_PREFIX = '/api/v1';
+
+/** Absolute backend URL for a resource path such as `/runs`. */
+export function apiUrl(path: string): string {
+  const versioned = path.startsWith(API_PREFIX)
+    ? path
+    : `${API_PREFIX}${path.startsWith('/') ? path : `/${path}`}`;
+  return `${apiBaseUrl()}${versioned}`;
+}
+
 interface ErrorEnvelope {
   code?: string;
   message?: string;
@@ -46,7 +60,7 @@ async function parseError(response: Response): Promise<ApiClientError> {
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(`${apiBaseUrl()}${path}`, {
+  const response = await fetch(apiUrl(path), {
     cache: 'no-store',
     headers: { accept: 'application/json' },
   });
@@ -55,7 +69,7 @@ export async function apiGet<T>(path: string): Promise<T> {
 }
 
 export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
-  const response = await fetch(`${apiBaseUrl()}${path}`, {
+  const response = await fetch(apiUrl(path), {
     method: 'POST',
     cache: 'no-store',
     headers: {

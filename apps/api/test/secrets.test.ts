@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { req } from './helpers';
 import { join, resolve } from 'node:path';
 import { createApp } from '../src/app';
 import { loadApiConfig } from '../src/config';
@@ -24,7 +25,7 @@ const app = createApp(config);
 const JSON_HEADERS = { 'content-type': 'application/json' };
 
 async function post(path: string, body: unknown): Promise<{ status: number; body: any }> {
-  const response = await app.request(path, {
+  const response = await req(app, path, {
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify(body),
@@ -33,7 +34,7 @@ async function post(path: string, body: unknown): Promise<{ status: number; body
 }
 
 async function del(path: string): Promise<{ status: number; body: any }> {
-  const response = await app.request(path, { method: 'DELETE' });
+  const response = await req(app, path, { method: 'DELETE' });
   return { status: response.status, body: await response.json() };
 }
 
