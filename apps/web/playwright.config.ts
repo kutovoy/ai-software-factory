@@ -9,6 +9,9 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './e2e',
+  // The audit specs are a manual tool, not part of the CI suite:
+  //   UI_AUDIT=1 bunx playwright test audit.spec.ts
+  testIgnore: process.env.UI_AUDIT ? [] : ['**/audit*.spec.ts'],
   fullyParallel: false,
   workers: 1,
   forbidOnly: Boolean(process.env.CI),
