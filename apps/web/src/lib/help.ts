@@ -1,4 +1,4 @@
-import { FACTORY_NAV, TOP_NAV } from './nav';
+import { FACTORY_NAV, FOOTER_NAV, TOP_NAV } from './nav';
 
 /**
  * In-product help centre (`web-console` spec: "Help centre", "Contextual help",
@@ -45,7 +45,7 @@ export const HELP_SECTIONS: HelpSectionMeta[] = [
     id: 'factories',
     title: 'Factory how-tos',
     description:
-      'How-to guides: add a factory, connect GitHub, choose the model through the environment, register a secret, add an MCP server.',
+      'How-to guides: start with what the factory can build (supported projects), then add a factory, connect GitHub, choose the model through the environment, register a secret, add an MCP server.',
   },
   {
     id: 'troubleshooting',
@@ -94,6 +94,11 @@ export interface HelpEntry {
   pageHref?: string;
   /** Override for the "open the page" label (factory pages name the example factory). */
   pageHrefLabel?: string;
+  /**
+   * Extra renderer for entries that are generated rather than typed: the API reference is
+   * rendered from the served OpenAPI document, so it cannot drift from the routes.
+   */
+  renderer?: 'api-reference';
   blocks: HelpBlock[];
   related: HelpLink[];
 }
@@ -124,7 +129,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'prose',
         text:
-          'A work item is the unit of work. It enters at intake, runs the loop stage by stage (triage → spec → plan → implement → review → verify → ship), and every stage that resolves to a human gate parks on a durable workflow wait until someone decides. Only the ship stage merges a pull request. Scores and benchmarks feed the self-improvement loop, which proposes definition changes instead of editing them.',
+          'A work item is the unit of work. It enters at intake, runs the loop stage by stage (triage → spec → plan → implement → review → verify → ship), and every stage that resolves to a human gate parks on a durable workflow wait until someone decides. Only the ship stage merges a pull request. Scores and benchmarks feed the self-improvement loop, which proposes definition changes instead of editing them. The unit of work is a repository diff verified by checks — see "Supported projects" for what that includes and what it will only propose.',
       },
       { kind: 'diagram', name: 'pipeline', caption: 'The pipeline: intake → loop → gates → merge → score → improve.' },
       {
@@ -164,7 +169,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
           {
             title: 'Create a work item',
             command:
-              'curl -sS -X POST http://localhost:8080/work-items \\\n  -H \'content-type: application/json\' \\\n  -d \'{"factory":"example","title":"Fix the README link","type":"task","source":"manual","harness":"fake","prompt":"fix the broken readme link"}\'',
+              'curl -sS -X POST http://localhost:8080/api/v1/work-items \\\n  -H \'content-type: application/json\' \\\n  -d \'{"factory":"example","title":"Fix the README link","type":"task","source":"manual","harness":"fake","prompt":"fix the broken readme link"}\'',
             expected:
               'The response contains `workItem.id`, `"stage":"triage"` and the pinned `definitionCommit`. The item appears on the Work items board.',
           },
@@ -173,7 +178,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
             detail:
               'Use the id from the previous step. The same decision is available in Inbox, where each gate shows its SLA countdown.',
             command:
-              'curl -sS -X POST http://localhost:8080/work-items/<work-item-id>/gates/triage \\\n  -H \'content-type: application/json\' \\\n  -d \'{"decision":"approve","actor":"you","reason":"scope looks right"}\'',
+              'curl -sS -X POST http://localhost:8080/api/v1/work-items/<work-item-id>/gates/triage \\\n  -H \'content-type: application/json\' \\\n  -d \'{"decision":"approve","actor":"you","reason":"scope looks right"}\'',
             expected:
               'The response reports `"decision":"approve"` and `"delivery":"update"`; the item advances past triage and the next stage starts.',
           },
@@ -224,6 +229,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
       },
     ],
     related: [
+      { label: 'What the factory can build', href: '/help/factories/supported-projects' },
       { label: 'Add a factory', href: '/help/factories/add' },
       { label: 'Work-item lifecycle', href: '/help/concepts/work-item-lifecycle' },
       { label: 'Gates and autonomy', href: '/help/concepts/gates-and-autonomy' },
@@ -752,6 +758,46 @@ export const HELP_ENTRIES: HelpEntry[] = [
     ],
   },
   {
+    slug: 'api',
+    title: 'API',
+    section: 'menu',
+    status: 'Shipped — path-versioned `/api/v1` (ADR-030)',
+    summary:
+      'Every endpoint in one place, rendered from the served OpenAPI document: method, path, purpose, parameters and response codes.',
+    renderer: 'api-reference',
+    blocks: [
+      {
+        kind: 'prose',
+        text:
+          'Every public resource lives under `/api/v1` — runs, work items, factories, scoring, benchmarks, self-improvement, secrets, integrations and webhooks. `GET /health` stays unversioned for probes, and `GET /api/v1/health` serves the same check to versioned clients. The document below is `GET /api/v1/openapi.json`; the API contract test fails when a served route is missing from it (or the document lists a route that is not served), so this page lists exactly what is live.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Versioning rule',
+        text:
+          'The prefix is the version. An additive change (a new endpoint, a new optional field) stays in `/api/v1`; a breaking change — a removed or renamed field, an incompatible response shape, a changed required parameter — introduces a new prefix, and the old one keeps serving until it is removed deliberately. Clients should pin the prefix rather than follow `/api/latest`.',
+      },
+      {
+        kind: 'prose',
+        text:
+          'The raw document is a standard OpenAPI 3.1 file: point Swagger UI at it, or import it in Postman (Import → Link) to get a request collection. Authentication is not modelled yet — the API runs as a single implicit local user (Phase 6b adds auth), so no security scheme is declared.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'When the API is down',
+        text:
+          'The reference is fetched at page load. If the API is unreachable the page says so with the error code and a reload link instead of showing an empty or invented list; `/health` tells you whether the API and Temporal are up.',
+      },
+    ],
+    related: [
+      { label: 'Raw OpenAPI document', href: '/api/openapi.json' },
+      { label: 'Quick start', href: '/help/quick-start' },
+      { label: 'Definitions as code', href: '/help/concepts/definitions-as-code' },
+    ],
+  },
+  {
     slug: 'factories/dashboard',
     title: 'Dashboard',
     section: 'menu',
@@ -1078,6 +1124,59 @@ export const HELP_ENTRIES: HelpEntry[] = [
 
   // ------------------------------------------------------------------ how-tos
   {
+    slug: 'factories/supported-projects',
+    title: 'Supported projects',
+    section: 'factories',
+    status: 'Current behaviour — branch → PR → checks → merge queue (Phase 3b)',
+    summary:
+      'What the factory can build: anything expressible as a repository diff that checks can verify — and the honest list of what it will only propose.',
+    blocks: [
+      {
+        kind: 'prose',
+        text:
+          'The unit of work is a repository diff verified by checks. A work item names a repository and a change; the loop turns it into a branch, a pull request, and a set of checks that either pass or fail. If no check can tell whether the change is right, the factory has nothing to gate on — that is the boundary of what it can build, not a limitation of a particular harness.',
+      },
+      {
+        kind: 'list',
+        items: [
+          'Application code — features, fixes and refactors in the repositories the factory declares.',
+          'Tests — new or repaired unit/integration/e2e coverage, including the test that proves a fix.',
+          'Documentation — READMEs, guides, API references and changelogs.',
+          'Configuration — CI workflows, linters, formatters, build and runtime config files.',
+          'Database migrations — schema and data migrations reviewed like any other diff.',
+          'Terraform modules and plans — module code, variables and the reviewed `terraform plan` output; the change is a diff, the plan is the evidence.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The mechanism',
+        text:
+          'Agents produce a branch + PR; the forge checks (CI, tests, review verdicts) gate it; when the factory owns merges, the merge queue lands it — it merges the batch in order and gates the merged stack at the new head, reverting only the offending PR. Infrastructure-as-code changes are proposed as a diff and a plan, never applied: no cloud credentials are handed to a run, and the merge lands the code, not the infrastructure.',
+      },
+      {
+        kind: 'list',
+        items: [
+          'Out of scope — applying infrastructure: `terraform apply`, `kubectl apply`, cloud console changes, DNS or IAM edits. The factory opens a PR; your pipeline applies it after the merge.',
+          'Out of scope — physical actions: deploying hardware, shipping, signing, calling, printing, anything that is not a file in a repository.',
+          'Out of scope — artefacts no check can verify: a binary, dataset, model weight or screenshot with no automated check attached. The factory can add it to the repo, but nothing gates it, so it cannot claim the result is correct.',
+          'Out of scope — anything needing credentials the runner does not hold. Secrets reach a run only by explicit allowlist; inference credentials are refused outright.',
+        ],
+      },
+      {
+        kind: 'prose',
+        text:
+          'If a request lands in the out-of-scope list, the honest outcome is a proposal at most: a PR that a human reviews and a pipeline applies, or a written plan. The console never claims the factory performed the action. When a request is ambiguous, phrase it as the diff you want ("add a migration that backfills `owner_id`", "raise the timeout in the CI workflow") — the checks then define done.',
+      },
+    ],
+    related: [
+      { label: 'Merge queue', href: '/help/concepts/merge-queue' },
+      { label: 'Connect GitHub', href: '/help/factories/connect-github' },
+      { label: 'Add a factory', href: '/help/factories/add' },
+      { label: 'Quick start', href: '/help/quick-start' },
+    ],
+  },
+  {
     slug: 'factories/add',
     title: 'Add a factory',
     section: 'factories',
@@ -1155,6 +1254,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     ],
     related: [
       { label: 'Definitions as code', href: '/help/concepts/definitions-as-code' },
+      { label: 'What the factory can build', href: '/help/factories/supported-projects' },
       { label: 'Choose the model through the environment', href: '/help/factories/model-env' },
       { label: 'Definition page', href: '/help/factories/definition' },
     ],
@@ -1189,7 +1289,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
             detail:
               'The registry tracks names and presence only; register `GITHUB_TOKEN` (and `GITHUB_WEBHOOK_SECRET`) in Secrets so usage and rotation are audited.',
             command:
-              'curl -sS -X POST http://localhost:8080/secrets -H \'content-type: application/json\' \\\n  -d \'{"name":"GITHUB_TOKEN","provider":"env","scope":"factory:example"}\'',
+              'curl -sS -X POST http://localhost:8080/api/v1/secrets -H \'content-type: application/json\' \\\n  -d \'{"name":"GITHUB_TOKEN","provider":"env","scope":"factory:example"}\'',
             expected: 'The response has no value field; presence is reported as `resolved`.',
           },
           {
@@ -1197,13 +1297,13 @@ export const HELP_ENTRIES: HelpEntry[] = [
             detail:
               'On the factory\'s Settings page, fill the GitHub connection form: token secret ref, repositories, webhook secret ref, event/label/branch filters, dry run and merge ownership.',
             command:
-              'curl -sS -X POST http://localhost:8080/integrations/github -H \'content-type: application/json\' \\\n  -d \'{"factory":"example","secretRef":"GITHUB_TOKEN","repos":[{"owner":"acme","name":"api-service"}],"mergeQueue":true}\'',
+              'curl -sS -X POST http://localhost:8080/api/v1/integrations/github -H \'content-type: application/json\' \\\n  -d \'{"factory":"example","secretRef":"GITHUB_TOKEN","repos":[{"owner":"acme","name":"api-service"}],"mergeQueue":true}\'',
             expected: 'The card shows "connected" (or "dry run"); a missing secret shows "secret missing".',
           },
           {
             title: 'Wire the webhook',
             detail:
-              'Point the repository webhook at the URL Settings shows (`/webhooks/github`), with the same secret as `GITHUB_WEBHOOK_SECRET`. Deliveries are HMAC-verified before parsing, deduped by delivery id, filtered and recorded.',
+              'Point the repository webhook at the URL Settings shows (`/api/v1/webhooks/github`), with the same secret as `GITHUB_WEBHOOK_SECRET`. Deliveries are HMAC-verified before parsing, deduped by delivery id, filtered and recorded.',
             expected: 'A signed test delivery creates a work item with `sourceRef.untrusted`; an unsigned one is rejected with no item.',
           },
           {
@@ -1296,7 +1396,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
           {
             title: 'Register the name',
             command:
-              'curl -sS -X POST http://localhost:8080/secrets -H \'content-type: application/json\' \\\n  -d \'{"name":"MY_SERVICE_TOKEN","provider":"env","scope":"factory:example","description":"deploy token"}\'',
+              'curl -sS -X POST http://localhost:8080/api/v1/secrets -H \'content-type: application/json\' \\\n  -d \'{"name":"MY_SERVICE_TOKEN","provider":"env","scope":"factory:example","description":"deploy token"}\'',
             expected:
               'A row appears on Secrets with presence `resolved`. Sending a `value` is refused with `secret_value_rejected` before any query.',
           },
@@ -1362,14 +1462,14 @@ export const HELP_ENTRIES: HelpEntry[] = [
             detail:
               'On MCPs and apps, choose the declared server and register it — the page writes the index, not the definition.',
             command:
-              'curl -sS -X POST http://localhost:8080/factories/example/mcp -H \'content-type: application/json\' \\\n  -d \'{"servers":[{"name":"github"}]}\'',
+              'curl -sS -X POST http://localhost:8080/api/v1/factories/example/mcp -H \'content-type: application/json\' \\\n  -d \'{"servers":[{"name":"github"}]}\'',
             expected: 'The server appears with its transport, bound/denied agents and tool globs.',
           },
           {
             title: 'Probe it',
             detail:
               'The Test button runs in the worker/runner, resolves credentials locally by name and records transport/latency/error. A failure marks the server `unhealthy`; bound agents still validate.',
-            command: 'curl -sS -X POST http://localhost:8080/factories/example/mcp/github/test',
+            command: 'curl -sS -X POST http://localhost:8080/api/v1/factories/example/mcp/github/test',
             expected:
               'A result with transport, latency and status. A stdio "pass" means it exited 0 or was still alive at the timeout — not a full JSON-RPC handshake.',
           },
@@ -1611,4 +1711,8 @@ export function menuEntryForFactorySegment(segment: string): HelpEntry | undefin
 }
 
 /** Every nav label the menu reference must cover; kept exported so tests can assert it. */
-export const NAV_LABELS: string[] = [...TOP_NAV.map((item) => item.label), ...FACTORY_NAV.map((item) => item.label)];
+export const NAV_LABELS: string[] = [
+  ...TOP_NAV.map((item) => item.label),
+  ...FACTORY_NAV.map((item) => item.label),
+  ...FOOTER_NAV.map((item) => item.label),
+];

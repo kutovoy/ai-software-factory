@@ -108,3 +108,117 @@ test('the Factories + is an honest link to the add-factory how-to', async ({ pag
   expect(accountBox).not.toBeNull();
   expect(helpBox!.y).toBeLessThan(accountBox!.y);
 });
+
+/**
+ * `web-console` spec: "API reference in help". The page is rendered from the served
+ * OpenAPI document, so it lists exactly what the API serves (ADR-030).
+ */
+test('the API nav opens the reference generated from the served document', async ({ page }) => {
+  await page.goto('/chat');
+  await expect(page.getByTestId('nav-api')).toBeVisible();
+  await page.getByTestId('nav-api').click();
+
+  await expect(page).toHaveURL(/\/help\/api$/);
+  await expect(page.getByTestId('help-entry-title')).toHaveText('API');
+  await expect(page.getByTestId('help-entry-status')).toContainText('/api/v1');
+
+  // Grouped by resource, each endpoint carrying method, path, purpose, params and codes.
+  await expect(page.getByTestId('api-reference')).toBeVisible();
+  await expect(page.locator('[data-testid="api-resource"][data-resource="runs"]')).toBeVisible();
+  await expect(page.locator('[data-testid="api-resource"][data-resource="work-items"]')).toBeVisible();
+
+  const runsList = page.locator(
+    '[data-testid="api-endpoint"][data-path="/api/v1/runs"][data-method="GET"]',
+  );
+  await expect(runsList).toBeVisible();
+  await expect(runsList).toContainText('List runs');
+  await expect(runsList).toContainText('GET');
+  await expect(
+    page.locator('[data-testid="api-endpoint"][data-path="/api/v1/work-items"][data-method="POST"]'),
+  ).toBeVisible();
+  await expect(runsList.getByTestId('api-endpoint-params')).toContainText('limit');
+  await expect(runsList.getByTestId('api-endpoint-responses')).toContainText('200');
+  await expect(runsList.getByTestId('api-endpoint-responses')).toContainText('400');
+
+  // The versioning rule is stated, and the raw document is linked and really served.
+  await expect(page.getByTestId('help-entry')).toContainText('breaking change');
+  const rawLink = page.getByTestId('api-raw-spec');
+  await expect(rawLink).toHaveAttribute('href', '/api/openapi.json');
+  const raw = await page.request.get('/api/openapi.json');
+  expect(raw.ok()).toBeTruthy();
+  const document = (await raw.json()) as { paths?: Record<string, unknown> };
+  expect(Object.keys(document.paths ?? {}).length).toBeGreaterThan(0);
+});
+
+/**
+ * `web-console` spec: "Pinned sidebar footer". The quick start is far longer than the
+ * viewport; the footer must still be visible without scrolling.
+ */
+test('the sidebar footer stays visible on a long help page', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto('/help/quick-start');
+  await expect(page.getByTestId('help-entry-title')).toHaveText('Quick start');
+
+  // The page really is longer than the viewport.
+  const { scrollHeight, viewport } = await page.evaluate(() => ({
+    scrollHeight: document.documentElement.scrollHeight,
+    viewport: window.innerHeight,
+  }));
+  expect(scrollHeight).toBeGreaterThan(viewport);
+
+  // The sidebar is bounded by the viewport, so it cannot grow with the page.
+  const sidebar = await page.getByTestId('nav-sidebar').boundingBox();
+  expect(sidebar).not.toBeNull();
+  expect(sidebar!.height).toBeLessThanOrEqual(viewport + 1);
+
+  // Footer links and the usage/account block are visible without scrolling.
+  await expect(page.getByTestId('nav-api')).toBeInViewport();
+  await expect(page.getByTestId('nav-help')).toBeInViewport();
+  await expect(page.getByTestId('nav-usage')).toBeInViewport();
+  await expect(page.getByTestId('nav-account')).toBeInViewport();
+
+  // Order is API above Help above the account footer.
+  const apiBox = await page.getByTestId('nav-api').boundingBox();
+  const helpBox = await page.getByTestId('nav-help').boundingBox();
+  const accountBox = await page.getByTestId('nav-account').boundingBox();
+  expect(apiBox!.y).toBeLessThan(helpBox!.y);
+  expect(helpBox!.y).toBeLessThan(accountBox!.y);
+
+  // Scrolling the page does not move the footer: no layout shift.
+  await page.mouse.wheel(0, 2000);
+  await page.waitForTimeout(300);
+  await expect(page.getByTestId('nav-account')).toBeInViewport();
+});
+
+test('the contextual ? resolves on /help/api', async ({ page }) => {
+  await page.goto('/help/api');
+  const control = page.getByTestId('help-context-link');
+  await expect(control).toBeVisible();
+  await expect(control).toHaveAttribute('href', '/help');
+  await expect(control).toHaveAttribute('data-help-slug', 'index');
+
+  await control.click();
+  await expect(page).toHaveURL(/\/help$/);
+  await expect(page.getByTestId('help-title')).toHaveText('Help centre');
+});
+
+test('the factory how-tos include supported projects, linked from the quick start', async ({ page }) => {
+  await page.goto('/help');
+  const entry = page.getByTestId('help-entry-link').filter({ hasText: 'Supported projects' });
+  await expect(entry.first()).toBeVisible();
+  await entry.first().click();
+
+  await expect(page).toHaveURL(/\/help\/factories\/supported-projects$/);
+  await expect(page.getByTestId('help-entry-title')).toHaveText('Supported projects');
+  const article = page.getByTestId('help-entry');
+  await expect(article).toContainText('repository diff verified by checks');
+  await expect(article).toContainText('Terraform');
+  await expect(article).toContainText('merge queue');
+  await expect(article).toContainText('Out of scope');
+
+  // The quick start links to it.
+  await page.goto('/help/quick-start');
+  await expect(
+    page.getByTestId('help-related-link').filter({ hasText: 'What the factory can build' }),
+  ).toHaveAttribute('href', '/help/factories/supported-projects');
+});

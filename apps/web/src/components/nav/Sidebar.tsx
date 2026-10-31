@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { FACTORY_NAV, TOP_NAV, factoryHref } from '@/lib/nav';
+import { FACTORY_NAV, FOOTER_NAV, TOP_NAV, factoryHref } from '@/lib/nav';
 import type { FactoryListItem } from '@/lib/types';
 
 function factoryFromPathname(pathname: string): string | null {
@@ -19,13 +19,23 @@ export function Sidebar({ factories }: { factories: FactoryListItem[] }) {
   const isActive = (href: string): boolean =>
     pathname === href || (href !== '/chat' && pathname.startsWith(`${href}/`));
 
+  // `API` and `Help` share the /help prefix; only the one you are on is highlighted.
+  const isHelpActive =
+    pathname === '/help' || (pathname.startsWith('/help/') && pathname !== '/help/api');
+
+  /**
+   * Bounded, pinned column (`web-console` spec: "Pinned sidebar footer"): the sidebar is
+   * `h-screen` and sticks to the top, so it never grows with the page. Only the nav list
+   * scrolls (`min-h-0 overflow-y-auto`); the header, footer links and usage/account block
+   * stay visible on long pages such as the quick start.
+   */
   return (
     <nav
       data-testid="nav-sidebar"
       aria-label="Main navigation"
-      className="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white"
+      className="sticky top-0 flex h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white"
     >
-      <div className="border-b border-slate-200 px-4 py-4">
+      <div className="shrink-0 border-b border-slate-200 px-4 py-4">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Software Factory</p>
         <label htmlFor="factory-switcher" className="mt-3 block text-xs font-medium text-slate-500">
           Factory
@@ -46,7 +56,7 @@ export function Sidebar({ factories }: { factories: FactoryListItem[] }) {
         </select>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2 py-3">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
         <ul className="space-y-0.5">
           {TOP_NAV.map((item) => (
             <li key={item.href}>
@@ -106,23 +116,37 @@ export function Sidebar({ factories }: { factories: FactoryListItem[] }) {
         </ul>
       </div>
 
-      <div className="border-t border-slate-200 px-2 py-2">
+      <div className="shrink-0 border-t border-slate-200 px-2 py-2">
+        {FOOTER_NAV.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            data-testid={item.testId}
+            data-active={pathname === item.href ? 'true' : 'false'}
+            aria-current={pathname === item.href ? 'page' : undefined}
+            className={`mb-0.5 block rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300 ${
+              pathname === item.href
+                ? 'bg-slate-900 text-white'
+                : 'text-slate-700 hover:bg-slate-100'
+            }`}
+          >
+            {item.label}
+          </Link>
+        ))}
         <Link
           href="/help"
           data-testid="nav-help"
-          data-active={pathname === '/help' || pathname.startsWith('/help/') ? 'true' : 'false'}
-          aria-current={pathname === '/help' || pathname.startsWith('/help/') ? 'page' : undefined}
+          data-active={isHelpActive ? 'true' : 'false'}
+          aria-current={isHelpActive ? 'page' : undefined}
           className={`block rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300 ${
-            pathname === '/help' || pathname.startsWith('/help/')
-              ? 'bg-slate-900 text-white'
-              : 'text-slate-700 hover:bg-slate-100'
+            isHelpActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
           }`}
         >
           Help
         </Link>
       </div>
 
-      <div className="border-t border-slate-200 px-4 py-3">
+      <div className="shrink-0 border-t border-slate-200 px-4 py-3">
         <div data-testid="nav-usage" className="flex items-center gap-2 text-xs text-slate-500">
           <span aria-hidden="true" className="h-2 w-2 rounded-full bg-emerald-500" />
           Usage available

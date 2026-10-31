@@ -623,3 +623,35 @@ demo database and refuses without `--yes`.
 schedule firing work items. Cost: a fresh dev volume needs the init SQL (or one manual
 `create database`) before integration tests run, and reset-dev is a destructive command that
 must stay explicit.
+
+---
+
+## ADR-030 — Path-versioned API with an OpenAPI document as the source of truth
+
+**Status:** accepted, implemented (2026-10-31, add-api-v1-and-help-scope)
+**Context:** the HTTP surface grew phase by phase with no version marker and no document. Every
+resource (`/runs`, `/work-items`, `/secrets`, `/webhooks/*`, …) sat at the root, so an
+incompatible change would silently break the console's server fetches, the smoke scripts and
+the copy-paste examples in help and docs. Nothing inside the product described the API, and
+nothing enforced that a new route was documented.
+**Options:** header-based versioning (`Accept: application/vnd.factory.v2+json`) · a
+`?version=` query parameter · a path prefix `/api/v1` · stay unversioned and rely on an
+additive-only rule.
+**Decision:** one **path prefix**. Every public resource lives under `/api/v1`, applied by a
+single constant (`API_PREFIX` in `apps/web/src/lib/api.ts` and the equivalent on the API
+side); `GET /health` stays unversioned for probes, and `GET /api/v1/health` serves the same
+check to versioned clients. A breaking change — a removed/renamed field, an incompatible
+response shape, a newly required parameter — bumps the prefix, and the old prefix keeps
+serving until it is removed deliberately. Additive changes stay in `v1`.
+`apps/api/openapi.json` (OpenAPI 3.1) is the **source of truth**: it is served at
+`GET /api/v1/openapi.json`, and a contract test compares the registered route table with the
+document, failing in both directions with method + path. The console renders `/help/api`
+from that document (through the web client, so the prefix stays server-side) instead of a
+second hand-written list, and links to it for Swagger UI/Postman. Browser-facing same-origin
+route handlers stay under `/api/*`; `apiUrl()` applies `/api/v1` only when talking to the
+backend, so the two prefixes cannot be confused.
+**Consequences:** the version is visible, cacheable and directly consumable by standard
+tooling, and the document cannot drift from the routes without a red test. Cost: a version
+bump is mechanical but wide (every caller, smoke script and help example), a route change
+must edit `openapi.json` in the same commit, and a browser-facing handler cannot live at
+`/api/v1/...` without colliding with the backend convention.

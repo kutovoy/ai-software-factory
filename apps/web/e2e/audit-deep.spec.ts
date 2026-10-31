@@ -43,6 +43,7 @@ test('deep audit every page', async ({ page }) => {
     '/users',
     '/help',
     '/help/quick-start',
+    '/help/api',
     ...(runId ? [`/runs/${runId}`] : []),
     ...(workItemId ? [`/work-items/${workItemId}`] : []),
     ...(scoreId ? [`/scores/${scoreId}`] : []),

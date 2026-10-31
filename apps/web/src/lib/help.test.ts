@@ -8,7 +8,7 @@ import {
   menuEntryForFactorySegment,
   menuEntryForHref,
 } from './help';
-import { FACTORY_NAV, TOP_NAV } from './nav';
+import { FACTORY_NAV, FOOTER_NAV, TOP_NAV } from './nav';
 
 /**
  * The help registry is a contract with the navigation (`web-console` spec: "Menu
@@ -33,6 +33,35 @@ describe('help registry', () => {
       expect(entry?.section).toBe('menu');
       expect(entry?.pageHref).toBe(`/factories/example/${item.segment}`);
     }
+  });
+
+  test('every footer nav item has a menu entry', () => {
+    // Footer links point at help entries, so the slug is the href minus `/help/`.
+    for (const item of FOOTER_NAV) {
+      const slug = item.href.replace(/^\/help\//, '');
+      const entry = getHelpEntry(slug);
+      expect(entry, `no help entry for footer link ${item.label} (${item.href})`).toBeDefined();
+      expect(entry?.title).toBe(item.label);
+      expect(entry?.section).toBe('menu');
+    }
+    // The API entry is generated from the served OpenAPI document, not typed by hand.
+    expect(getHelpEntry('api')?.renderer).toBe('api-reference');
+  });
+
+  test('supported projects states the unit of work and the out-of-scope list', () => {
+    const entry = getHelpEntry('factories/supported-projects');
+    expect(entry?.section).toBe('factories');
+    const text = (entry?.blocks ?? [])
+      .flatMap((block) => {
+        if (block.kind === 'prose' || block.kind === 'callout') return [block.text];
+        if (block.kind === 'list' || block.kind === 'checklist') return block.items;
+        return [];
+      })
+      .join(' ');
+    expect(text).toContain('repository diff verified by checks');
+    expect(text).toContain('Terraform');
+    expect(text.toLowerCase()).toContain('out of scope');
+    expect(text).toContain('merge queue');
   });
 
   test('slugs are unique and every section has content', () => {

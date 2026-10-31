@@ -12,11 +12,69 @@ database, events, logs, API responses or definitions.
 Next: **Phase 6b** (auth/users, multi-tenant/ops, a managed secret provider behind the same
 registry).
 
+### Versioned API, in-product reference, supported projects, pinned sidebar (ADR-030, 2026-10-31)
+
+The HTTP surface is now path-versioned and documented inside the product. Every public
+resource lives under `/api/v1` via one prefix constant; `GET /health` stays unversioned for
+probes and `GET /api/v1/health` serves the same check to versioned clients. Unversioned
+resource paths return 404 (asserted). `apps/api/openapi.json` is an OpenAPI 3.1 document with
+61 paths (method, path, summary, parameters, response codes), served at
+`GET /api/v1/openapi.json`; a contract test compares the registered route table with the
+document and fails in either direction naming method + path, so the document cannot drift.
+Every caller was moved in the same change: the console's server fetches (`apiUrl`/`apiGet`),
+same-origin route handlers, smoke scripts and docs. Webhook URLs render
+`/api/v1/webhooks/:provider`.
+
+The console gained a sidebar `API` entry (`nav-api`) above `Help`, and `/help/api` renders the
+endpoint reference from the served document — grouped by resource, with method badge, path,
+summary, parameters and response codes — plus a link to the raw document and the versioning
+rule (breaking changes bump the prefix; the old one keeps serving until removed deliberately).
+Swagger UI and Postman can consume the same document. The page is fetched through the web
+client, so `/api/v1` stays server-side; a same-origin `/api/openapi.json` handler proxies it
+byte-for-byte (the browser never talks to `apps/api` directly). If the API is unreachable the
+page says so with the error code and a reload link instead of showing an empty list — no
+endpoint is invented. No new dependency: the reference is server-rendered from the JSON.
+
+`help/factories/supported-projects` answers the most common question: the unit of work is a
+repository diff verified by checks. In scope: application code, tests, documentation,
+configuration, database migrations, Terraform modules and reviewed `terraform plan` output.
+Out of scope: applying infrastructure (the factory opens a PR; the merge queue lands the code,
+no cloud credentials reach a run), physical actions, and artefacts no check can verify —
+those get a proposal at most. The mechanism is stated end to end (branch → PR → checks →
+merge queue) and the entry is linked from the quick start, the factory how-tos section and
+the add-a-factory how-to. The seven `curl http://localhost:8080/<resource>` examples in help
+are now `/api/v1/...` (the health examples stay unversioned).
+
+Sidebar footer fix (`web-console` spec: "Pinned sidebar footer"): the sidebar is
+`sticky top-0 h-screen` with `shrink-0` header/footer blocks, and the nav list is the only
+scroll area (`min-h-0 flex-1 overflow-y-auto`). On long pages such as `/help/quick-start` the
+API/Help links and the usage/account footer stay visible without scrolling, and the sidebar
+never grows with the page.
+
+Verification (2026-10-31):
+
+```
+bun run ci                     → typecheck clean; 481 pass / 122 skip / 0 fail
+                                 (incl. footer-nav parity + supported-projects content tests)
+cd apps/web && bunx playwright test → 38 passed (34 existing + 4 help: API nav → reference
+                                 (resource groups, method/path/params/codes, raw doc really
+                                 served); footer visible + pinned on /help/quick-start;
+                                 `?` on /help/api resolves; supported projects reachable)
+UI_AUDIT=1 bunx playwright test audit-deep.spec.ts → 36 routes, 0 overflow, 0 console errors
+bash scripts/smoke.sh          → SMOKE PASSED (backend unchanged; /health + /api/v1 paths)
+```
+
+Caveats: the API reference reflects whatever the document declares — a wrong summary is a
+documentation bug, not a rendering bug; auth is still not modelled (Phase 6b), so the document
+declares no security scheme. `/api/openapi.json` is a proxy of the backend document, not a
+second copy.
+
 ### In-product help centre (web-console, 2026-10-31)
 
 The console is now self-documenting. `apps/web/src/lib/help.ts` is a typed registry
 (`{slug, title, section, status, summary, pageHref?, blocks, related}`) with five Diátaxis
-sections: quick start, concepts, menu reference, setup how-tos and troubleshooting. 36 entries:
+sections: quick start, concepts, menu reference, setup how-tos and troubleshooting. 36 entries
+at the time (38 now, after the API and supported-projects additions above):
 one per top-level nav item (New Chat, Inbox, Work items, Runs, MCPs and apps, Secrets, Users) and
 per factory page (Dashboard, Agents, Automations, Scorers, Self-improvement, Benchmarks, Definition,
 Gates, Merge queue, Settings); eight concept entries (definitions as code, work-item lifecycle,
@@ -61,7 +119,7 @@ UI_AUDIT=1 bunx playwright test audit-deep.spec.ts → 35 routes, 0 overflow, 0 
 
 Caveats: help content is prose checked against this document, not generated from code; the only
 automated freshness guard is nav parity (a capability can change without a failing test — the
-AGENTS.md rule is the process guard). The filter is client-side over 36 rows, no server index.
+AGENTS.md rule is the process guard). The filter is client-side over 38 rows, no server index.
 
 
 ### UI audit + model configuration (ADR-028/ADR-029, 2026-10-30)

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { ApiReference } from '@/components/help/ApiReference';
 import { HelpBlocks, RelatedLinks } from '@/components/help/HelpBlocks';
 import { Badge } from '@/components/ui/Badge';
 import { HELP_SECTIONS, getHelpEntry } from '@/lib/help';
@@ -71,6 +72,7 @@ export default async function HelpEntryPage({ params }: HelpPageProps) {
 
       <article data-testid="help-entry" data-slug={entry.slug} className="space-y-5">
         <HelpBlocks blocks={entry.blocks} />
+        {entry.renderer === 'api-reference' ? <ApiReference /> : null}
       </article>
 
       <RelatedLinks links={entry.related} />

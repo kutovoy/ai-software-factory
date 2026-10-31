@@ -52,6 +52,8 @@ test('audit every page', async ({ page }) => {
     '/secrets',
     '/mcps',
     '/users',
+    '/help',
+    '/help/api',
     ...(runId ? [`/runs/${runId}`] : []),
     ...(workItemId ? [`/work-items/${workItemId}`] : []),
     ...(scoreId ? [`/scores/${scoreId}`] : []),

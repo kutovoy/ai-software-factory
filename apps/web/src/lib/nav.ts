@@ -15,6 +15,12 @@ export const TOP_NAV: NavItem[] = [
   { href: '/users', label: 'Users', testId: 'nav-users' },
 ];
 
+/**
+ * Footer links pinned above the account footer. `API` sits above `Help`: both open a help
+ * entry, but the API reference is the one people reach for by name (ADR-030).
+ */
+export const FOOTER_NAV: NavItem[] = [{ href: '/help/api', label: 'API', testId: 'nav-api' }];
+
 export interface FactoryNavItem {
   segment: string;
   label: string;
