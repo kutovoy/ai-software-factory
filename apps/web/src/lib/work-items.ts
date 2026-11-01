@@ -162,6 +162,29 @@ export function statusEvents(events: WorkItemEvent[]): StatusEventView[] {
     }));
 }
 
+export interface RetryEventView {
+  previousStatus: string | null;
+  actor: string | null;
+  reason: string | null;
+  attempt: number | null;
+  workflowId: string | null;
+  at: string | null;
+}
+
+/** Every `work_item.retried` event: who re-opened the item, why, and under which attempt. */
+export function retryEvents(events: WorkItemEvent[]): RetryEventView[] {
+  return events
+    .filter((event) => event.type === 'work_item.retried')
+    .map((event) => ({
+      previousStatus: stringOf(event.payload.previousStatus) || null,
+      actor: stringOf(event.payload.actor) || event.actor,
+      reason: stringOf(event.payload.reason) || null,
+      attempt: numberOrNull(event.payload.attempt),
+      workflowId: stringOf(event.payload.workflowId) || null,
+      at: event.createdAt,
+    }));
+}
+
 /** True once the loop recorded a merge (the ship gate approved and the forge merged). */
 export function mergedAt(events: WorkItemEvent[]): string | null {
   const statuses = statusEvents(events).filter((entry) => /merge/i.test(entry.reason ?? ''));
@@ -257,6 +280,17 @@ export function humanizeSeconds(seconds: number): string {
   if (abs < 3600) return `${prefix}${Math.round(abs / 60)}m`;
   if (abs < 86_400) return `${prefix}${(abs / 3600).toFixed(1)}h`;
   return `${prefix}${(abs / 86_400).toFixed(1)}d`;
+}
+
+/**
+ * Statuses a work item can be retried from (spec `factory-loop` › Work-item retry).
+ * `active` and `done` are never retryable; `failed` is accepted for forward compatibility
+ * even though no writer produces it today.
+ */
+export const RETRYABLE_WORK_ITEM_STATUSES = ['escalated', 'failed', 'blocked', 'cancelled'];
+
+export function canRetryWorkItem(status: string): boolean {
+  return RETRYABLE_WORK_ITEM_STATUSES.includes(status);
 }
 
 export function isLoopStage(value: string): value is WorkItemStage {

@@ -5,16 +5,19 @@ import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Table } from '@/components/ui/Table';
 import { GateDecisionActions } from '@/components/work-items/GateDecisionActions';
+import { RetryWorkItemButton } from '@/components/work-items/RetryWorkItemButton';
 import { SlaCountdown } from '@/components/work-items/SlaCountdown';
 import { ApiClientError, apiGet } from '@/lib/api';
 import { formatDateTime, formatRelative, shortCommit, statusTone } from '@/lib/format';
 import type { GateDecisionRecord, WorkItemDetail } from '@/lib/types';
 import {
+  canRetryWorkItem,
   checksRecorded,
   judgeVerdict,
   lastAutonomyEvent,
   mergedAt,
   prOpened,
+  retryEvents,
   reviewerReports,
   runsForWorkItem,
   slaState,
@@ -45,6 +48,7 @@ export default async function WorkItemDetailPage({ params }: { params: Promise<{
   const autonomy = lastAutonomyEvent(events);
   const runs = runsForWorkItem(workItem.id, events);
   const statuses = statusEvents(events);
+  const retries = retryEvents(events);
   const pendingSla = pendingGate ? slaState(pendingGate.slaAt) : null;
 
   return (
@@ -72,6 +76,11 @@ export default async function WorkItemDetailPage({ params }: { params: Promise<{
                 loop ×{workItem.loopCount}
               </Badge>
             ) : null}
+            {workItem.attempt && workItem.attempt > 1 ? (
+              <Badge tone="info" testId="work-item-attempt">
+                attempt {workItem.attempt}
+              </Badge>
+            ) : null}
             {merged ? (
               <Badge tone="success" testId="work-item-merged">
                 merged · {formatDateTime(merged)}
@@ -86,12 +95,18 @@ export default async function WorkItemDetailPage({ params }: { params: Promise<{
             {workItem.id}
           </p>
         </div>
-        <Link
-          href="/work-items"
-          className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
-        >
-          Back to board
-        </Link>
+        <div className="flex flex-col items-end gap-2">
+          {/* Retry belongs to the work item: a factory stage run refuses per-run retry. */}
+          {canRetryWorkItem(workItem.status) ? (
+            <RetryWorkItemButton workItemId={workItem.id} status={workItem.status} />
+          ) : null}
+          <Link
+            href="/work-items"
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+          >
+            Back to board
+          </Link>
+        </div>
       </header>
 
       <Card testId="work-item-meta">
@@ -115,6 +130,17 @@ export default async function WorkItemDetailPage({ params }: { params: Promise<{
             <p className="text-xs uppercase tracking-wide text-slate-400">Loop count</p>
             <p data-testid="work-item-loop-value" className="text-sm text-slate-800">
               {workItem.loopCount}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-400">Attempt</p>
+            <p
+              data-testid="work-item-attempt-value"
+              className="text-sm text-slate-800"
+              title={workItem.workflowId ?? undefined}
+            >
+              {workItem.attempt ?? 1}
+              {workItem.retriedAt ? ` · retried ${formatRelative(workItem.retriedAt)}` : ''}
             </p>
           </div>
           <div>
@@ -545,8 +571,8 @@ export default async function WorkItemDetailPage({ params }: { params: Promise<{
           </Card>
 
           <Card testId="work-item-status-card">
-            <CardHeader title="Status events" hint="Blocked, escalated, done and merge evidence." />
-            <CardBody>
+            <CardHeader title="Status events" hint="Blocked, escalated, done, merge evidence and retries." />
+            <CardBody className="space-y-3">
               {statuses.length === 0 ? (
                 <EmptyState testId="work-item-status-empty" title="No status changes recorded" />
               ) : (
@@ -566,6 +592,33 @@ export default async function WorkItemDetailPage({ params }: { params: Promise<{
                   ))}
                 </ul>
               )}
+              {retries.length > 0 ? (
+                <div data-testid="work-item-retried-events" className="space-y-1 border-t border-slate-200 pt-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Retries</p>
+                  <ul className="space-y-1 text-sm">
+                    {retries.map((retry, index) => (
+                      <li
+                        key={index}
+                        data-testid="retried-event"
+                        data-previous-status={retry.previousStatus ?? ''}
+                        data-attempt={retry.attempt ?? ''}
+                        data-actor={retry.actor ?? ''}
+                        className="flex flex-wrap items-center gap-2"
+                      >
+                        <Badge tone="info">attempt {retry.attempt ?? '—'}</Badge>
+                        <span className="text-xs text-slate-600">
+                          from {retry.previousStatus ?? 'unknown'}
+                          {retry.actor ? ` · by ${retry.actor}` : ''}
+                          {retry.reason ? ` — ${retry.reason}` : ''}
+                        </span>
+                        <span className="ml-auto text-[11px] text-slate-400">
+                          {formatDateTime(retry.at)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </CardBody>
           </Card>
         </div>

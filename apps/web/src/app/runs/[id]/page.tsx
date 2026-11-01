@@ -22,7 +22,8 @@ import type { RunArtifact, RunDetail, RunStep, ScoresResponse } from '@/lib/type
 
 export const dynamic = 'force-dynamic';
 
-const TERMINAL = new Set(['ok', 'error', 'cancelled']);
+/** Cancel is offered only while a cancel can still change the outcome. */
+const LIVE = new Set(['pending', 'running', 'cancelling']);
 
 export default async function RunDetailPage({
   params,
@@ -68,10 +69,33 @@ export default async function RunDetailPage({
             {run.id}
           </p>
         </div>
-        <CancelRunButton runId={run.id} disabled={TERMINAL.has(run.status)} />
-        {run.kind === 'chat' && (run.status === 'error' || run.status === 'cancelled') ? (
-          <RetryRunButton runId={run.id} />
-        ) : null}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Cancel only while it can do something; a terminal run shows its end state. */}
+          {LIVE.has(run.status) ? (
+            <CancelRunButton runId={run.id} />
+          ) : (
+            <span
+              data-testid="run-terminal-state"
+              data-status={run.status}
+              className="text-sm text-slate-500"
+            >
+              Run ended · {run.status}
+            </span>
+          )}
+          {run.kind === 'chat' && (run.status === 'error' || run.status === 'cancelled') ? (
+            <RetryRunButton runId={run.id} />
+          ) : null}
+          {/* Factory stage runs belong to their work item: retry lives there, not per run. */}
+          {run.kind === 'run' && summary.workItemId ? (
+            <Link
+              href={`/work-items/${encodeURIComponent(summary.workItemId)}`}
+              data-testid="run-retry-work-item"
+              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            >
+              Retry the work item
+            </Link>
+          ) : null}
+        </div>
       </header>
 
       {promptText ? (

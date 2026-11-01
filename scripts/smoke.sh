@@ -861,8 +861,8 @@ automations="$(api "$API/factories/example/automations")"
 [ "$(printf '%s' "$automations" | jget webhook.url)" != "" ] || fail "automations has no webhook url"
 pass "automations projection exposes webhook url + cron status"
 
-# ------------------------------- 17. autonomy read + work-item cancel + rebuild
-log "checking the autonomy read model, work-item cancellation and the rebuild dry run"
+# ------------------------------- 17. autonomy read + work-item cancel/retry + rebuild
+log "checking the autonomy read model, work-item cancellation/retry and the rebuild dry run"
 
 autonomy_read="$(api "$API/autonomy?factory=example")"
 printf '%s' "$autonomy_read" | bun -e '
@@ -935,6 +935,52 @@ repeat_cancel="$(api -X POST "$API/work-items/$cancel_id/cancel" \
 [ "$(printf '%s' "$repeat_cancel" | jget eventRecorded)" = "false" ] \
   || fail "repeat cancel emitted a second event: $repeat_cancel"
 pass "work item $cancel_id cancelled cooperatively (one work_item.cancelled, repeat is a no-op)"
+
+retry_resp="$(api -X POST "$API/work-items/$cancel_id/retry" \
+  -H 'content-type: application/json' \
+  -d '{"actor":"smoke","reason":"smoke: retry the cancelled item"}')"
+[ "$(printf '%s' "$retry_resp" | jget workItem.status)" = "active" ] \
+  || fail "retry did not re-open the item: $retry_resp"
+[ "$(printf '%s' "$retry_resp" | jget previousStatus)" = "cancelled" ] \
+  || fail "retry did not record the previous status: $retry_resp"
+[ "$(printf '%s' "$retry_resp" | jget attempt)" = "2" ] \
+  || fail "retry did not land on attempt 2: $retry_resp"
+[ "$(printf '%s' "$retry_resp" | jget workflow.workflowId)" = "factory-$cancel_id-a2" ] \
+  || fail "retry did not start a new attempt workflow: $retry_resp"
+[ "$(printf '%s' "$retry_resp" | jget workItem.cancelRequestedAt)" = "" ] \
+  || fail "retry kept cancel_requested_at: $retry_resp"
+[ "$(printf '%s' "$retry_resp" | jget workItem.cancelActor)" = "" ] \
+  || fail "retry kept cancel_actor: $retry_resp"
+[ "$(printf '%s' "$retry_resp" | jget workItem.cancelReason)" = "" ] \
+  || fail "retry kept cancel_reason: $retry_resp"
+
+retry_detail="$(api "$API/work-items/$cancel_id")"
+printf '%s' "$retry_detail" | bun -e '
+  const d = JSON.parse(await Bun.stdin.text());
+  const events = d.events ?? [];
+  const retried = events.filter((e) => e.type === "work_item.retried");
+  if (retried.length !== 1) {
+    console.error(`expected exactly one work_item.retried, got ${retried.length}`);
+    process.exit(1);
+  }
+  const p = retried[0].payload ?? {};
+  if (p.previousStatus !== "cancelled") { console.error(`previousStatus ${p.previousStatus}`); process.exit(1); }
+  if (p.actor !== "smoke") { console.error(`actor ${p.actor}`); process.exit(1); }
+  if (p.attempt !== 2) { console.error(`attempt ${p.attempt}`); process.exit(1); }
+  if (!events.some((e) => e.type === "work_item.cancelled")) {
+    console.error("the prior cancellation is missing from the audit"); process.exit(1);
+  }
+' || fail "retry audit assertions failed"
+pass "work item $cancel_id retried to active (attempt 2, factory-<id>-a2, flags cleared, cancellation kept in the audit)"
+
+# Leave the stack tidy: the retried item dispatches triage again, so cancel it.
+api -X POST "$API/work-items/$cancel_id/cancel" \
+  -H 'content-type: application/json' \
+  -d '{"actor":"smoke","reason":"smoke: clean up the retried item"}' >/dev/null
+for _ in $(seq 1 120); do
+  [ "$(api "$API/work-items/$cancel_id" | jget workItem.status)" = "cancelled" ] && break
+  sleep 0.5
+done
 
 rebuild_out="$(DATABASE_URL="$DATABASE_URL" bun packages/cli/src/index.ts rebuild --from runs --dry-run 2>&1)" \
   || fail "factory rebuild --dry-run failed: $rebuild_out"

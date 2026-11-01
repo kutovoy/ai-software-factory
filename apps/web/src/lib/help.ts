@@ -616,7 +616,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     section: 'menu',
     status: 'Shipped — Phase 2b / 3c',
     summary:
-      'The board of work items by stage, with create, cancel and per-item gate state.',
+      'The board of work items by stage, with create, cancel, retry and per-item gate state.',
     pageHref: '/work-items',
     blocks: [
       {
@@ -628,9 +628,17 @@ export const HELP_ENTRIES: HelpEntry[] = [
         kind: 'list',
         items: [
           'Create: title, type, source, harness and prompt; the response returns the item id and stage.',
-          'Open: the detail page lists runs, gate history and events for the item.',
+          'Open: the detail page lists runs, gate history, events and retries for the item.',
           'Cancel: takes an actor + reason, is idempotent and emits exactly one `work_item.cancelled`; a terminal item is refused with `invalid_state`.',
+          'Retry: an `escalated`, `failed`, `blocked` or `cancelled` item can be re-opened with an actor + optional reason. It returns to `active` at its current stage, the cancellation flags are cleared, `work_item.retried` records the previous status and the stage is dispatched again under a new attempt (`factory-<itemId>-a<n>`). `active` and `done` items are refused with `work_item_not_retryable`; a double submit within 60 seconds returns the existing dispatch.',
         ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Retry lives on the work item',
+        text:
+          'A factory stage run cannot be retried on its own (`run_not_retryable`) — it belongs to its work item. The run page links to the work item, where the retry control re-dispatches the current stage; the attempt badge and the Retries list show what happened.',
       },
     ],
     related: [
@@ -659,6 +667,8 @@ export const HELP_ENTRIES: HelpEntry[] = [
           'Filters: factory and status (`running`, `pending`, `ok`, `error`, `cancelled`).',
           'Detail: events, steps, artifacts (`runs/<runId>/artifacts/`), permissions, scores and cost.',
           'Score detail: label, value, rationale, evidence links, provenance (`rubricHash`, judge model/version), calibration state.',
+          'Cancel is offered only while the run is `pending`, `running` or `cancelling`; a terminal run shows its end state instead of a dead button.',
+          'A chat run that failed or was cancelled can be retried as a new run. A factory stage run cannot: the page links to the work item, where retry re-dispatches the current stage under a new attempt.',
         ],
       },
       {

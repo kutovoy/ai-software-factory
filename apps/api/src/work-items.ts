@@ -10,10 +10,13 @@ import {
   foremanAgentName,
   getActiveCanaryRollout,
   getAutonomyState,
+  getCanaryRollout,
   getIntegration,
   getPendingGate,
   getWorkItem,
+  isRetryableWorkItemStatus,
   latestAutonomyEvent,
+  latestWorkItemRetry,
   listGateDecisions,
   markWorkItemCancelled,
   listWorkItemEvents,
@@ -24,8 +27,10 @@ import {
   recordGateDecision,
   requestWorkItemCancel,
   resolveAllGates,
+  retryWorkItem as retryWorkItemRow,
   resolveStageConfigs,
   setAutonomyState,
+  setWorkItemStatus,
   stageDeclarationsFromDefinition,
   type AgentDef,
   type FactoryDefinition,
@@ -42,6 +47,7 @@ import {
   startFactoryWorkflow,
   submitGateDecision,
   type FactoryWorkflowInput,
+  type FactoryWorkflowResume,
   type GateDecisionValue,
   type LoopStageName,
   type StageGraphSummary,
@@ -61,6 +67,7 @@ import {
   invalidState,
   spawnNotAllowed,
   workItemNotFound,
+  workItemNotRetryable,
 } from './errors';
 import { benchmarkGateStatus } from './benchmarks';
 import { log } from './logger';
@@ -144,6 +151,12 @@ export interface WorkItemSummary {
   prUrl: string | null;
   prNumber: number | null;
   loopCount: number;
+  /** 1-based item attempt: 1 for the first dispatch, incremented by every retry. */
+  attempt: number;
+  /** When the item was last retried, or null. */
+  retriedAt: string | null;
+  /** The workflow currently driving the item (`factory-<id>` or `factory-<id>-a<n>`). */
+  workflowId: string | null;
   cancelRequestedAt: string | null;
   cancelActor: string | null;
   cancelReason: string | null;
@@ -168,6 +181,9 @@ function summarize(item: WorkItem): WorkItemSummary {
     prUrl: item.prUrl,
     prNumber: item.prNumber,
     loopCount: item.loopCount,
+    attempt: item.attempt,
+    retriedAt: item.retriedAt ?? null,
+    workflowId: item.workflowId ?? null,
     cancelRequestedAt: item.cancelRequestedAt ?? null,
     cancelActor: item.cancelActor ?? null,
     cancelReason: item.cancelReason ?? null,
@@ -378,6 +394,12 @@ export async function createWorkItemForApi(
       definitionVersion,
       canaryRolloutId: canary?.rolloutId ?? null,
       mergeQueue,
+      // Creation snapshot reused by a retry so the item keeps its seed prompt and the
+      // harness/model/runner it was created with (fix-run-actions).
+      prompt,
+      harness: defaults.harness,
+      ...(defaults.model ? { model: defaults.model } : {}),
+      runner: defaults.runner,
     },
   });
 
@@ -468,7 +490,8 @@ export async function getWorkItemDetail(workItemId: string): Promise<WorkItemDet
     events,
     gates,
     pendingGate,
-    workflowId: workItemWorkflowId(workItemId),
+    // The live workflow is the current attempt's id after a retry.
+    workflowId: item.workflowId ?? workItemWorkflowId(workItemId, item.attempt),
   };
 }
 
@@ -639,7 +662,11 @@ export async function setAutonomyForApi(
     for (const item of active) {
       try {
         await pauseWorkItemAutonomy(
-          { workflowId: workItemWorkflowId(item.id), actor: body.actor, reason: body.reason },
+          {
+            workflowId: item.workflowId ?? workItemWorkflowId(item.id, item.attempt),
+            actor: body.actor,
+            reason: body.reason,
+          },
           toOrchestrationConfig(config),
         );
         signaled += 1;
@@ -872,7 +899,7 @@ export async function cancelWorkItemForApi(
   let delivery: CancelWorkItemResult['delivery'] = 'none';
   try {
     const signaled = await cancelWorkItem(
-      workItemWorkflowId(workItemId),
+      item.workflowId ?? workItemWorkflowId(workItemId, item.attempt),
       { actor: body.actor, reason: body.reason },
       toOrchestrationConfig(config),
     );
@@ -900,5 +927,329 @@ export async function cancelWorkItemForApi(
     cancelRequestedAt: recorded.item.cancelRequestedAt ?? null,
     delivery,
     eventRecorded: recorded.requested,
+  };
+}
+
+/* ------------------------------------------- work item retry (fix-run-actions) */
+
+export const retryWorkItemBodySchema = z
+  .object({
+    actor: z.string().min(1).max(120),
+    reason: z.string().max(2000).optional(),
+  })
+  .strict();
+
+export type RetryWorkItemBody = z.infer<typeof retryWorkItemBodySchema>;
+
+/** A double submit inside this window returns the dispatch the first call started. */
+const RETRY_DEDUPE_WINDOW_MS = 60_000;
+
+export interface RetryWorkItemResult {
+  workItem: WorkItemSummary;
+  /** True when the item is active because of a retry (fresh or deduped). */
+  retried: boolean;
+  /** True when this call returned the dispatch an earlier retry already started. */
+  deduped: boolean;
+  previousStatus: string | null;
+  /** The item attempt after the retry (1 = first dispatch, so a retry lands on ≥ 2). */
+  attempt: number;
+  workflow: { workflowId: string; temporalRunId: string | null } | null;
+  retriedAt: string | null;
+}
+
+/**
+ * Per-stage attempt counters reconstructed from the durable read model: the highest gate
+ * attempt and the highest run attempt (`run_<item>_<stage>_<n>`) recorded for the item.
+ *
+ * A retry resumes the loop with these counters, so every child workflow id
+ * (`stage-<item>-<stage>-<n>`) and run id is fresh. Reusing an attempt number would point
+ * at a closed Temporal workflow and `executeChild` would fail on the duplicate id.
+ */
+async function recordedStageAttempts(
+  sql: ReturnType<typeof getSql>,
+  workItemId: string,
+): Promise<Record<string, number>> {
+  const attempts: Record<string, number> = {};
+
+  const gates = await listGateDecisions(sql, workItemId);
+  for (const gate of gates) {
+    attempts[gate.stage] = Math.max(attempts[gate.stage] ?? 0, gate.attempt);
+  }
+
+  const prefix = `run_${workItemId.slice(3)}_`;
+  const rows = (await sql`
+    select id from runs where id like ${`${prefix}%`}
+  `) as { id: string }[];
+  for (const row of rows) {
+    const match = /^([a-z]+)_(\d+)(?:_r\d+)?$/.exec(row.id.slice(prefix.length));
+    const stage = match?.[1];
+    const attempt = match?.[2];
+    if (!stage || !attempt) continue;
+    attempts[stage] = Math.max(attempts[stage] ?? 0, Number(attempt));
+  }
+
+  return attempts;
+}
+
+/**
+ * Rebuilds the `FactoryWorkflowInput` for a retry from the item, its creation snapshot and
+ * the definition. The item stays pinned to its `definitionCommit`; only the run defaults,
+ * seed prompt and merge-queue choice come from the snapshot, so a retry keeps the contract
+ * the operator originally chose.
+ */
+async function buildRetryInput(
+  config: ApiConfig,
+  sql: ReturnType<typeof getSql>,
+  item: WorkItem,
+  attempt: number,
+): Promise<FactoryWorkflowInput> {
+  const factory = item.factory;
+  const snapshot = item.input ?? {};
+
+  let dir = resolveFactoryDir(config, factory);
+  if (item.canaryRolloutId) {
+    const rollout = await getCanaryRollout(sql, item.canaryRolloutId);
+    if (rollout?.candidateRoot) {
+      dir = rollout.candidateRoot;
+    } else {
+      log('warn', 'canary_candidate_unavailable', {
+        factory,
+        rolloutId: item.canaryRolloutId,
+        workItemId: item.id,
+        reason: 'the rollout has no candidate tree; retrying on the stable definition root',
+      });
+    }
+  }
+
+  const compiled = compileLoopAt(dir, factory);
+  const order = compiled.graph.order;
+  const stageIndex = order.indexOf(item.stage);
+  if (stageIndex < 0) {
+    throw invalidState(
+      `work item "${item.id}" is at stage "${item.stage}", which is not in factory "${factory}"'s compiled stage graph`,
+      { workItemId: item.id, stage: item.stage, stages: [...order] },
+    );
+  }
+
+  const manifest = compiled.definition.manifest;
+  const orchestration = toOrchestrationConfig(config);
+  const defaults = resolveRunDefaults(
+    manifest,
+    {
+      ...(typeof snapshot.harness === 'string' ? { harness: snapshot.harness } : {}),
+      ...(typeof snapshot.model === 'string' ? { model: snapshot.model } : {}),
+      ...(typeof snapshot.runner === 'string' ? { runner: snapshot.runner } : {}),
+    } as Parameters<typeof resolveRunDefaults>[1],
+  );
+
+  const state = await getAutonomyState(sql, factory);
+  const integration = await getIntegration(sql, factory, 'github');
+  const mergeQueue = snapshot.mergeQueue === true || integration?.config.mergeQueue === true;
+  const gate = await benchmarkGateStatus(config, factory);
+  const benchmarkGateSatisfied =
+    gate.satisfied || Boolean(state?.overrideActor && state?.overrideReason);
+
+  const prompt =
+    typeof snapshot.prompt === 'string' && snapshot.prompt.trim() !== ''
+      ? snapshot.prompt
+      : [
+          item.title,
+          '',
+          `Source: ${item.source}`,
+          `Factory: ${factory}`,
+          `Definition commit: ${item.definitionCommit}`,
+          `Definition version: ${item.definitionVersion}`,
+          ...(Object.keys(item.sourceRef).length > 0
+            ? [`Context: ${JSON.stringify(item.sourceRef)}`]
+            : []),
+        ].join('\n');
+
+  const attempts = await recordedStageAttempts(sql, item.id);
+  // Floor for the current stage: every retry advances it by at least one attempt, so a
+  // stage whose run/gate rows are missing can never reuse a closed child workflow id.
+  attempts[item.stage] = Math.max(attempts[item.stage] ?? 0, attempt - 1);
+
+  const resume: FactoryWorkflowResume = {
+    stageIndex,
+    loopCount: item.loopCount,
+    stagesCompleted: stageIndex,
+    attempts,
+    currentStage: item.stage,
+    ...(item.prUrl ? { prUrl: item.prUrl } : {}),
+    ...(item.prNumber ? { prNumber: item.prNumber } : {}),
+  };
+
+  return {
+    workItemId: item.id,
+    factory,
+    factoryRoot: dir,
+    definitionCommit: item.definitionCommit,
+    definitionDirty: item.definitionDirty,
+    title: item.title,
+    prompt,
+    sourceRef: item.sourceRef,
+    repo: { path: config.repoRoot },
+    stageGraph: compiled.stageGraph,
+    gates: compiled.gates,
+    mergePolicy: manifest.mergePolicy,
+    autonomy: {
+      enabled: state?.enabled ?? false,
+      paused: state?.paused ?? false,
+      benchmarkGateSatisfied,
+      actor: state?.actor ?? null,
+      reason: state?.reason ?? null,
+    },
+    loopLimit: orchestration.loopLimit,
+    gateSlaMs: config.gateSlaMs,
+    maxStagesPerRun: orchestration.maxStagesPerRun,
+    defaultHarness: defaults.harness,
+    ...(defaults.model ? { defaultModel: defaults.model } : {}),
+    defaultRunner: defaults.runner,
+    autoAllowPermissions: true,
+    permissionTimeoutMs: config.permissionTimeoutMs,
+    ...(mergeQueue ? { mergeQueue: true } : {}),
+    attempt,
+    resume,
+  };
+}
+
+/**
+ * `POST /work-items/:id/retry` (spec `factory-loop` › Work-item retry).
+ *
+ * Re-opens an escalated/failed/blocked/cancelled item at its current stage, clears the
+ * cancellation flags (the cancellation stays in the event log as history), records
+ * `work_item.retried` (previous status, actor, reason, attempt) and dispatches the current
+ * stage again under a new attempt workflow id (`factory-<itemId>-a<n>`). `active` and `done`
+ * are refused with `work_item_not_retryable`; a double submit inside 60 s returns the
+ * dispatch the first call started instead of starting a second workflow.
+ */
+export async function retryWorkItemForApi(
+  config: ApiConfig,
+  workItemId: string,
+  body: RetryWorkItemBody,
+): Promise<RetryWorkItemResult> {
+  const sql = getSql();
+  const item = await getWorkItem(sql, workItemId);
+  if (!item) throw workItemNotFound(workItemId);
+
+  const latest = await latestWorkItemRetry(sql, workItemId);
+
+  if (item.status === 'active') {
+    const recent =
+      latest !== null &&
+      latest.retriedAt !== null &&
+      Date.now() - Date.parse(latest.retriedAt) <= RETRY_DEDUPE_WINDOW_MS;
+    if (recent && latest) {
+      log('info', 'work_item_retry_deduped', {
+        workItemId,
+        factory: item.factory,
+        attempt: latest.attempt,
+        workflowId: latest.workflowId,
+      });
+      return {
+        workItem: summarize(item),
+        retried: true,
+        deduped: true,
+        previousStatus: latest.previousStatus,
+        attempt: latest.attempt,
+        workflow: latest.workflowId
+          ? { workflowId: latest.workflowId, temporalRunId: null }
+          : null,
+        retriedAt: latest.retriedAt,
+      };
+    }
+    throw workItemNotRetryable(workItemId, item.status);
+  }
+
+  if (!isRetryableWorkItemStatus(item.status)) {
+    throw workItemNotRetryable(workItemId, item.status);
+  }
+
+  const attempt = (latest?.attempt ?? 1) + 1;
+  const workflowId = workItemWorkflowId(workItemId, attempt);
+  const input = await buildRetryInput(config, sql, item, attempt);
+
+  const transitioned = await retryWorkItemRow(sql, {
+    workItemId,
+    stage: item.stage,
+    actor: body.actor,
+    reason: body.reason ?? null,
+    attempt,
+    workflowId,
+  });
+
+  if (!transitioned.applied) {
+    // Lost the row lock to a concurrent retry (or the item turned `done` meanwhile).
+    const current = await getWorkItem(sql, workItemId);
+    if (!current || current.status === 'done') {
+      throw workItemNotRetryable(workItemId, current?.status ?? 'unknown');
+    }
+    const raced = await latestWorkItemRetry(sql, workItemId);
+    log('info', 'work_item_retry_deduped', {
+      workItemId,
+      factory: item.factory,
+      attempt: raced?.attempt ?? attempt,
+      workflowId: raced?.workflowId ?? workflowId,
+      raced: true,
+    });
+    return {
+      workItem: summarize(current),
+      retried: true,
+      deduped: true,
+      previousStatus: raced?.previousStatus ?? transitioned.previousStatus,
+      attempt: raced?.attempt ?? attempt,
+      workflow: { workflowId: raced?.workflowId ?? workflowId, temporalRunId: null },
+      retriedAt: raced?.retriedAt ?? null,
+    };
+  }
+
+  let workflow: { workflowId: string; temporalRunId: string };
+  try {
+    workflow = await startFactoryWorkflow(input, toOrchestrationConfig(config));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // The item must not stay `active` with no workflow behind it: restore the status it
+    // came from so the operator can retry again.
+    await setWorkItemStatus(sql, {
+      workItemId,
+      status: (transitioned.previousStatus ?? 'escalated') as WorkItem['status'],
+      actor: 'api',
+      reason: `orchestrator_unavailable: ${message}`,
+    });
+    log('error', 'work_item_retry_start_failed', {
+      workItemId,
+      factory: item.factory,
+      attempt,
+      workflowId,
+      message,
+    });
+    throw new ApiError(
+      'orchestrator_unavailable',
+      503,
+      'could not start the retried work item workflow',
+      { workItemId, attempt, workflowId, error: message },
+    );
+  }
+
+  const fresh = (await getWorkItem(sql, workItemId)) ?? transitioned.item;
+
+  log('info', 'work_item_retried', {
+    workItemId,
+    factory: item.factory,
+    stage: item.stage,
+    previousStatus: transitioned.previousStatus,
+    actor: body.actor,
+    attempt,
+    workflowId,
+  });
+
+  return {
+    workItem: summarize(fresh),
+    retried: true,
+    deduped: false,
+    previousStatus: transitioned.previousStatus,
+    attempt,
+    workflow,
+    retriedAt: fresh.retriedAt ?? null,
   };
 }

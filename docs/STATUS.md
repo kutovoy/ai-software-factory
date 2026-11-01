@@ -12,6 +12,67 @@ database, events, logs, API responses or definitions.
 Next: **Phase 6b** (auth/users, multi-tenant/ops, a managed secret provider behind the same
 registry).
 
+### Run actions: contextual cancel + work-item retry (fix-run-actions, 2026-11-01)
+
+A finished run no longer renders a dead "Cancel run" button, and an escalated item is no
+longer a dead end. The run page renders `CancelRunButton` only for
+`pending|running|cancelling`; a terminal run shows `Run ended · <status>` instead. Factory
+stage runs (`kind === 'run'`) offer no per-run retry — `POST /runs/:id/retry` still refuses
+them with `run_not_retryable` — and instead link to the owning work item
+(`GET /runs/:id` now projects `workItemId`, derived from the documented
+`run_<ulid>_<stage>_<n>` scheme). Chat runs keep "Retry as new run".
+
+**Retry mechanics.** `POST /api/v1/work-items/:id/retry` (`{actor, reason?}`) re-opens an
+`escalated|failed|blocked|cancelled` item at its current stage: one locked transaction
+transitions it to `active`, clears `cancel_requested_at/actor/reason` (the cancellation
+stays in `work_item_events` as history) and appends exactly one `work_item.retried` event
+carrying the previous status, actor, reason, attempt and the new workflow id. The current
+stage is then dispatched under a new attempt workflow id, `factory-<itemId>-a<n>`: a closed
+Temporal workflow cannot be started again under the old id. `attempt` is derived from the
+retried-event count (1 = first dispatch) and exposed on the detail and list projections
+along with `retriedAt` and the live `workflowId`; cancel/pause now target that id. The
+per-stage attempt counters are reconstructed from `gate_decisions` and stage run ids, with
+a floor of `attempt - 1` for the current stage, so every child `stage-<item>-<stage>-<n>`
+and `run_<ulid>_<stage>_<n>` id is fresh. A double submit within 60 s returns the dispatch
+the first call started (`deduped: true`, no second workflow); `active` and `done` are
+refused with `work_item_not_retryable` naming the status. The retry input is rebuilt from
+the item, its creation snapshot (prompt, harness/model/runner, merge-queue choice) and the
+current definition graph, keeping the item's pinned `definitionCommit`. If the workflow
+cannot start, the item is restored to the status it came from so it stays retryable.
+
+**Console.** The work-item detail page shows an attempt badge and a "Retry work item"
+control (actor + optional reason) for retryable statuses, disabled while in flight and
+reloading from the read model on success; the Retries list renders every
+`work_item.retried` audit row. Help entries for Runs and Work items describe the contextual
+actions.
+
+Verification (2026-11-01):
+
+```
+bun run ci                     → typecheck clean; 506 pass / 130 skip / 0 fail
+work-items integration (PG + Temporal)
+                               → 13 pass (9 existing + 4 new: escalated retry → active
+                                 attempt 2 + factory-<id>-a2, double submit deduped with
+                                 one retried event, active/done refused, cancelled item
+                                 clears flags and keeps the cancellation in the audit)
+docker compose up -d --build   → api, worker, web, postgres, temporal healthy
+bash scripts/smoke.sh          → SMOKE PASSED incl. §17 retry (attempt 2, a2 workflow,
+                                 flags cleared, cancellation kept, then cleaned up)
+cd apps/web && bunx playwright test → 45 passed (43 existing + 2: terminal run has no
+                                 cancel/retry-as-new for chat; escalated item retried
+                                 from its page → active attempt 2 with a second dispatch)
+UI_AUDIT=1 bunx playwright test audit-deep.spec.ts → 36 routes, 0 hard problems (three
+                                 pages logged the tolerated React hydration #418 on a
+                                 time-formatted page: no overflow, console errors or bad
+                                 responses)
+```
+
+Caveats: `failed` is accepted by the retry guard for forward compatibility, but no writer
+produces that status today (a failed stage run escalates). A retry recompiles the current
+definition graph (the on-disk definition), while the item stays pinned to its original
+commit; a stage removed from the graph refuses with `invalid_state`. The deduped response
+does not re-read the Temporal run id (it is null); the workflow id is returned.
+
 ### Real-model runs: the docker path now works end to end (2026-10-31)
 
 A chat run failed with `Activity task failed`. The stored error was Temporal's wrapper; the cause was

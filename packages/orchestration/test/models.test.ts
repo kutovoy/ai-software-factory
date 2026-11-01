@@ -143,4 +143,11 @@ describe('workflow ids', () => {
     expect(runWorkflowIdFor('run_1')).toBe('run-run_1');
     expect(stageRunId('wi_ABC', 'review', 2, 1)).toBe('run_ABC_review_2_r1');
   });
+
+  test('a retried work item starts under a new attempt workflow id', () => {
+    // Attempt 1 keeps the historical id; a retry cannot reuse a closed Temporal workflow.
+    expect(workItemWorkflowId('wi_ABC', 1)).toBe('factory-wi_ABC');
+    expect(workItemWorkflowId('wi_ABC', 2)).toBe('factory-wi_ABC-a2');
+    expect(workItemWorkflowId('wi_ABC', 3)).toBe('factory-wi_ABC-a3');
+  });
 });

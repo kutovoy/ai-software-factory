@@ -3,7 +3,12 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-export function CancelRunButton({ runId, disabled }: { runId: string; disabled: boolean }) {
+/**
+ * Cancel control (spec `web-console` › Contextual run actions). The run page renders it
+ * only for `pending`/`running`/`cancelling` runs, so it is never a dead button on a
+ * terminal run.
+ */
+export function CancelRunButton({ runId }: { runId: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +39,7 @@ export function CancelRunButton({ runId, disabled }: { runId: string; disabled: 
       <button
         type="button"
         data-testid="run-cancel"
-        disabled={disabled || busy}
+        disabled={busy}
         onClick={() => void cancel()}
         className="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-200 disabled:opacity-50"
       >

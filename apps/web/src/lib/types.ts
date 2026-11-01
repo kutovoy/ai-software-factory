@@ -13,6 +13,8 @@ export interface RunSummary {
   kind: string;
   title: string | null;
   status: RunStatus;
+  /** Owning work item for a factory stage run; null for chat runs. */
+  workItemId?: string | null;
   startedAt: string;
   endedAt: string | null;
   costUsd: number | null;
@@ -254,6 +256,10 @@ export interface WorkItemSummary {
   prUrl: string | null;
   prNumber: number | null;
   loopCount: number;
+  /** 1-based item attempt; a retry lands on ≥ 2 and starts `factory-<id>-a<n>`. */
+  attempt?: number;
+  retriedAt?: string | null;
+  workflowId?: string | null;
   cancelRequestedAt?: string | null;
   cancelActor?: string | null;
   cancelReason?: string | null;

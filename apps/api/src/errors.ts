@@ -95,6 +95,18 @@ export const workItemNotFound = (workItemId: string): ApiError =>
 export const invalidState = (message: string, details?: unknown): ApiError =>
   new ApiError('invalid_state', 409, message, details);
 
+/**
+ * A work item cannot be retried: it is `active` (a retry already re-opened it) or `done`.
+ * The message names the current status (spec `factory-loop` › Not retryable).
+ */
+export const workItemNotRetryable = (workItemId: string, status: string): ApiError =>
+  new ApiError(
+    'work_item_not_retryable',
+    409,
+    `work item "${workItemId}" is ${status}; only an escalated, failed, blocked or cancelled item can be retried`,
+    { workItemId, status },
+  );
+
 export const gateNotFound = (workItemId: string, stage: string): ApiError =>
   new ApiError(
     'gate_not_found',

@@ -18,6 +18,25 @@ export type WorkItemSource = (typeof WORK_ITEM_SOURCES)[number];
 export const WORK_ITEM_STATUSES = ['active', 'blocked', 'escalated', 'done', 'cancelled'] as const;
 export type WorkItemStatus = (typeof WORK_ITEM_STATUSES)[number];
 
+/**
+ * Statuses a work item may be retried from (spec `factory-loop` › Work-item retry).
+ *
+ * `failed` is accepted for forward compatibility: no writer produces it today (a stage run
+ * that fails escalates the item), but an item recorded as `failed` by an external producer
+ * must still be recoverable. `active` and `done` are never retryable.
+ */
+export const RETRYABLE_WORK_ITEM_STATUSES = [
+  'escalated',
+  'failed',
+  'blocked',
+  'cancelled',
+] as const;
+export type RetryableWorkItemStatus = (typeof RETRYABLE_WORK_ITEM_STATUSES)[number];
+
+export function isRetryableWorkItemStatus(status: string): status is RetryableWorkItemStatus {
+  return (RETRYABLE_WORK_ITEM_STATUSES as readonly string[]).includes(status);
+}
+
 /** Which factory version a work item ran (canary routing, ADR-021). */
 export const WORK_ITEM_VERSIONS = ['stable', 'candidate'] as const;
 export type WorkItemVersion = (typeof WORK_ITEM_VERSIONS)[number];
@@ -49,9 +68,25 @@ export const workItemSchema = z
      */
     canaryRolloutId: z.string().min(1).nullable().default(null),
     definitionVersion: z.enum(WORK_ITEM_VERSIONS).default('stable'),
+    /** True when the pinned definition was dirty at creation (the commit is the identity). */
+    definitionDirty: z.boolean().default(false),
+    /**
+     * Opaque creation snapshot (stage order, gates, resolved run defaults). A retry reuses
+     * it so the item keeps the harness/model/runner it was created with.
+     */
+    input: z.record(z.string(), z.unknown()).default({}),
     prUrl: z.string().url().nullable().default(null),
     prNumber: z.number().int().min(1).nullable().default(null),
     loopCount: z.number().int().min(0).default(0),
+    /**
+     * Attempt counter (1-based): 1 for the first dispatch, incremented by every retry. The
+     * live workflow id is `factory-<id>` for attempt 1 and `factory-<id>-a<n>` afterwards.
+     */
+    attempt: z.number().int().min(1).default(1),
+    /** When the item was last retried (the newest `work_item.retried` event), else null. */
+    retriedAt: z.string().nullable().default(null),
+    /** The workflow currently driving the item (null until it is first started). */
+    workflowId: z.string().nullable().default(null),
     /**
      * Cooperative cancellation (harden-runtime). The request is recorded once; the
      * workflow cancels the in-flight stage child and ends `cancelled`.
@@ -132,6 +167,8 @@ export const WORK_ITEM_EVENT_TYPES = [
   'autonomy.attestation_missing',
   'cancel.requested',
   'work_item.cancelled',
+  /** A terminal item was re-opened and its current stage dispatched under a new attempt. */
+  'work_item.retried',
   'runner.sandbox_unavailable',
   'work_item.status',
   'work_item.spawned',

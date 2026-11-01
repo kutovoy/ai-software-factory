@@ -5,6 +5,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Hono } from 'hono';
 import { closeClient, getSql } from '@factory/orchestration';
+import { markWorkItemCancelled } from '@factory/core';
 import { createApp } from '../src/app';
 import { loadApiConfig, type ApiConfig } from '../src/config';
 
@@ -387,5 +388,204 @@ suite('work item API', () => {
     const alreadyBody = (await already.json()) as { alreadyCancelled: boolean; eventRecorded: boolean };
     expect(alreadyBody.alreadyCancelled).toBe(true);
     expect(alreadyBody.eventRecorded).toBe(false);
+  }, 60_000);
+
+  test('POST /work-items/:id/retry re-opens an escalated item under a new attempt', async () => {
+    const created = await postJson(app, '/work-items', {
+      factory: 'example',
+      title: 'itest: retry an escalated item',
+      harness: 'fake',
+    });
+    const { workItem } = (await created.json()) as { workItem: { id: string } };
+
+    // The original attempt escalated (a failed stage run does this in production).
+    await getSql()`update work_items set status = 'escalated' where id = ${workItem.id}`;
+
+    const response = await postJson(app, `/work-items/${workItem.id}/retry`, {
+      actor: 'ada',
+      reason: 'itest: retry after escalation',
+    });
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as {
+      workItem: { status: string; attempt: number; retriedAt: string | null; workflowId: string };
+      retried: boolean;
+      deduped: boolean;
+      previousStatus: string | null;
+      attempt: number;
+      workflow: { workflowId: string; temporalRunId: string | null } | null;
+      retriedAt: string | null;
+    };
+    expect(body.retried).toBe(true);
+    expect(body.deduped).toBe(false);
+    expect(body.previousStatus).toBe('escalated');
+    expect(body.attempt).toBe(2);
+    expect(body.workItem.status).toBe('active');
+    expect(body.workItem.attempt).toBe(2);
+    expect(body.workItem.retriedAt).toBeTruthy();
+    expect(body.retriedAt).toBeTruthy();
+    // A closed Temporal workflow id cannot be reused: the retry gets its own attempt id.
+    expect(body.workflow?.workflowId).toBe(`factory-${workItem.id}-a2`);
+    expect(body.workItem.workflowId).toBe(`factory-${workItem.id}-a2`);
+
+    const detail = await req(app, `/work-items/${workItem.id}`);
+    const detailBody = (await detail.json()) as {
+      workItem: { status: string; attempt: number; workflowId: string };
+      workflowId: string;
+      events: {
+        type: string;
+        actor: string | null;
+        payload: Record<string, unknown>;
+      }[];
+    };
+    expect(detailBody.workItem.status).toBe('active');
+    expect(detailBody.workItem.attempt).toBe(2);
+    expect(detailBody.workflowId).toBe(`factory-${workItem.id}-a2`);
+    const retried = detailBody.events.filter((event) => event.type === 'work_item.retried');
+    expect(retried).toHaveLength(1);
+    expect(retried[0]?.payload).toMatchObject({
+      previousStatus: 'escalated',
+      actor: 'ada',
+      reason: 'itest: retry after escalation',
+      attempt: 2,
+      workflowId: `factory-${workItem.id}-a2`,
+    });
+    expect(retried[0]?.actor).toBe('ada');
+
+    // The list projection exposes the attempt too.
+    const list = await req(app, '/work-items?factory=example&status=active&limit=200');
+    const listed = (await list.json()) as { workItems: { id: string; attempt: number }[] };
+    expect(listed.workItems.find((item) => item.id === workItem.id)?.attempt).toBe(2);
+  }, 60_000);
+
+  test('a double retry submit returns the existing dispatch and starts no second workflow', async () => {
+    const created = await postJson(app, '/work-items', {
+      factory: 'example',
+      title: 'itest: idempotent retry',
+      harness: 'fake',
+    });
+    const { workItem } = (await created.json()) as { workItem: { id: string } };
+    await getSql()`update work_items set status = 'blocked' where id = ${workItem.id}`;
+
+    const first = await postJson(app, `/work-items/${workItem.id}/retry`, {
+      actor: 'ada',
+      reason: 'itest: first retry',
+    });
+    expect(first.status).toBe(201);
+    const firstBody = (await first.json()) as {
+      attempt: number;
+      workflow: { workflowId: string } | null;
+    };
+
+    const second = await postJson(app, `/work-items/${workItem.id}/retry`, {
+      actor: 'grace',
+      reason: 'itest: double submit',
+    });
+    expect(second.status).toBe(200);
+    const secondBody = (await second.json()) as {
+      deduped: boolean;
+      retried: boolean;
+      attempt: number;
+      previousStatus: string | null;
+      workflow: { workflowId: string } | null;
+    };
+    expect(secondBody.deduped).toBe(true);
+    expect(secondBody.retried).toBe(true);
+    expect(secondBody.attempt).toBe(firstBody.attempt);
+    expect(secondBody.previousStatus).toBe('blocked');
+    expect(secondBody.workflow?.workflowId).toBe(firstBody.workflow?.workflowId);
+
+    const detail = await req(app, `/work-items/${workItem.id}`);
+    const detailBody = (await detail.json()) as { events: { type: string }[] };
+    expect(detailBody.events.filter((event) => event.type === 'work_item.retried')).toHaveLength(1);
+  }, 60_000);
+
+  test('POST /work-items/:id/retry refuses active and done items', async () => {
+    const created = await postJson(app, '/work-items', {
+      factory: 'example',
+      title: 'itest: not retryable',
+      harness: 'fake',
+    });
+    const { workItem } = (await created.json()) as { workItem: { id: string } };
+
+    // A fresh item is `active`: no retry has re-opened it, so it is refused.
+    const active = await postJson(app, `/work-items/${workItem.id}/retry`, {
+      actor: 'ada',
+    });
+    expect(active.status).toBe(409);
+    const activeBody = (await active.json()) as { code: string; message: string; details?: { status?: string } };
+    expect(activeBody.code).toBe('work_item_not_retryable');
+    expect(activeBody.message).toContain('active');
+    expect(activeBody.details?.status).toBe('active');
+
+    await getSql()`update work_items set status = 'done' where id = ${workItem.id}`;
+    const done = await postJson(app, `/work-items/${workItem.id}/retry`, {
+      actor: 'ada',
+    });
+    expect(done.status).toBe(409);
+    const doneBody = (await done.json()) as { code: string; message: string; details?: { status?: string } };
+    expect(doneBody.code).toBe('work_item_not_retryable');
+    expect(doneBody.message).toContain('done');
+    expect(doneBody.details?.status).toBe('done');
+  }, 60_000);
+
+  test('retrying a cancelled item clears the cancellation flags and keeps the audit', async () => {
+    const created = await postJson(app, '/work-items', {
+      factory: 'example',
+      title: 'itest: retry a cancelled item',
+      harness: 'fake',
+    });
+    const { workItem } = (await created.json()) as { workItem: { id: string } };
+
+    // Record the request through the API, then write the terminal state the workflow
+    // would write (no worker runs in this suite).
+    const cancelled = await postJson(app, `/work-items/${workItem.id}/cancel`, {
+      actor: 'ada',
+      reason: 'itest: cancel before retry',
+    });
+    expect(cancelled.status).toBe(200);
+    await markWorkItemCancelled(getSql(), {
+      workItemId: workItem.id,
+      stage: 'triage',
+      actor: 'ada',
+      reason: 'itest: cancel before retry',
+    });
+
+    const before = await req(app, `/work-items/${workItem.id}`);
+    const beforeBody = (await before.json()) as {
+      workItem: { status: string; cancelRequestedAt: string | null; cancelActor: string | null };
+    };
+    expect(beforeBody.workItem.status).toBe('cancelled');
+    expect(beforeBody.workItem.cancelRequestedAt).toBeTruthy();
+    expect(beforeBody.workItem.cancelActor).toBe('ada');
+
+    const retry = await postJson(app, `/work-items/${workItem.id}/retry`, {
+      actor: 'grace',
+      reason: 'itest: retry the cancelled item',
+    });
+    expect(retry.status).toBe(201);
+    const retryBody = (await retry.json()) as {
+      previousStatus: string | null;
+      workItem: {
+        status: string;
+        attempt: number;
+        cancelRequestedAt: string | null;
+        cancelActor: string | null;
+        cancelReason: string | null;
+      };
+    };
+    expect(retryBody.previousStatus).toBe('cancelled');
+    expect(retryBody.workItem.status).toBe('active');
+    expect(retryBody.workItem.attempt).toBe(2);
+    expect(retryBody.workItem.cancelRequestedAt).toBeNull();
+    expect(retryBody.workItem.cancelActor).toBeNull();
+    expect(retryBody.workItem.cancelReason).toBeNull();
+
+    // The prior cancellation stays in the event log as history.
+    const detail = await req(app, `/work-items/${workItem.id}`);
+    const detailBody = (await detail.json()) as { events: { type: string }[] };
+    const types = detailBody.events.map((event) => event.type);
+    expect(types).toContain('cancel.requested');
+    expect(types).toContain('work_item.cancelled');
+    expect(types).toContain('work_item.retried');
   }, 60_000);
 });

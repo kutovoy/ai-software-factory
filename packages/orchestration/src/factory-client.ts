@@ -28,7 +28,7 @@ export async function startFactoryWorkflow(
   config: OrchestrationConfig = loadConfig(),
 ): Promise<StartedWorkItem> {
   const client = await getClient(config);
-  const workflowId = workItemWorkflowId(input.workItemId);
+  const workflowId = workItemWorkflowId(input.workItemId, input.attempt ?? 1);
   const handle = await client.workflow.start('FactoryWorkflow', {
     taskQueue: config.taskQueue,
     workflowId,

@@ -204,6 +204,12 @@ test.describe('Runs', () => {
     await expect(page.getByTestId('run-cancel-actor')).not.toBeEmpty();
     await expect(page.getByTestId('run-failure-workflow-id')).toContainText(/run/);
     await expect(page.getByTestId('run-failure-temporal-link')).toBeVisible();
+
+    // Contextual actions: a cancelled chat run offers no cancel (it is terminal) but keeps
+    // retry-as-new (spec `web-console` › Contextual run actions).
+    await expect(page.getByTestId('run-cancel')).toHaveCount(0);
+    await expect(page.getByTestId('run-terminal-state')).toContainText('cancelled');
+    await expect(page.getByTestId('run-retry-button')).toBeVisible();
   });
 
 

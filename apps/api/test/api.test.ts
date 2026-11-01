@@ -5,10 +5,11 @@ import {
   invalidStageGraph,
   spawnNotAllowed,
   workItemNotFound,
+  workItemNotRetryable,
   ApiError,
   toEnvelope,
 } from '../src/errors';
-import { mapRunnerName, resolveRunDefaults } from '../src/runs';
+import { mapRunnerName, resolveRunDefaults, workItemIdForRun } from '../src/runs';
 import { factorySchema } from '@factory/core';
 import { redact } from '../src/logger';
 
@@ -91,6 +92,25 @@ describe('factory loop error envelope', () => {
   test('work item and gate lookups are 404', () => {
     expect(toEnvelope(workItemNotFound('wi_x')).status).toBe(404);
     expect(toEnvelope(gateNotFound('wi_x', 'spec')).body.code).toBe('gate_not_found');
+  });
+
+  test('a non-retryable work item is refused with work_item_not_retryable', () => {
+    const envelope = toEnvelope(workItemNotRetryable('wi_x', 'active'));
+    expect(envelope.status).toBe(409);
+    expect(envelope.body.code).toBe('work_item_not_retryable');
+    expect(envelope.body.message).toContain('active');
+    expect(envelope.body.details).toEqual({ workItemId: 'wi_x', status: 'active' });
+  });
+});
+
+describe('stage run ownership', () => {
+  test('a factory stage run id names its work item; chat runs have none', () => {
+    const ulid = '01M6ASKQGPMZ8Q54YABS8YCWP3';
+    expect(workItemIdForRun({ id: `run_${ulid}_triage_1`, kind: 'run' })).toBe(`wi_${ulid}`);
+    expect(workItemIdForRun({ id: `run_${ulid}_review_2_r1`, kind: 'run' })).toBe(`wi_${ulid}`);
+    expect(workItemIdForRun({ id: 'run_mvxea0vq_d0f54acc', kind: 'chat' })).toBeNull();
+    // A stage run whose id does not follow the scheme is not guessed.
+    expect(workItemIdForRun({ id: 'run_unknown', kind: 'run' })).toBeNull();
   });
 });
 

@@ -150,11 +150,14 @@ import {
   gateDecisionBodySchema,
   getWorkItemDetail,
   listWorkItemsForApi,
+  retryWorkItemBodySchema,
+  retryWorkItemForApi,
   setAutonomyForApi,
   submitGateDecisionForApi,
   type AutonomyBody,
   type CancelWorkItemBody,
   type CreateWorkItemBody,
+  type RetryWorkItemBody,
 } from './work-items';
 import { modelSchema, type GateDecisionRequest } from '@factory/core';
 
@@ -766,6 +769,18 @@ export function createApp(config: ApiConfig): Hono {
   api.post('/work-items/:id/cancel', async (c) => {
     const body = await json<CancelWorkItemBody>(c, cancelWorkItemBodySchema);
     return c.json(await cancelWorkItemForApi(config, c.req.param('id'), body));
+  });
+
+  api.post('/work-items/:id/retry', async (c) => {
+    const body = await json<RetryWorkItemBody>(c, retryWorkItemBodySchema);
+    const result = await retryWorkItemForApi(config, c.req.param('id'), body);
+    log('info', 'work_item_retry_requested', {
+      workItemId: c.req.param('id'),
+      actor: body.actor,
+      attempt: result.attempt,
+      deduped: result.deduped,
+    });
+    return c.json(result, result.deduped ? 200 : 201);
   });
 
   api.post('/work-items/:id/gates/:stage', async (c) => {

@@ -4171,6 +4171,110 @@
         }
       }
     },
+    "/api/v1/work-items/{id}/retry": {
+      "post": {
+        "tags": [
+          "work-items"
+        ],
+        "summary": "Retry a work item",
+        "description": "Re-opens an escalated, failed, blocked or cancelled item at its current stage, clears the cancellation flags (the prior cancellation stays in the event log as history), records `work_item.retried` with the previous status, actor, reason and attempt, and dispatches the current stage again under a new attempt workflow id (`factory-<id>-a<n>`). `active` and `done` items are refused with `work_item_not_retryable`. A double submit within 60 seconds returns the dispatch the first call started (`deduped: true`).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Retry started: the item is active and the stage is dispatched under a new attempt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Existing dispatch returned (deduped within the 60-second window).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request — malformed body, query or path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found — the resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "work_item_not_retryable — the item is active or done, or its stage is not in the current graph.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error — unexpected server failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "orchestrator_unavailable — the attempt workflow could not be started; the item keeps its previous status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/work-items/{id}/gates/{stage}": {
       "post": {
         "tags": [

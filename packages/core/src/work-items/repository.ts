@@ -1,13 +1,14 @@
 import type { SQL } from 'bun';
 import type { LoopStage } from '../stage-graph/graph';
-import type {
-  GateDecisionValue,
-  WorkItem,
-  WorkItemEventType,
-  WorkItemSource,
-  WorkItemStatus,
-  WorkItemType,
-  WorkItemVersion,
+import {
+  isRetryableWorkItemStatus,
+  type GateDecisionValue,
+  type WorkItem,
+  type WorkItemEventType,
+  type WorkItemSource,
+  type WorkItemStatus,
+  type WorkItemType,
+  type WorkItemVersion,
 } from './types';
 
 /**
@@ -44,6 +45,10 @@ interface WorkItemRow {
   cancel_requested_at: unknown;
   cancel_actor: string | null;
   cancel_reason: string | null;
+  input?: unknown;
+  /** Derived from `work_item.retried` events by `getWorkItem`/`listWorkItems`. */
+  retry_count?: number | string;
+  retried_at?: unknown;
   created_at: unknown;
   updated_at: unknown;
 }
@@ -156,9 +161,14 @@ function mapWorkItem(row: WorkItemRow): WorkItem {
     definitionCommit: row.definition_commit,
     canaryRolloutId: row.canary_rollout_id ?? null,
     definitionVersion: (row.definition_version ?? 'stable') as WorkItemVersion,
+    definitionDirty: row.definition_dirty === true,
+    input: parseJsonb<Record<string, unknown>>(row.input, {}),
     prUrl: row.pr_url,
     prNumber: row.pr_number === null ? null : Number(row.pr_number),
     loopCount: Number(row.loop_count),
+    attempt: Number(row.retry_count ?? 0) + 1,
+    retriedAt: iso(row.retried_at),
+    workflowId: row.workflow_id ?? null,
     cancelRequestedAt: iso(row.cancel_requested_at),
     cancelActor: row.cancel_actor ?? null,
     cancelReason: row.cancel_reason ?? null,
@@ -266,9 +276,21 @@ export async function createWorkItem(sql: SQL, args: CreateWorkItemArgs): Promis
   });
 }
 
+/**
+ * `attempt`/`retriedAt` are derived from the `work_item.retried` event log (no schema
+ * change), so the row plus its audit trail remain the single source of truth.
+ */
 export async function getWorkItem(sql: SQL, workItemId: string): Promise<WorkItem | null> {
   const rows = (await sql`
-    select * from work_items where id = ${workItemId} limit 1
+    select w.*, r.retry_count, r.retried_at
+    from work_items w
+    left join lateral (
+      select count(*)::int as retry_count, max(e.created_at) as retried_at
+      from work_item_events e
+      where e.work_item_id = w.id and e.type = 'work_item.retried'
+    ) r on true
+    where w.id = ${workItemId}
+    limit 1
   `) as WorkItemRow[];
   return rows[0] ? mapWorkItem(rows[0]) : null;
 }
@@ -343,11 +365,17 @@ export async function listWorkItems(
   const status = filters.status ?? null;
 
   const rows = (await sql`
-    select * from work_items
-    where (${factory}::text is null or factory = ${factory})
-      and (${stage}::text is null or stage = ${stage})
-      and (${status}::text is null or status = ${status})
-    order by created_at desc
+    select w.*, r.retry_count, r.retried_at
+    from work_items w
+    left join lateral (
+      select count(*)::int as retry_count, max(e.created_at) as retried_at
+      from work_item_events e
+      where e.work_item_id = w.id and e.type = 'work_item.retried'
+    ) r on true
+    where (${factory}::text is null or w.factory = ${factory})
+      and (${stage}::text is null or w.stage = ${stage})
+      and (${status}::text is null or w.status = ${status})
+    order by w.created_at desc
     limit ${limit} offset ${offset}
   `) as WorkItemRow[];
 
@@ -774,6 +802,117 @@ export async function markWorkItemCancelled(
     void inserted;
 
     return mapWorkItem(updated[0]);
+  });
+}
+
+/* -------------------------------------------------------- retry (fix-run-actions) */
+
+export interface WorkItemRetryRecord {
+  /** The item attempt this retry produced (1 = first dispatch, so the first retry is 2). */
+  attempt: number;
+  previousStatus: string | null;
+  actor: string | null;
+  reason: string | null;
+  workflowId: string | null;
+  retriedAt: string | null;
+}
+
+/** The newest `work_item.retried` event, or null when the item was never retried. */
+export async function latestWorkItemRetry(
+  sql: SQL,
+  workItemId: string,
+): Promise<WorkItemRetryRecord | null> {
+  const rows = (await sql`
+    select * from work_item_events
+    where work_item_id = ${workItemId} and type = 'work_item.retried'
+    order by id desc
+    limit 1
+  `) as WorkItemEventRow[];
+  const row = rows[0];
+  if (!row) return null;
+  const payload = parseJsonb<Record<string, unknown>>(row.payload, {});
+  const attempt = Number(payload.attempt);
+  return {
+    attempt: Number.isFinite(attempt) && attempt >= 1 ? attempt : 1,
+    previousStatus: typeof payload.previousStatus === 'string' ? payload.previousStatus : null,
+    actor: typeof payload.actor === 'string' ? payload.actor : row.actor,
+    reason: typeof payload.reason === 'string' ? payload.reason : null,
+    workflowId: typeof payload.workflowId === 'string' ? payload.workflowId : null,
+    retriedAt: iso(row.created_at),
+  };
+}
+
+export interface RetryWorkItemArgs {
+  workItemId: string;
+  stage: LoopStage;
+  actor: string;
+  reason?: string | null;
+  /** Item attempt produced by this retry; the workflow id embeds it. */
+  attempt: number;
+  workflowId: string;
+}
+
+export interface RetryWorkItemResult {
+  item: WorkItem;
+  /** False when the guard refused (the status was not retryable at write time). */
+  applied: boolean;
+  previousStatus: string | null;
+}
+
+/**
+ * Re-opens a terminal item (spec `factory-loop` › Work-item retry): transitions
+ * `escalated|failed|blocked|cancelled` → `active` at the current stage, clears the
+ * cancellation flags (the prior cancellation stays in the event log as history), points
+ * the row at the new attempt workflow and appends exactly one `work_item.retried` event.
+ *
+ * The row is locked first so two concurrent retries cannot both apply; the loser sees
+ * `applied: false` and must not start a second workflow.
+ */
+export async function retryWorkItem(
+  sql: SQL,
+  args: RetryWorkItemArgs,
+): Promise<RetryWorkItemResult> {
+  return await sql.begin(async (tx) => {
+    const current = (await tx`
+      select * from work_items where id = ${args.workItemId} for update
+    `) as WorkItemRow[];
+    const row = current[0];
+    if (!row) throw new Error(`work item ${args.workItemId} does not exist`);
+
+    if (!isRetryableWorkItemStatus(row.status)) {
+      return { item: mapWorkItem(row), applied: false, previousStatus: row.status };
+    }
+
+    const updated = (await tx`
+      update work_items set
+        status = 'active',
+        cancel_requested_at = null,
+        cancel_actor = null,
+        cancel_reason = null,
+        workflow_id = ${args.workflowId},
+        updated_at = now()
+      where id = ${args.workItemId}
+      returning *
+    `) as WorkItemRow[];
+
+    await tx`
+      insert into work_item_events (work_item_id, type, stage, actor, payload)
+      values (${args.workItemId}, 'work_item.retried', ${args.stage}, ${args.actor},
+              ${({
+                previousStatus: row.status,
+                actor: args.actor,
+                reason: args.reason ?? null,
+                attempt: args.attempt,
+                workflowId: args.workflowId,
+                retriedAt: iso(updated[0]?.updated_at),
+              })}::jsonb)
+    `;
+
+    return {
+      item: mapWorkItem(updated[0] as WorkItemRow),
+      applied: true,
+      previousStatus: row.status,
+    };
   });
 }
 

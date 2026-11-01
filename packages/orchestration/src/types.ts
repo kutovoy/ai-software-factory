@@ -297,6 +297,11 @@ export interface FactoryWorkflowInput {
    * on a green gate).
    */
   mergeQueue?: boolean;
+  /**
+   * Item attempt (1-based). Attempt 1 runs as `factory-<id>`; a retry starts a fresh
+   * workflow `factory-<id>-a<n>` because a closed Temporal workflow id cannot be reused.
+   */
+  attempt?: number;
   resume?: FactoryWorkflowResume;
 }
 
@@ -442,9 +447,13 @@ export interface ReviewVerdict {
 
 /* ------------------------------------------------------- workflow ids */
 
-/** One workflow per work item (design decision 1: id is derived from the item). */
-export function workItemWorkflowId(workItemId: string): string {
-  return `factory-${workItemId}`;
+/**
+ * One workflow per work item attempt (design decision 1: id is derived from the item).
+ * The first attempt keeps the historical id; a retry must use a new id because a closed
+ * Temporal workflow cannot be started again under the same id.
+ */
+export function workItemWorkflowId(workItemId: string, attempt = 1): string {
+  return attempt <= 1 ? `factory-${workItemId}` : `factory-${workItemId}-a${attempt}`;
 }
 
 /** One child workflow per stage attempt / reviewer / gate. */

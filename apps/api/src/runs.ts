@@ -327,6 +327,19 @@ export async function retryRun(
   };
 }
 
+/**
+ * `run_<ulid>_<stage>_<attempt>[_r<n>]` is the orchestrator's `stageRunId` scheme; the
+ * embedded ULID is the work item id without its `wi_` prefix. Chat runs never match.
+ */
+const STAGE_RUN_ID_RE = /^run_([0-9A-HJKMNP-TV-Z]{26})_[a-z]+_\d+(?:_r\d+)?$/;
+
+/** The work item that owns a factory stage run, or null for a chat run. */
+export function workItemIdForRun(row: Pick<RunRow, 'id' | 'kind'>): string | null {
+  if (row.kind !== 'run') return null;
+  const match = STAGE_RUN_ID_RE.exec(row.id);
+  return match?.[1] ? `wi_${match[1]}` : null;
+}
+
 export interface RunSummary {
   id: string;
   factory: string;
@@ -338,6 +351,8 @@ export interface RunSummary {
   kind: string;
   title: string | null;
   status: string;
+  /** Owning work item for a factory stage run; null for chat runs. */
+  workItemId: string | null;
   startedAt: string;
   endedAt: string | null;
   costUsd: number | null;
@@ -382,6 +397,7 @@ export function summarize(row: RunRow): RunSummary {
     kind: row.kind,
     title: row.title,
     status: row.status,
+    workItemId: workItemIdForRun(row),
     startedAt: row.started_at,
     endedAt: row.ended_at,
     costUsd: row.cost_usd === null ? null : Number(row.cost_usd),
