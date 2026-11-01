@@ -1,6 +1,7 @@
 # Handover
 
-State as of 2026-10-29. Everything below is committed and tagged.
+State as of 2026-11-01. Everything below is committed and tagged. Public-release prep: `README.md`, `LICENSE`
+(MIT, © Nick Kutovyy), `NOTICE` (attribution request), `SECURITY.md`, `CONTRIBUTING.md`.
 
 ## What exists
 
@@ -81,7 +82,42 @@ lets you validate wiring without touching a repo. GitHub delivers to
 ## Version tags
 
 `factory-v0` (definition schema) · `phase-2a` (runtime) · `phase-2b` (console) · `phase-3a` (loop) ·
-`phase-3b` (GitHub + merge queue) · `phase-4a` (scoring) · `phase-4b` (benchmarks) · `phase-5` (self-improvement).
+`phase-3b` (GitHub + merge queue) · `phase-4a` (scoring) · `phase-4b` (benchmarks) · `phase-5` (self-improvement) ·
+`harden-runtime` · `secrets-mcp` · `api-v1-help` · `help-center` · `live-api-explorer` · `api-explorer-parity` ·
+`fix-ui-audit` · `fix-run-failures` · `run-actions` · `readiness-hello-nextjs` · `console-ops` · `forgejo`.
+
+## Latest state (2026-11-01)
+
+- **Readiness PASS**: `hello-nextjs` (six agents, all gates `agent`, `auto_on_green`, audited autonomy override)
+  took `wi_01M6B5097TGHK0KKZQN9BB3C4G` to `done` with zero human decisions and a merged PR containing the five
+  `site/` files. Fixes: prompt delivery, factory-agent identity, patch capture for untracked files, downstream
+  patch application, work-item retry, contextual run actions.
+- **Local forge**: Forgejo at `http://localhost:3000/extras/forgejo/`, enabled by default, proxied by the console
+  with single-user header auth. Bootstrap: `bash scripts/forgejo-bootstrap.sh` (admin, token to `.env`, org/repo).
+  The forge client speaks Gitea's dialect; PR URLs resolve. SSH/websockets and multi-user OIDC are deferred.
+- **Console**: auto-refresh (15s, off on help), operational dashboard (state/work/runs/deliverables), persisted
+  factory selection, work-items board with status filters and timestamps.
+- **API**: everything under `/api/v1`, OpenAPI 3.1 at `/api/v1/openapi.json`, live Swagger UI at `/help/api`.
+
+### Run it with a real model and forge
+
+```bash
+cp .env.example .env
+# OPENAI_BASE_URL / OPENAI_API_KEY, FACTORY_MODEL / FACTORY_SMALL_MODEL / FACTORY_REVIEW_MODEL
+docker compose up -d --build
+bash scripts/forgejo-bootstrap.sh   # provisions the local forge and writes GITHUB_TOKEN to .env
+```
+
+Then open http://localhost:3000, pick a factory, and create a work item. `hello-nextjs` is lights-off.
+
+### Known gaps
+
+1. **Phase 6b**: console auth/users; per-user forge organizations via OIDC (Keycloak optional).
+2. **Agent-gate verdicts**: gates approve on run `ok`; a textual FAIL is advisory. A structured verdict channel is
+   the next correctness fix for lights-off.
+3. Remote runners, Temporal Cloud, multi-tenant isolation.
+4. Forge SSH/websockets; dedicated proxy if pushes outgrow the console proxy.
+5. Benchmarks are hermetic replays, not recorded-tool-response replays.
 
 ## Specs
 

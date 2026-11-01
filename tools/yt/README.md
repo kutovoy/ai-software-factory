@@ -165,3 +165,7 @@ scene detection. Run both.
   quote them with care. `caption_source` in `transcript.json` tells you which you got.
 - **`-ss` before `-i` + `-to` is ambiguous** across ffmpeg versions; we use `-t`
   (duration) instead, which is stable.
+
+---
+
+Part of **Software Factory** — created by Nick Kutovyy. See the repository `NOTICE` for attribution.

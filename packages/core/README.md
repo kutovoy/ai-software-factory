@@ -41,3 +41,7 @@ Git is the truth: rows are rebuilt from a definition tree at a pinned `commit_sh
 the UI/API must never write definitions into these tables. A row carries
 `(factory, commit_sha, path, kind, name, hash, doc)` so the UI can answer "what did
 version X contain" without walking the repository.
+
+---
+
+Part of **Software Factory** — created by Nick Kutovyy. See the repository `NOTICE` for attribution.

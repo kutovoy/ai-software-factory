@@ -729,3 +729,21 @@ asserting the header and must never forward a browser-supplied one), git pushes 
 Next (a dedicated proxy can replace it later without changing URLs), and the Gitea dialect
 needs maintenance as Forgejo's API drifts — the shared contract suite plus a live check
 against a real instance are the guard.
+
+## ADR-033 — MIT license with an attribution request; README is the public front door
+
+**Status:** accepted (2026-11-01). **Context:** the project is being published publicly on
+GitHub. MIT requires preserving the copyright and license notice; it does not require a
+credit beyond that. The author wants a visible reference back to the original creator without
+making the license non-standard or legally ambiguous.
+**Decision:** ship the standard MIT text in `LICENSE` with `Copyright (c) 2026 Nick Kutovyy`,
+and add a `NOTICE` that *requests* attribution ("credit Nick Kutovyy" on use, fork or
+redistribution) while stating explicitly that it is not an additional license condition.
+`README.md` follows the structure of a mature open-source project (header, links, badges,
+introduction, features, getting started, security, contributing, creator, license) and keeps
+a Creator/attribution section. `AGENTS.md` requires README updates in the same change as any
+feature or install change. `SECURITY.md`, `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md` are part
+of the public surface.
+**Consequences:** the license stays MIT-compatible and GitHub-detectable; attribution is a
+social request rather than a restriction, so downstream use remains unencumbered. The README
+becomes a maintained artifact, not a one-off.

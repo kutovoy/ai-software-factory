@@ -68,6 +68,9 @@ docs/               STATUS, DECISIONS, ARCHITECTURE, GLOSSARY
   `apps/web/src/lib/help.ts`, the menu reference, and the quick start when the first-run flow changes —
   in the same OpenSpec change. Help is part of the product, not an afterthought; `apps/web/src/lib/help.test.ts`
   fails when a nav item loses its entry, and `openspec validate` must list the help update in `tasks.md`.
+- **README stays current:** any change to features, install steps, supported models/harnesses, architecture or
+  licensing must update `README.md` in the same change. It is the public front door; keep its structure and
+  claims accurate, and keep the Creator/attribution section intact.
 
 ## Delegation
 

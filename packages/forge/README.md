@@ -63,3 +63,7 @@ runCodeForgeContractTests('fake', () => new FakeForge(), { setup, redChecks });
 The suite covers checkout, branch/commit isolation, protected-branch refusal, idempotent PR
 creation, comments, green/red checks, merge and `not_found` cases. A new backend must pass it
 without changing the suite.
+
+---
+
+Part of **Software Factory** — created by Nick Kutovyy. See the repository `NOTICE` for attribution.

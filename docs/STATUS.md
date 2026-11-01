@@ -10,7 +10,44 @@ registry with per-agent tool permissions and a runner-side connection test. Valu
 database, events, logs, API responses or definitions.
 
 Next: **Phase 6b** (auth/users, multi-tenant/ops, a managed secret provider behind the same
-registry).
+registry), then hardening the agent-gate verdict channel.
+
+### Readiness and public-release prep (2026-11-01)
+
+**End-to-end lights-off readiness: PASS.** A new `hello-nextjs` factory (six agents, every gate `agent`,
+`mergePolicy: auto_on_green`, autonomy enabled with an audited override) took work item
+`wi_01M6B5097TGHK0KKZQN9BB3C4G` from `triage` to `done` with zero human decisions: six automatic gates, PR #1
+merged, and a patch containing `site/package.json`, `site/app/layout.tsx`, `site/app/page.tsx`,
+`site/next.config.ts`, `site/README.md` with `<h1>Hello, world!</h1>`.
+
+Fixes that the test forced (all committed):
+
+- **Prompt delivery** — the harness prompt was never sent; the stream then idled and reset. The prompt is now sent
+  once per fresh session, after the stream consumer starts.
+- **Factory agent identity** — `agent: "triage"` was passed to opencode, which has no such agent. Factory agent
+  instructions are now injected into the prompt instead.
+- **Patch capture** — `git diff` ignored untracked files, so implement shipped an empty patch. The runner stages
+  `git add -A` and diffs against the recorded base; downstream stages apply the implement patch to their checkouts.
+- **Work-item retry** — escalated/failed/blocked/cancelled items retry under a fresh attempt workflow id; a
+  terminal run no longer shows a dead Cancel button; stage runs link to the item's retry.
+- **Local forge** — Forgejo runs by default at `/extras/forgejo`, proxied by the console with single-user header
+  auth; PR links now resolve. The forge client speaks Gitea's dialect against it.
+- **Console ops** — auto-refresh (15s default, off on help), an operational dashboard (state, work, runs,
+  deliverables), a persisted factory selection that survives top-level navigation, and a work-items board that
+  hides cancelled items by default with status chips and timestamps.
+
+Latest tags: `harden-runtime`, `secrets-mcp`, `api-v1-help`, `help-center`, `live-api-explorer`,
+`api-explorer-parity`, `fix-ui-audit`, `fix-run-failures`, `run-actions`, `readiness-hello-nextjs`, `console-ops`,
+`forgejo`. `bun run ci` 516 pass; smoke passes; Playwright 50; UI audit 36 routes clean.
+
+What is left:
+
+1. **Phase 6b** — console auth/users/roles; the forge proxy then asserts the real user and OIDC group mappings
+   give per-user organizations (Keycloak optional).
+2. **Agent-gate verdict channel** — gates currently approve whenever a stage run ends `ok`; a textual FAIL is
+   advisory. A structured verdict must be able to reject/request-changes without a human.
+3. **Remote runners + Temporal Cloud** for team/cloud; local runner has an opt-in macOS sandbox only.
+4. **SSH/websockets** for the forge; a dedicated reverse proxy if pushes outgrow the console proxy.
 
 ### Local forge: Forgejo served by the console (add-forgejo, 2026-11-01)
 

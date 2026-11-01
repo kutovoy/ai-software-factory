@@ -28,7 +28,22 @@ factories/*/.factory-cache/
 .env
 .env.*
 !.env.example
+.env.local
+.env.*.local
 *.pem
+*.key
+*.crt
+*.p12
+secrets/
+
+# Local forge bind data (named volumes are used by default)
+forgejo-data/
+
+# Logs, coverage, editor state
+*.log
+coverage/
+.idea/
+.vscode/
 
 # Media & run artifacts (keep transcripts, frames, manifests — not raw video/audio)
 *.mp4

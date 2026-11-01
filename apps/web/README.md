@@ -106,3 +106,7 @@ Specs: `chat.spec.ts` (prompt → tool call → approve → terminal, no provide
 `runs.spec.ts` (list, pinned commit, reload mid-stream replay without duplicates),
 `nav.spec.ts` (every nav item, stubs name their phase, no console errors),
 `inbox.spec.ts` (pending permission → deep link → act).
+
+---
+
+Part of **Software Factory** — created by Nick Kutovyy. See the repository `NOTICE` for attribution.

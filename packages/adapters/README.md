@@ -160,3 +160,7 @@ records the denied-permission path.
 5. Record a real transcript as an SSE/JSONL fixture and add it to `test/contract.test.ts`
    so the new harness is held to the same canonical sequence.
 6. Update the capability matrix in this README.
+
+---
+
+Part of **Software Factory** — created by Nick Kutovyy. See the repository `NOTICE` for attribution.

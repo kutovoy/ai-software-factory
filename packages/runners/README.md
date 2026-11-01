@@ -117,3 +117,7 @@ by injecting `OPENAI_API_KEY` — that is the exact boundary this package enforc
   (lease → exec `echo hi` → artifacts → kill).
 - `RUN_SLOW=1 bun test` — the docker integration test (builds the image, leases a container,
   runs `echo hi`, checks no inference env leaked, collects artifacts, kills twice).
+
+---
+
+Part of **Software Factory** — created by Nick Kutovyy. See the repository `NOTICE` for attribution.

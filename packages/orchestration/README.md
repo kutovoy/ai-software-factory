@@ -84,3 +84,7 @@ OPENAI_BASE_URL='<proxy>/v1' OPENAI_API_KEY='rsk_…' opencode serve --hostname 
 Only the per-run token (model allowlist, revoked at run end) is exposed — never the provider
 key. The token also appears in the Temporal activity history, which is orchestrator-side; it
 is revoked when the run reaches a terminal state.
+
+---
+
+Part of **Software Factory** — created by Nick Kutovyy. See the repository `NOTICE` for attribution.
