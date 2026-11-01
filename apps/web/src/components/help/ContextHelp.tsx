@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { AutoRefresh } from '@/components/nav/AutoRefresh';
 import { helpContextForPath } from '@/lib/help';
 
 /**
@@ -34,6 +35,7 @@ export function ContextHelp() {
         </span>
         Help
       </Link>
+      <AutoRefresh />
     </header>
   );
 }

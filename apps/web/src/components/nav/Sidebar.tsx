@@ -2,19 +2,51 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { FACTORY_NAV, FOOTER_NAV, TOP_NAV, factoryHref } from '@/lib/nav';
 import type { FactoryListItem } from '@/lib/types';
+
+const FACTORY_COOKIE = 'factory';
 
 function factoryFromPathname(pathname: string): string | null {
   const match = /^\/factories\/([^/]+)/.exec(pathname);
   return match?.[1] ? decodeURIComponent(match[1]) : null;
 }
 
-export function Sidebar({ factories }: { factories: FactoryListItem[] }) {
+function persistFactory(name: string): void {
+  document.cookie = `${FACTORY_COOKIE}=${encodeURIComponent(name)}; path=/; max-age=31536000; samesite=lax`;
+}
+
+export function Sidebar({
+  factories,
+  initialFactory = null,
+}: {
+  factories: FactoryListItem[];
+  /** Value of the `factory` cookie, resolved by the root layout. */
+  initialFactory?: string | null;
+}) {
   const pathname = usePathname() ?? '/';
   const router = useRouter();
-  const activeFactory = factoryFromPathname(pathname) ?? factories[0]?.name ?? 'example';
+
+  /**
+   * Stable selection (`web-console` spec: "Stable factory selection"): the path wins on
+   * `/factories/:name/*`; otherwise the persisted factory holds, so clicking Runs/Inbox
+   * never silently switches factory. `selected` starts `null` so the server and client
+   * agree on the first render, then tracks the path and the switcher.
+   */
+  const pathFactory = factoryFromPathname(pathname);
+  const [selected, setSelected] = useState<string | null>(null);
+  const known = (name: string | null): string | null =>
+    name && factories.some((factory) => factory.name === name) ? name : null;
+  const activeFactory = pathFactory ?? selected ?? known(initialFactory) ?? factories[0]?.name ?? 'example';
   const activeFactoryEntry = factories.find((factory) => factory.name === activeFactory) ?? null;
+
+  // Opening a factory route makes that factory the persisted selection.
+  useEffect(() => {
+    if (!pathFactory) return;
+    setSelected(pathFactory);
+    persistFactory(pathFactory);
+  }, [pathFactory]);
 
   const isActive = (href: string): boolean =>
     pathname === href || (href !== '/chat' && pathname.startsWith(`${href}/`));
@@ -44,7 +76,12 @@ export function Sidebar({ factories }: { factories: FactoryListItem[] }) {
           id="factory-switcher"
           data-testid="factory-switcher"
           value={activeFactory}
-          onChange={(event) => router.push(factoryHref(event.target.value, 'dashboard'))}
+          onChange={(event) => {
+            const next = event.target.value;
+            setSelected(next);
+            persistFactory(next);
+            router.push(factoryHref(next, 'dashboard'));
+          }}
           className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
         >
           {factories.length === 0 ? <option value="example">example</option> : null}

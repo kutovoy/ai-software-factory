@@ -77,10 +77,15 @@ test.describe('runtime hardening', () => {
     const afterBody = (await afterRepeat.json()) as { events: { type: string }[] };
     expect(afterBody.events.filter((event) => event.type === 'work_item.cancelled')).toHaveLength(1);
 
+    // `improve-console-ops`: cancelled items are hidden by default; the status chip reveals them.
     await page.reload();
     const cancelledCard = page.locator(
       `[data-testid="work-item-card"][data-work-item-id="${workItemId}"]`,
     );
+    await expect(cancelledCard).toHaveCount(0);
+    await page.getByTestId('work-items-status-cancelled').click();
+    await expect(page).toHaveURL(/status=/);
+    await expect(cancelledCard).toBeVisible({ timeout: 30_000 });
     await expect(cancelledCard).toHaveAttribute('data-status', 'cancelled');
   });
 

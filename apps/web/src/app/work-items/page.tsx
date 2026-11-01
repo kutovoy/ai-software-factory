@@ -6,15 +6,39 @@ import { CancelWorkItemButton } from '@/components/work-items/CancelWorkItemButt
 import { CreateWorkItemForm } from '@/components/work-items/CreateWorkItemForm';
 import { SlaCountdown } from '@/components/work-items/SlaCountdown';
 import { getOrError, safeGet } from '@/lib/api';
-import { formatRelative, shortCommit, statusTone } from '@/lib/format';
+import { formatDateTime, formatRelative, shortCommit, statusTone } from '@/lib/format';
 import type { FactoryListItem, WorkItemDetail, WorkItemSummary } from '@/lib/types';
 import { WORK_ITEM_STAGES } from '@/lib/types';
 import { runsForWorkItem } from '@/lib/work-items';
 
 export const dynamic = 'force-dynamic';
 
-/** The board shows the newest 40 items; details (runs, pending gate) are fetched per card. */
+/** The board shows the newest 40 visible items; details (runs, pending gate) are per card. */
 const BOARD_LIMIT = 40;
+/** The list is fetched wider than the board so the status filter can drop cancelled items. */
+const FETCH_LIMIT = 100;
+
+/** Status chips (`web-console` spec: "Work-item board filters"). */
+const STATUS_FILTERS = ['active', 'escalated', 'done', 'failed', 'cancelled'] as const;
+/** Default view: everything except cancelled. */
+const DEFAULT_STATUSES = STATUS_FILTERS.filter((status) => status !== 'cancelled');
+
+function parseStatuses(value: string | undefined): Set<string> | null {
+  if (value === undefined) return null;
+  return new Set(
+    value
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0),
+  );
+}
+
+function statusesHref(factory: string | undefined, statuses: Iterable<string>): string {
+  const query = new URLSearchParams();
+  if (factory) query.set('factory', factory);
+  query.set('status', Array.from(statuses).join(','));
+  return `/work-items?${query.toString()}`;
+}
 
 const COLUMN_HINTS: Record<string, string> = {
   triage: 'Intake judgement and classification.',
@@ -29,11 +53,11 @@ const COLUMN_HINTS: Record<string, string> = {
 export default async function WorkItemsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ factory?: string }>;
+  searchParams: Promise<{ factory?: string; status?: string }>;
 }) {
-  const { factory } = await searchParams;
+  const { factory, status } = await searchParams;
 
-  const query = new URLSearchParams({ limit: String(BOARD_LIMIT) });
+  const query = new URLSearchParams({ limit: String(FETCH_LIMIT) });
   if (factory) query.set('factory', factory);
 
   const [list, factories] = await Promise.all([
@@ -41,15 +65,21 @@ export default async function WorkItemsPage({
     safeGet<{ factories: FactoryListItem[] }>('/factories', { factories: [] }),
   ]);
 
-  const items = list.data?.workItems ?? [];
+  const fetched = list.data?.workItems ?? [];
+
+  // `status` is the explicit chip selection; absent means "everything except cancelled".
+  const selected = parseStatuses(status);
+  const isVisible = (item: WorkItemSummary): boolean =>
+    selected ? selected.has(item.status) : item.status !== 'cancelled';
+  const visible = fetched.filter(isVisible).slice(0, BOARD_LIMIT);
 
   const details = await Promise.all(
-    items.map((item) =>
+    visible.map((item) =>
       safeGet<WorkItemDetail | null>(`/work-items/${encodeURIComponent(item.id)}`, null),
     ),
   );
 
-  const cards = items.map((item, index) => {
+  const cards = visible.map((item, index) => {
     const detail = details[index] ?? null;
     const events = detail?.events ?? [];
     return {
@@ -59,6 +89,9 @@ export default async function WorkItemsPage({
       prUrl: item.prUrl,
     };
   });
+
+  const countsByStatus: Record<string, number> = {};
+  for (const item of fetched) countsByStatus[item.status] = (countsByStatus[item.status] ?? 0) + 1;
 
   const byStage = new Map<string, typeof cards>();
   for (const card of cards) {
@@ -74,11 +107,12 @@ export default async function WorkItemsPage({
           <h1 className="text-lg font-semibold text-slate-900">Work items</h1>
           <p className="text-sm text-slate-500">
             One durable workflow per item: stages advance through the compiled graph, and a gate
-            decides whether the loop continues. Cards link to their stage runs and the item detail.
+            decides whether the loop continues. Cancelled items are hidden by default; the status
+            chips narrow the board, and each card shows when it was created and last updated.
           </p>
         </div>
         <Badge tone="neutral" testId="work-items-count">
-          {items.length} item{items.length === 1 ? '' : 's'}
+          {visible.length} of {fetched.length} item{fetched.length === 1 ? '' : 's'}
         </Badge>
       </header>
 
@@ -138,17 +172,76 @@ export default async function WorkItemsPage({
         ) : null}
       </form>
 
+      <nav data-testid="work-items-status-filters" aria-label="Status filters" className="flex flex-wrap items-center gap-1">
+        <Link
+          href={statusesHref(factory, STATUS_FILTERS)}
+          data-testid="work-items-status-all"
+          data-active={
+            selected && STATUS_FILTERS.every((entry) => selected.has(entry)) ? 'true' : 'false'
+          }
+          className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+            selected && STATUS_FILTERS.every((entry) => selected.has(entry))
+              ? 'bg-slate-900 text-white'
+              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+          }`}
+        >
+          all
+        </Link>
+        {STATUS_FILTERS.map((entry) => {
+          const active = selected ? selected.has(entry) : entry !== 'cancelled';
+          // Toggling a chip starts from the current selection (or the default set).
+          const next = new Set<string>(selected ?? DEFAULT_STATUSES);
+          if (next.has(entry)) next.delete(entry);
+          else next.add(entry);
+          return (
+            <Link
+              key={entry}
+              href={statusesHref(factory, next)}
+              data-testid={`work-items-status-${entry}`}
+              data-active={active ? 'true' : 'false'}
+              aria-pressed={active}
+              className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                active
+                  ? entry === 'cancelled'
+                    ? 'bg-amber-100 text-amber-800'
+                    : 'bg-slate-900 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {entry} {countsByStatus[entry] ?? 0}
+            </Link>
+          );
+        })}
+      </nav>
+
       {list.error ? (
         <EmptyState
           testId="work-items-unavailable"
           title="Work items are unavailable"
           description={`The API could not be read (${list.error.code}). The board is a projection — it never invents items.`}
         />
-      ) : items.length === 0 ? (
+      ) : fetched.length === 0 ? (
         <EmptyState
           testId="work-items-empty"
           title="No work items yet"
           description="Create one above; it enters triage and the board fills as the loop advances."
+        />
+      ) : visible.length === 0 ? (
+        <EmptyState
+          testId="work-items-filter-empty"
+          title="No items match these filters"
+          description={`${fetched.length} item(s) exist, but none has a selected status${
+            factory ? ` for ${factory}` : ''
+          }. Widen the status chips or clear the factory filter.`}
+          action={
+            <Link
+              href={statusesHref(factory, STATUS_FILTERS)}
+              data-testid="work-items-filter-reset"
+              className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-800"
+            >
+              Show all statuses
+            </Link>
+          }
         />
       ) : (
         <div
@@ -222,7 +315,18 @@ export default async function WorkItemsPage({
                           <span data-testid="work-item-card-factory" className="font-mono">
                             {item.factory}@{shortCommit(item.definitionCommit)}
                           </span>
-                          <span data-testid="work-item-card-age">{formatRelative(item.createdAt)}</span>
+                          <span
+                            data-testid="work-item-card-age"
+                            title={formatDateTime(item.createdAt)}
+                          >
+                            created {formatRelative(item.createdAt)}
+                          </span>
+                          <span
+                            data-testid="work-item-card-updated"
+                            title={formatDateTime(item.updatedAt)}
+                          >
+                            updated {formatRelative(item.updatedAt)}
+                          </span>
                         </p>
 
                         {pendingGate ? (

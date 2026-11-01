@@ -616,17 +616,19 @@ export const HELP_ENTRIES: HelpEntry[] = [
     section: 'menu',
     status: 'Shipped — Phase 2b / 3c',
     summary:
-      'The board of work items by stage, with create, cancel, retry and per-item gate state.',
+      'The board of work items by stage, with status filters, created/updated timestamps, create, cancel, retry and per-item gate state.',
     pageHref: '/work-items',
     blocks: [
       {
         kind: 'prose',
         text:
-          'The board shows the newest 40 items, grouped by stage (triage → ship). Each card carries the stage hint, the pending gate, the SLA countdown and links to the item\'s runs. The create form starts an item at triage and pins the current `definitionCommit`.',
+          'The board groups the newest visible items by stage (triage → ship). Cancelled items are hidden by default so the board reflects live work; the status chips (all / active / escalated / done / failed / cancelled) toggle exactly the statuses you select, and an empty board says that the filters excluded everything instead of pretending there is no work. Each card carries the stage hint, the pending gate, the SLA countdown, links to the item\'s runs, and when the item was created and last updated (the exact timestamp is in the tooltip). The create form starts an item at triage and pins the current `definitionCommit`.',
       },
       {
         kind: 'list',
         items: [
+          'Filters: factory (server-side) plus status chips; cancelled is off until you turn it on.',
+          'Timestamps: created and last updated, relative with the absolute time in the `title`.',
           'Create: title, type, source, harness and prompt; the response returns the item id and stage.',
           'Open: the detail page lists runs, gate history, events and retries for the item.',
           'Cancel: takes an actor + reason, is idempotent and emits exactly one `work_item.cancelled`; a terminal item is refused with `invalid_state`.',
@@ -664,6 +666,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'list',
         items: [
+          'Auto-refresh: the header control (Off / 15s / 30s / 60s, default 15s, remembered per browser) re-runs the server projection on that interval while the tab is visible; it pauses when the tab is hidden and shows when the data was last refreshed.',
           'Filters: factory and status (`running`, `pending`, `ok`, `error`, `cancelled`).',
           'Detail: events, steps, artifacts (`runs/<runId>/artifacts/`), permissions, scores and cost.',
           'Score detail: label, value, rationale, evidence links, provenance (`rubricHash`, judge model/version), calibration state.',
@@ -841,24 +844,36 @@ export const HELP_ENTRIES: HelpEntry[] = [
     slug: 'factories/dashboard',
     title: 'Dashboard',
     section: 'menu',
-    status: 'Shipped — Phase 2b / 4a',
+    status: 'Shipped — Phase 2b / 4a / console-ops',
     summary:
-      'Factory-level metrics over a window: throughput, cost, cycle time, touchpoints and defect rate, each with its definition.',
+      'An operations view: autonomy and canary state, last activity, recent work items and runs, deliverables (PRs, merged items, latest patch) and factory metrics over a window.',
     pageHref: factoryPageHref('dashboard'),
     pageHrefLabel: 'Open Dashboard (example factory)',
     blocks: [
       {
         kind: 'prose',
         text:
-          'Metric cards are computed from runs, scores and forge events over a selectable window. Missing data is `null` with a reason (`no_runs_in_bucket`, `no_scores_in_bucket`) rather than a fabricated zero. The runs table, status split and spend cards sit below.',
+          'The dashboard answers "what is this factory doing and what did it produce", not only "how are the numbers". It shows the autonomy state in force (enabled/paused, the declaration and any override), the canary rollout (active or last), the newest recorded activity, the newest work items with their stage/status, the newest runs with harness/model/cost, and the deliverables: pull request links, the count of items that reached `done`, and the latest captured artifact. Metric cards are computed from runs, scores and forge events over a selectable window; missing data is `null` with a reason (`no_runs_in_bucket`, `no_scores_in_bucket`) rather than a fabricated zero.',
       },
       {
         kind: 'list',
         items: [
-          'Window switch: changes the aggregation window.',
+          'State: autonomy (enabled/paused/override), canary (active or last), last activity.',
+          'Work items: status counts plus the newest items, each linking to its detail page.',
+          'Runs: newest runs with status, harness/model, cost and start time, linking to the run detail.',
+          'Deliverables: PR links from items, the `done` (merged) count and the latest patch/artifact from the newest run that captured one.',
+          'Where results live: the PR carries the diff and checks; the run detail carries the patch, the event stream and the captured files.',
+          'Window switch: changes the aggregation window for the metric cards.',
           'Metric cards: throughput, cost per PR (total + per stage + unattributed), cycle time, time to first human review, touchpoints per PR, automation %, defect rate.',
           'Runs / status split / spend: newest 100 runs for the factory.',
         ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Empty means empty',
+        text:
+          'Each section has its own honest empty state: no runs, no work items, no PRs and no artifact are reported as such, never as a zero or an empty shell.',
       },
     ],
     related: [

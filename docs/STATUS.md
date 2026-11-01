@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-10-31
+Last updated: 2026-11-01
 
 ## Phase
 
@@ -11,6 +11,43 @@ database, events, logs, API responses or definitions.
 
 Next: **Phase 6b** (auth/users, multi-tenant/ops, a managed secret provider behind the same
 registry).
+
+### Console operations: auto-refresh, operational dashboard, stable selection, board filters (improve-console-ops, 2026-11-01)
+
+The console was a set of projections you had to reload by hand, a dashboard that reported
+metrics but not what the factory produced, a sidebar that reset the selected factory whenever a
+top-level item was clicked, and a board drowning in cancelled items.
+
+- **Auto-refresh.** `AutoRefresh` in the shared header (right of `?`): Off / 15s / 30s / 60s,
+  default 15s, persisted in `localStorage`. It calls `router.refresh()` (server components read
+  the API with `cache: 'no-store'`, so this re-runs the projection), skips ticks while
+  `document.hidden`, refreshes once on becoming visible, and shows "updated <relative>". On
+  `/help` and `/help/*` the control renders nothing and no timer starts.
+- **Dashboard as an operations view.** State card (autonomy enabled/paused + declaration and
+  override, canary active/last, last activity across runs and items), work items (status counts
+  + newest items with stage/status/updated links), recent runs (status, harness/model, cost,
+  started, link), deliverables (deduped PR links, `done`/merged count, the latest patch from the
+  newest runs that captured artifacts, plus the "results live in the PR and the run's artifacts"
+  explainer). Metric cards and cost-by-stage are unchanged; each new section has an honest empty
+  state.
+- **Stable factory selection.** The root layout reads the `factory` cookie and passes it to the
+  sidebar; `/factories/:name/*` wins, otherwise the persisted factory holds, and the switcher
+  writes the cookie and navigates to that factory's dashboard. Client state starts `null` so the
+  server and client markup agree.
+- **Work-items board.** Status chips (all / active / escalated / done / failed / cancelled) with
+  cancelled hidden by default; cards show created and last-updated relative times with the
+  absolute timestamp in `title`; the factory filter is unchanged and an empty filter result says
+  so instead of claiming there is no work.
+
+Verification (2026-11-01): `bun run ci` → 512 pass / 0 fail; `bash scripts/smoke.sh` →
+`SMOKE PASSED`; `bunx playwright test` → 49 passed (4 new in `e2e/console-ops.spec.ts`);
+`UI_AUDIT=1 bunx playwright test audit-deep.spec.ts` → 36 routes, 0 problems. No backend change:
+the existing `/runs`, `/work-items`, `/autonomy`, `/factories/:name/canary` and `/runs/:id`
+projections already carry every field the dashboard needs.
+
+Deferred: nothing from the change; the dashboard inspects the three newest runs for artifact
+metadata (the summary projection has no artifacts field, and adding one would be a backend
+change).
 
 ### Lights-off readiness: stage hand-off + complete patch capture (2026-11-01)
 
