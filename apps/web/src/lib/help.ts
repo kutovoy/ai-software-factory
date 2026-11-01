@@ -862,7 +862,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
           'Work items: status counts plus the newest items, each linking to its detail page.',
           'Runs: newest runs with status, harness/model, cost and start time, linking to the run detail.',
           'Deliverables: PR links from items, the `done` (merged) count and the latest patch/artifact from the newest run that captured one.',
-          'Where results live: the PR carries the diff and checks; the run detail carries the patch, the event stream and the captured files.',
+          'Where results live: the PR carries the diff and checks; the run detail carries the patch, the event stream and the captured files. PR links open on the factory\'s own forge — Forgejo, served by this console at `/extras/forgejo/` — so they resolve from your machine instead of pointing at a placeholder host.',
           'Window switch: changes the aggregation window for the metric cards.',
           'Metric cards: throughput, cost per PR (total + per stage + unattributed), cycle time, time to first human review, touchpoints per PR, automation %, defect rate.',
           'Runs / status split / spend: newest 100 runs for the factory.',
@@ -871,12 +871,20 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'callout',
         tone: 'info',
+        title: 'The local forge is single-user',
+        text:
+          'Pull request links point at the local Forgejo instance, proxied by the console under /extras/forgejo/. The proxy asserts the seeded admin identity with a trusted header, so opening a PR never asks for a password — but anyone who can reach the console is that admin, and the forge has no published host port. Multi-user isolation is the documented path, not built yet: Phase 6 console auth makes the proxy assert the signed-in user instead of the admin, and Forgejo OIDC group mappings place each user in their own organization/team. Keycloak is optional — any OIDC provider fits.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
         title: 'Empty means empty',
         text:
           'Each section has its own honest empty state: no runs, no work items, no PRs and no artifact are reported as such, never as a zero or an empty shell.',
       },
     ],
     related: [
+      { label: 'Open the local forge', href: '/extras/forgejo/' },
       { label: 'Scoring and calibration', href: '/help/concepts/scoring-and-calibration' },
       { label: 'Runs', href: '/help/runs' },
     ],

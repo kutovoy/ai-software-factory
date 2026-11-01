@@ -13,6 +13,7 @@ import {
   type CreateBranchInput,
   type CheckoutInput,
   type CheckoutResult,
+  type FileChange,
   type GetChecksInput,
   type MergeInput,
   type MergeResult,
@@ -63,6 +64,9 @@ export type GithubActionName =
   | 'merge'
   | 'revert';
 
+/** API dialect: GitHub's REST surface, or the Gitea/Forgejo-compatible one. */
+export type GithubApiFlavor = 'github' | 'gitea';
+
 /** Emitted for every intended mutation in dry-run mode (and for every write in real mode). */
 export interface GithubIntendedAction {
   type: 'github.intended_action';
@@ -83,6 +87,13 @@ export interface GithubForgeOptions {
   resolveSecret?: (ref: string) => string | undefined;
   /** API root, defaults to `https://api.github.com`. */
   baseUrl?: string;
+  /**
+   * API dialect. GitHub and Gitea/Forgejo share the PR/issue surface but differ on git
+   * refs, commits, checks and merge; the client adapts behind the same `CodeForge`
+   * contract (spec `code-forge` › API compatibility). Auto-detected from `baseUrl`:
+   * anything other than `api.github.com` is treated as Gitea-compatible.
+   */
+  flavor?: GithubApiFlavor;
   /** `GITHUB_DRY_RUN=1` equivalent. */
   dryRun?: boolean;
   /** Injected sleep so a rate-limit/backoff test does not wait for real. */
@@ -119,6 +130,28 @@ interface GithubPullResponse {
   created_at: string;
   merged: boolean;
   merged_at: string | null;
+  /** Gitea/Forgejo only: the commit created by the merge on the base branch. */
+  merge_commit_sha?: string | null;
+}
+
+interface GiteaRefResponse {
+  ref: string;
+  object: { sha: string };
+}
+
+interface GiteaStatusResponse {
+  state: string;
+  statuses: { status: string; context?: string; description?: string; target_url?: string }[] | null;
+}
+
+interface GiteaContentResponse {
+  sha: string;
+  content?: string;
+  encoding?: string;
+}
+
+interface GiteaWriteResponse {
+  commit: { sha: string };
 }
 
 interface GithubTreeResponse {
@@ -135,6 +168,42 @@ function envSecret(ref: string): string | undefined {
   return process.env[ref] ?? process.env[ref.toUpperCase()] ?? process.env[`SECRET_${ref.toUpperCase()}`];
 }
 
+/**
+ * `api.github.com` is the only host whose REST surface is GitHub's own; every other base
+ * URL (a local Forgejo/Gitea, an enterprise GitHub host is an exception but opts in with
+ * `flavor: 'github'`) is served by the Gitea-compatible dialect.
+ */
+function detectFlavor(baseUrl: string): GithubApiFlavor {
+  try {
+    const host = new URL(baseUrl).hostname.toLowerCase();
+    return host === 'api.github.com' || host.endsWith('.api.github.com') ? 'github' : 'gitea';
+  } catch {
+    return 'github';
+  }
+}
+
+/** Gitea commit status → the contract's `CheckConclusion`. */
+function giteaConclusion(status: string): CheckRun['conclusion'] {
+  switch (status) {
+    case 'success':
+      return 'success';
+    case 'failure':
+    case 'error':
+      return 'failure';
+    case 'pending':
+      return 'pending';
+    case 'skipped':
+      return 'skipped';
+    default:
+      return 'neutral';
+  }
+}
+
+/** Gitea merge styles are spelled in `Do`; the contract keeps GitHub's `merge_method` names. */
+function giteaMergeStyle(method: MergeInput['method']): string {
+  return method === 'squash' ? 'squash' : method === 'rebase' ? 'rebase' : 'merge';
+}
+
 export class GitHubForge implements CodeForge {
   readonly id = 'github' as const;
 
@@ -142,6 +211,7 @@ export class GitHubForge implements CodeForge {
   private readonly secretRef: string;
   private readonly resolveSecret: (ref: string) => string | undefined;
   private readonly baseUrl: string;
+  private readonly flavor: GithubApiFlavor;
   private readonly dryRun: boolean;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly maxRetries: number;
@@ -165,6 +235,7 @@ export class GitHubForge implements CodeForge {
     this.secretRef = options.secretRef ?? 'GITHUB_TOKEN';
     this.resolveSecret = options.resolveSecret ?? envSecret;
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE).replace(/\/+$/, '');
+    this.flavor = options.flavor ?? detectFlavor(this.baseUrl);
     this.dryRun = options.dryRun ?? process.env.GITHUB_DRY_RUN === '1';
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.maxRetries = options.maxRetries ?? 3;
@@ -223,6 +294,15 @@ export class GitHubForge implements CodeForge {
     if (existing) return { repo: input.repo, name: input.name, commit: existing.sha };
 
     const from = await this.resolveRef(input.repo, input.from ?? defaultBranch);
+    if (this.flavor === 'gitea') {
+      // Gitea has no "create git ref" endpoint; `POST /branches` is its equivalent.
+      await this.request('POST', `/repos/${input.repo.owner}/${input.repo.name}/branches`, {
+        body: { new_branch_name: input.name, old_branch_name: from.branch },
+      });
+      this.record('branch.create', input.repo, { name: input.name, from: from.sha });
+      return { repo: input.repo, name: input.name, commit: from.sha };
+    }
+
     await this.request('POST', `/repos/${input.repo.owner}/${input.repo.name}/git/refs`, {
       body: { ref: `refs/heads/${input.name}`, sha: from.sha },
     });
@@ -260,6 +340,21 @@ export class GitHubForge implements CodeForge {
         repo: repoKey(input.repo),
         branch: input.branch,
       });
+    }
+
+    if (this.flavor === 'gitea') {
+      const sha = await this.giteaCommitFiles(input.repo, input.branch, input.files, input.message, author);
+      this.record('commit', input.repo, { branch: input.branch, message: input.message, sha });
+      const files = await this.snapshot(input.repo, sha);
+      return {
+        repo: input.repo,
+        sha,
+        branch: input.branch,
+        message: input.message,
+        files,
+        author,
+        at: this.now(),
+      };
     }
 
     const parent = await this.request<{ sha: string; commit: { tree: { sha: string } } }>(
@@ -362,17 +457,31 @@ export class GitHubForge implements CodeForge {
     }
 
     // Idempotent: a retried activity must not open a second PR for the same head.
-    const existing = await this.request<GithubPullResponse[]>(
-      'GET',
-      `/repos/${input.repo.owner}/${input.repo.name}/pulls?head=${encodeURIComponent(
-        `${input.repo.owner}:${input.head}`,
-      )}&base=${encodeURIComponent(base)}&state=open`,
-    );
-    const match = existing.find((pull) => {
-      if (input.workItemId) return this.workItemOf(pull) === input.workItemId;
-      return pull.head.ref === input.head;
-    });
-    if (match) return this.mapPull(input.repo, match);
+    if (this.flavor === 'gitea') {
+      // Gitea ignores `head`/`base` filters on the list endpoint, so filter here.
+      const open = await this.request<GithubPullResponse[]>(
+        'GET',
+        `/repos/${input.repo.owner}/${input.repo.name}/pulls?state=open&limit=50`,
+      );
+      const match = open.find((pull) => {
+        if (pull.head.ref !== input.head || pull.base.ref !== base) return false;
+        if (input.workItemId) return this.workItemOf(pull) === input.workItemId;
+        return true;
+      });
+      if (match) return this.mapPull(input.repo, match);
+    } else {
+      const existing = await this.request<GithubPullResponse[]>(
+        'GET',
+        `/repos/${input.repo.owner}/${input.repo.name}/pulls?head=${encodeURIComponent(
+          `${input.repo.owner}:${input.head}`,
+        )}&base=${encodeURIComponent(base)}&state=open`,
+      );
+      const match = existing.find((pull) => {
+        if (input.workItemId) return this.workItemOf(pull) === input.workItemId;
+        return pull.head.ref === input.head;
+      });
+      if (match) return this.mapPull(input.repo, match);
+    }
 
     const created = await this.request<GithubPullResponse>(
       'POST',
@@ -435,6 +544,31 @@ export class GitHubForge implements CodeForge {
     }
 
     const sha = await this.shaForChecks(input);
+
+    if (this.flavor === 'gitea') {
+      // Gitea has no check-runs API: commit statuses are the equivalent signal. A forge
+      // with no CI configured reports an empty status set, which is green — nothing is
+      // red, so the loop's verify stage does not deadlock on a forge that has no Actions.
+      const response = await this.request<GiteaStatusResponse>(
+        'GET',
+        `/repos/${input.repo.owner}/${input.repo.name}/commits/${sha}/status`,
+      );
+      const statuses = response.statuses ?? [];
+      const checks: CheckRun[] = statuses.map((status) => ({
+        name: status.context ?? status.description ?? 'status',
+        conclusion: giteaConclusion(status.status),
+        ...(status.target_url ? { url: status.target_url } : {}),
+      }));
+      return {
+        repo: input.repo,
+        ref: input.ref ?? sha,
+        checks,
+        green:
+          checks.length === 0 ||
+          checks.every((check) => check.conclusion === 'success' || check.conclusion === 'skipped'),
+      };
+    }
+
     const response = await this.request<{
       check_runs: { name: string; conclusion: string | null; details_url?: string; status: string }[];
     }>('GET', `/repos/${input.repo.owner}/${input.repo.name}/commits/${sha}/check-runs`);
@@ -478,11 +612,21 @@ export class GitHubForge implements CodeForge {
 
     let response: { merged?: boolean; sha?: string; message?: string };
     try {
-      response = await this.request<{ merged?: boolean; sha?: string; message?: string }>(
-        'PUT',
-        `/repos/${input.repo.owner}/${input.repo.name}/pulls/${input.pullRequestNumber}/merge`,
-        { body: { merge_method: input.method ?? 'merge' } },
-      );
+      if (this.flavor === 'gitea') {
+        // Gitea merges with POST + `Do` (not PUT + `merge_method`); a 200 means merged and
+        // the response body may be empty, so the merge commit comes from the PR itself.
+        response = await this.request<{ merged?: boolean; sha?: string; message?: string }>(
+          'POST',
+          `/repos/${input.repo.owner}/${input.repo.name}/pulls/${input.pullRequestNumber}/merge`,
+          { body: { Do: giteaMergeStyle(input.method) } },
+        );
+      } else {
+        response = await this.request<{ merged?: boolean; sha?: string; message?: string }>(
+          'PUT',
+          `/repos/${input.repo.owner}/${input.repo.name}/pulls/${input.pullRequestNumber}/merge`,
+          { body: { merge_method: input.method ?? 'merge' } },
+        );
+      }
     } catch (error) {
       // GitHub reports "not mergeable" (checks red / conflict) as 405 or 409.
       if (error instanceof ForgeError && (error.code === 'not_found' || error.code === 'invalid_state')) {
@@ -498,6 +642,26 @@ export class GitHubForge implements CodeForge {
       throw error;
     }
 
+    const merged = await this.request<GithubPullResponse>(
+      'GET',
+      `/repos/${input.repo.owner}/${input.repo.name}/pulls/${input.pullRequestNumber}`,
+    );
+
+    if (this.flavor === 'gitea') {
+      if (!merged.merged && !merged.merged_at) {
+        throw new ForgeError('checks_not_green', response.message ?? 'merge refused: the pull request is not mergeable', {
+          repo: repoKey(input.repo),
+          pullRequestNumber: input.pullRequestNumber,
+        });
+      }
+      this.record('merge', input.repo, { pullRequestNumber: input.pullRequestNumber, sha: merged.merge_commit_sha ?? null });
+      return {
+        merged: true,
+        sha: merged.merge_commit_sha ?? merged.head.sha,
+        pullRequest: this.mapPull(input.repo, merged),
+      };
+    }
+
     if (!response.merged) {
       throw new ForgeError('checks_not_green', response.message ?? 'merge refused: the pull request is not mergeable', {
         repo: repoKey(input.repo),
@@ -505,10 +669,6 @@ export class GitHubForge implements CodeForge {
       });
     }
 
-    const merged = await this.request<GithubPullResponse>(
-      'GET',
-      `/repos/${input.repo.owner}/${input.repo.name}/pulls/${input.pullRequestNumber}`,
-    );
     this.record('merge', input.repo, { pullRequestNumber: input.pullRequestNumber, sha: response.sha ?? null });
     return {
       merged: true,
@@ -525,6 +685,29 @@ export class GitHubForge implements CodeForge {
     if (this.dryRun) {
       const sha = this.syntheticSha(input.repo, `revert:${input.toSha}`);
       this.record('revert', input.repo, { toSha: input.toSha, message, sha });
+      return { repo: input.repo, sha, branch: defaultBranch, revertedTo: input.toSha };
+    }
+
+    if (this.flavor === 'gitea') {
+      // Gitea has no "create commit from tree" API, so a revert restores the target tree
+      // through the contents API: every differing file is written, every file that only
+      // exists now is deleted. Each write is a commit on the default branch (a revert may
+      // be several commits, but the tree ends exactly at `toSha`).
+      const head = await this.resolveRef(input.repo, defaultBranch);
+      const target = await this.snapshot(input.repo, input.toSha);
+      const current = await this.snapshot(input.repo, head.sha);
+      const changes: FileChange[] = [];
+      for (const path of Object.keys(current)) {
+        if (!(path in target)) changes.push({ path, content: null });
+      }
+      for (const [path, content] of Object.entries(target)) {
+        if (current[path] !== content) changes.push({ path, content });
+      }
+      const sha =
+        changes.length === 0
+          ? head.sha
+          : await this.giteaCommitFiles(input.repo, defaultBranch, changes, message, author);
+      this.record('revert', input.repo, { toSha: input.toSha, sha });
       return { repo: input.repo, sha, branch: defaultBranch, revertedTo: input.toSha };
     }
 
@@ -591,6 +774,16 @@ export class GitHubForge implements CodeForge {
 
   private async tryRef(repo: RepoRef, ref: string): Promise<{ sha: string } | null> {
     try {
+      if (this.flavor === 'gitea') {
+        // Gitea serves refs under `git/refs/...` and answers with an array.
+        const refs = await this.request<GiteaRefResponse[]>(
+          'GET',
+          `/repos/${repo.owner}/${repo.name}/git/refs/heads/${ref}`,
+          { allow404: true },
+        );
+        const first = Array.isArray(refs) ? refs[0] : undefined;
+        return first ? { sha: first.object.sha } : null;
+      }
       const response = await this.request<{ object: { sha: string } }>(
         'GET',
         `/repos/${repo.owner}/${repo.name}/git/ref/heads/${ref}`,
@@ -609,11 +802,11 @@ export class GitHubForge implements CodeForge {
     if (branch) return { sha: branch.sha, branch: ref };
 
     if (/^[0-9a-f]{7,40}$/.test(ref)) {
-      const commit = await this.request<{ sha: string }>(
-        'GET',
-        `/repos/${repo.owner}/${repo.name}/commits/${ref}`,
-        { allow404: true },
-      );
+      const path =
+        this.flavor === 'gitea'
+          ? `/repos/${repo.owner}/${repo.name}/git/commits/${ref}`
+          : `/repos/${repo.owner}/${repo.name}/commits/${ref}`;
+      const commit = await this.request<{ sha: string }>('GET', path, { allow404: true });
       return { sha: commit.sha, branch: 'HEAD' };
     }
 
@@ -658,6 +851,78 @@ export class GitHubForge implements CodeForge {
     return files;
   }
 
+  /* ------------------------------------------------------------ gitea dialect */
+
+  /**
+   * Gitea/Forgejo has no "write blob/tree/commit/ref" API (those endpoints are read-only),
+   * so a commit is written through the contents API: one commit per changed file, in
+   * order, on the target branch. The returned SHA is the branch head after the last write.
+   */
+  private async giteaCommitFiles(
+    repo: RepoRef,
+    branch: string,
+    files: FileChange[],
+    message: string,
+    author: { name: string; email: string },
+  ): Promise<string> {
+    const head = await this.tryRef(repo, branch);
+    if (!head) {
+      throw new ForgeError('not_found', `branch "${branch}" does not exist`, { repo: repoKey(repo), branch });
+    }
+
+    let sha = head.sha;
+    for (const change of files) {
+      const encodedPath = change.path.split('/').map(encodeURIComponent).join('/');
+      const resource = `/repos/${repo.owner}/${repo.name}/contents/${encodedPath}`;
+      const existing = await this.giteaFile(repo, branch, change.path);
+
+      if (change.content === null) {
+        if (!existing) continue;
+        const deleted = await this.request<GiteaWriteResponse>('DELETE', resource, {
+          body: { message, branch, sha: existing.sha },
+        });
+        sha = deleted.commit.sha;
+        continue;
+      }
+
+      const content = Buffer.from(change.content, 'utf8').toString('base64');
+      if (existing) {
+        // A retried activity must not add an empty commit for unchanged content.
+        if (existing.content.replace(/\s+/g, '') === content) continue;
+        const updated = await this.request<GiteaWriteResponse>('PUT', resource, {
+          body: { message, branch, sha: existing.sha, content, author },
+        });
+        sha = updated.commit.sha;
+      } else {
+        const created = await this.request<GiteaWriteResponse>('POST', resource, {
+          body: { message, branch, content, author },
+        });
+        sha = created.commit.sha;
+      }
+    }
+    return sha;
+  }
+
+  /** Current file on a branch (`null` when it does not exist). */
+  private async giteaFile(
+    repo: RepoRef,
+    branch: string,
+    path: string,
+  ): Promise<{ sha: string; content: string } | null> {
+    const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+    try {
+      const file = await this.request<GiteaContentResponse>(
+        'GET',
+        `/repos/${repo.owner}/${repo.name}/contents/${encodedPath}?ref=${encodeURIComponent(branch)}`,
+        { allow404: true },
+      );
+      return { sha: file.sha, content: file.content ?? '' };
+    } catch (error) {
+      if (error instanceof ForgeError && error.code === 'not_found') return null;
+      throw error;
+    }
+  }
+
   private async request<T>(
     method: string,
     path: string,
@@ -697,7 +962,13 @@ export class GitHubForge implements CodeForge {
       if (response.status === 304 && cached) return cached.body as T;
 
       if (response.ok) {
-        const body = await response.json();
+        // Gitea answers some writes (e.g. a merge) with an empty body; treat that as `{}`.
+        let body: unknown;
+        try {
+          body = await response.json();
+        } catch {
+          body = {};
+        }
         if (method === 'GET') {
           const etag = response.headers.get('etag');
           if (etag) this.etags.set(cacheKey, { etag, body });
@@ -841,6 +1112,9 @@ export class GitHubForge implements CodeForge {
 export function githubForgeFromEnv(options: GithubForgeOptions = {}): GitHubForge {
   return new GitHubForge({
     secretRef: process.env.GITHUB_SECRET_REF ?? 'GITHUB_TOKEN',
+    // Forgejo exposes the Gitea-compatible API under /api/v1; the dialect is detected
+    // from the host, so pointing this at a forge is all a deployment needs to do.
+    ...(process.env.GITHUB_API_BASE_URL ? { baseUrl: process.env.GITHUB_API_BASE_URL } : {}),
     dryRun: process.env.GITHUB_DRY_RUN === '1',
     ...options,
   });

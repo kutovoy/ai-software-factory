@@ -221,6 +221,38 @@ export default async function SettingsPage({ params }: { params: Promise<{ name:
         </CardBody>
       </Card>
 
+      <Card testId="settings-local-forge">
+        <CardHeader
+          title="Local forge"
+          hint="Forgejo, served by this console at /extras/forgejo/ — pull request links recorded by the factory open here."
+          action={
+            <Badge tone="info" testId="settings-forgejo-mode">
+              single-user
+            </Badge>
+          }
+        />
+        <CardBody className="space-y-3 text-sm">
+          <p className="text-xs text-slate-600">
+            The console proxies <span className="font-mono">/extras/forgejo/</span> to the local Forgejo instance and
+            asserts the seeded admin identity with a trusted header, so there is no second password prompt. This is{' '}
+            <span className="font-semibold">single-user local mode</span>: anyone who can reach the console is that
+            admin, and the forge itself has no published host port.
+          </p>
+          <p className="text-xs text-slate-600">
+            Multi-user isolation is the documented path, not built yet: Phase 6 console auth makes the proxy assert the
+            authenticated user instead of the admin, and Forgejo OIDC group mappings place each user in their own
+            organization/team. Keycloak is optional — any OIDC provider works.
+          </p>
+          <a
+            href="/extras/forgejo/"
+            data-testid="settings-open-forgejo"
+            className="inline-block text-sm font-medium text-slate-900 underline decoration-slate-300 underline-offset-2"
+          >
+            Open Forgejo →
+          </a>
+        </CardBody>
+      </Card>
+
           <Card testId="settings-mcps">
             <CardHeader
               title="MCP servers"

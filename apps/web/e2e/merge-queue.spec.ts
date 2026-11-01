@@ -33,6 +33,20 @@ test.describe('Integrations, merge queue and automations', () => {
     await cleanupRuns(request);
   });
 
+  test('settings names the local forge and links to it', async ({ page, request }) => {
+    await page.goto(`/factories/${FACTORY}/settings`);
+    const card = page.getByTestId('settings-local-forge');
+    await expect(card).toBeVisible();
+    await expect(page.getByTestId('settings-forgejo-mode')).toContainText('single-user');
+    // The multi-user path is stated, not implied (spec `forge` › Mode is stated).
+    await expect(card).toContainText('OIDC');
+    await expect(page.getByTestId('settings-open-forgejo')).toHaveAttribute('href', '/extras/forgejo/');
+
+    const forge = await request.get('/extras/forgejo/');
+    expect(forge.status()).toBe(200);
+    expect(await forge.text()).toContain('Forgejo');
+  });
+
   test('settings saves a GitHub connection by secret reference', async ({ page, request }) => {
     await page.goto(`/factories/${FACTORY}/settings`);
     await expect(page.getByTestId('settings-github-integration')).toBeVisible();

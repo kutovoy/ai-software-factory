@@ -683,3 +683,49 @@ path under `/api/v1`, so it must stay a transparent forwarder (no console-side a
 filtering), and a new backend route is reachable through the console the moment it is served.
 Blocking dependency scripts means a future package that genuinely needs a postinstall must be
 added to `trustedDependencies` deliberately.
+
+---
+
+## ADR-032 — The factory owns a local forge; identity is asserted by the console proxy
+
+**Status:** accepted, implemented (2026-11-01, add-forgejo)
+**Context:** Every factory PR was recorded against the fake backend, so links pointed at
+`https://forge.local/...` and resolved nowhere. The factory needs a repository backend the
+operator can actually open, and the identity design must not paint itself into a corner for
+multi-user (Phase 6). The console has no auth yet, so any identity story is local/single-user
+until then.
+**Options:** keep the fake backend and rewrite links · point at public GitHub (needs an App,
+internet, credentials) · run a self-hosted forge and serve it from the console origin · run a
+separate reverse proxy in front of the forge.
+**Decision:** a **Forgejo** service (pinned `codeberg.org/forgejo/forgejo:17.0.1`) owns the
+forge, enabled by default, with its own database and volume. It is hosted on a **subpath**:
+`ROOT_URL=http://localhost:3000/extras/forgejo/` and `STATIC_URL_PREFIX=/extras/forgejo`, so
+every link and asset it generates stays on the console origin. The console serves that prefix
+from a catch-all route handler (`apps/web/src/app/extras/forgejo/[[...path]]/route.ts`) that
+strips the prefix, streams the request/response (git-over-HTTP included) and injects the
+trusted `X-WebAuth-User` header; Forgejo runs `ENABLE_REVERSE_PROXY_AUTHENTICATION` with
+`REVERSE_PROXY_AUTHENTICATION_USER=X-WebAuth-User`. A plain Next rewrite cannot add a request
+header, which is why the proxy is a handler rather than a rewrite. The forge has **no
+published host port**: it is reachable only from the compose network, so the header cannot be
+spoofed from a browser (`REVERSE_PROXY_TRUSTED_PROXIES=*` is acceptable only because of that).
+This is explicitly **single-user local mode**: the console asserts the seeded admin for every
+request and says so in Settings and Help. **Multi-user (documented, not built):** Phase 6
+console auth makes the proxy assert the signed-in user, and Forgejo OIDC group mappings place
+each user in a per-user organization/team so users only see their own projects. Keycloak is
+one option, not a requirement — Forgejo is itself an OAuth2 provider and any OIDC IdP fits.
+The `CodeForge` GitHub client speaks the **Gitea-compatible dialect** when
+`GITHUB_API_BASE_URL` is not `api.github.com`, behind the same contract: refs are read from
+`git/refs`, branches are created with `POST /branches`, commits are written through the
+contents API (Gitea has no write blob/tree/commit endpoints), checks come from commit
+statuses (an empty status set is green — a forge with no CI has nothing red), merges use
+`POST .../merge` with `Do`, and revert restores the target tree file by file. Which backend a
+factory uses is decided by its stored integration: enabled + not a dry run + a secret that
+resolves ⇒ the real forge; anything else ⇒ the fake backend, so smoke and CI stay
+credential-free (`CODE_FORGE` overrides both).
+**Consequences:** PR URLs resolve from the operator's laptop and `git clone
+http://localhost:3000/extras/forgejo/<org>/<repo>.git` works through the console. SSH and
+websockets are out of scope in v1. Cost: the proxy is a security-relevant hop (it must keep
+asserting the header and must never forward a browser-supplied one), git pushes travel through
+Next (a dedicated proxy can replace it later without changing URLs), and the Gitea dialect
+needs maintenance as Forgejo's API drifts — the shared contract suite plus a live check
+against a real instance are the guard.

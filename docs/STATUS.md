@@ -12,6 +12,69 @@ database, events, logs, API responses or definitions.
 Next: **Phase 6b** (auth/users, multi-tenant/ops, a managed secret provider behind the same
 registry).
 
+### Local forge: Forgejo served by the console (add-forgejo, 2026-11-01)
+
+Every factory PR was recorded against the fake backend, so links pointed at
+`https://forge.local/...` and resolved nowhere. The stack now owns its forge and serves it from
+the console origin (ADR-032).
+
+- **Compose.** A pinned `codeberg.org/forgejo/forgejo:17.0.1` service with its own database
+  (`forgejo`, created by `scripts/postgres-init.sql`; an existing volume needs one manual
+  `create database forgejo owner factory`), a `forgejo-data` volume and a `/api/healthz`
+  healthcheck. No host port: the forge is reachable only from the compose network, so the
+  identity header cannot be spoofed from a browser. Enabled by default; opting out is
+  `FORGEJO_ENABLED=0 docker compose -f compose.yaml -f compose.no-forgejo.yaml up -d` (the
+  overlay assigns a profile, so Compose skips the service).
+- **Subpath hosting.** `ROOT_URL=http://localhost:3000/extras/forgejo/`,
+  `STATIC_URL_PREFIX=/extras/forgejo`; every generated link and asset already carries the
+  prefix. The console serves it from `apps/web/src/app/extras/forgejo/[[...path]]/route.ts`,
+  a streaming catch-all proxy that strips the prefix and injects `X-WebAuth-User` — a
+  `next.config` rewrite cannot add a request header, which is why this is a route handler and
+  not a rewrite. `skipTrailingSlashRedirect` plus a prefix-scoped middleware keep the
+  trailing-slash home page (`/extras/forgejo/`) a 200 instead of Next's 308.
+- **Single-user auto-login.** Forgejo runs `ENABLE_REVERSE_PROXY_AUTHENTICATION` with
+  `REVERSE_PROXY_AUTHENTICATION_USER=X-WebAuth-User`; opening the forge lands on the seeded
+  admin's dashboard with no password prompt. Settings states the mode and names the
+  multi-user path (Phase 6 console auth asserts the signed-in user; Forgejo OIDC group
+  mappings place each user in their own organization/team; Keycloak optional). Help's
+  "Where results live" says the same.
+- **Bootstrap.** `scripts/forgejo-bootstrap.sh` waits for health, ensures the admin (password
+  generated once into `.env`), reuses a token that still resolves or generates one
+  (`--raw`, captured, never printed), creates the `acme` organization and the
+  `hello-nextjs` repository with an initial commit, registers `GITHUB_TOKEN` as a secret
+  *name*, records the factory's forge integration and restarts api+worker. A second run
+  changes nothing.
+- **Forge backend.** The `CodeForge` GitHub client detects the Gitea dialect from
+  `GITHUB_API_BASE_URL` and adapts behind the same contract: refs from `git/refs`, branches
+  via `POST /branches`, commits through the contents API (Gitea's blob/tree/commit writes are
+  read-only), checks from commit statuses (an empty status set is green — a forge with no CI
+  has nothing red), merges via `POST .../merge` with `Do`, and revert by restoring the target
+  tree file by file. Which backend a factory uses is decided by its stored integration
+  (enabled + not dry-run + a secret that resolves ⇒ real forge), so smoke and CI stay on the
+  fake backend and credential-free.
+- **Git over HTTP** works through the console:
+  `git clone http://localhost:3000/extras/forgejo/acme/hello-nextjs.git`. SSH and websockets
+  are out of scope in v1.
+
+Verification (2026-11-01): `docker compose up -d --build` → forgejo healthy;
+`GET /extras/forgejo/` → 200 (auto-login as `factory`, assets and redirects on the console
+origin); `git clone http://localhost:3000/extras/forgejo/acme/hello-nextjs.git` → ok;
+`bash scripts/forgejo-bootstrap.sh` twice → the second run reuses the token and changes
+nothing (no value printed); a live Gitea-dialect check against the real instance (checkout,
+branch, commit, PR idempotency, checks, comment, merge, revert, `protected_branch`/`not_found`
+/`invalid_state`) → passed; a real lights-off run on `hello-nextjs` (opencode + `best_llm`,
+all gates agent, override autonomy) → item `wi_01M6C2WA3J8V6JYWFA97SXMEMX` `done` at `ship`,
+PR #3 merged (`c44db4f…` is now `main`), `http://localhost:3000/extras/forgejo/acme/hello-nextjs/pulls/3`
+→ 200 and rendered on the item and the dashboard; `bun run ci` → 516 pass / 0 fail;
+`bash scripts/smoke.sh` → `SMOKE PASSED` (forgejo health + assets + 1 recorded PR link
+resolving through the console); `bunx playwright test` → 50 passed; `UI_AUDIT=1 bunx
+playwright test audit-deep.spec.ts` → 36 routes, 0 problems; `openspec validate add-forgejo`
+→ valid. The token appears in no run directory, event or container log (checked by grep).
+
+Deferred: SSH and websockets through the proxy; multi-user identity (Phase 6 + OIDC group
+mappings); a dedicated proxy if pushes ever outgrow the Next handler; Forgejo Actions/CI
+(checks are commit statuses, and an empty status set is green).
+
 ### Console operations: auto-refresh, operational dashboard, stable selection, board filters (improve-console-ops, 2026-11-01)
 
 The console was a set of projections you had to reload by hand, a dashboard that reported

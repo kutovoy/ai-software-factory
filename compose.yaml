@@ -1,10 +1,15 @@
-# Full stack for Phase 2b: postgres (read model) + Temporal dev server + api + worker + web.
+# Full stack for Phase 2b: postgres (read model) + Temporal dev server + forgejo (local forge)
+# + api + worker + web.
 #
 #   docker compose up -d
+#   bash scripts/forgejo-bootstrap.sh     # seeds the admin, token, org and repo
 #   bash scripts/smoke.sh
 #
 # Inference credentials live only in the api/worker containers; the runner sandbox sees
 # just OPENAI_BASE_URL=<proxy>/v1 and OPENAI_API_KEY=<per-run token> (ADR-011).
+#
+# The local forge is enabled by default (spec `forge`). To opt out:
+#   FORGEJO_ENABLED=0 docker compose -f compose.yaml -f compose.no-forgejo.yaml up -d
 
 name: factory
 
@@ -39,6 +44,52 @@ services:
       timeout: 5s
       retries: 40
       start_period: 10s
+
+  # Local forge (spec `forge`). Served at the console origin under /extras/forgejo by the
+  # web app's same-origin proxy (apps/web/src/app/extras/forgejo/[[...path]]/route.ts),
+  # which injects the trusted `X-WebAuth-User` header (single-user mode, ADR-032).
+  # No host port: the forge is reachable only from the compose network, so the identity
+  # header cannot be spoofed from the browser. Enabled by default; to opt out run
+  #   FORGEJO_ENABLED=0 docker compose -f compose.yaml -f compose.no-forgejo.yaml up -d
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:17.0.1
+    environment:
+      # Subpath hosting: ROOT_URL carries /extras/forgejo/, STATIC_URL_PREFIX strips it for
+      # assets (<https://forgejo.org/docs/v17.0/admin/setup/reverse-proxy/>).
+      FORGEJO__server__ROOT_URL: http://localhost:3000/extras/forgejo/
+      FORGEJO__server__STATIC_URL_PREFIX: /extras/forgejo
+      FORGEJO__server__DOMAIN: localhost
+      FORGEJO__server__HTTP_PORT: '3000'
+      FORGEJO__server__DISABLE_SSH: 'true'
+      FORGEJO__server__START_SSH_SERVER: 'false'
+      FORGEJO__server__OFFLINE_MODE: 'true'
+      FORGEJO__repository__DEFAULT_BRANCH: main
+      FORGEJO__database__DB_TYPE: postgres
+      FORGEJO__database__HOST: postgres:5432
+      FORGEJO__database__NAME: forgejo
+      FORGEJO__database__USER: factory
+      FORGEJO__database__PASSWD: factory
+      FORGEJO__database__SSL_MODE: disable
+      # Skip the install wizard; the bootstrap script seeds the admin instead.
+      FORGEJO__security__INSTALL_LOCK: 'true'
+      # Auto-login (single-user v1): trust the header from the proxy only. The forge is not
+      # published on the host, so every request arrives through the console proxy.
+      FORGEJO__service__ENABLE_REVERSE_PROXY_AUTHENTICATION: 'true'
+      FORGEJO__security__REVERSE_PROXY_AUTHENTICATION_USER: X-WebAuth-User
+      FORGEJO__security__REVERSE_PROXY_TRUSTED_PROXIES: '*'
+      FORGEJO__service__DISABLE_REGISTRATION: 'true'
+      FORGEJO__actions__ENABLED: 'false'
+    volumes:
+      - forgejo-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:3000/api/healthz || exit 1']
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 20s
 
   api:
     build:
@@ -105,6 +156,9 @@ services:
       MERGE_IDLE_INTERVAL_MS: ${MERGE_IDLE_INTERVAL_MS:-30000}
       MERGE_IDLE_CYCLES: ${MERGE_IDLE_CYCLES:-2}
       GITHUB_DRY_RUN: ${GITHUB_DRY_RUN:-0}
+      # Local forge backend (spec `code-forge` › Forgejo backend). The Gitea-compatible API
+      # lives at /api/v1; the token is resolved by name at run time (ADR-026).
+      GITHUB_API_BASE_URL: ${GITHUB_API_BASE_URL:-http://forgejo:3000/api/v1}
       # Secrets registry (ADR-026): a dummy execution secret so the smoke run resolves one
       # name and records usage. Never a real credential.
       GITHUB_TOKEN: ${GITHUB_TOKEN:-smoke-github-token}
@@ -143,6 +197,10 @@ services:
       # parity/debugging; the browser talks to same-origin /api/* route handlers.
       API_BASE_URL: http://api:8080
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8080}
+      # Same-origin proxy for the local forge (spec `forge`): the rewrite target and the
+      # identity the proxy asserts. Both are server-side only.
+      FORGEJO_URL: ${FORGEJO_URL:-http://forgejo:3000}
+      FORGEJO_ADMIN_USER: ${FORGEJO_ADMIN_USER:-factory}
       NODE_ENV: production
       PORT: '3000'
     ports:
@@ -222,6 +280,7 @@ services:
       # Secrets registry (ADR-026): the worker resolves execution secrets by name; the
       # smoke uses a dummy value so usage can be audited without a real credential.
       GITHUB_TOKEN: ${GITHUB_TOKEN:-smoke-github-token}
+      GITHUB_API_BASE_URL: ${GITHUB_API_BASE_URL:-http://forgejo:3000/api/v1}
       # ADR-013: permission waits hold no activity slot, so 8 slots (the old hardcoded
       # value that used to starve the queue) is enough for eight blocked runs plus new work.
       # Raise for more concurrent streaming runs; the code default is Temporal's 100.
@@ -260,6 +319,7 @@ services:
 
 volumes:
   pgdata:
+  forgejo-data:
 
 networks:
   # Sandboxes only. Kept off the default network so a run cannot reach Postgres, Temporal

@@ -7,6 +7,8 @@
 # Asserts, against a running stack:
 #   1. /health is green (db + temporal)
 #   1b. the web console serves / (200) and renders the full nav + New Chat composer
+#   1c. the local forge (forgejo, spec `forge`) is served by the console: home + healthz +
+#       assets are 200, and every recorded forge PR link resolves through the console
 #   2. migrations apply (idempotent)
 #   3. POST /chat starts a fake-harness run (no model, no network)
 #   4. GET /runs/:id/events streams >= 3 events including exactly one terminal event
@@ -124,6 +126,41 @@ done
 grep -q 'data-testid="chat-prompt"' "$TMP_DIR/web.html" || fail "New Chat composer did not render"
 grep -q 'data-testid="factory-switcher"' "$TMP_DIR/web.html" || fail "factory switcher did not render"
 pass "web / returns 200 with full nav + New Chat composer"
+
+# ----------------------------------------------------- 1c. local forge (forgejo)
+# Credential-free: only the public console surface is touched. The forge is enabled by
+# default (spec `forge`); when it is opted out these checks report the skip instead of
+# failing, so the smoke stays runnable on a stack without it.
+forge_code="$(curl -sS -o "$TMP_DIR/forge.html" -w '%{http_code}' "$WEB_URL/extras/forgejo/" || true)"
+if [ "$forge_code" = "200" ]; then
+  grep -q 'Forgejo' "$TMP_DIR/forge.html" || fail "the forge home page did not render through the console"
+  forge_health="$(curl -sS "$WEB_URL/extras/forgejo/api/healthz" || true)"
+  [ "$(printf '%s' "$forge_health" | jget status)" = "pass" ] \
+    || fail "the forge health check is not passing: $forge_health"
+  asset_code="$(curl -sS -o /dev/null -w '%{http_code}' "$WEB_URL/extras/forgejo/assets/css/index.css" || true)"
+  [ "$asset_code" = "200" ] || fail "the forge static assets are not served through the console (got ${asset_code:-none})"
+  pass "forgejo healthy through the console (home + healthz + assets)"
+
+  # Recorded PR links must resolve through the console origin; this needs no credential.
+  pr_links="$(api "$API/work-items?limit=100" | bun -e '
+    let s = ""; for await (const c of Bun.stdin.stream()) s += new TextDecoder().decode(c);
+    const items = JSON.parse(s).workItems ?? [];
+    const urls = [...new Set(items.map((i) => i.prUrl).filter((u) => typeof u === "string" && u.startsWith("http://localhost:3000/extras/forgejo/")))];
+    console.log(urls.join("\n"));
+  ' || true)"
+  if [ -n "$pr_links" ]; then
+    while IFS= read -r pr_url; do
+      [ -z "$pr_url" ] && continue
+      pr_code="$(curl -sSL -o /dev/null -w '%{http_code}' "$pr_url" || true)"
+      [ "$pr_code" = "200" ] || fail "recorded PR link does not resolve: $pr_url (got ${pr_code:-none})"
+    done <<< "$pr_links"
+    pass "recorded forge PR links resolve through the console ($(printf '%s\n' "$pr_links" | grep -c .) checked)"
+  else
+    log "no recorded forge PR links yet (run a lights-off factory pass to produce one)"
+  fi
+else
+  log "local forge is not running (FORGEJO_ENABLED=0 or not started); skipping the forge checks"
+fi
 
 # ------------------------------------------------------------- 2. migrations
 log "applying migrations"

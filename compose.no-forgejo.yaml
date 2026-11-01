@@ -1,0 +1,10 @@
+# Opt-out overlay for the local forge (spec `forge` › "Enabled by default").
+#
+#   FORGEJO_ENABLED=0 docker compose -f compose.yaml -f compose.no-forgejo.yaml up -d
+#
+# Assigning a profile to a service makes Compose skip it unless that profile is active, so
+# merging this file removes `forgejo` from the default `up` without deleting its definition
+# (a later `docker compose up -d` without this file brings it back, reusing `forgejo-data`).
+services:
+  forgejo:
+    profiles: ['disabled']

@@ -4,6 +4,7 @@ import { ApplicationFailure } from '@temporalio/activity';
 import {
   FakeForge,
   ForgeError,
+  githubForgeFromEnv,
   repoKey,
   type ChecksResult,
   type CodeForge,
@@ -12,8 +13,9 @@ import {
   type MergeResult,
   type RepoRef,
 } from '@factory/forge';
-import { loadDefinition } from '@factory/core';
+import { getIntegration, loadDefinition } from '@factory/core';
 import { loadConfig } from '../config';
+import { getSql } from '../db';
 
 /**
  * Forge activities — the only place the loop touches a repository.
@@ -21,6 +23,12 @@ import { loadConfig } from '../config';
  * Phase 3a runs on the in-memory `FakeForge`: no network, no credentials, deterministic.
  * Phase 3b swaps in the GitHub backend behind the same `CodeForge` interface; nothing in
  * the workflow changes.
+ *
+ * `add-forgejo` adds a second real dialect: the same client talks to a local Forgejo/Gitea
+ * (`GITHUB_API_BASE_URL`, ADR-032). Which backend a factory uses is decided by its stored
+ * integration: an enabled, non-dry-run GitHub connection whose secret resolves uses the
+ * real forge; every other factory keeps the fake backend, so `scripts/smoke.sh` and CI
+ * stay credential-free. `CODE_FORGE` still overrides both.
  *
  * Forge errors are stable codes (`protected_branch`, `checks_not_green`, ...) and become
  * non-retryable Temporal failures, so a rejected write fails the stage instead of being
@@ -36,19 +44,61 @@ export function setForge(id: string, forge: CodeForge | null): void {
   else forges.set(id, forge);
 }
 
-export function getForge(id = process.env.CODE_FORGE ?? 'fake'): CodeForge {
-  const existing = forges.get(id);
+export function getForge(
+  id = process.env.CODE_FORGE ?? 'fake',
+  options: { secretRef?: string } = {},
+): CodeForge {
+  // A real backend is cached per secret reference: two factories may point at different
+  // tokens for the same forge.
+  const key = id === 'github' && options.secretRef ? `github:${options.secretRef}` : id;
+  const existing = forges.get(key);
   if (existing) return existing;
+  if (id === 'github') {
+    const forge = githubForgeFromEnv({
+      secretRef: options.secretRef ?? process.env.GITHUB_SECRET_REF ?? 'GITHUB_TOKEN',
+    });
+    forges.set(key, forge);
+    return forge;
+  }
   if (id !== 'fake') {
     throw ApplicationFailure.create({
       type: 'forge_unavailable',
       nonRetryable: true,
-      message: `code forge "${id}" has no backend yet (3b); use CODE_FORGE=fake`,
+      message: `code forge "${id}" has no backend; use CODE_FORGE=fake or CODE_FORGE=github`,
       details: [{ backend: id }],
     });
   }
   defaultForge ??= new FakeForge();
   return defaultForge;
+}
+
+/**
+ * Resolves the backend a factory actually uses. `CODE_FORGE` (and the test hook) win;
+ * otherwise the factory's stored integration decides: enabled, not a dry run, and a token
+ * that resolves in this process. Everything else is the fake forge, so a factory that
+ * declares no connection never pretends to have pushed anywhere.
+ */
+export async function resolveForge(factory: string): Promise<CodeForge> {
+  const explicit = process.env.CODE_FORGE;
+  if (explicit) return getForge(explicit);
+
+  const testHook = forges.get('fake');
+  if (testHook) return testHook;
+
+  const baseUrl = process.env.GITHUB_API_BASE_URL;
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!baseUrl || !databaseUrl) return getForge('fake');
+
+  try {
+    const integration = await getIntegration(getSql(databaseUrl), factory, 'github');
+    if (!integration || !integration.enabled || integration.dryRun) return getForge('fake');
+    // The token is resolved by name from this process's environment (ADR-026); a name
+    // that does not resolve is a configuration gap, not a reason to hit the network.
+    if (!process.env[integration.secretRef]) return getForge('fake');
+    return getForge('github', { secretRef: integration.secretRef });
+  } catch {
+    return getForge('fake');
+  }
 }
 
 export function factoryRepo(factoryRoot: string, factory: string): RepoRef {
@@ -123,7 +173,7 @@ export async function forgeOpenPullRequest(
   args: OpenPullRequestArgs,
 ): Promise<OpenPullRequestResult> {
   const repo = factoryRepo(args.factoryRoot, args.factory);
-  const forge = getForge();
+  const forge = await resolveForge(args.factory);
   ensureSeeded(forge, repo);
 
   const branch = `factory/${args.workItemId}`;
@@ -168,7 +218,7 @@ export async function forgeMergePullRequest(args: {
   method?: 'merge' | 'squash' | 'rebase';
 }): Promise<MergeResult> {
   const repo = factoryRepo(args.factoryRoot, args.factory);
-  const forge = getForge();
+  const forge = await resolveForge(args.factory);
   ensureSeeded(forge, repo);
   try {
     return await forge.merge({
@@ -187,7 +237,7 @@ export async function forgeGetChecks(args: {
   pullRequestNumber: number;
 }): Promise<ChecksResult> {
   const repo = factoryRepo(args.factoryRoot, args.factory);
-  const forge = getForge();
+  const forge = await resolveForge(args.factory);
   ensureSeeded(forge, repo);
   try {
     return await forge.getChecks({ repo, pullRequestNumber: args.pullRequestNumber });
@@ -205,7 +255,7 @@ export async function forgeComment(args: {
   author?: string;
 }): Promise<Comment> {
   const repo = factoryRepo(args.factoryRoot, args.factory);
-  const forge = getForge();
+  const forge = await resolveForge(args.factory);
   ensureSeeded(forge, repo);
   try {
     return await forge.comment({

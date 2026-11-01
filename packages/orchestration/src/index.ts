@@ -20,7 +20,7 @@ export * from './merge-client';
 export * from './mcp-client';
 export * from './mcp-probe';
 export * from './automation-client';
-export { getForge, setForge } from './activities/forge';
+export { getForge, resolveForge, setForge } from './activities/forge';
 export * from './run-dir';
 export * from './failures';
 export * from './db';

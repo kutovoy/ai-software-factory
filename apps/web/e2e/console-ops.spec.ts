@@ -71,11 +71,13 @@ test.describe('console operations', () => {
       '/work-items/wi_01M6B5097TGHK0KKZQN9BB3C4G',
     );
 
-    // Deliverables: the PR link, a merged count and the captured patch.
+    // Deliverables: the PR link, a merged count and the captured patch. A recorded PR
+    // opens on the factory's own forge now (`/extras/forgejo/…`); items created before
+    // add-forgejo still carry the historical `forge.local` URL, so both shapes are valid.
     await expect(page.getByTestId('dashboard-deliverables-explainer')).toBeVisible();
     await expect(page.getByTestId('dashboard-pr-link').first()).toHaveAttribute(
       'href',
-      /forge\.local\/acme\/hello-nextjs\/pull\/1/,
+      /(forge\.local|localhost:3000\/extras\/forgejo)\/acme\/hello-nextjs\/(pull|pulls)\/\d+/,
     );
     await expect(page.getByTestId('dashboard-merged-count')).not.toHaveText('0');
     await expect(page.getByTestId('dashboard-artifact')).toContainText('patch.diff');
