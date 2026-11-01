@@ -2,6 +2,7 @@
 import type { FactoryEvent } from '@factory/adapters';
 import { AdapterError } from '@factory/adapters';
 import { loadConfig } from '../config';
+import { harnessPasswordFor } from '../harness-auth';
 import { heartbeat } from '../heartbeat';
 import { isCancelRequested, setRunSessionRef, upsertStep } from '../db';
 import { pumpSegment } from '../pump';
@@ -50,7 +51,9 @@ export async function startHarness(args: {
   const entry = await ensureSession(args.input, {
     harnessUrl: args.lease.harnessUrl,
     sessionRef: args.sessionRef ?? null,
-    password: process.env.OPENCODE_SERVER_PASSWORD,
+    // Derived per run (see `harness-auth.ts`): opencode generates a random server password
+    // unless one is supplied, so the runner injects this same value into the harness env.
+    password: harnessPasswordFor(args.input.runId),
   });
 
   if (entry.handle.sessionRef) {
@@ -107,7 +110,9 @@ export async function pumpEvents(args: {
   const entry = await ensureSession(args.input, {
     harnessUrl: args.lease.harnessUrl,
     sessionRef: args.sessionRef ?? null,
-    password: process.env.OPENCODE_SERVER_PASSWORD,
+    // Derived per run (see `harness-auth.ts`): opencode generates a random server password
+    // unless one is supplied, so the runner injects this same value into the harness env.
+    password: harnessPasswordFor(args.input.runId),
   });
 
   const { adapter, handle } = entry;

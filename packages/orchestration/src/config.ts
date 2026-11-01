@@ -20,6 +20,16 @@ export interface OrchestrationConfig {
   providerKey?: string;
   /** Default runner backend when the definition does not name one. */
   defaultRunner: 'docker' | 'local';
+  /**
+   * User-defined docker network the docker backend attaches sandboxes to. Unset means the
+   * sandbox publishes an ephemeral 127.0.0.1 port (correct for a host worker only).
+   */
+  runnerNetwork?: string;
+  /**
+   * How the docker backend hands the workspace to the sandbox: `bind` (host worker) or
+   * `copy` (worker runs in a container, so the daemon cannot see its filesystem).
+   */
+  runnerWorkspaceMode: 'bind' | 'copy';
   /** How long a `permission.requested` may wait before it is auto-denied. */
   permissionTimeoutMs: number;
   /** SLA for an undecided stage gate before the configured fallback applies. */
@@ -104,6 +114,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): OrchestrationC
     providerBaseUrl: env.OPENAI_BASE_URL,
     providerKey: env.OPENAI_API_KEY,
     defaultRunner: env.RUNNER_BACKEND === 'local' ? 'local' : 'docker',
+    ...(env.RUNNER_NETWORK ? { runnerNetwork: env.RUNNER_NETWORK } : {}),
+    runnerWorkspaceMode: env.RUNNER_WORKSPACE_MODE === 'copy' ? 'copy' : 'bind',
     permissionTimeoutMs: intFromEnv(env.PERMISSION_TIMEOUT_MS, 30 * 60 * 1000),
     // A gate may wait for days; the SLA only decides the fallback, not the wait.
     gateSlaMs: intFromEnv(env.GATE_SLA_MS, 24 * 60 * 60 * 1000),

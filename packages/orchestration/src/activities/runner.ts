@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
+import { ApplicationFailure } from '@temporalio/activity';
 import { FakeAdapter, type SessionHandle, type UsageReport } from '@factory/adapters';
 import {
   appendWorkItemEvent,
@@ -15,10 +16,12 @@ import {
   DEFAULT_HARNESS_COMMAND,
   DockerRunnerBackend,
   LocalRunnerBackend,
+  isRunnerError,
   type Artifact,
   type RunnerBackend,
 } from '@factory/runners';
 import { loadConfig } from '../config';
+import { harnessPasswordFor } from '../harness-auth';
 import { heartbeat } from '../heartbeat';
 import { getSql, upsertStep } from '../db';
 import { artifactsDir, ensureRunDir, patchPath, runDir } from '../run-dir';
@@ -41,14 +44,45 @@ import type { LeaseInfo, RunArtifact, RunInput } from '../types';
 const ephemeralLeases = new Map<string, LeaseInfo>();
 
 /**
+ * Preserves a runner error code through Temporal's failure serialization.
+ *
+ * A plain `RunnerError` thrown from an activity becomes an `ApplicationFailure` with
+ * `type: 'RunnerError'` and no code, so the workflow (and the run row) can no longer tell
+ * `docker_unavailable` from `runner_unavailable`. Throwing an explicit `ApplicationFailure`
+ * with `type = error.code` and the error shape in `details` keeps the code in the chain that
+ * `describeFailure()` walks. Retry behaviour is unchanged (`nonRetryable: false`).
+ */
+function rethrowWithCause(error: unknown): never {
+  if (isRunnerError(error)) {
+    throw ApplicationFailure.create({
+      type: error.code,
+      message: error.message,
+      details: [error.toJSON()],
+      nonRetryable: false,
+    });
+  }
+  throw error;
+}
+
+
+/**
  * `@factory/runners` bans every `OPENAI_*` name from `spec.env` and `spec.harness.env`
  * (that is the provider-credential boundary). The inference proxy therefore reaches the
  * harness through the harness *command*: a per-run token and the proxy base URL, never the
  * provider key. The token is revoked when the run ends (ADR-011).
+ *
+ * `OPENCODE_SERVER_PASSWORD` travels the same way: opencode `serve` generates a random
+ * password otherwise and then rejects the adapter's readiness probe with
+ * `401 Authentication required` (see `harness-auth.ts`).
  */
-function harnessCommandWithProxyEnv(env: Record<string, string> | undefined): string {
-  const entries = Object.entries(env ?? {}).filter(([, value]) => value !== '');
-  if (entries.length === 0) return DEFAULT_HARNESS_COMMAND;
+function harnessCommandWithProxyEnv(
+  env: Record<string, string> | undefined,
+  runId: string,
+): string {
+  const entries = [
+    ...Object.entries(env ?? {}).filter(([, value]) => value !== ''),
+    ['OPENCODE_SERVER_PASSWORD', harnessPasswordFor(runId)] as [string, string],
+  ];
   const prefix = entries
     .map(([name, value]) => `${name}='${value.replace(/'/g, `'\\''`)}'`)
     .join(' ');
@@ -59,7 +93,12 @@ function backendFor(input: RunInput): RunnerBackend {
   const config = loadConfig();
   const kind =
     input.runner === 'local-process' || config.defaultRunner === 'local' ? 'local' : 'docker';
-  return kind === 'docker' ? new DockerRunnerBackend() : new LocalRunnerBackend();
+  return kind === 'docker'
+    ? new DockerRunnerBackend({
+        ...(config.runnerNetwork ? { network: config.runnerNetwork } : {}),
+        workspaceMode: config.runnerWorkspaceMode,
+      })
+    : new LocalRunnerBackend();
 }
 
 /**
@@ -137,19 +176,21 @@ export async function leaseRunner(args: {
   }
 
   const backend = backendFor(args.input);
-  const handle = await backend.lease({
-    runId: args.input.runId,
-    repo: {
-      path: args.input.repo?.path ?? args.input.factoryRoot,
-      url: args.input.repo?.url,
-      commit: args.input.repo?.commit ?? args.input.definitionCommit,
-    },
-    harness: { command: harnessCommandWithProxyEnv(args.harnessEnv) },
-    keepWorkspace: false,
-    runDir: runDir(config.runsDir, args.input.runId),
-    // The local sandbox denies network unless the stage/factory grants it (task 6).
-    networkPolicy: args.input.networkPolicy ?? 'denied',
-  });
+  const handle = await backend
+    .lease({
+      runId: args.input.runId,
+      repo: {
+        path: args.input.repo?.path ?? args.input.factoryRoot,
+        url: args.input.repo?.url,
+        commit: args.input.repo?.commit ?? args.input.definitionCommit,
+      },
+      harness: { command: harnessCommandWithProxyEnv(args.harnessEnv, args.input.runId) },
+      keepWorkspace: false,
+      runDir: runDir(config.runsDir, args.input.runId),
+      // The local sandbox denies network unless the stage/factory grants it (task 6).
+      networkPolicy: args.input.networkPolicy ?? 'denied',
+    })
+    .catch(rethrowWithCause);
 
   const lease: LeaseInfo = {
     runnerId: handle.runnerId,
@@ -254,17 +295,21 @@ export async function runCommand(args: {
   const chunks: string[] = [];
   let exitCode = 0;
 
-  for await (const event of backend.exec(args.lease.runnerId, {
-    command: args.command,
-    timeoutMs: args.timeoutMs ?? 10 * 60 * 1000,
-  })) {
-    if (event.type === 'stdout' || event.type === 'stderr') chunks.push(event.data);
-    if (event.type === 'exit') exitCode = event.code;
-    if (event.type === 'error') {
-      chunks.push(`[${event.code}] ${event.message}\n`);
-      exitCode = 1;
+  try {
+    for await (const event of backend.exec(args.lease.runnerId, {
+      command: args.command,
+      timeoutMs: args.timeoutMs ?? 10 * 60 * 1000,
+    })) {
+      if (event.type === 'stdout' || event.type === 'stderr') chunks.push(event.data);
+      if (event.type === 'exit') exitCode = event.code;
+      if (event.type === 'error') {
+        chunks.push(`[${event.code}] ${event.message}\n`);
+        exitCode = 1;
+      }
+      heartbeat({ stepId: args.stepId, exitCode });
     }
-    heartbeat({ stepId: args.stepId, exitCode });
+  } catch (error) {
+    rethrowWithCause(error);
   }
 
   const logPath = join(artifactsDir(config.runsDir, args.input.runId), `${args.stepId}.log`);
@@ -352,10 +397,9 @@ export async function collectArtifacts(args: {
     }
   } else {
     const backend = backendFor(args.input);
-    const collected: Artifact[] = await backend.artifacts(args.lease.runnerId, {
-      destDir: dir,
-      includeGitDiff: true,
-    });
+    const collected: Artifact[] = await backend
+      .artifacts(args.lease.runnerId, { destDir: dir, includeGitDiff: true })
+      .catch(rethrowWithCause);
     for (const artifact of collected) {
       artifacts.push({
         path: artifact.path,
@@ -393,7 +437,7 @@ export async function killRunner(args: { input: RunInput; lease?: LeaseInfo }): 
     return;
   }
   const backend = backendFor(args.input);
-  await backend.kill(lease.runnerId);
+  await backend.kill(lease.runnerId).catch(rethrowWithCause);
   // Release the in-worker adapter session so a long-lived worker does not accumulate runs.
   await dropSession(args.input.runId);
   await upsertStep({

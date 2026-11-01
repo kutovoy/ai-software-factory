@@ -43,6 +43,8 @@ export interface RunInput {
   proxyModels: string[];
   /** Scripted adapter step delay; lets tests kill the worker mid-run. */
   fakeDelayMs?: number;
+  /** Set when this run was created by retrying another run (retry-as-new-run). */
+  retryOf?: string;
   workspace?: string;
   /** Setup commands from the definition's runner resource (executed inside the sandbox). */
   setupCommands?: string[];

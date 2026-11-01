@@ -176,6 +176,7 @@ export function toOrchestrationConfig(config: ApiConfig): OrchestrationConfig {
     providerBaseUrl: config.providerBaseUrl,
     providerKey: config.providerKey,
     defaultRunner: process.env.RUNNER_BACKEND === 'local' ? 'local' : 'docker',
+    runnerWorkspaceMode: process.env.RUNNER_WORKSPACE_MODE === 'copy' ? 'copy' : 'bind',
     permissionTimeoutMs: config.permissionTimeoutMs,
     gateSlaMs: config.gateSlaMs,
     loopLimit: intFromEnv(process.env.FACTORY_LOOP_LIMIT, 3),

@@ -118,6 +118,7 @@ import {
 } from './secrets';
 import {
   createRun,
+  retryRun,
   getRunDetail,
   listRuns,
   summarize,
@@ -672,6 +673,25 @@ export function createApp(config: ApiConfig): Hono {
 
     log('info', 'run_cancel_requested', { runId });
     return c.json({ runId, status: 'cancelling', cancelled: true }, 202);
+  });
+
+  api.post('/runs/:id/retry', async (c) => {
+    const result = await retryRun(config, c.req.param('id'));
+    log('info', 'run_retried', {
+      from: result.retryOf,
+      to: result.run.id,
+      deduped: result.deduped,
+    });
+    return c.json(
+      {
+        run: summarize(result.run),
+        ...(result.workflow ? { workflow: result.workflow } : {}),
+        ...(result.proxy ? { proxy: result.proxy } : {}),
+        retryOf: result.retryOf,
+        deduped: result.deduped,
+      },
+      result.deduped ? 200 : 201,
+    );
   });
 
   /* ----------------------------------------------------------- permissions */

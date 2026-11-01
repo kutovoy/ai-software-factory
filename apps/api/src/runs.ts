@@ -155,7 +155,7 @@ export function newRunId(): string {
 export async function createRun(
   config: ApiConfig,
   body: CreateRunBody,
-  options: { kind: 'chat' | 'run' },
+  options: { kind: 'chat' | 'run'; retryOf?: string },
 ): Promise<CreatedRun> {
   const factory = body.factory;
   const dir = resolveFactoryRoot(config, factory);
@@ -201,6 +201,7 @@ export async function createRun(
     setupCommands,
     // The workflow owns the permission SLA (ADR-013); pin it into the run input.
     permissionTimeoutMs: config.permissionTimeoutMs,
+    ...(options.retryOf ? { retryOf: options.retryOf } : {}),
   };
 
   await insertRun({
@@ -249,6 +250,80 @@ export async function createRun(
       baseUrl: config.proxyPublicUrl,
       models: input.proxyModels,
     },
+  };
+}
+
+/**
+ * Retry a failed/cancelled chat run as a *new* run (spec `run-lifecycle` › Retry as a new run).
+ *
+ * The original run is immutable: reusing its id would collide with the terminal event and
+ * Temporal replay would re-execute non-idempotent activities. Factory stage runs are owned by
+ * their work item, so they are refused here.
+ */
+export async function retryRun(
+  config: ApiConfig,
+  runId: string,
+): Promise<{
+  run: RunRow;
+  workflow?: CreatedRun['workflow'];
+  proxy?: CreatedRun['proxy'];
+  retryOf: string;
+  deduped: boolean;
+}> {
+  const original = await getRun(runId);
+  if (!original) throw runNotFound(runId);
+
+  if (original.kind !== 'chat') {
+    throw new ApiError(
+      'run_not_retryable',
+      409,
+      'only chat runs can be retried; factory stage runs belong to their work item',
+      { runId, kind: original.kind },
+    );
+  }
+  if (original.status !== 'error' && original.status !== 'cancelled') {
+    throw new ApiError('run_not_retryable', 409, `a ${original.status} run cannot be retried`, {
+      runId,
+      status: original.status,
+    });
+  }
+
+  // Double-submit guard: a retry created within the window is returned instead of a second run.
+  const sql = getSql();
+  const existing = (await sql`
+    select id from runs
+    where input->>'retryOf' = ${runId}
+      and created_at > now() - interval '60 seconds'
+    order by created_at desc
+    limit 1
+  `) as { id: string }[];
+  if (existing[0]) {
+    const child = await getRun(existing[0].id);
+    if (child) return { run: child, retryOf: runId, deduped: true };
+  }
+
+  const input = original.input as RunInput;
+  const created = await createRun(
+    config,
+    {
+      factory: original.factory,
+      prompt: input.prompt?.text ?? '',
+      files: input.prompt?.files,
+      title: input.title ?? undefined,
+      harness: original.harness as RunInput['harness'],
+      model: original.model ?? undefined,
+      runner: original.runner as RunInput['runner'],
+      agent: input.agent,
+    },
+    { kind: 'chat', retryOf: runId },
+  );
+
+  return {
+    run: created.run,
+    workflow: created.workflow,
+    proxy: created.proxy,
+    retryOf: runId,
+    deduped: false,
   };
 }
 
@@ -323,10 +398,19 @@ export async function getRunDetail(runId: string): Promise<{
   permissions: unknown[];
   pendingPermissions: unknown[];
   proxyAttempts: unknown[];
+  retryOf: string | null;
+  retriedBy: string | null;
 }> {
   const run = await getRun(runId);
   if (!run) throw runNotFound(runId);
   const permissions = await listPermissions(runId);
+  const input = run.input as RunInput;
+  const children = (await getSql()`
+    select id from runs
+    where input->>'retryOf' = ${runId}
+    order by created_at asc
+    limit 1
+  `) as { id: string }[];
   return {
     run,
     summary: summarize(run),
@@ -337,5 +421,7 @@ export async function getRunDetail(runId: string): Promise<{
       (permission) => (permission as { decision: string | null }).decision === null,
     ),
     proxyAttempts: await listProxyAttempts(runId),
+    retryOf: input.retryOf ?? null,
+    retriedBy: children[0]?.id ?? null,
   };
 }

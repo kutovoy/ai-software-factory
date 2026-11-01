@@ -63,6 +63,9 @@ export interface RunRow {
   session_ref: string | null;
   error: string | null;
   summary: string | null;
+  /** Present when cancellation was requested through the console (cooperative cancel). */
+  cancel_requested_at?: string | null;
+  cancel_reason?: string | null;
   started_at: string;
   ended_at: string | null;
   cost_usd: string | number | null;
@@ -81,6 +84,10 @@ export interface RunDetail {
   permissions: PermissionRow[];
   pendingPermissions: PermissionRow[];
   proxyAttempts: unknown[];
+  /** Set when this run was created by retrying another run. */
+  retryOf: string | null;
+  /** The run created by retrying this one, when it exists. */
+  retriedBy: string | null;
 }
 
 export interface GateStage {

@@ -179,6 +179,12 @@ services:
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://127.0.0.1:8080/internal/stub-model/v1}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-provider-secret}
       RUNNER_BACKEND: ${RUNNER_BACKEND:-docker}
+      # The worker runs in a container, so it cannot reach a port published on the host's
+      # 127.0.0.1 and the daemon cannot see the worker's filesystem. Sandboxes therefore
+      # join the dedicated `factory-runners` network (worker + sandboxes only, no Postgres
+      # or Temporal) and the workspace is copied in/out with `docker cp`.
+      RUNNER_NETWORK: ${RUNNER_NETWORK:-factory-runners}
+      RUNNER_WORKSPACE_MODE: ${RUNNER_WORKSPACE_MODE:-copy}
       # Model references (ADR-028): the worker resolves env:FACTORY_* at dispatch time.
       FACTORY_MODEL: ${FACTORY_MODEL:-best_llm}
       FACTORY_SMALL_MODEL: ${FACTORY_SMALL_MODEL:-best_llm}
@@ -226,6 +232,12 @@ services:
       - ./runs:/app/runs
       # Real (non-fake) runs lease sibling containers through the docker backend.
       - /var/run/docker.sock:/var/run/docker.sock
+    # Sandboxes join `factory-runners` so the worker can reach the harness by container IP
+    # without publishing a port on the host; the default network still carries Postgres,
+    # Temporal and the API.
+    networks:
+      - default
+      - runners
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     depends_on:
@@ -248,3 +260,10 @@ services:
 
 volumes:
   pgdata:
+
+networks:
+  # Sandboxes only. Kept off the default network so a run cannot reach Postgres, Temporal
+  # or the API directly; the harness still reaches the inference proxy through
+  # `host.docker.internal`.
+  runners:
+    name: factory-runners

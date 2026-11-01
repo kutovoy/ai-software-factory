@@ -40,6 +40,23 @@ export interface DockerRunnerOptions {
   controlTimeoutMs?: number;
   /** Build the default image on demand (defaults to true). */
   buildImage?: boolean;
+  /**
+   * Attach every sandbox to this user-defined docker network instead of publishing an
+   * ephemeral host port. Required when the worker itself runs in a container: a port
+   * published on the host's `127.0.0.1` is not reachable from another container's
+   * loopback, so the harness would never answer its readiness probe.
+   */
+  network?: string;
+  /**
+   * How the workspace reaches the sandbox.
+   *
+   * `bind` (default) mounts the worker-local path into the container — correct when the
+   * worker shares the docker daemon's filesystem, i.e. runs as a host process.
+   * `copy` seeds the container with `docker cp` and copies the workspace back before
+   * artifacts are collected — required when the worker runs in a container, where the
+   * daemon cannot see the worker's filesystem.
+   */
+  workspaceMode?: 'bind' | 'copy';
 }
 
 interface Lease {
@@ -60,8 +77,9 @@ interface ContainerState {
 /**
  * Docker backend: one container per run.
  *
- *   lease   → container with the workspace bind-mounted, harness started inside,
- *             container port mapped to an ephemeral 127.0.0.1 port
+ *   lease   → container with the workspace bind-mounted (or copied in), harness started
+ *             inside, reachable either through a published 127.0.0.1 port (host worker) or
+ *             through a user-defined network (containerised worker)
  *   exec    → `docker exec` streaming stdout/stderr/exit
  *   artifacts → `docker cp` into the run directory, hashed by sha256
  *   kill    → `docker rm -f`, idempotent, workspace removed unless kept
@@ -79,6 +97,8 @@ export class DockerRunnerBackend implements RunnerBackend {
   private readonly readyTimeoutMs: number;
   private readonly controlTimeoutMs: number;
   private readonly buildImage: boolean;
+  private readonly network: string | undefined;
+  private readonly workspaceMode: 'bind' | 'copy';
   private readonly leases = new Map<string, Lease>();
   private readonly builtImages = new Set<string>();
 
@@ -90,6 +110,8 @@ export class DockerRunnerBackend implements RunnerBackend {
     this.readyTimeoutMs = options.readyTimeoutMs ?? 60_000;
     this.controlTimeoutMs = options.controlTimeoutMs ?? 30_000;
     this.buildImage = options.buildImage ?? true;
+    this.network = options.network;
+    this.workspaceMode = options.workspaceMode ?? 'bind';
   }
 
   async lease(input: RunnerSpec): Promise<RunnerHandle> {
@@ -120,15 +142,17 @@ export class DockerRunnerBackend implements RunnerBackend {
     const existing = await this.inspect(containerName);
     if (existing?.running) {
       const workspace = existing.labels['factory.workspace'] ?? spec.workspace ?? '';
-      const port = await this.mappedPort(containerName, spec.harness.port);
+      // Re-attach without touching the workspace: a retried lease must not overwrite the
+      // edits the harness has already made inside the container.
+      const endpoint = await this.harnessEndpoint(containerName, spec.harness.port);
       const handle: RunnerHandle = {
         runnerId: spec.runnerId,
         kind: this.kind,
         workspace,
-        harnessUrl: `http://127.0.0.1:${port}`,
+        harnessUrl: endpoint.url,
         containerId: existing.id,
         containerName,
-        port,
+        ...(endpoint.port === undefined ? {} : { port: endpoint.port }),
       };
       this.leases.set(spec.runnerId, {
         handle,
@@ -158,13 +182,21 @@ export class DockerRunnerBackend implements RunnerBackend {
       `factory.run=${spec.runId}`,
       '--label',
       `factory.workspace=${workspace}`,
-      '-v',
-      `${workspace}:/workspace`,
       '-w',
       '/workspace',
-      '-p',
-      `127.0.0.1::${spec.harness.port}`,
     ];
+
+    if (this.workspaceMode === 'bind') {
+      args.push('-v', `${workspace}:/workspace`);
+    }
+
+    if (this.network) {
+      // A user-defined network lets the worker reach the harness by container IP without
+      // publishing a port on the host, which a containerised worker cannot reach.
+      args.push('--network', this.network);
+    } else {
+      args.push('-p', `127.0.0.1::${spec.harness.port}`);
+    }
 
     if (spec.cpu !== undefined) args.push('--cpus', String(spec.cpu));
     if (spec.memoryMb !== undefined) args.push('--memory', `${spec.memoryMb}m`);
@@ -182,11 +214,30 @@ export class DockerRunnerBackend implements RunnerBackend {
     }
 
     const containerId = run.stdout.trim();
-    let port: number;
+
+    if (this.workspaceMode === 'copy') {
+      // The daemon cannot see the worker's filesystem when the worker runs in a container,
+      // so the prepared workspace travels into the sandbox explicitly.
+      const copied = await runCommand(
+        [this.dockerBin, 'cp', `${workspace}/.`, `${containerName}:/workspace`],
+        { timeoutMs: 10 * 60_000 },
+      );
+      if (copied.code !== 0) {
+        await this.removeContainer(containerName).catch(() => undefined);
+        await removeDir(workspace).catch(() => undefined);
+        throw new RunnerError('runner_unavailable', 'docker cp of the workspace failed', {
+          runnerId: spec.runnerId,
+          containerId,
+          stderr: copied.stderr.slice(-2000),
+        });
+      }
+    }
+
+    let endpoint: { url: string; port?: number };
     try {
-      port = await this.mappedPort(containerName, spec.harness.port);
+      endpoint = await this.harnessEndpoint(containerName, spec.harness.port);
       await waitForReady({
-        url: `http://127.0.0.1:${port}`,
+        url: endpoint.url,
         readyPath: spec.harness.readyPath,
         timeoutMs: spec.readyTimeoutMs || this.readyTimeoutMs,
       });
@@ -205,10 +256,10 @@ export class DockerRunnerBackend implements RunnerBackend {
       runnerId: spec.runnerId,
       kind: this.kind,
       workspace,
-      harnessUrl: `http://127.0.0.1:${port}`,
+      harnessUrl: endpoint.url,
       containerId,
       containerName,
-      port,
+      ...(endpoint.port === undefined ? {} : { port: endpoint.port }),
     };
 
     this.leases.set(spec.runnerId, {
@@ -297,6 +348,21 @@ export class DockerRunnerBackend implements RunnerBackend {
     if (!lease) throw new RunnerError('runner_not_found', `no sandbox for ${runnerId}`);
 
     await mkdir(req.destDir, { recursive: true });
+
+    if (this.workspaceMode === 'copy') {
+      // Bring the sandbox's workspace back before diffing: the harness edited files inside
+      // the container, and the worker's copy is the only place `git diff` can run.
+      const copied = await runCommand(
+        [this.dockerBin, 'cp', `${lease.containerName}:/workspace/.`, lease.workspace],
+        { timeoutMs: 10 * 60_000 },
+      );
+      if (copied.code !== 0) {
+        throw new RunnerError('artifact_not_found', 'cannot copy the workspace back', {
+          runnerId,
+          stderr: copied.stderr.slice(-2000),
+        });
+      }
+    }
 
     if (req.includeGitDiff) {
       const diff = await runCommand(['git', '-C', lease.workspace, 'diff', '--binary']);
@@ -434,6 +500,45 @@ export class DockerRunnerBackend implements RunnerBackend {
     } catch {
       return undefined;
     }
+  }
+
+  /**
+   * Where the worker reaches the harness: a published host port (host worker) or the
+   * container's IP on the configured user-defined network (containerised worker).
+   */
+  private async harnessEndpoint(
+    containerName: string,
+    containerPort: number,
+  ): Promise<{ url: string; port?: number }> {
+    if (this.network) {
+      const address = await this.networkAddress(containerName, this.network);
+      return { url: `http://${address}:${containerPort}` };
+    }
+    const port = await this.mappedPort(containerName, containerPort);
+    return { url: `http://127.0.0.1:${port}`, port };
+  }
+
+  /** Container IP on `network`, read from `docker inspect` (no DNS-name guessing). */
+  private async networkAddress(containerName: string, network: string): Promise<string> {
+    const result = await runCommand(
+      [
+        this.dockerBin,
+        'inspect',
+        '--format',
+        `{{(index .NetworkSettings.Networks "${network}").IPAddress}}`,
+        containerName,
+      ],
+      { timeoutMs: this.controlTimeoutMs },
+    );
+    const address = result.stdout.trim();
+    if (result.code !== 0 || address.length === 0) {
+      throw new RunnerError(
+        'runner_unavailable',
+        `cannot read the address of ${containerName} on network ${network}`,
+        { containerName, network, stderr: result.stderr.slice(-1000) },
+      );
+    }
+    return address;
   }
 
   private async mappedPort(containerName: string, containerPort: number): Promise<number> {

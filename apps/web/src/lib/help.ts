@@ -652,6 +652,18 @@ export const HELP_ENTRIES: HelpEntry[] = [
           'Score detail: label, value, rationale, evidence links, provenance (`rubricHash`, judge model/version), calibration state.',
         ],
       },
+      {
+        kind: 'prose',
+        text:
+          'A failed run shows a failure panel: the cause recorded by the failing activity (`code: message`, not Temporal’s `Activity task failed` wrapper), the code, every failed step, the workflow id and a link into the Temporal UI at `http://localhost:8233/namespaces/default/workflows/<workflowId>`. Known codes (`docker_unavailable`, `model_unresolved`, `runner_unavailable`, `permission_timeout`) carry a remediation hint; anything else points at the workflow history. A cancelled run shows the cancellation reason and actor; a healthy run shows no panel.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Long identifiers stay inside their cell',
+        text:
+          'The pinned commit shows a 12-character short SHA with the full 40-character value in the cell’s `title` and behind its copy button, so the metadata grid never overlaps the harness/model cell on narrow viewports.',
+      },
     ],
     related: [
       { label: 'Runners and sandboxes', href: '/help/concepts/runners-and-sandboxes' },

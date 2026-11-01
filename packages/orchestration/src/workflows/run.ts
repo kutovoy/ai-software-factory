@@ -9,6 +9,7 @@ import {
   workflowInfo,
 } from '@temporalio/workflow';
 import type * as activities from '../activities';
+import { describeFailure } from '../failures';
 import type {
   LeaseInfo,
   PermissionDecisionAck,
@@ -195,7 +196,7 @@ export async function RunWorkflow(input: RunInput): Promise<RunOutcome> {
             stepId: `setup-${index + 1}`,
             kind: 'exec',
             status: 'error',
-            error: error instanceof Error ? error.message : String(error),
+            error: describeFailure(error),
           });
         }
       }
@@ -267,7 +268,8 @@ export async function RunWorkflow(input: RunInput): Promise<RunOutcome> {
           const decision = decisions.get(requestId);
           if (!decision) {
             // SLA exceeded: auto-deny so the harness unblocks, then fail the run.
-            failure = `permission ${action} timed out`;
+            // The console maps `permission_timeout` to a remediation hint.
+            failure = `permission_timeout: permission ${action} timed out`;
             try {
               await harness.respondPermission({ input, requestId, decision: 'deny' });
             } catch {
@@ -292,7 +294,10 @@ export async function RunWorkflow(input: RunInput): Promise<RunOutcome> {
     if (cancelRequested || isCancellation(error)) {
       cancelled = true;
     } else {
-      failure = error instanceof Error ? error.message : String(error);
+      // Temporal hands the workflow an `ActivityFailure` whose message is the wrapper
+      // `Activity task failed`. Record the cause chain instead (code + message) so the run
+      // row, the `workflow-error` step and the terminal summary all say what broke.
+      failure = describeFailure(error);
       await persistence.persistStep({
         runId,
         stepId: 'workflow-error',
@@ -352,7 +357,7 @@ export async function RunWorkflow(input: RunInput): Promise<RunOutcome> {
         stepId: 'artifacts-error',
         kind: 'artifacts',
         status: 'error',
-        error: error instanceof Error ? error.message : String(error),
+        error: describeFailure(error),
       });
     }
   }

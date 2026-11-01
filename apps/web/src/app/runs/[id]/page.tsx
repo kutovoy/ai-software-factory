@@ -5,6 +5,9 @@ import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Table } from '@/components/ui/Table';
 import { CancelRunButton } from '@/components/runs/CancelRunButton';
+import { CopyButton } from '@/components/runs/CopyButton';
+import { FailurePanel } from '@/components/runs/FailurePanel';
+import { RetryRunButton } from '@/components/runs/RetryRunButton';
 import { RunLive } from '@/components/stream/RunLive';
 import { ApiClientError, apiGet, safeGet } from '@/lib/api';
 import {
@@ -14,6 +17,7 @@ import {
   formatTokens,
   statusTone,
 } from '@/lib/format';
+import { shortSha } from '@/lib/failure';
 import type { RunArtifact, RunDetail, RunStep, ScoresResponse } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -62,73 +66,114 @@ export default async function RunDetailPage({
           </p>
         </div>
         <CancelRunButton runId={run.id} disabled={TERMINAL.has(run.status)} />
+        {run.kind === 'chat' && (run.status === 'error' || run.status === 'cancelled') ? (
+          <RetryRunButton runId={run.id} />
+        ) : null}
       </header>
 
       <Card testId="run-meta">
         <CardBody className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
-          <div>
+          <div className="min-w-0" data-testid="run-meta-cell" data-meta="factory">
             <p className="text-xs uppercase tracking-wide text-slate-400">Factory</p>
             <Link
               href={`/factories/${encodeURIComponent(run.factory)}/dashboard`}
-              className="font-mono text-sm text-slate-800 underline decoration-slate-300 underline-offset-2"
+              title={run.factory}
+              className="block truncate font-mono text-sm text-slate-800 underline decoration-slate-300 underline-offset-2"
             >
               {run.factory}
             </Link>
           </div>
-          <div>
+          <div className="min-w-0" data-testid="run-meta-cell" data-meta="commit">
             <p className="text-xs uppercase tracking-wide text-slate-400">Pinned commit</p>
-            <p data-testid="pinned-commit" className="font-mono text-sm text-slate-800">
-              {summary.definitionCommit}
-              {summary.definitionDirty ? ' (dirty)' : ''}
-            </p>
+            <div className="flex items-center gap-2">
+              {/* A 40-char SHA overflowed its column into the harness/model cell: the cell
+                  shows the 12-char short form, the full value lives in `title` and the
+                  copy affordance (and in an sr-only span for screen readers/tests). */}
+              <span
+                data-testid="pinned-commit"
+                title={summary.definitionCommit}
+                className="min-w-0 truncate font-mono text-sm text-slate-800"
+              >
+                {shortSha(summary.definitionCommit)}
+                <span className="sr-only">{summary.definitionCommit}</span>
+                {summary.definitionDirty ? ' (dirty)' : ''}
+              </span>
+              <CopyButton value={summary.definitionCommit} testId="pinned-commit-copy" />
+            </div>
           </div>
-          <div>
+          <div className="min-w-0" data-testid="run-meta-cell" data-meta="harness">
             <p className="text-xs uppercase tracking-wide text-slate-400">Harness / model</p>
-            <p className="font-mono text-sm text-slate-800">
+            <p className="truncate font-mono text-sm text-slate-800" title={`${run.harness} · ${run.model ?? '—'}`}>
               <span data-testid="run-harness">{run.harness}</span>
               {' · '}
               <span data-testid="run-model">{run.model ?? '—'}</span>
             </p>
           </div>
-          <div>
+          <div className="min-w-0" data-testid="run-meta-cell" data-meta="runner">
             <p className="text-xs uppercase tracking-wide text-slate-400">Runner</p>
-            <p className="font-mono text-sm text-slate-800" data-testid="run-runner">
+            <p className="truncate font-mono text-sm text-slate-800" data-testid="run-runner" title={run.runner}>
               {run.runner}
             </p>
           </div>
-          <div>
+          <div className="min-w-0" data-testid="run-meta-cell" data-meta="started">
             <p className="text-xs uppercase tracking-wide text-slate-400">Started</p>
-            <p className="text-sm text-slate-800" data-testid="run-started">
+            <p className="truncate text-sm text-slate-800" data-testid="run-started">
               {formatDateTime(summary.startedAt)}
             </p>
           </div>
-          <div>
+          <div className="min-w-0" data-testid="run-meta-cell" data-meta="duration">
             <p className="text-xs uppercase tracking-wide text-slate-400">Duration</p>
-            <p className="text-sm text-slate-800" data-testid="run-duration">
+            <p className="truncate text-sm text-slate-800" data-testid="run-duration">
               {formatDuration(summary.startedAt, summary.endedAt)}
             </p>
           </div>
-          <div>
+          <div className="min-w-0" data-testid="run-meta-cell" data-meta="cost">
             <p className="text-xs uppercase tracking-wide text-slate-400">Cost</p>
-            <p className="text-sm text-slate-800" data-testid="run-cost">
+            <p className="truncate text-sm text-slate-800" data-testid="run-cost">
               {formatCost(summary.costUsd)}
             </p>
           </div>
-          <div>
+          <div className="min-w-0" data-testid="run-meta-cell" data-meta="tokens">
             <p className="text-xs uppercase tracking-wide text-slate-400">Tokens</p>
-            <p className="text-sm text-slate-800" data-testid="run-tokens">
+            <p className="truncate text-sm text-slate-800" data-testid="run-tokens">
               in {formatTokens(summary.inputTokens)} · out {formatTokens(summary.outputTokens)}
             </p>
           </div>
         </CardBody>
-        {run.error ? (
-          <CardBody className="border-t border-slate-100">
-            <p data-testid="run-error" className="text-sm text-red-700">
-              <span className="font-semibold">error:</span> {run.error}
-            </p>
-          </CardBody>
-        ) : null}
       </Card>
+
+      <FailurePanel run={run} steps={steps} summary={run.summary} />
+
+      {detail.retryOf || detail.retriedBy ? (
+        <Card testId="run-retry-lineage">
+          <CardBody className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+            {detail.retryOf ? (
+              <p className="text-slate-700">
+                Retried from{' '}
+                <Link
+                  href={`/runs/${encodeURIComponent(detail.retryOf)}`}
+                  className="font-mono underline decoration-slate-300 underline-offset-2"
+                  data-testid="run-retried-from"
+                >
+                  {detail.retryOf}
+                </Link>
+              </p>
+            ) : null}
+            {detail.retriedBy ? (
+              <p className="text-slate-700">
+                Retried as{' '}
+                <Link
+                  href={`/runs/${encodeURIComponent(detail.retriedBy)}`}
+                  className="font-mono underline decoration-slate-300 underline-offset-2"
+                  data-testid="run-retried-by"
+                >
+                  {detail.retriedBy}
+                </Link>
+              </p>
+            ) : null}
+          </CardBody>
+        </Card>
+      ) : null}
 
       <Card testId="run-scores-card">
         <CardHeader
