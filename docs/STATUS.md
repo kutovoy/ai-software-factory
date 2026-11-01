@@ -12,6 +12,41 @@ database, events, logs, API responses or definitions.
 Next: **Phase 6b** (auth/users, multi-tenant/ops, a managed secret provider behind the same
 registry).
 
+### Lights-off readiness: stage hand-off + complete patch capture (2026-11-01)
+
+A real-model lights-off run (`hello-nextjs`, all gates `agent`, `mergePolicy: auto_on_green`,
+`best_llm` via opencode on `local-docker`) exposed two loop defects:
+
+1. **Patch capture dropped new files.** `git diff --binary` returns nothing for untracked files,
+   so an implement agent that creates a fresh `site/` tree produced an empty `patch.diff`; the
+   forge committed an empty patch and the PR carried no change. `gitDiff` now stages everything
+   (`git add -A`) and diffs the working tree against `HEAD`, covering new, modified and already
+   staged files (both the local runner and the docker artifact collection).
+2. **Downstream stages ran on a clean tree.** Every stage cloned the definition commit, so review
+   and verify inspected a workspace without the implement change: verify correctly reported FAIL
+   and the agent gate approved anyway. `RunInput.patchRunId` carries the implement run id; the
+   runner applies `runs/<implementRunId>/patch.diff` to the fresh checkout before the sandbox
+   starts (`RepoSpec.patch`), so review/verify see the change. Implement always starts clean, so
+   its patch stays a diff against the definition commit. The id survives `continueAsNew`.
+
+Also fixed: `ship` is a forge/merge stage, not an agent run (the graph compiler already documents
+that). It now runs the `gate` phase only instead of spawning a redundant agent run with the raw
+work-item prompt (that run used to re-implement the task in a throwaway workspace).
+
+Verification (2026-11-01): `bun run ci` → 512 pass / 0 fail (6 new runner tests in
+`packages/runners/test/patch.test.ts`); work item `wi_01M6B5097TGHK0KKZQN9BB3C4G` ran
+triage → spec → implement → review (2 reviewers) → verify → ship to `done` with no human gate
+decisions (all six gates `automatic: true`), a merged fake-forge PR #1 (`merged: true` in the
+workflow result), and a 2241-byte patch containing `site/package.json`, `site/app/layout.tsx`,
+`site/app/page.tsx`, `site/next.config.ts`, `site/README.md` with `<h1>Hello, world!</h1>`.
+Review and verify both saw the applied patch and returned PASS. The first attempt
+(`wi_01M6B2Q33WN3YG4KE50NDA9E8G`) exposed the empty-patch bug: it reached `done` with a 0-byte
+patch and a verify run that reported FAIL against a clean tree.
+
+Deferred: an agent gate still resolves `approve` whenever the stage run ends `ok`; the agent's
+textual verdict is advisory. A structured verdict channel (so a FAIL report can reject or
+request changes without a human) is a follow-up design change.
+
 ### Run actions: contextual cancel + work-item retry (fix-run-actions, 2026-11-01)
 
 A finished run no longer renders a dead "Cancel run" button, and an escalated item is no

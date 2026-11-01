@@ -105,6 +105,7 @@ export async function FactoryWorkflow(
   let prUrl = resume.prUrl;
   let prNumber = resume.prNumber;
   let reviewVerdict = resume.reviewVerdict;
+  let patchRunId = resume.patchRunId;
 
   let paused = input.autonomy.paused;
   let pauseActor: string | null = null;
@@ -323,6 +324,9 @@ export async function FactoryWorkflow(
       title: input.title,
       prompt: input.prompt,
       ...(input.repo ? { repo: input.repo } : {}),
+      // Implement always starts from a clean checkout: its patch is the PR's content, so it
+      // must be a diff against the definition commit, not against a previous attempt.
+      ...(stage !== 'implement' && patchRunId ? { patchRunId } : {}),
       ...(input.permissionTimeoutMs ? { permissionTimeoutMs: input.permissionTimeoutMs } : {}),
     };
 
@@ -403,7 +407,9 @@ export async function FactoryWorkflow(
 
         const stageInput: StageWorkflowInput = {
           ...common,
-          phase: 'run',
+          // `ship` is a forge/merge stage, not an agent run: it only resolves the deploy
+          // gate and the parent then merges (or hands the PR to the merge queue).
+          phase: stage === 'ship' ? 'gate' : 'run',
           gate: node.gate,
         };
 
@@ -453,6 +459,9 @@ export async function FactoryWorkflow(
 
     // implement: branch + commit + PR referencing the work item (forge abstraction).
     if (stage === 'implement' && result.runId) {
+      // Downstream stages (review, verify) run on this patch: they checkout the definition
+      // commit and apply it, so they inspect the change instead of a clean tree.
+      patchRunId = result.runId;
       const opened = await forge.forgeOpenPullRequest({
         workItemId: input.workItemId,
         factory: input.factory,
@@ -693,6 +702,7 @@ export async function FactoryWorkflow(
           ...(prUrl ? { prUrl } : {}),
           ...(prNumber ? { prNumber } : {}),
           ...(reviewVerdict ? { reviewVerdict } : {}),
+          ...(patchRunId ? { patchRunId } : {}),
         },
       });
     }

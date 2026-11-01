@@ -269,6 +269,8 @@ export async function prepareWorkspace(repo?: RepoSpec, workspace?: string): Pro
     await runOrThrow(['git', '-C', dir, 'checkout', '--detach', commit], {
       errorCode: 'runner_unavailable',
     });
+    await rememberBase(dir, commit);
+    await applyRepoPatch(dir, repo);
     return dir;
   }
 
@@ -281,10 +283,48 @@ export async function prepareWorkspace(repo?: RepoSpec, workspace?: string): Pro
         errorCode: 'runner_unavailable',
       });
     }
+    await rememberBase(dir, repo.commit);
+    await applyRepoPatch(dir, repo);
     return dir;
   }
 
   return dir;
+}
+
+/**
+ * Records the checkout's base commit inside `.git` (never tracked). Patch capture diffs
+ * against it, so an agent that commits its work still produces a patch against the base.
+ */
+async function rememberBase(dir: string, commit?: string): Promise<void> {
+  const base =
+    commit ??
+    (await runOrThrow(['git', '-C', dir, 'rev-parse', 'HEAD'], {
+      errorCode: 'runner_unavailable',
+    })).stdout.trim();
+  await writeFile(join(dir, '.git', 'factory-base'), `${base}\n`, 'utf8').catch(() => undefined);
+}
+
+/**
+ * Applies a prior stage's `patch.diff` to the fresh checkout, so downstream stages
+ * (review, verify, ship) see the change the upstream stage produced. The patch is a host
+ * path outside the sandbox: it is read here, never by the agent.
+ */
+async function applyRepoPatch(dir: string, repo: RepoSpec): Promise<void> {
+  if (!repo.patch) return;
+  if (!existsSync(repo.patch)) {
+    throw new RunnerError('invalid_spec', `repo.patch does not exist: ${repo.patch}`, {
+      path: repo.patch,
+    });
+  }
+  const applied = await runCommand(['git', '-C', dir, 'apply', '--whitespace=nowarn', repo.patch], {
+    timeoutMs: 120_000,
+  });
+  if (applied.code !== 0) {
+    throw new RunnerError('runner_unavailable', 'cannot apply the stage patch', {
+      path: repo.patch,
+      stderr: applied.stderr.slice(-2000),
+    });
+  }
 }
 
 async function isEmptyDir(dir: string): Promise<boolean> {
@@ -298,8 +338,20 @@ export async function isGitRepo(dir: string): Promise<boolean> {
 
 export async function gitDiff(dir: string): Promise<string | undefined> {
   if (!(await isGitRepo(dir))) return undefined;
-  const result = await runCommand(['git', '-C', dir, 'diff', '--binary']);
-  return result.code === 0 ? result.stdout : undefined;
+  // `git diff` alone misses two things an agent commonly leaves behind: untracked files
+  // (a brand-new `site/` directory) and changes the agent already staged. Stage everything
+  // first, then diff the working tree against the checkout's base commit, so new, modified,
+  // staged and committed work all land in the patch the forge commits.
+  await runCommand(['git', '-C', dir, 'add', '-A']).catch(() => undefined);
+  const base = await readFile(join(dir, '.git', 'factory-base'), 'utf8')
+    .then((value) => value.trim())
+    .catch(() => '');
+  const against = base.length > 0 ? base : 'HEAD';
+  const result = await runCommand(['git', '-C', dir, 'diff', '--binary', against]);
+  if (result.code === 0) return result.stdout;
+  // No HEAD yet (an empty repository): fall back to the index diff.
+  const fallback = await runCommand(['git', '-C', dir, 'diff', '--binary', '--cached']);
+  return fallback.code === 0 ? fallback.stdout : undefined;
 }
 
 /** Copies workspace-relative paths into `destDir` (local backend). */

@@ -10,6 +10,11 @@ export interface RepoSpec {
   url?: string;
   /** Full SHA (or ref) to pin. Defaults to the source repo's HEAD. */
   commit?: string;
+  /**
+   * Host path to a unified diff (`runs/<runId>/patch.diff`) applied to the checkout before
+   * the sandbox starts. Downstream stages see the change the upstream stage produced.
+   */
+  patch?: string;
 }
 
 export interface HarnessSpec {

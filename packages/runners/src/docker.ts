@@ -17,6 +17,7 @@ import {
 } from './protocol';
 import { assertNoInferenceEnv, resolveSecrets, scrubSecrets, type ResolvedSecret } from './secrets';
 import {
+  gitDiff,
   hashArtifacts,
   prepareWorkspace,
   removeDir,
@@ -366,9 +367,9 @@ export class DockerRunnerBackend implements RunnerBackend {
     }
 
     if (req.includeGitDiff) {
-      const diff = await runCommand(['git', '-C', lease.workspace, 'diff', '--binary']);
-      if (diff.code === 0 && diff.stdout.length > 0) {
-        await writeFile(join(req.destDir, 'patch.diff'), diff.stdout, 'utf8');
+      const diff = await gitDiff(lease.workspace);
+      if (diff !== undefined && diff.length > 0) {
+        await writeFile(join(req.destDir, 'patch.diff'), diff, 'utf8');
       }
     }
 

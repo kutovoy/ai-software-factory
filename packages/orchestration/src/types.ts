@@ -35,6 +35,12 @@ export interface RunInput {
   agent?: string;
   runner: RunnerKindName;
   repo?: { path?: string; url?: string; commit?: string };
+  /**
+   * Run whose `patch.diff` is applied to this run's workspace after checkout. Set on
+   * stages that must see an upstream stage's change (review/verify run on the implement
+   * patch); absent for the first stage of a loop.
+   */
+  patchRunId?: string;
   /** First human message. Chat and factory runs share this field (ADR-002). */
   prompt: RunPrompt | null;
   kind: 'chat' | 'run';
@@ -259,6 +265,8 @@ export interface FactoryWorkflowResume {
   prUrl?: string;
   prNumber?: number;
   reviewVerdict?: ReviewVerdict;
+  /** Implement run whose patch downstream stages run on (carried across continueAsNew). */
+  patchRunId?: string;
 }
 
 export interface FactoryWorkflowInput {
@@ -375,6 +383,8 @@ export interface StageWorkflowInput {
   title: string;
   prompt: string;
   repo?: { path?: string };
+  /** Upstream run whose patch is applied to this stage's workspace (review/verify). */
+  patchRunId?: string;
   permissionTimeoutMs?: number;
   /** Evidence attached to a gate-only child (review verdict / findings). */
   verdict?: ReviewVerdict;

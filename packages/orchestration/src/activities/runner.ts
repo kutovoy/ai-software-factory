@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
@@ -176,6 +177,12 @@ export async function leaseRunner(args: {
   }
 
   const backend = backendFor(args.input);
+  // A downstream stage (review/verify) runs on the upstream stage's patch: the workspace
+  // is a fresh checkout at the definition commit, so the implement diff is applied here
+  // (host-side) before the sandbox starts.
+  const patchFile = args.input.patchRunId
+    ? patchPath(config.runsDir, args.input.patchRunId)
+    : undefined;
   const handle = await backend
     .lease({
       runId: args.input.runId,
@@ -183,6 +190,7 @@ export async function leaseRunner(args: {
         path: args.input.repo?.path ?? args.input.factoryRoot,
         url: args.input.repo?.url,
         commit: args.input.repo?.commit ?? args.input.definitionCommit,
+        ...(patchFile && existsSync(patchFile) ? { patch: patchFile } : {}),
       },
       harness: {
         command: harnessCommandWithProxyEnv(args.harnessEnv, args.input.runId),

@@ -122,6 +122,7 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
       ...(input.agent ? { agent: input.agent } : {}),
       runner: input.runner,
       ...(input.repo ? { repo: input.repo } : {}),
+      ...(input.patchRunId ? { patchRunId: input.patchRunId } : {}),
       prompt: { text: prompt },
       kind: 'run',
       title: `${input.stage}: ${input.title}`,
