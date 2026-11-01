@@ -17,7 +17,8 @@
     "worker": "bun packages/orchestration/src/worker.ts",
     "migrate": "bun scripts/migrate.ts",
     "smoke": "bash scripts/smoke.sh",
-    "ci": "bash scripts/ci.sh"
+    "ci": "bash scripts/ci.sh",
+    "factory:delete": "bun scripts/delete-factory.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.2.0",

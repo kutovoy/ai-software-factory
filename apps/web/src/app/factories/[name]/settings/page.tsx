@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { GithubIntegrationForm } from '@/components/integrations/GithubIntegrationForm';
 import { ReadOnlyNotice } from '@/components/factory/ReadOnlyNotice';
 import { Badge } from '@/components/ui/Badge';
@@ -289,6 +290,32 @@ export default async function SettingsPage({ params }: { params: Promise<{ name:
           description="The API did not return this factory's manifest, so there is nothing to display."
         />
       )}
+
+      <Card testId="settings-delete-factory">
+        <CardHeader
+          title="Delete this factory"
+          hint="Git-backed removal — the console never writes the worktree"
+        />
+        <CardBody className="space-y-2 text-sm text-slate-700">
+          <p>
+            There is no delete button by design. Deleting means removing the definition directory, pausing its
+            automations and clearing its read-model rows; git history keeps the definition.
+          </p>
+          <pre className="overflow-x-auto rounded bg-slate-50 px-3 py-2 font-mono text-[11px] text-slate-700">
+            bun scripts/delete-factory.ts {factory} --yes
+          </pre>
+          <p className="text-xs text-slate-500">
+            The script refuses while work items are active or runs are live (use <span className="font-mono">--force</span>{' '}
+            to override), then reminds you to commit the removal.
+          </p>
+          <Link
+            href="/help/factories/delete"
+            className="inline-block text-xs underline decoration-slate-300 underline-offset-2"
+          >
+            How deletion works →
+          </Link>
+        </CardBody>
+      </Card>
 
       <div
         data-testid="settings-killswitch-note"

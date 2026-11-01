@@ -1265,6 +1265,61 @@ export const HELP_ENTRIES: HelpEntry[] = [
     ],
   },
   {
+    slug: 'factories/delete',
+    title: 'Delete a factory',
+    section: 'factories',
+    status: 'Current behaviour — definitions are git-backed files',
+    summary:
+      'Remove a factory directory, pause its automations and purge its read-model rows with a script; commit the removal.',
+    blocks: [
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Deletion is a git change, not a button',
+        text:
+          'The console never writes the worktree (ADR-012), so there is no delete button. Removing `factories/<name>/` deletes the definition; the script below also pauses automations and clears the read-model rows so old runs and items do not linger in lists. Git history keeps the definition if you need it back.',
+      },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Check for live work',
+            detail:
+              'The script refuses while the factory has active work items or pending/running runs. Cancel or retry them first, or pass `--force` if you accept losing in-flight work.',
+            command: 'curl -s "localhost:8080/api/v1/work-items?factory=<name>"',
+            expected: 'No `active` items and no `pending`/`running` runs.',
+          },
+          {
+            title: 'Run the delete script',
+            detail:
+              'It pauses the factory automations, purges rows with a `factory` column, and removes the directory. Add `--keep-db` to keep history.',
+            command: 'bun scripts/delete-factory.ts <name> --yes',
+            expected: 'Automations paused, rows reported, directory removed.',
+          },
+          {
+            title: 'Commit the removal',
+            detail:
+              'The definition lives in git; commit so every checkout agrees the factory is gone.',
+            command: 'git add -A && git commit -m "chore: remove factory <name>"',
+            expected: 'The factory disappears from the switcher after the API reloads.',
+          },
+        ],
+      },
+      {
+        kind: 'list',
+        items: [
+          'Deleted: the definition directory, automation schedules, and read-model rows (runs, items, scores, benchmarks, proposals, integrations, MCP rows).',
+          'Kept: git history, run directories under `runs/` (unless you remove them), and any artifact you exported.',
+          'Irreversible from the console; re-adding means restoring the directory from git and committing again.',
+        ],
+      },
+    ],
+    related: [
+      { label: 'Add a factory', href: '/help/factories/add' },
+      { label: 'Settings', href: '/factories/hello-nextjs/settings' },
+    ],
+  },
+  {
     slug: 'factories/add',
     title: 'Add a factory',
     section: 'factories',
