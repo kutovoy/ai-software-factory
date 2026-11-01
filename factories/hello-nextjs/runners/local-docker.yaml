@@ -1,0 +1,11 @@
+description: Docker runner for the hello-nextjs factory.
+failureSessionRetentionMinutes: 30
+instanceShape:
+  memoryGb: 4
+  vcpus: 2
+platform:
+  arch: x86_64
+  linux:
+    dockerImage: factory-runner:local
+  os: linux
+setupCommands: []
