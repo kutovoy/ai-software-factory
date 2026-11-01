@@ -98,6 +98,21 @@ describe('describeFailure', () => {
     expect(describeFailure(error)).toBe('Activity task failed');
   });
 
+  test('a Node system error keeps its ALL-CAPS code exactly once', () => {
+    const socket = Object.assign(
+      new Error(
+        'ECONNRESET: The socket connection was closed unexpectedly. For more information, pass `verbose: true`',
+      ),
+      { code: 'ECONNRESET' },
+    );
+    const error = new TypeError('fetch failed', { cause: socket });
+
+    const text = describeFailure(error);
+    expect(text.startsWith('ECONNRESET: ')).toBe(true);
+    expect(text.match(/ECONNRESET/g)?.length).toBe(1);
+    expect(text).toContain('The socket connection was closed unexpectedly');
+  });
+
   test('non-Error throwables and empty input stay readable', () => {
     expect(describeFailure('lease failed')).toBe('lease failed');
     expect(describeFailure(undefined)).toBe('run failed');

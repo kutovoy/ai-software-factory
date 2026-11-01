@@ -811,8 +811,22 @@ export class OpencodeAdapter implements HarnessAdapter {
 
     // MCP wiring + per-agent permission globs travel with the session (ADR-027). The
     // config holds `{env:NAME}` templates only — never a credential value (ADR-026).
-    const sessionConfig = req.mcp ? buildOpencodeSessionConfig(req.mcp) : undefined;
-    if (sessionConfig) body.config = sessionConfig;
+    // Factory agents travel the same way: opencode rejects `agent: "triage"` unless the
+    // agent is declared in the session config.
+    const config: Record<string, unknown> = req.mcp ? { ...buildOpencodeSessionConfig(req.mcp) } : {};
+    if (req.agents && req.agents.length > 0) {
+      const existing = (config.agent as Record<string, Record<string, unknown>> | undefined) ?? {};
+      const agents: Record<string, Record<string, unknown>> = { ...existing };
+      for (const agent of req.agents) {
+        agents[agent.name] = {
+          ...(agents[agent.name] ?? {}),
+          description: agent.description ?? agent.name,
+          prompt: agent.prompt,
+        };
+      }
+      config.agent = agents;
+    }
+    if (Object.keys(config).length > 0) body.config = config;
 
     const response = await this.transport.request<{ data?: SessionInfo }>(
       'POST',
@@ -833,7 +847,7 @@ export class OpencodeAdapter implements HarnessAdapter {
       sessionRef,
       harnessUrl: this.baseUrl,
       model: req.model ?? formatModelRef(info?.model),
-      ...(sessionConfig
+      ...(req.mcp
         ? {
             meta: {
               mcp: {

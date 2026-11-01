@@ -8,6 +8,7 @@ import { isCancelRequested, listSteps, setRunSessionRef, upsertStep } from '../d
 import { pumpSegment } from '../pump';
 import { appendEvent, recordPermissionRequest } from './persist';
 import {
+  agentDefinitionsFor,
   capabilitiesOf,
   dropStream,
   ensureSession,
@@ -181,7 +182,11 @@ export async function pumpEvents(args: {
   // prompt and left a real-harness run streaming forever. The durable `prompt` step is the
   // marker: it survives activity retries and a worker restart (where the adapter session is
   // recreated and would otherwise be prompted twice).
-  const promptParts = promptPartsFor(args.input.prompt);
+  const agentDefinitions = agentDefinitionsFor(args.input);
+  const activeAgent = args.input.agent
+    ? agentDefinitions?.find((agent) => agent.name === args.input.agent)
+    : undefined;
+  const promptParts = promptPartsFor(args.input.prompt, activeAgent);
   const prompted = (await listSteps(runId)).some(
     (step) => (step as { step_id?: string }).step_id === 'prompt',
   );
@@ -189,7 +194,7 @@ export async function pumpEvents(args: {
     try {
       await adapter.sendPrompt(handle, promptParts, {
         ...(args.input.model ? { model: args.input.model } : {}),
-        ...(args.input.agent ? { agent: args.input.agent } : {}),
+        // Factory agent names are not harness agents; their instructions are in the prompt.
       });
       await upsertStep({
         runId,
@@ -293,14 +298,20 @@ export async function respondPermission(args: {
 
 /**
  * Builds the prompt parts for the first turn. Files are passed as sandbox paths; the adapter
- * resolves them inside the runner. Text-only prompts are the common case.
+ * resolves them inside the runner. A factory agent's instructions are prepended because
+ * harness agents are not the factory's agents (opencode rejects `agent: "triage"`).
  */
 function promptPartsFor(
   prompt: { text?: string; files?: string[] } | null | undefined,
+  agent?: { name: string; description?: string; prompt: string },
 ): PromptPart[] {
   if (!prompt) return [];
   const parts: PromptPart[] = [];
-  if (prompt.text && prompt.text.trim() !== '') parts.push({ type: 'text', text: prompt.text });
+  const preamble = agent
+    ? `You are the "${agent.name}" agent in this factory.${agent.description ? ` ${agent.description}` : ''}\n\n${agent.prompt}`
+    : '';
+  const text = [preamble, prompt.text ?? ''].filter((part) => part.trim() !== '').join('\n\n---\n\n');
+  if (text.trim() !== '') parts.push({ type: 'text', text });
   for (const file of prompt.files ?? []) parts.push({ type: 'file', path: file });
   return parts;
 }

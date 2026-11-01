@@ -14,7 +14,12 @@ export type KnownFailureCode =
   | 'runner_unavailable'
   | 'permission_timeout';
 
-const CODE_PREFIX = /^\s*([a-z][a-z0-9_]*)\s*:/;
+/**
+ * Factory codes are snake_case (`docker_unavailable`); Node/system errors are ALL CAPS
+ * (`ECONNRESET`, `ENOENT`) and undici prefixes them into the message. A class name like
+ * `Error` matches neither, so it is never mistaken for a code.
+ */
+const CODE_PREFIX = /^\s*((?:[a-z][a-z0-9_]*)|(?:[A-Z][A-Z0-9_]*))\s*:/;
 
 /** Extracts `<code>` from a `<code>: <message>` failure text, when present. */
 export function failureCode(text: string | null | undefined): string | undefined {

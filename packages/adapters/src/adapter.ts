@@ -38,6 +38,11 @@ export interface StartSessionRequest {
   model?: string;
   /** Harness-native agent/subagent name. */
   agent?: string;
+  /**
+   * Factory agent definitions (name + instructions). Adapters that support custom agents
+   * register them with the harness so `agent: "triage"` resolves instead of failing.
+   */
+  agents?: HarnessAgentDefinition[];
   title?: string;
   /** Workspace directory the harness should operate in (inside the runner sandbox). */
   workspace?: string;
@@ -48,6 +53,13 @@ export interface StartSessionRequest {
    * adapters render credentials as `{env:NAME}` templates and never see values.
    */
   mcp?: McpSessionWiring;
+}
+
+export interface HarnessAgentDefinition {
+  name: string;
+  description?: string;
+  /** The agent's instructions (the Markdown body of `agents/<name>/agent.md`). */
+  prompt: string;
 }
 
 export interface SessionHandle {

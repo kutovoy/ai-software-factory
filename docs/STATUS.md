@@ -23,8 +23,8 @@ repo (keyring + `deb [arch=$(dpkg --print-architecture)]` for the image's own `V
 on arm64 here). No daemon. `docker compose exec worker docker version` prints client 29.9.2 against server
 29.7.2, and `docker image inspect factory-runner:local` succeeds from inside the worker.
 
-**Containerised worker.** Installing the CLI exposed three more defects that only appear when the worker is
-itself a container:
+**Containerised worker.** Installing the CLI exposed several more defects that only appear when the worker
+is itself a container:
 
 - A sandbox port published on the host's `127.0.0.1` is not reachable from another container's loopback, and
   the docker daemon cannot see the worker's filesystem (a `-v` bind mount pointed at `/tmp/factory-run-*`
@@ -62,22 +62,25 @@ narrow widths. A failure panel shows the message, the code (parsed from the `<co
 schema change), each failed step, the workflow id with a copy affordance and a link to
 `http://localhost:8233/namespaces/default/workflows/<workflowId>`, plus a remediation hint for
 `docker_unavailable`, `model_unresolved`, `runner_unavailable`, `permission_timeout` and a generic fallback.
-A cancelled run shows its reason and actor; a healthy run renders no panel.
+A cancelled run shows its reason and actor; a healthy run renders no panel. The code prefix is parsed for
+factory snake_case codes and Node's ALL-CAPS ones (`ECONNRESET`), and `describeFailure` does not repeat a code
+that the message already carries.
 
 Verification (2026-10-31):
 
 ```
 docker compose exec worker docker version → client 29.9.2 / server 29.7.2 (socket usable)
-bun run ci                     → typecheck clean; 494 pass / 126 skip / 0 fail
+bun run ci                     → typecheck clean; 503 pass / 126 skip / 0 fail
 docker compose up -d --build   → api, worker, web, postgres, temporal healthy
 bash scripts/smoke.sh          → SMOKE PASSED
 cd apps/web && bunx playwright test → 42 passed (failure panel + Temporal link on the newest failed
                                  run, cancelled panel, meta cells non-overlapping at 1280/900/600px
                                  with no page overflow)
 UI_AUDIT=1 bunx playwright test audit-deep.spec.ts → 36 routes, 0 with problems
-real run run_mvxdk5md_41eddbfb → status ok, harness opencode, model best_llm, 10464 in / 91 out tokens,
-                                 events: run.started, message.delta ×7, tool.call.started,
-                                 tool.call.completed, message.completed ×2, usage.updated ×4, run.completed
+real run run_mvxea0vq_d0f54acc → status ok, harness opencode, model best_llm, 19622 in / 719 out tokens,
+                                 events: run.started, message.delta ×152, tool.call.started/completed ×9,
+                                 message.completed, usage.updated ×12, run.completed
+real run run_mvxdk5md_41eddbfb → status ok (first tool-using chat: read README.md, 10464 in / 91 out)
 ```
 
 Caveats: the sandbox image fetches `@ai-sdk/openai-compatible` on first use, so a run needs outbound network;

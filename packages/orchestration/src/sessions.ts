@@ -4,6 +4,7 @@ import {
   type AdapterCapabilities,
   type FactoryEvent,
   type HarnessAdapter,
+  type HarnessAgentDefinition,
   type McpSessionWiring,
   type SessionHandle,
 } from '@factory/adapters';
@@ -93,6 +94,33 @@ export function mcpWiringFor(input: RunInput): McpSessionWiring | undefined {
   }
 }
 
+/**
+ * Factory agent instructions for the harness (spec `factory-loop`). opencode rejects
+ * `agent: "triage"` unless that agent is declared, so every agent resource with a body is
+ * sent with the session and the run's `agent` resolves to its own instructions.
+ */
+export function agentDefinitionsFor(input: RunInput): HarnessAgentDefinition[] | undefined {
+  try {
+    const { definition } = loadDefinition(input.factoryRoot);
+    if (!definition) return undefined;
+    const agents: HarnessAgentDefinition[] = [];
+    for (const resource of definition.resources) {
+      if (resource.kind !== 'agent') continue;
+      const body = resource.body?.trim();
+      if (!body) continue;
+      const description = (resource.doc as { description?: unknown } | null)?.description;
+      agents.push({
+        name: resource.name,
+        ...(typeof description === 'string' ? { description } : {}),
+        prompt: body,
+      });
+    }
+    return agents.length > 0 ? agents : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Returns the cached event stream for a run, creating one from the session if absent. */
 export function getOrCreateStream(entry: SessionEntry, runId: string): StreamEntry {
   const existing = streams.get(runId);
@@ -135,11 +163,13 @@ export async function ensureSession(
   });
 
   const mcp = mcpWiringFor(input);
+  const agents = agentDefinitionsFor(input);
 
   let handle = await adapter.startSession({
     runId: input.runId,
     model: input.model,
-    agent: input.agent,
+    // Factory agents are not opencode agents; their instructions travel in the prompt.
+    agent: agents ? undefined : input.agent,
     title: input.title ?? `run ${input.runId}`,
     workspace: input.workspace,
     metadata: { factory: input.factory, definitionCommit: input.definitionCommit },

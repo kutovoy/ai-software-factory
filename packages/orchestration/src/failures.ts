@@ -33,10 +33,11 @@ const WRAPPER_MESSAGES = new Set([
 ]);
 
 /**
- * Codes are lower_snake_case (`docker_unavailable`). Error *types* that are class names
- * (`RunnerError`, `Error`) are not codes and must not be shown as one.
+ * Factory codes are lower_snake_case (`docker_unavailable`); Node/system errors are ALL CAPS
+ * (`ECONNRESET`, `ENOENT`). Error *types* that are class names (`RunnerError`, `Error`) match
+ * neither and must not be shown as a code.
  */
-const CODE_PATTERN = /^[a-z][a-z0-9_]*$/;
+const CODE_PATTERN = /^(?:[a-z][a-z0-9_]*|[A-Z][A-Z0-9_]*)$/;
 
 export interface FailureLink {
   /** Machine-readable code, when the chain carries one. */
@@ -139,7 +140,11 @@ export function describeFailure(error: unknown): string {
   let text: string;
   if (deepest) {
     text = context.length > 0 ? `${deepest} (${context.join(' · ')})` : deepest;
-    if (code) text = `${code}: ${text}`;
+    // Node's fetch errors already carry their code in the message ("ECONNRESET: the socket…");
+    // do not repeat it.
+    if (code && !text.toLowerCase().startsWith(`${code.toLowerCase()}:`)) {
+      text = `${code}: ${text}`;
+    }
   } else if (code) {
     text = code;
   } else {
