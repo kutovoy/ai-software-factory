@@ -1,5 +1,5 @@
 
-import type { FactoryEvent } from '@factory/adapters';
+import type { FactoryEvent, PromptPart } from '@factory/adapters';
 import { AdapterError } from '@factory/adapters';
 import { loadConfig } from '../config';
 import { harnessPasswordFor } from '../harness-auth';
@@ -155,7 +155,10 @@ export async function pumpEvents(args: {
     }
   }
 
-  const segment = await pumpSegment({
+  // Start consuming before prompting: `streamEvents()` is an async generator, so the SSE
+  // connection only opens on the first `next()`. Prompting first loses early events
+  // (including `session.idle`) and leaves the run waiting until the activity times out.
+  const pumpPromise = pumpSegment({
     runId,
     adapter,
     handle,
@@ -172,6 +175,23 @@ export async function pumpEvents(args: {
       sleep,
     },
   });
+
+  // The prompt is sent once per session. A resumed session (worker restart) already got it.
+  const promptParts = promptPartsFor(args.input.prompt);
+  if (!args.sessionRef && promptParts.length > 0) {
+    try {
+      await adapter.sendPrompt(handle, promptParts, {
+        ...(args.input.model ? { model: args.input.model } : {}),
+        ...(args.input.agent ? { agent: args.input.agent } : {}),
+      });
+    } catch (error) {
+      dropStream(runId);
+      await pumpPromise.catch(() => undefined);
+      throw error;
+    }
+  }
+
+  const segment = await pumpPromise;
 
   const droppedEvents = adapter.getStats?.().droppedEvents ?? 0;
 
@@ -255,4 +275,18 @@ export async function respondPermission(args: {
   const entry = getSession(args.input.runId);
   if (!entry) return;
   await entry.adapter.respondToPermission(entry.handle, args.requestId, args.decision);
+}
+
+/**
+ * Builds the prompt parts for the first turn. Files are passed as sandbox paths; the adapter
+ * resolves them inside the runner. Text-only prompts are the common case.
+ */
+function promptPartsFor(
+  prompt: { text?: string; files?: string[] } | null | undefined,
+): PromptPart[] {
+  if (!prompt) return [];
+  const parts: PromptPart[] = [];
+  if (prompt.text && prompt.text.trim() !== '') parts.push({ type: 'text', text: prompt.text });
+  for (const file of prompt.files ?? []) parts.push({ type: 'file', path: file });
+  return parts;
 }

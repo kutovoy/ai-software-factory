@@ -216,6 +216,35 @@ describe('OpencodeAdapter operations', () => {
     expect(forked.meta?.forkedFrom).toBe(FIXTURE_SESSION);
   });
 
+  test('a bare model name is addressed on the factory proxy provider', async () => {
+    // Regression: `best_llm` has no `provider/model` prefix. Leaving it unset let opencode
+    // fall back to its built-in default (gpt-6.1-terra → api.openai.com) instead of the
+    // per-run proxy, so a run answered with the wrong model from the wrong endpoint.
+    const { adapter, transport } = await adapterWithFixture();
+    const handle = await adapter.startSession({
+      runId: 'run_model',
+      model: 'best_llm',
+    });
+
+    const session = transport.calls.find((call) => call.path === '/api/session');
+    expect(session?.body).toMatchObject({
+      model: { providerID: 'factory', id: 'best_llm' },
+    });
+
+    await adapter.sendPrompt(handle, [{ type: 'text', text: 'hi' }], { model: 'best_llm' });
+    const prompt = transport.calls.find((call) => call.path.endsWith('/prompt'));
+    expect(prompt?.body).toMatchObject({ model: { providerID: 'factory', id: 'best_llm' } });
+
+    // A prefixed ref keeps its own provider.
+    await adapter.sendPrompt(handle, [{ type: 'text', text: 'hi' }], {
+      model: 'anthropic/claude-sonnet-4-5',
+    });
+    const prefixed = transport.calls.filter((call) => call.path.endsWith('/prompt')).at(-1);
+    expect(prefixed?.body).toMatchObject({
+      model: { providerID: 'anthropic', id: 'claude-sonnet-4-5' },
+    });
+  });
+
   test('a stream that closes without a terminal event ends with status error', async () => {
     const transport = new ReplayTransport({
       sse: `data: {"id":"evt_1","type":"server.connected","data":{}}\n\n`,

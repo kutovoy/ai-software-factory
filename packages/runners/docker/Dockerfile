@@ -15,6 +15,13 @@ RUN apt-get update \
 RUN curl -fsSL https://opencode.ai/v2/install | bash \
     && ln -sf /root/.opencode/bin/opencode /usr/local/bin/opencode
 
+# opencode ships with its own providers (OpenAI, Anthropic, …) and a built-in default model.
+# A factory run must never reach a vendor directly: every model call goes through the API's
+# per-run inference proxy (ADR-011), whose base URL and token arrive in the harness command's
+# environment. This config declares that proxy as the `factory` provider, templated from
+# `OPENAI_BASE_URL`/`OPENAI_API_KEY` at startup, and makes `best_llm` the default model.
+COPY opencode.json /root/.config/opencode/opencode.json
+
 ENV PATH="/root/.opencode/bin:${PATH}"
 
 WORKDIR /workspace

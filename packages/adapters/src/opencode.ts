@@ -1008,10 +1008,19 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions): Opencode
   return new OpencodeAdapter(options);
 }
 
+/** Provider id declared by the runner image's opencode config (`packages/runners/docker`). */
+const FACTORY_PROVIDER_ID = 'factory';
+
 function parseModelRef(model?: string): { providerID: string; id: string } | undefined {
   if (!model) return undefined;
   const slash = model.indexOf('/');
-  if (slash <= 0 || slash === model.length - 1) return undefined;
+  if (slash <= 0 || slash === model.length - 1) {
+    // A bare name (`best_llm`) is a model served by the factory proxy, not "whatever
+    // opencode defaults to". Without this, the model is never sent and opencode silently
+    // falls back to its built-in default (gpt-6.1-terra against api.openai.com), so the run
+    // answers with the wrong model from the wrong endpoint.
+    return { providerID: FACTORY_PROVIDER_ID, id: model };
+  }
   return { providerID: model.slice(0, slash), id: model.slice(slash + 1) };
 }
 
