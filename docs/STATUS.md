@@ -12,6 +12,78 @@ database, events, logs, API responses or definitions.
 Next: **Phase 6b** (auth/users, multi-tenant/ops, a managed secret provider behind the same
 registry).
 
+### Real-model runs: the docker path now works end to end (2026-10-31)
+
+A chat run failed with `Activity task failed`. The stored error was Temporal's wrapper; the cause was
+`RunnerError: docker_unavailable` — the worker image never installed the `docker` CLI, so `leaseRunner`
+could not start a sandbox even though `/var/run/docker.sock` was mounted and usable.
+
+**Worker image.** `packages/orchestration/Dockerfile` installs `docker-ce-cli` from Docker's Debian apt
+repo (keyring + `deb [arch=$(dpkg --print-architecture)]` for the image's own `VERSION_CODENAME`; trixie
+on arm64 here). No daemon. `docker compose exec worker docker version` prints client 29.9.2 against server
+29.7.2, and `docker image inspect factory-runner:local` succeeds from inside the worker.
+
+**Containerised worker.** Installing the CLI exposed three more defects that only appear when the worker is
+itself a container:
+
+- A sandbox port published on the host's `127.0.0.1` is not reachable from another container's loopback, and
+  the docker daemon cannot see the worker's filesystem (a `-v` bind mount pointed at `/tmp/factory-run-*`
+  inside the worker, so the sandbox got an empty `/workspace`). The docker backend now takes
+  `network` + `workspaceMode`: compose sets `RUNNER_NETWORK=factory-runners` (a dedicated network holding
+  only the worker and its sandboxes — never Postgres, Temporal or the API) and `RUNNER_WORKSPACE_MODE=copy`
+  (`docker cp` in before start, back before artifacts). A host worker keeps the bind mount and the
+  published port; the defaults are unchanged.
+- opencode 2.2's `serve` **generates a random server password** and answers `401` without basic auth. The
+  readiness probe sent no auth, so every lease waited 60 s and failed on a healthy sandbox — and the retry
+  re-attached to the half-dead container, which is what produced the `ECONNRESET` mid-stream. The password
+  is now derived per run (`harnessPasswordFor(runId)`, `FACTORY_HARNESS_SECRET` optional), injected into the
+  harness command, and sent with the probe (`harness.headers`).
+- opencode ignored `OPENAI_BASE_URL` and silently used its built-in default model (`gpt-6.1-terra`) against
+  `api.openai.com`. The runner image now ships `/root/.config/opencode/opencode.json` declaring a `factory`
+  provider templated from `{env:OPENAI_BASE_URL}` / `{env:OPENAI_API_KEY}`, and the adapter addresses a bare
+  model name (`best_llm`) as `factory/best_llm` instead of leaving the model unset.
+- opencode 2.2 renamed the bus events (`session.next.*` → `session.*`, tool call id `callID` → `id`) and ends
+  an execution with `session.execution.succeeded|failed` rather than `session.idle`. The mapper translates
+  both spellings, so a pinned fixture and the current image produce the same canonical events.
+- `pumpEvents` only sent the prompt when `sessionRef` was empty, but `startHarness` always creates the
+  session, so a real run streamed forever without ever prompting. The prompt is now sent once, marked by a
+  durable `prompt` step that survives activity retries and worker restarts.
+
+**Cause-preserving failures.** `describeFailure()` (`packages/orchestration/src/failures.ts`) walks the
+`cause` chain, drops Temporal wrappers and duplicates, and prefixes the code, so a run records
+`docker_unavailable: docker CLI/server is not available` instead of `Activity task failed`. Runner
+activities rethrow `RunnerError` as an `ApplicationFailure` with `type = code` and the error shape in
+`details` (retry behaviour unchanged), which is what keeps the code through Temporal's serialization; a
+`permission_timeout` failure now carries that code too.
+
+**Run page.** The meta grid shows a 12-character short SHA with the full 40-character value in `title` and a
+copy button, every cell is `min-w-0`/truncating, and the steps/artifacts cards no longer blow the grid out at
+narrow widths. A failure panel shows the message, the code (parsed from the `<code>: <message>` prefix, no
+schema change), each failed step, the workflow id with a copy affordance and a link to
+`http://localhost:8233/namespaces/default/workflows/<workflowId>`, plus a remediation hint for
+`docker_unavailable`, `model_unresolved`, `runner_unavailable`, `permission_timeout` and a generic fallback.
+A cancelled run shows its reason and actor; a healthy run renders no panel.
+
+Verification (2026-10-31):
+
+```
+docker compose exec worker docker version → client 29.9.2 / server 29.7.2 (socket usable)
+bun run ci                     → typecheck clean; 494 pass / 126 skip / 0 fail
+docker compose up -d --build   → api, worker, web, postgres, temporal healthy
+bash scripts/smoke.sh          → SMOKE PASSED
+cd apps/web && bunx playwright test → 42 passed (failure panel + Temporal link on the newest failed
+                                 run, cancelled panel, meta cells non-overlapping at 1280/900/600px
+                                 with no page overflow)
+UI_AUDIT=1 bunx playwright test audit-deep.spec.ts → 36 routes, 0 with problems
+real run run_mvxdk5md_41eddbfb → status ok, harness opencode, model best_llm, 10464 in / 91 out tokens,
+                                 events: run.started, message.delta ×7, tool.call.started,
+                                 tool.call.completed, message.completed ×2, usage.updated ×4, run.completed
+```
+
+Caveats: the sandbox image fetches `@ai-sdk/openai-compatible` on first use, so a run needs outbound network;
+`host.docker.internal` resolves automatically on Docker Desktop and still needs `extra_hosts` on Linux. Runs
+created before this change keep the wrapper text in `error` — the panel shows it with the generic hint.
+
 ### Live API explorer with a same-origin proxy (2026-10-31)
 
 `/help/api` is now executable. A client-only Swagger UI (`swagger-ui-react` 5.34.1, imported

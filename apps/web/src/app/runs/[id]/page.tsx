@@ -49,6 +49,9 @@ export default async function RunDetailPage({
 
   const { run, summary, steps, artifacts, permissions } = detail;
   const artifactList = (artifacts ?? []) as RunArtifact[];
+  const runInput = run.input as { prompt?: { text?: string; files?: string[] } } | null;
+  const promptText = runInput?.prompt?.text ?? null;
+  const promptFiles = runInput?.prompt?.files ?? [];
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 px-6 py-6">
@@ -70,6 +73,28 @@ export default async function RunDetailPage({
           <RetryRunButton runId={run.id} />
         ) : null}
       </header>
+
+      {promptText ? (
+        <Card testId="run-task">
+          <CardHeader
+            title="Task"
+            hint="The prompt this run was started with — what the agent is working on."
+          />
+          <CardBody className="space-y-2">
+            <p
+              data-testid="run-prompt"
+              className="whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-800"
+            >
+              {promptText}
+            </p>
+            {promptFiles.length > 0 ? (
+              <p data-testid="run-prompt-files" className="text-xs text-slate-500">
+                files: <span className="font-mono">{promptFiles.join(', ')}</span>
+              </p>
+            ) : null}
+          </CardBody>
+        </Card>
+      ) : null}
 
       <Card testId="run-meta">
         <CardBody className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
@@ -255,7 +280,7 @@ export default async function RunDetailPage({
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card testId="run-steps-card">
+        <Card testId="run-steps-card" className="min-w-0">
           <CardHeader title="Steps" hint="Runner lease, harness session and the event pump." />
           <Table
             testId="run-steps"
@@ -294,7 +319,7 @@ export default async function RunDetailPage({
           />
         </Card>
 
-        <Card testId="run-artifacts-card">
+        <Card testId="run-artifacts-card" className="min-w-0">
           <CardHeader title="Artifacts" hint="Patches, logs and screenshots captured by the runner." />
           {artifactList.length === 0 ? (
             <CardBody>

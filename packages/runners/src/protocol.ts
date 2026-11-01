@@ -21,6 +21,11 @@ export interface HarnessSpec {
   readyPath?: string;
   /** Extra env for the harness process only. */
   env?: Record<string, string>;
+  /**
+   * Headers sent with the readiness probe (`readyPath`). A harness that requires HTTP basic
+   * auth answers `401` without them, so the probe would never see a healthy server.
+   */
+  headers?: Record<string, string>;
 }
 
 /** Secrets are referenced by name and resolved outside the sandbox. */

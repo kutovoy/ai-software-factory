@@ -4,7 +4,7 @@ import { AdapterError } from '@factory/adapters';
 import { loadConfig } from '../config';
 import { harnessPasswordFor } from '../harness-auth';
 import { heartbeat } from '../heartbeat';
-import { isCancelRequested, setRunSessionRef, upsertStep } from '../db';
+import { isCancelRequested, listSteps, setRunSessionRef, upsertStep } from '../db';
 import { pumpSegment } from '../pump';
 import { appendEvent, recordPermissionRequest } from './persist';
 import {
@@ -176,13 +176,27 @@ export async function pumpEvents(args: {
     },
   });
 
-  // The prompt is sent once per session. A resumed session (worker restart) already got it.
+  // The prompt is sent exactly once per run. `startHarness` already created the session, so
+  // `args.sessionRef` is always set on the first pump — keying off it silently skipped the
+  // prompt and left a real-harness run streaming forever. The durable `prompt` step is the
+  // marker: it survives activity retries and a worker restart (where the adapter session is
+  // recreated and would otherwise be prompted twice).
   const promptParts = promptPartsFor(args.input.prompt);
-  if (!args.sessionRef && promptParts.length > 0) {
+  const prompted = (await listSteps(runId)).some(
+    (step) => (step as { step_id?: string }).step_id === 'prompt',
+  );
+  if (!prompted && promptParts.length > 0) {
     try {
       await adapter.sendPrompt(handle, promptParts, {
         ...(args.input.model ? { model: args.input.model } : {}),
         ...(args.input.agent ? { agent: args.input.agent } : {}),
+      });
+      await upsertStep({
+        runId,
+        stepId: 'prompt',
+        kind: 'harness',
+        status: 'ok',
+        detail: { parts: promptParts.length },
       });
     } catch (error) {
       dropStream(runId);

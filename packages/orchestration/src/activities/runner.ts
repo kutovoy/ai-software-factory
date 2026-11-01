@@ -21,7 +21,7 @@ import {
   type RunnerBackend,
 } from '@factory/runners';
 import { loadConfig } from '../config';
-import { harnessPasswordFor } from '../harness-auth';
+import { harnessPasswordFor, harnessProbeHeaders } from '../harness-auth';
 import { heartbeat } from '../heartbeat';
 import { getSql, upsertStep } from '../db';
 import { artifactsDir, ensureRunDir, patchPath, runDir } from '../run-dir';
@@ -184,7 +184,14 @@ export async function leaseRunner(args: {
         url: args.input.repo?.url,
         commit: args.input.repo?.commit ?? args.input.definitionCommit,
       },
-      harness: { command: harnessCommandWithProxyEnv(args.harnessEnv, args.input.runId) },
+      harness: {
+        command: harnessCommandWithProxyEnv(args.harnessEnv, args.input.runId),
+        // opencode protects `/api/info` with the server password; the readiness probe
+        // must authenticate or the lease waits 60s and fails on a healthy sandbox.
+        ...(args.input.harness === 'opencode'
+          ? { headers: harnessProbeHeaders(args.input.runId) }
+          : {}),
+      },
       keepWorkspace: false,
       runDir: runDir(config.runsDir, args.input.runId),
       // The local sandbox denies network unless the stage/factory grants it (task 6).

@@ -171,18 +171,26 @@ function StreamBlockView({
       );
     }
 
-    case 'message':
+    case 'message': {
+      const thinking = block.role === 'reasoning';
       return (
         <div
-          data-testid="event-message"
+          data-testid={thinking ? 'event-reasoning' : 'event-message'}
           data-seq={block.seq}
           data-done={block.done ? 'true' : 'false'}
-          className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm leading-relaxed text-slate-800"
+          className={
+            thinking
+              ? 'rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-600'
+              : 'rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm leading-relaxed text-slate-800'
+          }
         >
-          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">assistant</p>
-          <p className="whitespace-pre-wrap">{block.text}</p>
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">
+            {thinking ? 'thinking' : 'assistant'}
+          </p>
+          <p className={`whitespace-pre-wrap ${thinking ? 'italic' : ''}`}>{block.text}</p>
         </div>
       );
+    }
 
     case 'tool': {
       const args = block.argsDelta.length > 0 ? block.argsDelta : block.argsStart;
@@ -325,12 +333,14 @@ function StreamBlockView({
 
     case 'usage':
       return (
-        <div data-testid="usage-chip" data-seq={block.seq} className="flex items-center gap-2 text-xs text-slate-600">
+        <div data-testid="usage-chip" data-seq={block.seq} className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
           <Badge tone="neutral" testId="usage-cost">
             {formatCost(block.costUsd)}
           </Badge>
           <span>
             in {formatTokens(block.inputTokens)} · out {formatTokens(block.outputTokens)}
+            {block.cacheReadTokens > 0 ? ` · cache ${formatTokens(block.cacheReadTokens)}` : ''}
+            {block.reasoningTokens > 0 ? ` · reasoning ${formatTokens(block.reasoningTokens)}` : ''}
           </span>
         </div>
       );

@@ -22,7 +22,7 @@ export const EVENT_TYPES = [
 
 export type StreamBlock =
   | { kind: 'notice'; id: string; seq: number; text: string; tone: 'info' | 'ok' | 'error' | 'warning' }
-  | { kind: 'message'; id: string; seq: number; text: string; done: boolean }
+  | { kind: 'message'; id: string; seq: number; role: 'assistant' | 'reasoning'; text: string; done: boolean }
   | {
       kind: 'tool';
       id: string;
@@ -51,6 +51,8 @@ export type StreamBlock =
       seq: number;
       inputTokens: number;
       outputTokens: number;
+      cacheReadTokens: number;
+      reasoningTokens: number;
       costUsd: number | null;
     };
 
@@ -102,22 +104,28 @@ export function reduceEvents(events: FactoryEvent[], decisions: Decisions = {}):
       }
 
       case 'message.delta': {
+        const role = event.role;
         const last = blocks[blocks.length - 1];
-        if (last && last.kind === 'message' && !last.done) {
+        if (role === 'assistant' && last && last.kind === 'message' && last.role === 'reasoning' && !last.done) {
+          // Thinking ends when the answer starts; keep it as its own collapsible block.
+          last.done = true;
+        }
+        if (last && last.kind === 'message' && last.role === role && !last.done) {
           last.text += event.text;
         } else {
-          blocks.push({ kind: 'message', id, seq: event.seq, text: event.text, done: false });
+          blocks.push({ kind: 'message', id, seq: event.seq, role, text: event.text, done: false });
         }
         break;
       }
 
       case 'message.completed': {
+        const role = event.role;
         const last = blocks[blocks.length - 1];
-        if (last && last.kind === 'message' && !last.done) {
+        if (last && last.kind === 'message' && last.role === role && !last.done) {
           last.text = event.text;
           last.done = true;
         } else {
-          blocks.push({ kind: 'message', id, seq: event.seq, text: event.text, done: true });
+          blocks.push({ kind: 'message', id, seq: event.seq, role, text: event.text, done: true });
         }
         break;
       }
@@ -185,14 +193,27 @@ export function reduceEvents(events: FactoryEvent[], decisions: Decisions = {}):
       }
 
       case 'usage.updated': {
-        blocks.push({
-          kind: 'usage',
-          id,
-          seq: event.seq,
-          inputTokens: event.inputTokens,
-          outputTokens: event.outputTokens,
-          costUsd: event.costUsd ?? null,
-        });
+        const last = blocks[blocks.length - 1];
+        if (last && last.kind === 'usage') {
+          // Usage arrives many times per step; keep one chip that shows the latest totals.
+          last.seq = event.seq;
+          last.inputTokens = event.inputTokens;
+          last.outputTokens = event.outputTokens;
+          last.cacheReadTokens = event.cacheReadTokens ?? 0;
+          last.reasoningTokens = event.reasoningTokens ?? 0;
+          last.costUsd = event.costUsd ?? null;
+        } else {
+          blocks.push({
+            kind: 'usage',
+            id,
+            seq: event.seq,
+            inputTokens: event.inputTokens,
+            outputTokens: event.outputTokens,
+            cacheReadTokens: event.cacheReadTokens ?? 0,
+            reasoningTokens: event.reasoningTokens ?? 0,
+            costUsd: event.costUsd ?? null,
+          });
+        }
         break;
       }
 

@@ -154,6 +154,12 @@ export interface ReadyTarget {
   timeoutMs: number;
   initialDelayMs?: number;
   maxDelayMs?: number;
+  /**
+   * Extra request headers. A password-protected harness (opencode with
+   * `OPENCODE_SERVER_PASSWORD`) answers `401` to an unauthenticated probe, so the readiness
+   * check must carry the same basic-auth header the adapter uses.
+   */
+  headers?: Record<string, string>;
 }
 
 /**
@@ -178,6 +184,7 @@ export async function waitForReady(target: ReadyTarget): Promise<void> {
       }
       const response = await fetch(`${target.url}${target.readyPath}`, {
         signal: AbortSignal.timeout(Math.max(1_000, Math.min(5_000, deadline - Date.now()))),
+        ...(target.headers ? { headers: target.headers } : {}),
       });
       if (response.ok) return;
       lastError = `HTTP ${response.status}`;

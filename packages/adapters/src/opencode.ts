@@ -215,7 +215,6 @@ const KNOWN_NOOP_TYPES = new Set<string>([
   'session.status',
   'session.next.text.started',
   'session.next.reasoning.started',
-  'session.next.reasoning.delta',
   'session.next.reasoning.ended',
   'session.next.tool.input.ended',
   'session.next.tool.progress',
@@ -264,6 +263,24 @@ const KNOWN_NOOP_TYPES = new Set<string>([
   'integration.updated',
   'integration.connection.updated',
   'catalog.updated',
+  // opencode 2.2 renamed the bus events from `session.next.*` to `session.*`; these carry
+  // no canonical meaning (progress, lifecycle, reasoning) but must not count as "dropped".
+  'session.created',
+  'session.updated',
+  'session.execution.started',
+  'session.inbox.enqueued',
+  'session.inbox.delivered',
+  'session.instructions.updated',
+  'session.step.started',
+  'session.step.streamed',
+  'session.text.started',
+  'session.reasoning.started',
+  'session.reasoning.ended',
+  'session.tool.progress',
+  'session.tool.input.ended',
+  'agent.updated',
+  'command.updated',
+  'plugin.updated',
 ]);
 
 const KNOWN_NOOP_PREFIXES = [
@@ -272,6 +289,8 @@ const KNOWN_NOOP_PREFIXES = [
   'workspace.',
   'worktree.',
   'installation.',
+  // Shell tool plumbing: the tool call itself is already reported by `session.tool.*`.
+  'shell.',
 ];
 
 export interface OpencodeMapperStats {
@@ -347,8 +366,116 @@ export class OpencodeEventMapper {
 
   private translate(type: string, data: Record<string, unknown>): FactoryEventInput[] | undefined {
     switch (type) {
+      /* ---------------------------------------------------------------- v2.2 */
+
+      // opencode 2.2 renamed `session.next.*` to `session.*` and moved the tool call id from
+      // `callID` to `id`. Both spellings are translated so a pinned harness version and the
+      // current image produce the same canonical events.
+      case 'session.text.delta':
+        return [{ type: 'message.delta', role: 'assistant', text: asString(data.delta) }];
+
+      case 'session.reasoning.delta':
+        return [{ type: 'message.delta', role: 'reasoning', text: asString(data.delta) }];
+
+      case 'session.text.ended':
+        return [{ type: 'message.completed', role: 'assistant', text: asString(data.text) }];
+
+      case 'session.tool.input.started': {
+        const callId = toolCallId(data);
+        if (!callId) return undefined;
+        this.startedCalls.add(callId);
+        return [
+          { type: 'tool.call.started', callId, name: asString(data.name) || 'unknown', args: {} },
+        ];
+      }
+
+      case 'session.tool.called': {
+        const callId = toolCallId(data);
+        if (!callId) return undefined;
+        if (this.startedCalls.has(callId)) return [];
+        this.startedCalls.add(callId);
+        return [
+          {
+            type: 'tool.call.started',
+            callId,
+            name: asString(data.name ?? data.tool) || 'unknown',
+            args: asJsonObject(data.input),
+          },
+        ];
+      }
+
+      case 'session.tool.success': {
+        const callId = toolCallId(data);
+        if (!callId) return undefined;
+        return [
+          {
+            type: 'tool.call.completed',
+            callId,
+            ok: true,
+            result: { structured: asJsonObject(data.structured), content: asJsonArray(data.content) },
+          },
+        ];
+      }
+
+      case 'session.tool.failed': {
+        const callId = toolCallId(data);
+        if (!callId) return undefined;
+        return [
+          {
+            type: 'tool.call.completed',
+            callId,
+            ok: false,
+            result: { error: asJsonValue(data.error) },
+          },
+        ];
+      }
+
+      case 'session.step.ended':
+      case 'session.usage.updated': {
+        // `session.step.ended` reports one step; `session.usage.updated` reports the session
+        // total and arrives last, so the persisted run row ends with the cumulative numbers.
+        const tokens = asJsonObject(data.tokens);
+        const cache = asJsonObject(tokens.cache);
+        return [
+          {
+            type: 'usage.updated',
+            inputTokens: asNumber(tokens.input),
+            outputTokens: asNumber(tokens.output),
+            ...(typeof data.cost === 'number' ? { costUsd: data.cost } : {}),
+            ...(typeof cache.read === 'number' ? { cacheReadTokens: cache.read } : {}),
+            ...(typeof tokens.reasoning === 'number' ? { reasoningTokens: tokens.reasoning } : {}),
+          },
+        ];
+      }
+
+      case 'session.step.failed':
+        this.failure = summariseError(data.error);
+        return [];
+
+      case 'session.execution.failed': {
+        this.failure = summariseError(data.error);
+        this.done = true;
+        return [{ type: 'run.completed', status: 'error', summary: this.failure }];
+      }
+
+      case 'session.execution.succeeded': {
+        this.done = true;
+        if (this.cancelled) {
+          return [{ type: 'run.completed', status: 'cancelled', summary: 'cancelled' }];
+        }
+        if (this.failure) {
+          return [{ type: 'run.completed', status: 'error', summary: this.failure }];
+        }
+        return [{ type: 'run.completed', status: 'ok' }];
+      }
+
+      /* ---------------------------------------------------------------- v2.0 */
+
       case 'session.next.text.delta':
         return [{ type: 'message.delta', role: 'assistant', text: asString(data.delta) }];
+
+      case 'session.next.reasoning.delta':
+        return [{ type: 'message.delta', role: 'reasoning', text: asString(data.delta) }];
 
       case 'session.next.text.ended':
         return [{ type: 'message.completed', role: 'assistant', text: asString(data.text) }];
@@ -1010,6 +1137,11 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions): Opencode
 
 /** Provider id declared by the runner image's opencode config (`packages/runners/docker`). */
 const FACTORY_PROVIDER_ID = 'factory';
+
+/** opencode 2.2 renamed the tool call id field from `callID` to `id`. */
+function toolCallId(data: Record<string, unknown>): string {
+  return asString(data.id) || asString(data.callID);
+}
 
 function parseModelRef(model?: string): { providerID: string; id: string } | undefined {
   if (!model) return undefined;

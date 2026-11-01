@@ -49,7 +49,7 @@ export const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
 
 const seq = z.number().int().nonnegative();
 const at = z.number().int().nonnegative();
-const role = z.literal('assistant');
+const role = z.enum(['assistant', 'reasoning']);
 
 export const runStartedEventSchema = z
   .object({

@@ -240,6 +240,7 @@ export class DockerRunnerBackend implements RunnerBackend {
         url: endpoint.url,
         readyPath: spec.harness.readyPath,
         timeoutMs: spec.readyTimeoutMs || this.readyTimeoutMs,
+        ...(spec.harness.headers ? { headers: spec.harness.headers } : {}),
       });
     } catch (error) {
       const logs = await this.logs(containerName);

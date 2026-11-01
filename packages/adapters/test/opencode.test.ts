@@ -117,6 +117,104 @@ describe('OpencodeAdapter mapping', () => {
     ]);
   });
 
+  test('maps opencode 2.2 `session.*` events from a real run to canonical events', () => {
+    // Payloads captured from `opencode serve` 2.2.0 against the LiteLLM proxy. 2.2 renamed
+    // the bus events (`session.next.*` → `session.*`) and moved the tool call id to `id`;
+    // before this, a real run produced only `run.started` and never reached a terminal state.
+    const session = FIXTURE_SESSION;
+    const mapper = createOpencodeMapper({ runId: 'r', sessionRef: session });
+
+    expect(
+      mapper.map({ type: 'session.step.started', data: { sessionID: session, agent: 'build' } }),
+    ).toEqual([]);
+
+    expect(
+      mapper.map({
+        type: 'session.text.delta',
+        data: { sessionID: session, assistantMessageID: 'm1', delta: 'Done' },
+      }),
+    ).toEqual([{ type: 'message.delta', role: 'assistant', text: 'Done' }]);
+
+    expect(
+      mapper.map({
+        type: 'session.tool.input.started',
+        data: { sessionID: session, id: 'call_1', name: 'shell' },
+      }),
+    ).toEqual([{ type: 'tool.call.started', callId: 'call_1', name: 'shell', args: {} }]);
+
+    expect(
+      mapper.map({
+        type: 'session.tool.called',
+        data: { sessionID: session, id: 'call_1', input: { command: 'ls -la' }, executed: false },
+      }),
+    ).toEqual([]); // already announced by `session.tool.input.started`
+
+    expect(
+      mapper.map({
+        type: 'session.tool.success',
+        data: { sessionID: session, id: 'call_1', content: [{ type: 'text', text: 'total 8' }] },
+      }),
+    ).toEqual([
+      {
+        type: 'tool.call.completed',
+        callId: 'call_1',
+        ok: true,
+        result: { structured: {}, content: [{ type: 'text', text: 'total 8' }] },
+      },
+    ]);
+
+    expect(
+      mapper.map({
+        type: 'session.step.ended',
+        data: {
+          sessionID: session,
+          finish: 'stop',
+          tokens: { input: 1307, output: 21, reasoning: 1, cache: { read: 4096, write: 0 } },
+          cost: 0,
+        },
+      }),
+    ).toEqual([
+      {
+        type: 'usage.updated',
+        inputTokens: 1307,
+        outputTokens: 21,
+        costUsd: 0,
+        cacheReadTokens: 4096,
+        reasoningTokens: 1,
+      },
+    ]);
+
+    // The session total arrives last and overwrites the per-step numbers.
+    expect(
+      mapper.map({
+        type: 'session.usage.updated',
+        data: { sessionID: session, cost: 0, tokens: { input: 2500, output: 60, cache: { read: 8192 } } },
+      }),
+    ).toMatchObject([{ type: 'usage.updated', inputTokens: 2500, outputTokens: 60 }]);
+
+    expect(
+      mapper.map({ type: 'session.text.ended', data: { sessionID: session, text: 'Done.' } }),
+    ).toEqual([{ type: 'message.completed', role: 'assistant', text: 'Done.' }]);
+
+    expect(
+      mapper.map({ type: 'session.execution.succeeded', data: { sessionID: session } }),
+    ).toEqual([{ type: 'run.completed', status: 'ok' }]);
+    expect(mapper.finished).toBe(true);
+  });
+
+  test('a v2.2 execution failure ends the run with the provider error', () => {
+    const mapper = createOpencodeMapper({ runId: 'r', sessionRef: FIXTURE_SESSION });
+    expect(
+      mapper.map({
+        type: 'session.execution.failed',
+        data: {
+          sessionID: FIXTURE_SESSION,
+          error: { type: 'provider.auth', message: 'unknown run token', status: 401 },
+        },
+      }),
+    ).toEqual([{ type: 'run.completed', status: 'error', summary: 'unknown run token' }]);
+  });
+
   test('file.edited without a diff still maps to a canonical file.edited', () => {
     const mapper = createOpencodeMapper({ runId: 'r', sessionRef: FIXTURE_SESSION });
     expect(mapper.map({ type: 'file.edited', data: { file: 'src/a.ts' } })).toEqual([

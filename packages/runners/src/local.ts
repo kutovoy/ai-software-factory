@@ -177,6 +177,7 @@ export class LocalRunnerBackend implements RunnerBackend {
         url: handle.harnessUrl,
         readyPath: spec.harness.readyPath,
         timeoutMs: spec.readyTimeoutMs || this.readyTimeoutMs,
+        ...(spec.harness.headers ? { headers: spec.harness.headers } : {}),
       });
     } catch (error) {
       await this.terminate(child);

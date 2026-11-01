@@ -375,14 +375,23 @@ export const HELP_ENTRIES: HelpEntry[] = [
           '`RUNNER_SANDBOX=exec` (macOS only) wraps the harness in a generated SBPL profile: reads of system paths + workspace, writes only to workspace/run dir/tmp, outbound network denied unless the stage grants `networkPolicy: allowed`.',
           'On a non-macOS host or without `sandbox-exec` the run is unconfined and records `runner.sandbox_unavailable` with the platform and reason. The default is `none`.',
           'Artifacts are captured by path + sha256 into `runs/<runId>/artifacts/`; a missing artifact makes deterministic scoring an `error` score without failing the run.',
+          'The compose worker ships the docker CLI (not the daemon) and leases sandboxes through the mounted `/var/run/docker.sock`; `docker compose exec worker docker version` must print a server version.',
+          'Because the worker is itself a container, sandboxes join the dedicated `factory-runners` network (`RUNNER_NETWORK`) instead of publishing a host port, and the workspace travels with `docker cp` (`RUNNER_WORKSPACE_MODE=copy`) — the daemon cannot see the worker filesystem. A host worker keeps the bind mount and the 127.0.0.1 port.',
         ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Harness credentials',
+        text:
+          'The harness command carries `OPENAI_BASE_URL`, the per-run proxy token and a per-run derived `OPENCODE_SERVER_PASSWORD`; opencode `serve` generates a random password otherwise and answers 401. The runner image ships an opencode config that declares the `factory` proxy provider, so a bare model name (`best_llm`) resolves to `factory/best_llm` rather than opencode’s built-in default.',
       },
       {
         kind: 'callout',
         tone: 'warning',
         title: 'Compose caveat',
         text:
-          'The compose stack runs `HARNESS=fake` for smoke/chat flows and `BENCHMARK_HARNESS=fake`, so the real opencode path is wired but not exercised there. The sandbox flag is not exercised in Linux containers.',
+          'The compose smoke and benchmark flows still run the fake harness (`HARNESS=fake`, `BENCHMARK_HARNESS=fake`) so CI needs no model credentials; a chat run can use the real opencode path by asking for `harness: "opencode"` (see New Chat), which leases a docker sandbox and calls the configured proxy model. The macOS `sandbox-exec` flag is not exercised in Linux containers.',
       },
     ],
     related: [
@@ -556,7 +565,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
         tone: 'info',
         title: 'Which harness runs',
         text:
-          'The compose stack creates fake-harness runs for the smoke/chat flow, so responses are canned. The real opencode adapter is wired but needs the runner image and model credentials; the fake adapter records MCP wiring as capability flags instead of enforcing it.',
+          'The smoke script and benchmark trials use the fake harness, so CI needs no credentials. Choosing `opencode` in New Chat leases a docker sandbox, starts `opencode serve` inside it and streams a real model answer through the per-run inference proxy; the fake adapter records MCP wiring as capability flags instead of enforcing it.',
       },
     ],
     related: [
@@ -1527,7 +1536,9 @@ export const HELP_ENTRIES: HelpEntry[] = [
           '`model_env_unresolved` warning — validation still passes, but run creation refuses. Same fix; do not commit a literal model to work around it.',
           'Invalid definition — `bun run factory validate factories/<name>` prints the code and file; fix in git, then reload.',
           'No run appears at all — check `curl localhost:8080/health` (Temporal reachable?), `docker compose ps` (worker up?), and the worker logs.',
-          'Harness/runner unavailable — compose defaults to the fake harness; a real run needs the runner image and credentials, and `RUNNER_SANDBOX=exec` is macOS-only (else `runner.sandbox_unavailable`).',
+          '`docker_unavailable` — the worker cannot reach the docker CLI or daemon. `docker compose exec worker docker version` must print a server version; rebuild the worker after changing its Dockerfile and confirm `/var/run/docker.sock` is mounted.',
+          '`runner_unavailable` — the sandbox could not start. Check `docker image inspect factory-runner:local`, then `docker logs <container>` for the harness; opencode needs `OPENAI_BASE_URL`, a proxy token and the derived `OPENCODE_SERVER_PASSWORD`, all injected by the worker.',
+          'Harness/runner unavailable — compose defaults to the fake harness; choosing `opencode` leases a docker sandbox. `RUNNER_SANDBOX=exec` is macOS-only (else `runner.sandbox_unavailable`).',
         ],
       },
       {

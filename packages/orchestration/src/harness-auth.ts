@@ -23,3 +23,15 @@ export function harnessPasswordFor(runId: string): string {
   const secret = process.env.FACTORY_HARNESS_SECRET ?? 'factory-local-harness';
   return createHash('sha256').update(`${secret}:${runId}`).digest('hex').slice(0, 32);
 }
+
+/**
+ * Basic-auth header for the opencode readiness probe.
+ *
+ * The runner's readiness check is an unauthenticated `GET /api/info` by default, which a
+ * password-protected server answers with `401` forever — the lease then times out even
+ * though the sandbox is healthy. Username `opencode` matches the adapter's transport.
+ */
+export function harnessProbeHeaders(runId: string): Record<string, string> {
+  const password = harnessPasswordFor(runId);
+  return { authorization: `Basic ${Buffer.from(`opencode:${password}`, 'utf8').toString('base64')}` };
+}

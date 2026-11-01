@@ -69,7 +69,10 @@ test.describe('Runs', () => {
     await expect(page.getByTestId('pinned-commit-copy')).toBeVisible();
     await expect(page.getByTestId('run-harness')).toHaveText('fake');
     await expect(page.getByTestId('run-model')).toBeVisible();
-    await expect(page.getByTestId('run-steps')).toBeVisible();
+    // A just-created run may have no steps yet; the card renders its empty state then.
+    await expect(
+      page.getByTestId('run-steps').or(page.getByTestId('run-steps-empty')),
+    ).toBeVisible();
     await expect(page.getByTestId('run-artifacts-card')).toBeVisible();
 
     // A blocked run exposes the inline prompt; approve it so the workflow can finish.
@@ -177,6 +180,20 @@ test.describe('Runs', () => {
       data: { reason: 'e2e cancelled panel' },
     });
     expect(cancelled.ok()).toBeTruthy();
+
+    // Cancellation is cooperative: the workflow ends `cancelled` after the pump notices.
+    // The run page is server-rendered, so wait for the terminal state, then load it.
+    const api = process.env.API_BASE_URL ?? 'http://localhost:8080';
+    await expect
+      .poll(
+        async () => {
+          const response = await page.request.get(`${api}/api/v1/runs/${run.id}`);
+          const body = (await response.json()) as { run: { status: string } };
+          return body.run.status;
+        },
+        { timeout: 60_000 },
+      )
+      .toBe('cancelled');
 
     await page.goto(`/runs/${run.id}`);
 
