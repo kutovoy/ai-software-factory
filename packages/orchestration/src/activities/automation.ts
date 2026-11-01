@@ -225,6 +225,7 @@ export async function fireAutomationActivity(
     repo: { path: config.factoryRoot },
     stageGraph,
     gates,
+    agentVerdict: definition.manifest.agentVerdict,
     mergePolicy: definition.manifest.mergePolicy,
     autonomy: {
       enabled: autonomy?.enabled ?? false,

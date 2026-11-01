@@ -16,6 +16,10 @@ export const ADAPTER_ERROR_CODES = [
   'permission_not_found',
   'invalid_response',
   'aborted',
+  /** A replay was requested but the recording directory/patch is absent. */
+  'replay_missing',
+  /** A replay's recorded patch does not apply to the fresh workspace. */
+  'replay_apply_failed',
 ] as const;
 
 export type AdapterErrorCode = (typeof ADAPTER_ERROR_CODES)[number];

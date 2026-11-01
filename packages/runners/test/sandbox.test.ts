@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
   LocalRunnerBackend,
+  bwrapCommand,
   buildSandboxProfile,
   sandboxAvailability,
+  sandboxModeFromEnv,
   type ExecEvent,
 } from '../src';
 
@@ -111,6 +113,116 @@ describe('sandbox profile', () => {
     const result = await collect(instance.exec('runner_sandbox', { command: 'echo fallback' }));
     expect(result.stdout.trim()).toBe('fallback');
   }, 30_000);
+});
+
+describe('bwrap jail', () => {
+  test('builds the minimal jail argv', () => {
+    const argv = bwrapCommand(
+      { workspace: '/work/run/workspace', network: 'allowed', binary: '/usr/bin/bwrap' },
+      '/bin/sh',
+      'echo hi',
+    );
+    expect(argv).toEqual([
+      '/usr/bin/bwrap',
+      '--ro-bind',
+      '/',
+      '/',
+      '--dev',
+      '/dev',
+      '--proc',
+      '/proc',
+      '--tmpfs',
+      '/tmp',
+      '--bind',
+      '/work/run/workspace',
+      '/work/run/workspace',
+      '--chdir',
+      '/work/run/workspace',
+      '--',
+      '/bin/sh',
+      '-c',
+      'echo hi',
+    ]);
+  });
+
+  test('unshares the network namespace only when the policy denies network', () => {
+    const denied = bwrapCommand(
+      { workspace: '/work/run/workspace', network: 'denied', binary: '/usr/bin/bwrap' },
+      '/bin/sh',
+      'ls',
+    );
+    expect(denied).toContain('--unshare-net');
+    expect(denied[denied.length - 4]).toBe('--');
+
+    const allowed = bwrapCommand(
+      { workspace: '/work/run/workspace', network: 'allowed', binary: '/usr/bin/bwrap' },
+      '/bin/sh',
+      'ls',
+    );
+    expect(allowed).not.toContain('--unshare-net');
+  });
+
+  test('honours an explicit working directory inside the jail', () => {
+    const argv = bwrapCommand(
+      {
+        workspace: '/work/run/workspace',
+        network: 'denied',
+        cwd: '/work/run/workspace/src',
+        binary: '/usr/bin/bwrap',
+      },
+      '/bin/sh',
+      'pwd',
+    );
+    expect(argv).toContain('--chdir');
+    expect(argv[argv.indexOf('--chdir') + 1]).toBe('/work/run/workspace/src');
+    expect(argv[argv.length - 1]).toBe('pwd');
+  });
+
+  test('reports bwrap as unavailable off Linux', () => {
+    const availability = sandboxAvailability('bwrap', 'darwin');
+    expect(availability.active).toBe(false);
+    expect(availability.unavailable).toBe(true);
+    expect(availability.reason).toContain('unsupported_platform');
+  });
+
+  test('a missing bwrap binary is unavailable, never a silent fallback', () => {
+    const availability = sandboxAvailability('bwrap', 'linux', { which: () => null });
+    expect(availability.active).toBe(false);
+    expect(availability.unavailable).toBe(true);
+    expect(availability.reason).toContain('bwrap_missing');
+    expect(availability.binary).toBeNull();
+  });
+
+  test('an installed bwrap is active and resolves its path', () => {
+    const availability = sandboxAvailability('bwrap', 'linux', {
+      which: (name) => (name === 'bwrap' ? '/usr/bin/bwrap' : null),
+    });
+    expect(availability).toEqual({
+      mode: 'bwrap',
+      active: true,
+      reason: null,
+      unavailable: false,
+      binary: '/usr/bin/bwrap',
+    });
+  });
+});
+
+describe('sandbox mode selection', () => {
+  test('Linux auto-selects bwrap when the binary is installed', () => {
+    expect(sandboxModeFromEnv(undefined, 'linux', { which: () => '/usr/bin/bwrap' })).toBe('bwrap');
+  });
+
+  test('falls back to none when bwrap is absent or the platform is macOS', () => {
+    expect(sandboxModeFromEnv(undefined, 'linux', { which: () => null })).toBe('none');
+    expect(sandboxModeFromEnv(undefined, 'darwin', { which: () => '/usr/bin/bwrap' })).toBe('none');
+  });
+
+  test('honours an explicit RUNNER_SANDBOX value', () => {
+    expect(sandboxModeFromEnv('bwrap', 'darwin')).toBe('bwrap');
+    expect(sandboxModeFromEnv('exec', 'linux')).toBe('exec');
+    expect(sandboxModeFromEnv('none', 'linux')).toBe('none');
+    expect(sandboxModeFromEnv('1', 'linux')).toBe('none');
+  });
 });
 
 describe.skipIf(!macos)('sandbox-exec confinement (macOS)', () => {

@@ -33,6 +33,7 @@ import {
   setWorkItemStatus,
   stageDeclarationsFromDefinition,
   type AgentDef,
+  type AgentVerdict,
   type FactoryDefinition,
   type GateDecisionRequest,
   type LoopStage,
@@ -353,6 +354,7 @@ export async function createWorkItemForApi(
     repo: { path: config.repoRoot },
     stageGraph: compiled.stageGraph,
     gates: compiled.gates,
+    agentVerdict: manifest.agentVerdict,
     mergePolicy: manifest.mergePolicy,
     autonomy: {
       enabled: state?.enabled ?? false,
@@ -501,6 +503,8 @@ export interface GateDecisionResult {
   decision: GateDecisionValue;
   actor: string;
   attempt: number;
+  /** Agent verdict recorded with the decision (null for human decisions). */
+  verdict: AgentVerdict | null;
   delivery: 'update' | 'signal' | 'none';
 }
 
@@ -529,7 +533,7 @@ export async function submitGateDecisionForApi(
   const pending = await getPendingGate(sql, { workItemId, stage });
   if (!pending) throw gateNotFound(workItemId, stage);
 
-  await recordGateDecision(sql, {
+  const recorded = await recordGateDecision(sql, {
     workItemId,
     stage: stage as LoopStage,
     attempt: pending.attempt,
@@ -580,6 +584,7 @@ export async function submitGateDecisionForApi(
     decision: request.decision,
     actor: request.actor,
     attempt: pending.attempt,
+    verdict: recorded.verdict,
     delivery,
   };
 }
@@ -1091,6 +1096,7 @@ async function buildRetryInput(
     repo: { path: config.repoRoot },
     stageGraph: compiled.stageGraph,
     gates: compiled.gates,
+    agentVerdict: manifest.agentVerdict,
     mergePolicy: manifest.mergePolicy,
     autonomy: {
       enabled: state?.enabled ?? false,

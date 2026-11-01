@@ -12,6 +12,7 @@ import {
 import { improvementSchema } from './improvement';
 import { mcpSchema } from './mcp';
 import { stageDeclarationSchema } from './stage';
+import { AGENT_VERDICT_POLICIES } from '../gates/verdict';
 
 export const agentDefaultsSchema = withInference(
   {
@@ -53,6 +54,11 @@ export const factorySchema = z
     }),
     agentDefaults: agentDefaultsSchema,
     gates: gatesSchema,
+    /**
+     * What an agent gate does when the stage emits no verdict (change `add-agent-verdicts`):
+     * `advisory` approves (pre-verdict behaviour), `required` requests changes.
+     */
+    agentVerdict: z.enum(AGENT_VERDICT_POLICIES).default('advisory'),
     mergePolicy: z.enum(MERGE_POLICIES),
     /**
      * Ordered stage graph for the factory loop. Optional: when omitted the graph is

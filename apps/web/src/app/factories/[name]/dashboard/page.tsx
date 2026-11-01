@@ -3,7 +3,8 @@ import { Badge } from '@/components/ui/Badge';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { safeGet } from '@/lib/api';
-import { formatCost, formatDateTime, formatRelative, formatTokens, shortCommit, statusTone } from '@/lib/format';
+import { formatCost, formatTokens, shortCommit, statusTone } from '@/lib/format';
+import { TimeAgo } from '@/components/ui/TimeAgo';
 import type {
   AutonomyReadWire,
   CanaryOverviewWire,
@@ -185,8 +186,8 @@ function StateCard({
                   </p>
                 ) : null}
                 {autonomy.updatedAt ? (
-                  <p className="text-[11px] text-slate-400" title={formatDateTime(autonomy.updatedAt)}>
-                    changed {formatRelative(autonomy.updatedAt)}
+                  <p className="text-[11px] text-slate-400">
+                    changed <TimeAgo value={autonomy.updatedAt} />
                   </p>
                 ) : null}
               </div>
@@ -207,7 +208,7 @@ function StateCard({
                 <p className="font-mono text-[11px] text-slate-500">{activeCanary.rollout.id}</p>
                 {activeCanary.window.endsAt ? (
                   <p className="text-[11px] text-slate-400">
-                    ends {formatRelative(activeCanary.window.endsAt)}
+                    ends <TimeAgo value={activeCanary.window.endsAt} />
                   </p>
                 ) : null}
               </div>
@@ -218,7 +219,7 @@ function StateCard({
                 </Badge>
                 <p className="font-mono text-[11px] text-slate-500">{lastCanary.rollout.id}</p>
                 <p className="text-[11px] text-slate-400">
-                  ended {formatRelative(lastCanary.rollout.endedAt ?? lastCanary.rollout.startedAt)}
+                  ended <TimeAgo value={lastCanary.rollout.endedAt ?? lastCanary.rollout.startedAt} />
                 </p>
               </div>
             ) : (
@@ -237,11 +238,8 @@ function StateCard({
           <div data-testid="dashboard-last-activity">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Last activity</p>
             {activity ? (
-              <p
-                className="mt-1 text-sm font-medium text-slate-800"
-                title={formatDateTime(activity)}
-              >
-                {formatRelative(activity)}
+              <p className="mt-1 text-sm font-medium text-slate-800">
+                <TimeAgo value={activity} />
               </p>
             ) : (
               <p className="mt-1 text-xs text-slate-500">Nothing has run yet.</p>
@@ -311,13 +309,11 @@ function WorkItemsCard({ items, encoded }: { items: WorkItemSummary[]; encoded: 
                     <Badge tone={statusTone(item.status)} testId="dashboard-work-item-status">
                       {item.status}
                     </Badge>
-                    <span
+                    <TimeAgo
                       className="text-[11px] text-slate-400"
-                      data-testid="dashboard-work-item-updated"
-                      title={formatDateTime(item.updatedAt)}
-                    >
-                      {formatRelative(item.updatedAt)}
-                    </span>
+                      testId="dashboard-work-item-updated"
+                      value={item.updatedAt}
+                    />
                   </span>
                 </li>
               ))}
@@ -380,13 +376,11 @@ function RunsCard({ runs, encoded }: { runs: RunSummary[]; encoded: string }) {
                   <span className="text-[11px] text-slate-600" data-testid="dashboard-run-cost">
                     {formatCost(run.costUsd)}
                   </span>
-                  <span
+                  <TimeAgo
                     className="text-[11px] text-slate-400"
-                    data-testid="dashboard-run-started"
-                    title={formatDateTime(run.startedAt)}
-                  >
-                    {formatRelative(run.startedAt)}
-                  </span>
+                    testId="dashboard-run-started"
+                    value={run.startedAt}
+                  />
                 </span>
               </li>
             ))}
@@ -486,7 +480,8 @@ function DeliverablesCard({
                     {latest.bytes !== undefined ? ` · ${latest.bytes} bytes` : ''}
                   </Link>
                   <p className="text-[11px] text-slate-400">
-                    from {artifactRun.title ?? artifactRun.id} · {formatRelative(artifactRun.startedAt)}
+                    from {artifactRun.title ?? artifactRun.id} ·{' '}
+                    <TimeAgo value={artifactRun.startedAt} />
                   </p>
                 </div>
               ) : (

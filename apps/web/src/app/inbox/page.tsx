@@ -3,9 +3,11 @@ import { Badge } from '@/components/ui/Badge';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { GateDecisionActions } from '@/components/work-items/GateDecisionActions';
+import { GateVerdictBadge } from '@/components/work-items/GateVerdictBadge';
 import { SlaCountdown } from '@/components/work-items/SlaCountdown';
 import { safeGet } from '@/lib/api';
-import { formatRelative, shortCommit } from '@/lib/format';
+import { shortCommit } from '@/lib/format';
+import { TimeAgo } from '@/components/ui/TimeAgo';
 import type {
   GateDecisionRecord,
   PermissionRow,
@@ -191,10 +193,13 @@ export default async function InboxPage() {
                           data-testid="inbox-gate-age"
                           data-requested-at={gate.requestedAt ?? ''}
                         >
-                          waiting {formatRelative(gate.requestedAt)}
+                          waiting <TimeAgo value={gate.requestedAt} />
                         </span>
                         <SlaCountdown slaAt={gate.slaAt} testId="inbox-gate-sla" />
                       </div>
+                      {gate.verdict ? (
+                        <GateVerdictBadge verdict={gate.verdict} testId="inbox-gate-verdict" />
+                      ) : null}
                       <GateDecisionActions
                         workItemId={workItem.id}
                         stage={gate.stage}
@@ -242,7 +247,7 @@ export default async function InboxPage() {
                           {item.factory}@{shortCommit(item.commit)}
                         </span>
                         <span className="ml-auto text-xs text-slate-500" data-testid="inbox-item-age">
-                          {formatRelative(item.at)}
+                          <TimeAgo value={item.at} />
                         </span>
                       </li>
                     ))}
@@ -282,7 +287,7 @@ export default async function InboxPage() {
                           {item.errorCode}
                         </span>
                         <span className="ml-auto text-xs text-slate-500" data-testid="inbox-item-age">
-                          {formatRelative(item.at)}
+                          <TimeAgo value={item.at} />
                         </span>
                       </li>
                     ))}

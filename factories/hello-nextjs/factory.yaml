@@ -1,12 +1,11 @@
-schemaVersion: v1alpha1
-name: hello-nextjs
-alias: Hello Next.js
-description: "Builds a minimal hello-world Next.js site in a repository: package.json, App Router layout and page, and a short README."
 agentDefaults:
   harness:
     model: env:FACTORY_MODEL
     type: opencode
   runner: local-docker
+agentVerdict: required
+alias: Hello Next.js
+description: "Builds a minimal hello-world Next.js site in a repository: package.json, App Router layout and page, and a short README."
 gates:
   deploy: agent
   implement: agent
@@ -15,6 +14,9 @@ gates:
   review: agent
   spec: agent
 mergePolicy: auto_on_green
+name: hello-nextjs
 repositories:
   - name: hello-nextjs
     owner: acme
+schemaVersion: v1alpha1
+secrets: []

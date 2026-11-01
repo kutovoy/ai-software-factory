@@ -84,9 +84,9 @@ export interface RunnerHandle {
   containerName?: string;
   port?: number;
   pid?: number;
-  /** Local sandbox state (macOS `sandbox-exec`); absent for the docker backend. */
+  /** Local sandbox state (macOS `sandbox-exec` / Linux `bwrap`); absent for docker. */
   sandbox?: {
-    mode: 'exec' | 'none';
+    mode: 'exec' | 'bwrap' | 'none';
     active: boolean;
     reason: string | null;
   };

@@ -8,6 +8,7 @@ import {
   requestGateDecision,
   setWorkItemStatus,
   transitionWorkItem,
+  type AgentVerdict,
   type AutonomyState,
   type GateDecisionValue,
   type LoopStage,
@@ -56,6 +57,7 @@ export async function resolveGateDecision(args: {
   actor: string;
   reason?: string | null;
   feedback?: string | null;
+  verdict?: AgentVerdict | null;
   automatic?: boolean;
 }): Promise<void> {
   await recordGateDecision(getSql(), args);

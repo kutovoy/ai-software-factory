@@ -24,7 +24,8 @@ export type BenchmarkErrorCode =
   | 'duplicate_tasks'
   | 'duplicate_configurations'
   | 'benchmark_task_mismatch'
-  | 'invalid_matrix';
+  | 'invalid_matrix'
+  | 'invalid_replay_source';
 
 export class BenchmarkError extends Error {
   readonly code: BenchmarkErrorCode;
@@ -54,6 +55,11 @@ export interface BenchmarkTaskDescriptor {
   startingRepoRefs: string[];
   tags: string[];
   sourceRunId: string | null;
+  /**
+   * Recorded run this task replays (`runs/<replayFrom>/events.jsonl` + `patch.diff`).
+   * A replay trial is scored without a model call (spec `benchmark-replay`).
+   */
+  replayFrom: string | null;
 }
 
 export interface BenchmarkSuiteDescriptor {
@@ -79,11 +85,16 @@ export interface BenchmarkTrialPlanItem {
   successCriteria: string;
   startingRepoRefs: string[];
   tags: string[];
+  /** Set when the task replays a recorded run; the trial then calls no model. */
+  replayFrom: string | null;
 }
 
 /* --------------------------------------------------------------- validation */
 
 const FULL_SHA_RE = /^[a-z0-9.-]+\.[a-z]{2,}:[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+@[0-9a-f]{40}$/;
+
+/** A run id (`run_<ulid>`, `run_bench_…`, `run_<ulid>_<stage>_<n>`) is the replay source. */
+const RUN_ID_RE = /^run_[A-Za-z0-9_-]+$/;
 
 function assertFullShas(task: BenchmarkTaskDescriptor): void {
   if (task.startingRepoRefs.length === 0) {
@@ -101,6 +112,22 @@ function assertFullShas(task: BenchmarkTaskDescriptor): void {
         { task: task.slug, ref },
       );
     }
+  }
+}
+
+/**
+ * A replay source must name a run id: the recording is read from `runs/<id>/`. The directory
+ * is checked at trial start (missing → `replay_missing`), not here — validation must stay
+ * pure so a definition can be validated without the run store.
+ */
+function assertReplaySource(task: BenchmarkTaskDescriptor): void {
+  if (task.replayFrom === null) return;
+  if (!RUN_ID_RE.test(task.replayFrom)) {
+    throw new BenchmarkError(
+      'invalid_replay_source',
+      `task "${task.slug}" declares replayFrom "${task.replayFrom}" but it is not a run id (run_…)`,
+      { task: task.slug, replayFrom: task.replayFrom },
+    );
   }
 }
 
@@ -156,6 +183,7 @@ export function validateBenchmarkSuite(
       );
     }
     assertFullShas(task);
+    assertReplaySource(task);
   }
 }
 
@@ -173,6 +201,7 @@ function taskDescriptor(resource: {
     startingRepoRefs: string[];
     tags?: string[];
     sourceRunId?: string;
+    replayFrom?: string;
   };
   return {
     slug: resource.name.split('/').slice(1).join('/'),
@@ -183,6 +212,7 @@ function taskDescriptor(resource: {
     startingRepoRefs: [...doc.startingRepoRefs],
     tags: [...(doc.tags ?? [])],
     sourceRunId: doc.sourceRunId ?? null,
+    replayFrom: doc.replayFrom ?? null,
   };
 }
 
@@ -324,6 +354,7 @@ export function buildBenchmarkTrials(
         successCriteria: task.successCriteria,
         startingRepoRefs: [...task.startingRepoRefs],
         tags: [...task.tags],
+        replayFrom: task.replayFrom,
       });
     }
   }

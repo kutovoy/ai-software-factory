@@ -146,6 +146,21 @@ test.describe('Factory loop (lights on)', () => {
     );
     await expect(shipRow.getByTestId('gate-decision-actor')).toContainText('local-user');
     await expect(shipRow.getByTestId('gate-decision-time')).not.toHaveText('—');
+
+    // Agent gates record the verdict that produced the automatic decision (change
+    // `add-agent-verdicts`). The fake harness has no summary, so advisory `example` approves
+    // with an explicit `unknown` / `none` verdict instead of an unexplained approval.
+    const implementRow = page.getByTestId('gate-decision-row').filter({ hasText: 'implement' });
+    await expect(implementRow.getByTestId('gate-verdict')).toHaveAttribute('data-decision', 'unknown');
+    await expect(implementRow.getByTestId('gate-verdict')).toHaveAttribute('data-source', 'none');
+    await expect(implementRow.getByTestId('gate-decision-decision')).toHaveAttribute(
+      'data-decision',
+      'approve',
+    );
+    await expect(implementRow.getByTestId('gate-decision-decision')).toHaveAttribute(
+      'data-automatic',
+      'true',
+    );
   });
 });
 

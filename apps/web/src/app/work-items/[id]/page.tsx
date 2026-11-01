@@ -5,10 +5,12 @@ import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Table } from '@/components/ui/Table';
 import { GateDecisionActions } from '@/components/work-items/GateDecisionActions';
+import { GateVerdictBadge } from '@/components/work-items/GateVerdictBadge';
 import { RetryWorkItemButton } from '@/components/work-items/RetryWorkItemButton';
 import { SlaCountdown } from '@/components/work-items/SlaCountdown';
 import { ApiClientError, apiGet } from '@/lib/api';
-import { formatDateTime, formatRelative, shortCommit, statusTone } from '@/lib/format';
+import { formatDateTime, shortCommit, statusTone } from '@/lib/format';
+import { TimeAgo } from '@/components/ui/TimeAgo';
 import type { GateDecisionRecord, WorkItemDetail } from '@/lib/types';
 import {
   canRetryWorkItem,
@@ -140,13 +142,18 @@ export default async function WorkItemDetailPage({ params }: { params: Promise<{
               title={workItem.workflowId ?? undefined}
             >
               {workItem.attempt ?? 1}
-              {workItem.retriedAt ? ` · retried ${formatRelative(workItem.retriedAt)}` : ''}
+              {workItem.retriedAt ? (
+                <>
+                  {' · retried '}
+                  <TimeAgo value={workItem.retriedAt} />
+                </>
+              ) : null}
             </p>
           </div>
           <div>
             <p className="text-xs uppercase tracking-wide text-slate-400">Created</p>
             <p data-testid="work-item-created" className="text-sm text-slate-800">
-              {formatRelative(workItem.createdAt)}
+              <TimeAgo value={workItem.createdAt} />
             </p>
           </div>
           <div className="md:col-span-2">
@@ -237,10 +244,16 @@ export default async function WorkItemDetailPage({ params }: { params: Promise<{
                 </Badge>
                 <span className="font-mono text-xs text-slate-500">attempt {pendingGate.attempt}</span>
                 <span className="text-xs text-slate-500" data-testid="work-item-pending-gate-age">
-                  waiting {formatRelative(pendingGate.requestedAt)}
+                  waiting <TimeAgo value={pendingGate.requestedAt} />
                 </span>
                 <SlaCountdown slaAt={pendingGate.slaAt} testId="work-item-pending-gate-sla" />
               </div>
+              {pendingGate.verdict ? (
+                <GateVerdictBadge
+                  verdict={pendingGate.verdict}
+                  testId="work-item-pending-gate-verdict"
+                />
+              ) : null}
               <GateDecisionActions
                 workItemId={workItem.id}
                 stage={pendingGate.stage}
@@ -363,6 +376,15 @@ export default async function WorkItemDetailPage({ params }: { params: Promise<{
                     </Badge>
                   </span>
                 ),
+              },
+              {
+                header: 'Verdict',
+                cell: (row: GateDecisionRecord) =>
+                  row.verdict ? (
+                    <GateVerdictBadge verdict={row.verdict} />
+                  ) : (
+                    <span className="text-xs text-slate-400">—</span>
+                  ),
               },
               {
                 header: 'Actor',

@@ -4,7 +4,8 @@ import { Badge } from '@/components/ui/Badge';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { safeGet } from '@/lib/api';
-import { formatCost, formatRelative } from '@/lib/format';
+import { formatCost } from '@/lib/format';
+import { TimeAgo } from '@/components/ui/TimeAgo';
 import type {
   CalibrationResultWire,
   FactoryDetail,
@@ -151,7 +152,7 @@ function CalibrationPanel({ scorer }: { scorer: ScorersResponse['scorers'][numbe
               Judge <span className="font-mono">{latest.judgeModel}</span>
               {latest.judgeModelVersion ? ` (${latest.judgeModelVersion})` : ''} · rubric{' '}
               <span className="font-mono">{latest.rubricHash.slice(0, 12)}…</span> ·{' '}
-              {formatRelative(latest.createdAt)}
+              <TimeAgo value={latest.createdAt} />
             </p>
           </>
         )}

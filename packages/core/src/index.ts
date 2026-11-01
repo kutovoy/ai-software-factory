@@ -20,6 +20,7 @@ export * from './loader/serialize';
 export * from './loader/hash';
 export * from './gates/resolve';
 export * from './gates/loop';
+export * from './gates/verdict';
 export * from './stage-graph/graph';
 export * from './stage-graph/resolve';
 export * from './autonomy/policy';

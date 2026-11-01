@@ -2541,6 +2541,38 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "workItem": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "gates": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/GateDecision"
+                      }
+                    },
+                    "pendingGate": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/GateDecision"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "workflowId": {
+                      "type": "string"
+                    }
+                  },
                   "additionalProperties": true
                 }
               }
@@ -4306,6 +4338,46 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "workItemId": {
+                      "type": "string"
+                    },
+                    "stage": {
+                      "type": "string"
+                    },
+                    "decision": {
+                      "type": "string",
+                      "enum": [
+                        "approve",
+                        "reject",
+                        "request_changes"
+                      ]
+                    },
+                    "actor": {
+                      "type": "string"
+                    },
+                    "attempt": {
+                      "type": "integer"
+                    },
+                    "verdict": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/GateDecisionVerdict"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "delivery": {
+                      "type": "string",
+                      "enum": [
+                        "update",
+                        "signal",
+                        "none"
+                      ]
+                    }
+                  },
                   "additionalProperties": true
                 }
               }
@@ -4470,6 +4542,112 @@
             "description": "Optional structured context (ids, limits, offending field)."
           }
         }
+      },
+      "GateDecisionVerdict": {
+        "type": "object",
+        "description": "Parsed agent verdict that produced an automatic gate decision (change `add-agent-verdicts`). `source` says whether it came from the fenced JSON block, the textual fallback, or nowhere. Null for human gates and for gates decided before migration 015.",
+        "required": [
+          "decision",
+          "source"
+        ],
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "request_changes",
+              "reject",
+              "unknown"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "structured",
+              "textual",
+              "none"
+            ]
+          },
+          "summary": {
+            "type": "string",
+            "description": "The block's own summary (or the matched textual signal)."
+          },
+          "findings": {
+            "type": "array",
+            "items": {},
+            "description": "Optional findings emitted with the verdict."
+          }
+        },
+        "additionalProperties": true
+      },
+      "GateDecision": {
+        "type": "object",
+        "description": "One durable stage gate decision. `verdict` is additive and may be absent on older rows.",
+        "properties": {
+          "workItemId": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "attempt": {
+            "type": "integer"
+          },
+          "gate": {
+            "type": "string"
+          },
+          "workflowId": {
+            "type": "string",
+            "nullable": true
+          },
+          "decision": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "approve",
+              "reject",
+              "request_changes"
+            ]
+          },
+          "actor": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "feedback": {
+            "type": "string",
+            "nullable": true
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GateDecisionVerdict"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "automatic": {
+            "type": "boolean"
+          },
+          "requestedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "slaAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "decidedAt": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": true
       }
     }
   }

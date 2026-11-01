@@ -3,6 +3,8 @@
  * packages: it is bundled into the deterministic workflow sandbox.
  */
 
+import type { AgentVerdict, AgentVerdictPolicy } from '@factory/core/gates/verdict';
+
 export type RunStatus = 'pending' | 'running' | 'ok' | 'error' | 'cancelled';
 export type TerminalStatus = 'ok' | 'error' | 'cancelled';
 export type HarnessId =
@@ -71,6 +73,13 @@ export interface RunInput {
    */
   hermetic?: boolean;
   networkPolicy?: 'denied' | 'allowed';
+  /**
+   * Replay this recorded run (`runs/<replayFrom>/events.jsonl` + `patch.diff`) instead of
+   * driving a harness: the adapter re-emits the recorded canonical events and applies the
+   * recorded patch to this run's fresh workspace. No model call, no proxy token
+   * (spec `benchmark-replay`).
+   */
+  replayFrom?: string;
 }
 
 export interface LeaseInfo {
@@ -80,8 +89,8 @@ export interface LeaseInfo {
   harnessUrl?: string;
   /** True when the run uses the in-process scripted adapter (no sandbox process). */
   ephemeral: boolean;
-  /** Local sandbox state (ADR-025); absent for docker/ephemeral leases. */
-  sandbox?: { mode: 'exec' | 'none'; active: boolean; reason: string | null };
+  /** Local sandbox state (ADR-025 / harden-runners); absent for docker/ephemeral leases. */
+  sandbox?: { mode: 'exec' | 'bwrap' | 'none'; active: boolean; reason: string | null };
 }
 
 export interface ProxyCredentials {
@@ -283,6 +292,8 @@ export interface FactoryWorkflowInput {
   stageGraph: StageGraphSummary;
   /** Resolved gate per loop stage (after the kill switch was applied). */
   gates: Record<string, string>;
+  /** `advisory` approves a missing agent verdict; `required` requests changes. */
+  agentVerdict?: AgentVerdictPolicy;
   mergePolicy: MergePolicyName;
   autonomy: AutonomySnapshot;
   loopLimit: number;
@@ -377,6 +388,8 @@ export interface StageWorkflowInput {
   tools?: { allow: string[]; deny: string[] } | null;
   /** `human`, `agent`, `policy:<name>` or `none` (run-only children). */
   gate: string;
+  /** What a missing agent verdict means for this factory (change `add-agent-verdicts`). */
+  agentVerdict?: AgentVerdictPolicy;
   gateSlaMs: number;
   /** SLA fallback may auto-approve (autonomy policy + benchmark gate allow it). */
   autoApproveAllowed: boolean;
@@ -397,6 +410,8 @@ export interface StageGateOutcome {
   automatic: boolean;
   reason?: string;
   feedback?: string;
+  /** Verdict that produced an automatic agent-gate decision. */
+  verdict?: AgentVerdict;
 }
 
 export interface StageWorkflowResult {
@@ -581,6 +596,12 @@ export interface BenchmarkTrialPlan {
   repo: string;
   /** Tags may declare `requires-network`; a hermetic trial then fails `network_denied`. */
   requiresNetwork: boolean;
+  /**
+   * Recorded run this trial replays (spec `benchmark-replay`). Set, the trial runs the
+   * replay adapter and is scored without a model call; a missing recording fails
+   * `replay_missing`.
+   */
+  replayFrom?: string | null;
 }
 
 export interface BenchmarkWorkflowInput {

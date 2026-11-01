@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { ApplicationFailure } from '@temporalio/activity';
 import {
   aggregateBenchmark,
@@ -34,11 +37,13 @@ import {
   type BenchmarkTrialRecord,
 } from '@factory/core';
 import { FakeForge, type RepoRef } from '@factory/forge';
+import { prepareWorkspace } from '@factory/runners';
 import { loadConfig } from '../config';
 import { getSql, getRun, insertRun } from '../db';
 import { getForge } from './forge';
 import { persistScore, runDeterministic, runJudge } from './scoring';
 import { skippedScoreDraft } from '../scoring/drafts';
+import { runDir } from '../run-dir';
 import type {
   BenchmarkTrialOutcome,
   BenchmarkTrialPlan,
@@ -252,18 +257,58 @@ function startingCommit(trial: BenchmarkTrialPlan): string {
  * Prepares one hermetic trial: fresh fake-forge repo, pinned SHA + definition commit,
  * trial row in `running`. A task tagged `requires-network` fails with `network_denied`
  * instead of silently reaching the network.
+ *
+ * A task with `replayFrom` runs the replay adapter instead of a harness: the recording must
+ * exist (`replay_missing` otherwise) and the run calls no model.
  */
 export async function startBenchmarkTrial(args: {
   input: BenchmarkWorkflowInput;
   trial: BenchmarkTrialPlan;
 }): Promise<RunInput> {
   const { input, trial } = args;
-  if (trial.requiresNetwork) {
+  const config = loadConfig();
+  const replayFrom = trial.replayFrom ?? null;
+
+  if (replayFrom) {
+    const recording = runDir(config.runsDir, replayFrom);
+    const hasEvents = existsSync(join(recording, 'events.jsonl'));
+    const hasPatch = existsSync(join(recording, 'patch.diff'));
+    if (!hasEvents || !hasPatch) {
+      fail(
+        'replay_missing',
+        `trial ${trial.trialId} replays ${replayFrom} but ${recording} is missing events.jsonl or patch.diff`,
+        { trialId: trial.trialId, replayFrom, recording, events: hasEvents, patch: hasPatch },
+      );
+    }
+  }
+
+  if (trial.requiresNetwork && !replayFrom) {
     fail('network_denied', `trial ${trial.trialId} requires network; hermetic benchmarks deny it`, {
       trialId: trial.trialId,
       task: trial.task,
       tags: trial.tags,
     });
+  }
+
+  // A replay trial wants a fresh checkout to apply the recorded patch to. When the pinned
+  // commit is available locally it is prepared here (host-side, like any stage patch);
+  // otherwise the replay adapter applies the patch itself, so a patch that does not fit
+  // fails the run with `replay_apply_failed` instead of being silently ignored.
+  let replayWorkspace: string | undefined;
+  if (replayFrom) {
+    const workspace = join(runDir(config.runsDir, trial.runId), 'workspace');
+    const patch = join(runDir(config.runsDir, replayFrom), 'patch.diff');
+    try {
+      await prepareWorkspace(
+        { path: input.repoRoot ?? input.factoryRoot, commit: startingCommit(trial), patch },
+        workspace,
+      );
+    } catch (error) {
+      console.warn(
+        `[benchmark] replay ${trial.trialId}: workspace not prepared (${message(error)}); the replay adapter will apply the patch`,
+      );
+      replayWorkspace = workspace;
+    }
   }
 
   const repo = repoOf(trial.repo);
@@ -311,10 +356,19 @@ export async function startBenchmarkTrial(args: {
     prompt: { text: prompt },
     kind: 'run',
     title: `benchmark: ${input.suite} · ${trial.configuration} · ${trial.task}`,
-    proxyModels: input.model ? [input.model] : [],
+    // A replay calls no model, so it gets no proxy token and no proxy models.
+    proxyModels: replayFrom ? [] : input.model ? [input.model] : [],
     autoAllowPermissions: true,
     hermetic: true,
     networkPolicy: 'denied',
+    ...(replayFrom
+      ? {
+          replayFrom,
+          // Set only when the host-side preparation failed: the adapter then applies the
+          // recorded patch to this fresh workspace itself.
+          ...(replayWorkspace ? { workspace: replayWorkspace } : {}),
+        }
+      : {}),
     ...(input.permissionTimeoutMs ? { permissionTimeoutMs: input.permissionTimeoutMs } : {}),
   };
 
@@ -698,6 +752,7 @@ export function planBenchmarkTrials(args: {
       requiresNetwork: trial.tags.some(
         (tag) => tag === 'requires-network' || tag === 'network',
       ),
+      replayFrom: trial.replayFrom,
     };
   });
 }

@@ -117,7 +117,9 @@ Then open http://localhost:3000, pick a factory, and create a work item. `hello-
    the next correctness fix for lights-off.
 3. Remote runners, Temporal Cloud, multi-tenant isolation.
 4. Forge SSH/websockets; dedicated proxy if pushes outgrow the console proxy.
-5. Benchmarks are hermetic replays, not recorded-tool-response replays.
+5. Benchmarks are hermetic trials; a task with `replayFrom: run_…` replays a recorded run (events + patch)
+   instead of calling a model, but a replay is a recording of *our* canonical events, not a recorded
+   tool-response trace from an arbitrary harness.
 
 ## Specs
 

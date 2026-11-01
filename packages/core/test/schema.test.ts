@@ -87,6 +87,22 @@ describe('root manifest schema', () => {
   it('rejects an invalid merge policy', () => {
     expect(codes(factorySchema, baseFactory({ mergePolicy: 'yolo' }))).toContain('invalid_value');
   });
+
+  it('defaults agentVerdict to advisory and accepts required', () => {
+    const parsed = factorySchema.safeParse(baseFactory());
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.agentVerdict).toBe('advisory');
+
+    const required = factorySchema.safeParse(baseFactory({ agentVerdict: 'required' }));
+    expect(required.success).toBe(true);
+    if (required.success) expect(required.data.agentVerdict).toBe('required');
+  });
+
+  it('rejects an unknown agentVerdict policy', () => {
+    expect(codes(factorySchema, baseFactory({ agentVerdict: 'always' }))).toContain(
+      'invalid_value',
+    );
+  });
 });
 
 describe('resource schemas', () => {

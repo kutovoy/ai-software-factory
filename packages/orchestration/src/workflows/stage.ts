@@ -7,6 +7,7 @@ import {
   setHandler,
   workflowInfo,
 } from '@temporalio/workflow';
+import { parseAgentVerdict } from '@factory/core/gates/verdict';
 import type * as activities from '../activities';
 import type {
   GateDecisionAck,
@@ -19,6 +20,21 @@ import type {
 } from '../types';
 import { runWorkflowIdFor, stageRunId } from '../types';
 import { RunWorkflow } from './run';
+
+/**
+ * Verdict contract for agent-gated stages (change `add-agent-verdicts`).
+ *
+ * Appended only when the stage gate is `agent`: the gate no longer approves every run that
+ * ends `ok`, it decides from this block. The parser reads the LAST fenced JSON block, so an
+ * earlier quoted verdict cannot spoof the gate.
+ */
+export const AGENT_VERDICT_INSTRUCTION = [
+  'Agent gate — finish your final message with a fenced ```json block:',
+  '{"verdict":"approve|request_changes|reject","summary":"<why>","findings":["<finding>"]}',
+  'Use approve only when the stage output is acceptable, request_changes for fixable gaps,',
+  'reject for an unsafe direction. Without a block the gate falls back to explicit',
+  '`VERDICT: PASS` / `VERDICT: FAIL` lines.',
+].join('\n');
 
 /**
  * StageWorkflow — one child workflow per stage attempt.
@@ -109,6 +125,7 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
         : []),
       `Work item: ${input.workItemId}`,
       `Definition commit: ${input.definitionCommit}`,
+      ...(input.gate === 'agent' ? ['', AGENT_VERDICT_INSTRUCTION] : []),
     ].join('\n');
 
     const runInput: RunInput = {
@@ -171,9 +188,66 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
     return { stage: input.stage, runId, status: runStatus, gate: null, ...(summary ? { summary } : {}) };
   }
 
-  // Agent gate: the stage's own run/verdict satisfies it. Recorded with its evidence.
+  // Agent gate: the stage's own verdict satisfies it. Recorded with its evidence.
   if (input.gate === 'agent') {
     const actor = input.agent ?? 'agent';
+
+    // Gate-only children (`ship`, the review committee's final gate) have no stage run to
+    // verdict. The review judge already forced a human gate on a non-approve verdict, so an
+    // agent gate here keeps the pre-verdict semantics.
+    if (input.phase === 'gate') {
+      await gates.recordGateRequest({
+        workItemId: input.workItemId,
+        stage: input.stage,
+        attempt: input.attempt,
+        gate: 'agent',
+        workflowId: workflowInfo().workflowId,
+      });
+      await gates.resolveGateDecision({
+        workItemId: input.workItemId,
+        stage: input.stage,
+        attempt: input.attempt,
+        decision: 'approve',
+        actor,
+        reason: 'agent gate satisfied by the gate evidence',
+        automatic: true,
+      });
+      const outcome: StageGateOutcome = { decision: 'approve', actor, automatic: true };
+      return { stage: input.stage, runId, status: runStatus, gate: outcome, ...(summary ? { summary } : {}) };
+    }
+
+    const verdict = parseAgentVerdict(summary);
+
+    // `request_changes` feeds the existing loop/escalation path in `factory.ts`; a missing
+    // verdict is only fatal when the factory opts into `agentVerdict: required`.
+    const required = (input.agentVerdict ?? 'advisory') === 'required';
+    // Structured blocks carry their own summary; the textual fallback's matched line is only
+    // a signal, so the full run summary is the actionable feedback there.
+    const verdictFeedback = verdict.source === 'structured' ? (verdict.summary ?? summary) : summary;
+    let decision: StageGateOutcome['decision'];
+    let reason: string;
+    let feedback: string | undefined;
+
+    if (verdict.decision === 'approve') {
+      decision = 'approve';
+      reason = 'agent verdict: approve';
+    } else if (verdict.decision === 'request_changes') {
+      decision = 'request_changes';
+      reason = 'agent verdict: request_changes';
+      feedback = verdictFeedback;
+    } else if (verdict.decision === 'reject') {
+      decision = 'reject';
+      reason = 'agent verdict: reject';
+      feedback = verdictFeedback;
+    } else if (required) {
+      decision = 'request_changes';
+      reason = 'missing agent verdict';
+      feedback = summary;
+    } else {
+      decision = 'approve';
+      reason = 'agent gate satisfied by the stage verdict';
+    }
+
     // The gate row is created first so the decision has a stable (item, stage, attempt) key
     // and the event log records both `gate.requested` and `gate.decided`.
     await gates.recordGateRequest({
@@ -187,12 +261,21 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
       workItemId: input.workItemId,
       stage: input.stage,
       attempt: input.attempt,
-      decision: 'approve',
+      decision,
       actor,
-      reason: 'agent gate satisfied by the stage verdict',
+      reason,
+      feedback: feedback ?? null,
+      verdict,
       automatic: true,
     });
-    const outcome: StageGateOutcome = { decision: 'approve', actor, automatic: true };
+    const outcome: StageGateOutcome = {
+      decision,
+      actor,
+      automatic: true,
+      reason,
+      ...(feedback ? { feedback } : {}),
+      verdict,
+    };
     return { stage: input.stage, runId, status: runStatus, gate: outcome, ...(summary ? { summary } : {}) };
   }
 

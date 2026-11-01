@@ -153,7 +153,12 @@ export async function leaseRunner(args: {
   // idempotent per `(runId, name)`.
   const secretNames = await recordRunSecretNames(args.input);
 
-  const ephemeral = args.input.harness === 'fake' || args.input.runner === 'fake';
+  const ephemeral =
+    args.input.harness === 'fake' ||
+    args.input.runner === 'fake' ||
+    // A replay is an in-process adapter: it re-emits a recording and applies its patch,
+    // so it needs a workspace but no sandbox process (spec `benchmark-replay`).
+    Boolean(args.input.replayFrom);
   const workspace = join(runDir(config.runsDir, args.input.runId), 'workspace');
   await mkdir(workspace, { recursive: true });
 
@@ -163,7 +168,13 @@ export async function leaseRunner(args: {
       kind: 'local',
       workspace,
       ephemeral: true,
-      sandbox: { mode: 'none', active: false, reason: 'ephemeral adapter (in-process)' },
+      sandbox: {
+        mode: 'none',
+        active: false,
+        reason: args.input.replayFrom
+          ? 'replay adapter (in-process)'
+          : 'ephemeral adapter (in-process)',
+      },
     };
     ephemeralLeases.set(args.input.runId, lease);
     await upsertStep({
@@ -171,7 +182,13 @@ export async function leaseRunner(args: {
       stepId: 'lease-runner',
       kind: 'runner',
       status: 'ok',
-      detail: { ...lease, backend: 'ephemeral', envKeys: [], secretNames },
+      detail: {
+        ...lease,
+        backend: args.input.replayFrom ? 'replay' : 'ephemeral',
+        envKeys: [],
+        secretNames,
+        ...(args.input.replayFrom ? { replayFrom: args.input.replayFrom } : {}),
+      },
     });
     return lease;
   }
@@ -205,7 +222,42 @@ export async function leaseRunner(args: {
       // The local sandbox denies network unless the stage/factory grants it (task 6).
       networkPolicy: args.input.networkPolicy ?? 'denied',
     })
-    .catch(rethrowWithCause);
+    .catch(async (error: unknown) => {
+      // A *requested* sandbox profile the host cannot honour fails the run here instead of
+      // running unconfined (spec `runner-sandbox` › "Missing bwrap"). Record the same
+      // `runner.sandbox_unavailable` identifier on the sandbox step so the run detail
+      // explains the cause, then let the activity fail with the runner error code.
+      if (isRunnerError(error) && error.code === 'runner.sandbox_unavailable') {
+        const details = (error.details ?? {}) as { mode?: string };
+        const detail = {
+          event: 'runner.sandbox_unavailable',
+          mode: details.mode ?? 'bwrap',
+          active: false,
+          platform: process.platform,
+          reason: error.message,
+          runId: args.input.runId,
+        };
+        await upsertStep({
+          runId: args.input.runId,
+          stepId: 'sandbox',
+          kind: 'runner',
+          status: 'error',
+          detail,
+          error: error.message,
+        });
+        const workItemMatch = /^run_([0-9A-HJKMNP-TV-Z]{26})(?:_|$)/.exec(args.input.runId);
+        if (workItemMatch) {
+          await appendWorkItemEvent(getSql(), {
+            workItemId: `wi_${workItemMatch[1]}`,
+            type: 'runner.sandbox_unavailable',
+            actor: 'runner',
+            payload: detail,
+          }).catch(() => undefined);
+        }
+        console.warn(`[runner] runner.sandbox_unavailable ${JSON.stringify(detail)}`);
+      }
+      rethrowWithCause(error);
+    });
 
   const lease: LeaseInfo = {
     runnerId: handle.runnerId,

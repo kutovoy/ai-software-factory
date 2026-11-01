@@ -475,6 +475,7 @@ function planTrials(
       requiresNetwork: trial.tags.some(
         (tag) => tag === 'requires-network' || tag === 'network',
       ),
+      replayFrom: trial.replayFrom,
     };
   });
 }

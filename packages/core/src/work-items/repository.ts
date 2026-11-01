@@ -1,4 +1,5 @@
 import type { SQL } from 'bun';
+import type { AgentVerdict } from '../gates/verdict';
 import type { LoopStage } from '../stage-graph/graph';
 import {
   isRetryableWorkItemStatus,
@@ -73,6 +74,8 @@ export interface GateDecisionRow {
   actor: string | null;
   reason: string | null;
   feedback: string | null;
+  /** Parsed agent verdict (`{decision, source, summary, findings}`), null for human gates. */
+  verdict: unknown;
   automatic: boolean;
   requested_at: unknown;
   sla_at: unknown;
@@ -111,6 +114,8 @@ export interface GateDecisionRecord {
   actor: string | null;
   reason: string | null;
   feedback: string | null;
+  /** Agent verdict that produced an automatic decision; null when none was parsed. */
+  verdict: AgentVerdict | null;
   automatic: boolean;
   requestedAt: string | null;
   slaAt: string | null;
@@ -200,6 +205,7 @@ function mapGate(row: GateDecisionRow): GateDecisionRecord {
     actor: row.actor,
     reason: row.reason,
     feedback: row.feedback,
+    verdict: parseJsonb<AgentVerdict | null>(row.verdict, null),
     automatic: row.automatic,
     requestedAt: iso(row.requested_at),
     slaAt: iso(row.sla_at),
@@ -583,6 +589,8 @@ export interface RecordGateDecisionArgs {
   actor: string;
   reason?: string | null;
   feedback?: string | null;
+  /** Parsed agent verdict (change `add-agent-verdicts`); omitted for human decisions. */
+  verdict?: AgentVerdict | null;
   automatic?: boolean;
 }
 
@@ -598,6 +606,7 @@ export async function recordGateDecision(
         actor = ${args.actor},
         reason = ${args.reason ?? null},
         feedback = ${args.feedback ?? null},
+        verdict = ${args.verdict ?? null}::jsonb,
         automatic = ${args.automatic ?? false},
         decided_at = now()
       where work_item_id = ${args.workItemId}
@@ -629,6 +638,7 @@ export async function recordGateDecision(
                 actor: args.actor,
                 reason: args.reason ?? null,
                 feedback: args.feedback ?? null,
+                verdict: args.verdict ?? null,
                 automatic: args.automatic ?? false,
                 attempt: args.attempt,
               })}::jsonb)

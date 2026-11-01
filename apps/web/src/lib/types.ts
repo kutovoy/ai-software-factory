@@ -277,6 +277,13 @@ export interface WorkItemEvent {
   createdAt: string | null;
 }
 
+export interface GateDecisionVerdictWire {
+  decision: 'approve' | 'request_changes' | 'reject' | 'unknown';
+  source: 'structured' | 'textual' | 'none';
+  summary?: string;
+  findings?: unknown[];
+}
+
 export interface GateDecisionRecord {
   workItemId: string;
   stage: string;
@@ -287,6 +294,8 @@ export interface GateDecisionRecord {
   actor: string | null;
   reason: string | null;
   feedback: string | null;
+  /** Agent verdict that produced an automatic decision; null for human gates / older rows. */
+  verdict: GateDecisionVerdictWire | null;
   automatic: boolean;
   requestedAt: string | null;
   slaAt: string | null;

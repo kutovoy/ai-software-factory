@@ -23,6 +23,11 @@ export const benchmarkTaskSchema = z
     successCriteria: z.string().min(1),
     startingRepoRefs: z.array(repoRefSchema).min(1),
     sourceRunId: z.string().min(1).optional(),
+    /**
+     * Replay this recorded run instead of calling a model (spec `benchmark-replay`).
+     * The recording lives at `runs/<replayFrom>/events.jsonl` + `patch.diff`.
+     */
+    replayFrom: z.string().regex(/^run_[A-Za-z0-9_-]+$/, 'replayFrom must be a run id (run_…)').optional(),
     tags: z.array(z.string().min(1)).optional(),
     linearSeed: z.unknown().optional(),
   })

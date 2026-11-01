@@ -7,7 +7,9 @@ export type AdapterId =
   | 'codex'
   | 'gemini'
   | 'generic-cli'
-  | 'fake';
+  | 'fake'
+  /** Recorded-run replay for benchmarks (spec `benchmark-replay`); no harness process. */
+  | 'replay';
 
 export type PermissionMode = 'interactive' | 'static' | 'none';
 

@@ -10,13 +10,8 @@ import { FailurePanel } from '@/components/runs/FailurePanel';
 import { RetryRunButton } from '@/components/runs/RetryRunButton';
 import { RunLive } from '@/components/stream/RunLive';
 import { ApiClientError, apiGet, safeGet } from '@/lib/api';
-import {
-  formatCost,
-  formatDateTime,
-  formatDuration,
-  formatTokens,
-  statusTone,
-} from '@/lib/format';
+import { formatCost, formatDateTime, formatTokens, statusTone } from '@/lib/format';
+import { ElapsedTime } from '@/components/ui/TimeAgo';
 import { shortSha } from '@/lib/failure';
 import type { RunArtifact, RunDetail, RunStep, ScoresResponse } from '@/lib/types';
 
@@ -173,7 +168,7 @@ export default async function RunDetailPage({
           <div className="min-w-0" data-testid="run-meta-cell" data-meta="duration">
             <p className="text-xs uppercase tracking-wide text-slate-400">Duration</p>
             <p className="truncate text-sm text-slate-800" data-testid="run-duration">
-              {formatDuration(summary.startedAt, summary.endedAt)}
+              <ElapsedTime startedAt={summary.startedAt} endedAt={summary.endedAt} />
             </p>
           </div>
           <div className="min-w-0" data-testid="run-meta-cell" data-meta="cost">

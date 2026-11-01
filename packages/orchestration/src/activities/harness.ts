@@ -67,11 +67,14 @@ export async function startHarness(args: {
     kind: 'harness',
     status: 'ok',
     detail: {
-      harness: args.input.harness,
+      // The adapter that actually ran: `replay` for a recorded run, never the requested
+      // harness (a replay calls no model).
+      harness: entry.adapter.id,
       model: args.input.model ?? null,
       harnessUrl: args.lease.harnessUrl ?? null,
       sessionRef: entry.handle.sessionRef ?? null,
       resumed: !existed && Boolean(args.sessionRef),
+      ...(args.input.replayFrom ? { replayFrom: args.input.replayFrom } : {}),
       // MCP wiring actually handed to the harness (names + globs, never values).
       mcp: entry.handle.meta?.mcp ?? { supported: false, servers: [], permissions: {} },
     },

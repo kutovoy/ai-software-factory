@@ -4,7 +4,8 @@ import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Table } from '@/components/ui/Table';
 import { safeGet } from '@/lib/api';
-import { formatCost, formatDuration, formatRelative, shortCommit, statusTone } from '@/lib/format';
+import { formatCost, shortCommit, statusTone } from '@/lib/format';
+import { ElapsedTime, TimeAgo } from '@/components/ui/TimeAgo';
 import type { FactoryListItem, RunSummary } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -173,14 +174,14 @@ export default async function RunsPage({
             {
               header: 'Started',
               cell: (run) => (
-                <span className="text-xs text-slate-600">{formatRelative(run.startedAt)}</span>
+                <TimeAgo value={run.startedAt} className="text-xs text-slate-600" />
               ),
             },
             {
               header: 'Duration',
               cell: (run) => (
                 <span className="text-xs text-slate-600">
-                  {formatDuration(run.startedAt, run.endedAt)}
+                  <ElapsedTime startedAt={run.startedAt} endedAt={run.endedAt} />
                 </span>
               ),
             },

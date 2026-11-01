@@ -6,7 +6,8 @@ import { CancelWorkItemButton } from '@/components/work-items/CancelWorkItemButt
 import { CreateWorkItemForm } from '@/components/work-items/CreateWorkItemForm';
 import { SlaCountdown } from '@/components/work-items/SlaCountdown';
 import { getOrError, safeGet } from '@/lib/api';
-import { formatDateTime, formatRelative, shortCommit, statusTone } from '@/lib/format';
+import { shortCommit, statusTone } from '@/lib/format';
+import { TimeAgo } from '@/components/ui/TimeAgo';
 import type { FactoryListItem, WorkItemDetail, WorkItemSummary } from '@/lib/types';
 import { WORK_ITEM_STAGES } from '@/lib/types';
 import { runsForWorkItem } from '@/lib/work-items';
@@ -315,18 +316,16 @@ export default async function WorkItemsPage({
                           <span data-testid="work-item-card-factory" className="font-mono">
                             {item.factory}@{shortCommit(item.definitionCommit)}
                           </span>
-                          <span
-                            data-testid="work-item-card-age"
-                            title={formatDateTime(item.createdAt)}
-                          >
-                            created {formatRelative(item.createdAt)}
-                          </span>
-                          <span
-                            data-testid="work-item-card-updated"
-                            title={formatDateTime(item.updatedAt)}
-                          >
-                            updated {formatRelative(item.updatedAt)}
-                          </span>
+                          <TimeAgo
+                            testId="work-item-card-age"
+                            value={item.createdAt}
+                            prefix="created "
+                          />
+                          <TimeAgo
+                            testId="work-item-card-updated"
+                            value={item.updatedAt}
+                            prefix="updated "
+                          />
                         </p>
 
                         {pendingGate ? (

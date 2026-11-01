@@ -30,7 +30,7 @@ import { setForge } from '../src/activities/forge';
 import { clearEphemeralLeases } from '../src/activities/runner';
 import { setReviewerModel } from '../src/models/review';
 import { setJudgementModel } from '../src/models/judgement';
-import { clearSessions } from '../src/sessions';
+import { clearSessions, setFakeRunSummary } from '../src/sessions';
 import { createWorker } from '../src/worker';
 import {
   cancelWorkItem,
@@ -244,6 +244,22 @@ async function waitForStatus(workItemId: string, status: WorkItemStatus): Promis
     const item = await getWorkItem(getSql(), workItemId);
     return item?.status === status ? true : false;
   });
+}
+
+/** Stops a test item once its assertions are done (a parked human gate holds no slot). */
+async function cancelItem(workItemId: string, stage: LoopStageName): Promise<void> {
+  await requestWorkItemCancel(getSql(), {
+    workItemId,
+    actor: 'ada',
+    reason: 'itest: agent verdict test done',
+    stage,
+  });
+  await cancelWorkItem(
+    workItemWorkflowId(workItemId),
+    { actor: 'ada', reason: 'itest: agent verdict test done' },
+    config,
+  );
+  await waitForStatus(workItemId, 'cancelled');
 }
 
 suite('factory loop on the fake forge + fake harness', () => {
@@ -542,6 +558,81 @@ suite('factory loop on the fake forge + fake harness', () => {
     const events = await listWorkItemEvents(getSql(), workItemId);
     expect(events.filter((event) => event.type === 'work_item.cancelled')).toHaveLength(1);
   }, 90_000);
+
+  test('an agent gate FAIL summary requests changes instead of auto-approving', async () => {
+    setJudgementModel(null);
+    setReviewerModel(null);
+    // The fake harness has no natural summary; script one only for the implement stage.
+    setFakeRunSummary((input) =>
+      input.runId.includes('_implement_')
+        ? 'Implemented the change.\n\nVERDICT: FAIL\nMissing regression test.'
+        : undefined,
+    );
+
+    try {
+      const workItemId = await newItem({ gateSlaMs: 60_000 });
+
+      await decide(workItemId, 'triage', 'approve');
+      await decide(workItemId, 'spec', 'approve');
+
+      // The implement gate is `agent`; a FAIL summary must NOT approve it.
+      const implementGate = await waitFor('implement gate to be decided', async () => {
+        const gates = await listGateDecisions(getSql(), workItemId);
+        return gates.find((gate) => gate.stage === 'implement' && gate.decision !== null) ?? null;
+      });
+      expect(implementGate.decision).toBe('request_changes');
+      expect(implementGate.automatic).toBe(true);
+      expect(implementGate.verdict).toMatchObject({
+        decision: 'request_changes',
+        source: 'textual',
+      });
+
+      // The existing loop path takes over: back one stage with the feedback attached.
+      const loopEvent = await waitFor('loop.requested_changes', async () => {
+        const events = await listWorkItemEvents(getSql(), workItemId);
+        return events.find((event) => event.type === 'loop.requested_changes') ?? null;
+      });
+      expect(String(loopEvent.payload.feedback)).toContain('VERDICT: FAIL');
+
+      const item = await waitFor('item to move back to spec', async () => {
+        const current = await getWorkItem(getSql(), workItemId);
+        return current?.stage === 'spec' && current.loopCount === 1 ? current : null;
+      });
+      expect(item.status).toBe('active');
+
+      await pendingGate(workItemId, 'spec');
+      await cancelItem(workItemId, 'spec');
+    } finally {
+      setFakeRunSummary(null);
+    }
+  }, 180_000);
+
+  test('agentVerdict: required turns a missing verdict into request_changes', async () => {
+    setJudgementModel(null);
+    setReviewerModel(null);
+    setFakeRunSummary(null);
+
+    const workItemId = await newItem({ gateSlaMs: 60_000, agentVerdict: 'required' });
+
+    await decide(workItemId, 'triage', 'approve');
+    await decide(workItemId, 'spec', 'approve');
+
+    const implementGate = await waitFor('implement gate to be decided', async () => {
+      const gates = await listGateDecisions(getSql(), workItemId);
+      return gates.find((gate) => gate.stage === 'implement' && gate.decision !== null) ?? null;
+    });
+    expect(implementGate.decision).toBe('request_changes');
+    expect(implementGate.reason).toBe('missing agent verdict');
+    expect(implementGate.verdict).toMatchObject({ decision: 'unknown', source: 'none' });
+
+    await waitFor('loop.requested_changes', async () => {
+      const events = await listWorkItemEvents(getSql(), workItemId);
+      return events.find((event) => event.type === 'loop.requested_changes') ?? null;
+    });
+
+    await pendingGate(workItemId, 'spec');
+    await cancelItem(workItemId, 'spec');
+  }, 180_000);
 
   test('reviewer disagreement escalates to a human review gate and never merges on a verdict', async () => {
     setJudgementModel(null);

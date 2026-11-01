@@ -27,6 +27,11 @@ export interface FakeAdapterOptions {
   delayMs?: number;
   /** Model reported in `run.started`; defaults to `fake/fake-model`. */
   model?: string;
+  /**
+   * Terminal `run.completed` summary. Test seam for contracts that read the summary (agent
+   * gate verdicts); omitted by default so the scripted happy path stays unchanged.
+   */
+  summary?: string;
   /** Clock used to stamp `at`; injectable for deterministic logs. */
   clock?: () => number;
 }
@@ -68,6 +73,7 @@ export class FakeAdapter implements HarnessAdapter {
 
   private readonly delayMs: number;
   private readonly model: string;
+  private readonly summary: string | undefined;
   private readonly clock: () => number;
   private readonly handles = new Map<string, SessionHandle>();
   private readonly sequencers = new Map<string, EventSequencer>();
@@ -80,6 +86,7 @@ export class FakeAdapter implements HarnessAdapter {
   constructor(options: FakeAdapterOptions = {}) {
     this.delayMs = Math.max(0, options.delayMs ?? 0);
     this.model = options.model ?? 'fake/fake-model';
+    this.summary = options.summary;
     this.clock = options.clock ?? Date.now;
   }
 
@@ -370,7 +377,7 @@ export class FakeAdapter implements HarnessAdapter {
           reasoningTokens: 0,
         },
       },
-      { kind: 'emit', body: { type: 'run.completed', status: 'ok' } },
+      { kind: 'emit', body: { type: 'run.completed', status: 'ok', ...(this.summary ? { summary: this.summary } : {}) } },
     ];
   }
 }

@@ -8,6 +8,11 @@ export interface FactoryErrorShape {
 export const RUNNER_ERROR_CODES = [
   /** The sandbox could not be created or the harness never became ready. */
   'runner_unavailable',
+  /**
+   * A requested sandbox profile (`RUNNER_SANDBOX=bwrap`) cannot be honoured on this host.
+   * Same identifier as the runner step event, so the UI can point at one cause.
+   */
+  'runner.sandbox_unavailable',
   'runner_not_found',
   'exec_failed',
   'exec_timeout',

@@ -3,6 +3,7 @@ agentDefaults:
     model: env:FACTORY_MODEL
     type: opencode
   runner: local-docker
+agentVerdict: advisory
 alias: Example
 description: "Reference factory exercising every resource type: a foreman routes work items through triage, spec, implement, review and verify agents."
 gates:

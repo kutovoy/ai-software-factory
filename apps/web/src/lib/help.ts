@@ -340,6 +340,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
           'Lights off: every stage resolves to `agent` and the merge policy is automatic. Enabling it is refused with `benchmark_attestation_missing` unless a passing, calibrated, non-partial attestation matches the current commit + configuration hash — or an explicit `{actor, reason}` override is confirmed.',
           'Kill switch: pausing always works. It pauses new stage dispatch and forces every gate back to `human`; the autonomy read model reports enabled/paused, actor, reason, timestamp and the newest `autonomy.*` event.',
           'Gate decisions are durable: an approval is delivered as a Temporal Update (Signal fallback) and survives a worker restart.',
+          'Agent gates decide from a verdict, not from a successful run: the stage prompt asks for a final fenced JSON block `{"verdict":"approve|request_changes|reject","summary":"...","findings":[...]}`, and `VERDICT: PASS` / `VERDICT: FAIL` lines are the textual fallback. A `request_changes` verdict feeds the normal loop and escalation path; `factory.yaml` › `agentVerdict: required` turns a missing verdict into `request_changes` (the default `advisory` approves, preserving older factories). The work-item gate history shows the verdict badge, its source and summary.',
         ],
       },
       {
@@ -373,7 +374,8 @@ export const HELP_ENTRIES: HelpEntry[] = [
         kind: 'list',
         items: [
           '`RUNNER_SANDBOX=exec` (macOS only) wraps the harness in a generated SBPL profile: reads of system paths + workspace, writes only to workspace/run dir/tmp, outbound network denied unless the stage grants `networkPolicy: allowed`.',
-          'On a non-macOS host or without `sandbox-exec` the run is unconfined and records `runner.sandbox_unavailable` with the platform and reason. The default is `none`.',
+          '`RUNNER_SANDBOX=bwrap` (Linux) runs the harness in a bubblewrap jail: read-only `/`, private `/tmp`, a writable bind of the workspace, `--chdir` into it, and `--unshare-net` when the policy denies network. On Linux an unset value auto-selects `bwrap` when the binary is installed.',
+          'A requested profile the host cannot honour is never a silent fallback: `RUNNER_SANDBOX=bwrap` without `bwrap` fails the run with `runner.sandbox_unavailable`, recorded on the sandbox step. `exec` on a non-macOS host keeps the older behaviour (unconfined, with the same record). The default is `none`.',
           'Artifacts are captured by path + sha256 into `runs/<runId>/artifacts/`; a missing artifact makes deterministic scoring an `error` score without failing the run.',
           'The compose worker ships the docker CLI (not the daemon) and leases sandboxes through the mounted `/var/run/docker.sock`; `docker compose exec worker docker version` must print a server version.',
           'Because the worker is itself a container, sandboxes join the dedicated `factory-runners` network (`RUNNER_NETWORK`) instead of publishing a host port, and the workspace travels with `docker cp` (`RUNNER_WORKSPACE_MODE=copy`) — the daemon cannot see the worker filesystem. A host worker keeps the bind mount and the 127.0.0.1 port.',
@@ -1065,6 +1067,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
         kind: 'list',
         items: [
           'Run dialog: configuration/task selection, estimate, confirmation, hard cap.',
+          'Replay tasks: a task with `replayFrom: run_…` re-emits that run’s recorded `events.jsonl` and applies its `patch.diff` to a fresh workspace, so the trial is scored deterministically without a model call. A missing recording fails the trial with `replay_missing`.',
           'Results: matrix with pass rate, weighted score, sample size, cost, errors/skips; per-trial drill-down to the child run.',
           'Frontier: pass rate vs cost with labels and a recommendation only on dominance.',
           'Attestation: binds commit + configHash; partial runs are marked `partial` and are not gate-eligible.',

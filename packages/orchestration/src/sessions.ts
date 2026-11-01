@@ -1,6 +1,7 @@
 import {
   FakeAdapter,
   OpencodeAdapter,
+  ReplayAdapter,
   type AdapterCapabilities,
   type FactoryEvent,
   type HarnessAdapter,
@@ -9,6 +10,8 @@ import {
   type SessionHandle,
 } from '@factory/adapters';
 import { loadDefinition, resolveMcpWiring } from '@factory/core';
+import { loadConfig } from './config';
+import { runDir } from './run-dir';
 import type { HarnessId, RunInput } from './types';
 
 interface SessionEntry {
@@ -45,16 +48,39 @@ interface StreamEntry {
 
 const streams = new Map<string, StreamEntry>();
 
+/** Fake-harness summary hook (test seam; see `setFakeRunSummary`). */
+let fakeRunSummary: ((input: RunInput) => string | undefined) | null = null;
+
 export interface EnsureSessionOptions {
   harnessUrl?: string;
   sessionRef?: string | null;
   password?: string;
+  /** Fake-harness terminal summary (test seam for agent gate verdicts). */
+  fakeSummary?: string;
+  /** Replay only: the recording directory (`runs/<runId>`). */
+  recordingDir?: string;
+  /** Replay only: the fresh workspace the recorded patch is applied to. */
+  workspace?: string;
 }
 
-export function createAdapter(harness: HarnessId, options: EnsureSessionOptions & { fakeDelayMs?: number }): HarnessAdapter {
+export function createAdapter(
+  harness: HarnessId | 'replay',
+  options: EnsureSessionOptions & { fakeDelayMs?: number },
+): HarnessAdapter {
   switch (harness) {
     case 'fake':
-      return new FakeAdapter({ delayMs: options.fakeDelayMs ?? 0 });
+      return new FakeAdapter({
+        delayMs: options.fakeDelayMs ?? 0,
+        ...(options.fakeSummary ? { summary: options.fakeSummary } : {}),
+      });
+    case 'replay':
+      if (!options.recordingDir) {
+        throw new Error('replay adapter requires a recordingDir (runs/<runId>)');
+      }
+      return new ReplayAdapter({
+        recordingDir: options.recordingDir,
+        ...(options.workspace ? { workspace: options.workspace } : {}),
+      });
     case 'opencode':
       if (!options.harnessUrl) {
         throw new Error('opencode adapter requires a harnessUrl from the runner lease');
@@ -157,10 +183,20 @@ export async function ensureSession(
   const existing = sessions.get(input.runId);
   if (existing) return existing;
 
-  const adapter = createAdapter(input.harness, {
-    ...options,
-    fakeDelayMs: input.fakeDelayMs,
-  });
+  const fakeSummary = fakeRunSummary?.(input);
+  // A replay run never touches a harness: the adapter re-emits the recorded stream and
+  // applies the recorded patch to `input.workspace` (spec `benchmark-replay`).
+  const adapter = input.replayFrom
+    ? createAdapter('replay', {
+        ...options,
+        recordingDir: runDir(loadConfig().runsDir, input.replayFrom),
+        ...(input.workspace ? { workspace: input.workspace } : {}),
+      })
+    : createAdapter(input.harness, {
+        ...options,
+        fakeDelayMs: input.fakeDelayMs,
+        ...(fakeSummary ? { fakeSummary } : {}),
+      });
 
   const mcp = mcpWiringFor(input);
   const agents = agentDefinitionsFor(input);
@@ -208,4 +244,17 @@ export function capabilitiesOf(adapter: HarnessAdapter): AdapterCapabilities {
 export function clearSessions(): void {
   for (const runId of streams.keys()) dropStream(runId);
   sessions.clear();
+}
+
+/**
+ * Test hook: derive the fake harness' terminal summary from the run input.
+ *
+ * The agent-gate verdict contract reads the run summary, so an integration test needs a
+ * deterministic way to make the scripted adapter emit one (e.g. `VERDICT: FAIL` for the
+ * implement stage). `null` restores the default scripted happy path.
+ */
+export function setFakeRunSummary(
+  hook: ((input: RunInput) => string | undefined) | null,
+): void {
+  fakeRunSummary = hook;
 }

@@ -4,9 +4,11 @@ import { dirname, join } from 'node:path';
 import { RunnerError } from './errors';
 import {
   buildSandboxProfile,
+  bwrapCommand,
   sandboxAvailability,
   sandboxCommand,
   sandboxModeFromEnv,
+  type SandboxLookupOptions,
   type SandboxMode,
 } from './sandbox';
 import {
@@ -47,10 +49,15 @@ export interface LocalRunnerOptions {
   /** Extra env for the harness process. */
   harnessEnv?: Record<string, string>;
   shell?: string;
-  /** `exec` confines the harness with macOS sandbox-exec; defaults to `RUNNER_SANDBOX`. */
+  /**
+   * `exec` confines the harness with macOS sandbox-exec, `bwrap` with a Linux bubblewrap
+   * jail; defaults to `RUNNER_SANDBOX` (Linux auto-selects bwrap when installed).
+   */
   sandbox?: SandboxMode;
   /** Test hook: pretend to run on another platform (fallback path). */
   platform?: NodeJS.Platform;
+  /** Test hook: resolve a sandbox binary (`which`) instead of probing the host. */
+  which?: SandboxLookupOptions['which'];
 }
 
 interface LocalLease {
@@ -62,6 +69,10 @@ interface LocalLease {
   startedAt: number;
   stderr: string;
   profilePath: string | null;
+  /** Network policy the jail was built with (`--unshare-net` when denied). */
+  sandboxNetwork: 'allowed' | 'denied';
+  /** Resolved bubblewrap binary when the jail is active. */
+  bwrapBinary: string | null;
   sandbox: { mode: SandboxMode; active: boolean; reason: string | null };
 }
 
@@ -74,8 +85,11 @@ interface LocalLease {
  * With `RUNNER_SANDBOX=exec` (ADR-025) the harness runs under a generated macOS
  * `sandbox-exec` profile: deny by default, read system + workspace, write only the
  * workspace, the run directory and `/private/tmp`, and no network unless the stage grants
- * it. Any other platform falls back to the unsandboxed process and records
- * `runner.sandbox_unavailable` on the lease step.
+ * it. `RUNNER_SANDBOX=bwrap` (harden-runners task 1) runs it in a Linux bubblewrap jail
+ * instead — read-only root, writable workspace, `--unshare-net` when network is denied.
+ * Linux auto-selects bwrap when the binary is installed. Any other platform falls back to
+ * the unsandboxed process and records `runner.sandbox_unavailable` on the lease step; a
+ * *requested* bwrap that is missing fails the lease instead of degrading.
  */
 export class LocalRunnerBackend implements RunnerBackend {
   readonly kind = 'local' as const;
@@ -87,6 +101,7 @@ export class LocalRunnerBackend implements RunnerBackend {
   private readonly shell: string;
   private readonly sandboxMode: SandboxMode;
   private readonly platform: NodeJS.Platform;
+  private readonly which: SandboxLookupOptions['which'];
   private readonly leases = new Map<string, LocalLease>();
 
   constructor(options: LocalRunnerOptions = {}) {
@@ -95,8 +110,13 @@ export class LocalRunnerBackend implements RunnerBackend {
     this.readyTimeoutMs = options.readyTimeoutMs ?? 30_000;
     this.harnessEnv = options.harnessEnv ?? {};
     this.shell = options.shell ?? '/bin/sh';
-    this.sandboxMode = options.sandbox ?? sandboxModeFromEnv(process.env.RUNNER_SANDBOX);
     this.platform = options.platform ?? process.platform;
+    this.which = options.which;
+    this.sandboxMode =
+      options.sandbox ??
+      sandboxModeFromEnv(process.env.RUNNER_SANDBOX, this.platform, {
+        ...(this.which ? { which: this.which } : {}),
+      });
   }
 
   async lease(input: RunnerSpec): Promise<RunnerHandle> {
@@ -112,6 +132,20 @@ export class LocalRunnerBackend implements RunnerBackend {
     const existing = this.leases.get(spec.runnerId);
     if (existing && this.isAlive(existing)) return existing.handle;
 
+    // Resolve the sandbox before touching the workspace: a requested `bwrap` that is not
+    // installed must fail the lease (`runner.sandbox_unavailable`), never fall back to an
+    // unsandboxed process (spec `runner-sandbox` › "Missing bwrap").
+    const availability = sandboxAvailability(this.sandboxMode, this.platform, {
+      ...(this.which ? { which: this.which } : {}),
+    });
+    if (this.sandboxMode === 'bwrap' && availability.unavailable) {
+      throw new RunnerError(
+        'runner.sandbox_unavailable',
+        `bwrap sandbox requested but unavailable: ${availability.reason ?? 'unknown reason'}`,
+        { runnerId: spec.runnerId, mode: this.sandboxMode, platform: this.platform, reason: availability.reason },
+      );
+    }
+
     const workspace = await prepareWorkspace(spec.repo, spec.workspace);
     const port = await freePort();
 
@@ -126,10 +160,10 @@ export class LocalRunnerBackend implements RunnerBackend {
 
     const command = this.harnessCommand(spec.harness.command, port);
     const runDir = spec.runDir ?? dirname(workspace);
-    const availability = sandboxAvailability(this.sandboxMode, this.platform);
+    const network = spec.networkPolicy ?? 'denied';
     let profilePath: string | null = null;
     let argv = [this.shell, '-c', command];
-    if (availability.active) {
+    if (availability.active && this.sandboxMode === 'exec') {
       await mkdir(runDir, { recursive: true });
       profilePath = join(runDir, '.sandbox.sb');
       await writeFile(
@@ -137,11 +171,21 @@ export class LocalRunnerBackend implements RunnerBackend {
         buildSandboxProfile({
           workspace,
           runDir,
-          network: spec.networkPolicy ?? 'denied',
+          network,
         }),
         'utf8',
       );
       argv = sandboxCommand(profilePath, this.shell, command);
+    } else if (availability.active && this.sandboxMode === 'bwrap') {
+      // NOTE: `--unshare-net` puts the jail in a private network namespace, so a harness
+      // started there cannot be reached from the host's loopback. A bwrap lease therefore
+      // needs the stage to grant `networkPolicy: allowed`; with `denied` the lease fails
+      // `runner_unavailable` at the readiness probe (the jail itself is still correct).
+      argv = bwrapCommand(
+        { workspace, network, binary: availability.binary },
+        this.shell,
+        command,
+      );
     }
 
     const child = spawn(argv[0] as string, argv.slice(1), {
@@ -198,6 +242,8 @@ export class LocalRunnerBackend implements RunnerBackend {
       startedAt: Date.now(),
       stderr,
       profilePath,
+      sandboxNetwork: network,
+      bwrapBinary: availability.binary,
       sandbox,
     });
 
@@ -220,13 +266,27 @@ export class LocalRunnerBackend implements RunnerBackend {
     const commandString = Array.isArray(req.command)
       ? req.command.map(shellQuote).join(' ')
       : req.command;
-    const command =
-      lease.sandbox.active && lease.profilePath
-        ? sandboxCommand(lease.profilePath, this.shell, commandString)
-        : [this.shell, '-c', commandString];
+    const cwd = req.cwd ?? lease.workspace;
+    let command: string[];
+    if (lease.sandbox.active && lease.sandbox.mode === 'bwrap') {
+      command = bwrapCommand(
+        {
+          workspace: lease.workspace,
+          network: lease.sandboxNetwork,
+          cwd,
+          binary: lease.bwrapBinary,
+        },
+        this.shell,
+        commandString,
+      );
+    } else if (lease.sandbox.active && lease.profilePath) {
+      command = sandboxCommand(lease.profilePath, this.shell, commandString);
+    } else {
+      command = [this.shell, '-c', commandString];
+    }
 
     for await (const event of streamCommand(command, {
-      cwd: req.cwd ?? lease.workspace,
+      cwd,
       env,
       timeoutMs: req.timeoutMs,
       signal: req.signal,

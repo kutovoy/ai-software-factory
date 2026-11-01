@@ -320,6 +320,7 @@ export async function FactoryWorkflow(
       runner: stageRunner,
       tools: node.tools,
       gateSlaMs: input.gateSlaMs,
+      agentVerdict: input.agentVerdict ?? 'advisory',
       autoApproveAllowed,
       title: input.title,
       prompt: input.prompt,

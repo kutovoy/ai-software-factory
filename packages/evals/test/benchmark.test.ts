@@ -26,6 +26,7 @@ function task(slug: string, overrides: Partial<BenchmarkTaskDescriptor> = {}): B
     startingRepoRefs: [`github.com:acme/api@${SHA}`],
     tags: [],
     sourceRunId: null,
+    replayFrom: null,
     ...overrides,
   };
 }
@@ -163,6 +164,23 @@ describe('configuration matrix and hash', () => {
     expect(isFullMatrix(suite(), { configurations: ['Baseline'] })).toBe(false);
 
     expect(() => buildBenchmarkTrials(suite(), { tasks: ['nope'] })).toThrow(BenchmarkError);
+  });
+
+  it('carries a task replay source into every trial', () => {
+    const replayTask = task('a', { replayFrom: 'run_01JABCDEFGHJKMNPQRSTVWXYZ0' });
+    const trials = buildBenchmarkTrials(suite({ tasks: [replayTask, task('b')] }));
+    expect(trials.filter((trial) => trial.task === 'a').every((trial) => trial.replayFrom === 'run_01JABCDEFGHJKMNPQRSTVWXYZ0')).toBe(true);
+    expect(trials.filter((trial) => trial.task === 'b').every((trial) => trial.replayFrom === null)).toBe(true);
+  });
+
+  it('rejects a replay source that is not a run id', () => {
+    const bad = task('a', { replayFrom: 'runs/whatever' });
+    expect(() => validateBenchmarkSuite({ name: 'review', agent: 'review', configurations: [{ name: 'Baseline' }], tasks: ['a', 'b'] } as never, [bad, task('b')])).toThrow(BenchmarkError);
+    try {
+      validateBenchmarkSuite({ name: 'review', agent: 'review', configurations: [{ name: 'Baseline' }], tasks: ['a', 'b'] } as never, [bad, task('b')]);
+    } catch (error) {
+      expect((error as BenchmarkError).code).toBe('invalid_replay_source');
+    }
   });
 });
 

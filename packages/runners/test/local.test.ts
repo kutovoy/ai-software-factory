@@ -42,7 +42,7 @@ async function collect(stream: AsyncIterable<ExecEvent>): Promise<{
 
 afterEach(async () => {
   for (const instance of backends.splice(0)) {
-    for (const runnerId of ['runner_local', 'runner_timeout', 'runner_secret']) {
+    for (const runnerId of ['runner_local', 'runner_timeout', 'runner_secret', 'runner_bwrap']) {
       await instance.kill(runnerId).catch(() => undefined);
     }
   }
@@ -173,5 +173,30 @@ describe('LocalRunnerBackend', () => {
         readyTimeoutMs: 500,
       }),
     ).rejects.toMatchObject({ code: 'runner_unavailable' });
+  });
+
+  test('a requested bwrap sandbox fails instead of running unsandboxed', async () => {
+    const runner = backend({ sandbox: 'bwrap', platform: 'linux', which: () => null });
+    await expect(
+      runner.lease({
+        runId: 'run-local-7',
+        runnerId: 'runner_bwrap',
+        harness: { command: HARNESS, readyPath: '/', port: 0 },
+      }),
+    ).rejects.toMatchObject({
+      code: 'runner.sandbox_unavailable',
+      details: { platform: 'linux' },
+    });
+  });
+
+  test('a requested bwrap sandbox fails off Linux as well', async () => {
+    const runner = backend({ sandbox: 'bwrap', platform: 'darwin', which: () => '/usr/bin/bwrap' });
+    await expect(
+      runner.lease({
+        runId: 'run-local-8',
+        runnerId: 'runner_bwrap',
+        harness: { command: HARNESS, readyPath: '/', port: 0 },
+      }),
+    ).rejects.toMatchObject({ code: 'runner.sandbox_unavailable' });
   });
 });
