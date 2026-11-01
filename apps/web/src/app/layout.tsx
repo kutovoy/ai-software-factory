@@ -37,12 +37,17 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   }
   const initialFactory =
     persisted && factories.factories.some((factory) => factory.name === persisted) ? persisted : null;
+  const forgejoEnabled = (process.env.FORGEJO_ENABLED ?? '1') !== '0';
 
   return (
     <html lang="en">
       <body className="min-h-screen bg-slate-50 text-slate-900">
         <div className="flex min-h-screen">
-          <Sidebar factories={factories.factories} initialFactory={initialFactory} />
+          <Sidebar
+            factories={factories.factories}
+            initialFactory={initialFactory}
+            forgejoEnabled={forgejoEnabled}
+          />
           <div className="flex min-w-0 flex-1 flex-col">
             <ContextHelp />
             <main className="min-w-0 flex-1">{children}</main>

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { FACTORY_NAV, FOOTER_NAV, TOP_NAV, factoryHref } from '@/lib/nav';
 import type { FactoryListItem } from '@/lib/types';
 
@@ -20,10 +20,13 @@ function persistFactory(name: string): void {
 export function Sidebar({
   factories,
   initialFactory = null,
+  forgejoEnabled = false,
 }: {
   factories: FactoryListItem[];
   /** Value of the `factory` cookie, resolved by the root layout. */
   initialFactory?: string | null;
+  /** Local Forgejo is enabled (spec `forge`); the menu links to it under "MCPs and apps". */
+  forgejoEnabled?: boolean;
 }) {
   const pathname = usePathname() ?? '/';
   const router = useRouter();
@@ -96,21 +99,36 @@ export function Sidebar({
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
         <ul className="space-y-0.5">
           {TOP_NAV.map((item) => (
-            <li key={item.href}>
-              <Link
-                href={item.href}
-                data-testid={item.testId}
-                data-active={isActive(item.href) ? 'true' : 'false'}
-                aria-current={isActive(item.href) ? 'page' : undefined}
-                className={`block rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300 ${
-                  isActive(item.href)
-                    ? 'bg-slate-900 text-white'
-                    : 'text-slate-700 hover:bg-slate-100'
-                }`}
-              >
-                {item.label}
-              </Link>
-            </li>
+            <Fragment key={item.href}>
+              <li>
+                <Link
+                  href={item.href}
+                  data-testid={item.testId}
+                  data-active={isActive(item.href) ? 'true' : 'false'}
+                  aria-current={isActive(item.href) ? 'page' : undefined}
+                  className={`block rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300 ${
+                    isActive(item.href)
+                      ? 'bg-slate-900 text-white'
+                      : 'text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              </li>
+              {item.href === '/mcps' && forgejoEnabled ? (
+                <li>
+                  <a
+                    href="/extras/forgejo/"
+                    target="_blank"
+                    rel="noreferrer"
+                    data-testid="nav-forgejo"
+                    className="block rounded-md px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  >
+                    Forgejo <span className="text-slate-400">↗</span>
+                  </a>
+                </li>
+              ) : null}
+            </Fragment>
           ))}
         </ul>
 

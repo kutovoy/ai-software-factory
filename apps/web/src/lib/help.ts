@@ -575,6 +575,31 @@ export const HELP_ENTRIES: HelpEntry[] = [
     ],
   },
   {
+    slug: 'forgejo',
+    title: 'Forgejo (local forge)',
+    section: 'menu',
+    status: 'Shipped — local single-user forge; OIDC multi-user is Phase 6',
+    summary:
+      'The git forge behind every PR link, served under /extras/forgejo with proxy auto-login.',
+    pageHref: '/extras/forgejo/',
+    blocks: [
+      {
+        kind: 'prose',
+        text:
+          'The factory ships its own Forgejo instance, enabled by default and reachable at `/extras/forgejo/`. Pull requests opened by the loop live there, so the PR link on a work item resolves from your machine. It is internal to the compose network; the console proxies it and asserts the seeded admin identity, so there is no second login.',
+      },
+      {
+        kind: 'list',
+        items: [
+          'Single-user local mode: anyone who can reach the console is the seeded admin. Do not expose the console publicly in this mode.',
+          'Multi-user (Phase 6): console auth asserts the real user, and Forgejo OIDC group mappings put each user in their own organization so they only see their projects.',
+          'SSH and websockets are out of scope; git-over-HTTP through the console proxy works.',
+        ],
+      },
+    ],
+    related: [{ label: 'Settings: local forge', href: '/factories/hello-nextjs/settings' }],
+  },
+  {
     slug: 'inbox',
     title: 'Inbox',
     section: 'menu',

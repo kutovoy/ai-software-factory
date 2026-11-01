@@ -201,6 +201,7 @@ services:
       # identity the proxy asserts. Both are server-side only.
       FORGEJO_URL: ${FORGEJO_URL:-http://forgejo:3000}
       FORGEJO_ADMIN_USER: ${FORGEJO_ADMIN_USER:-factory}
+      FORGEJO_ENABLED: ${FORGEJO_ENABLED:-1}
       NODE_ENV: production
       PORT: '3000'
     ports:
