@@ -22,6 +22,13 @@ RUN curl -fsSL https://opencode.ai/v2/install | bash \
 # `OPENAI_BASE_URL`/`OPENAI_API_KEY` at startup, and makes `best_llm` the default model.
 COPY opencode.json /root/.config/opencode/opencode.json
 
+# QA agent support: Playwright + Chromium baked into the runner so a verify stage can
+# open the generated site in a real browser without downloading a browser per run.
+# Keep the version in sync with the QA prompt (`@playwright/test@1.64.1`).
+RUN npm install -g @playwright/test@1.64.1 \
+    && npx playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV PATH="/root/.opencode/bin:${PATH}"
 
 WORKDIR /workspace
