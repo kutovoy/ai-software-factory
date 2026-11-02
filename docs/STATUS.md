@@ -51,8 +51,8 @@ Fixes that the test forced (all committed):
 Latest tags: `harden-runtime`, `secrets-mcp`, `api-v1-help`, `help-center`, `live-api-explorer`,
 `api-explorer-parity`, `fix-ui-audit`, `fix-run-failures`, `run-actions`, `readiness-hello-nextjs`, `console-ops`,
 `forgejo`, `agent-verdicts`, `console-auth`, `harden-runners`, `forge-ssh-public`, `readiness-qa`,
-`factory-identity`, `factory-purge`, `readiness-identity`, `unify-factory-api`. `bun run ci` 735 pass; smoke
-passes; Playwright 56; UI audit clean.
+`factory-identity`, `factory-purge`, `readiness-identity`, `unify-factory-api`, `fix-forge-pr-files`,
+`readiness-forge-files`. `bun run ci` 746 pass; smoke passes; Playwright 56; UI audit clean.
 
 ### Unified factory paths (2026-11-02)
 
@@ -69,7 +69,23 @@ scoring group moved under `/api/v1/factories/:factoryId/...`:
 - Breaking `/api/v1` rewrite; ADR-039 records the exception. `bun run ci` 735, smoke passes, Playwright 56,
   UI audit clean.
 
-### Second lights-off run with Playwright QA (2026-11-02)
+### Forge PR content fix (2026-11-02)
+
+Previous readiness PRs contained only `changes/<workItemId>.patch` (the diff text) plus the seeded README/probe
+files — no `site/app/layout.tsx`, `site/app/page.tsx` or other web code. Root cause: `forgeOpenPullRequest`
+committed a hard-coded patch artifact instead of applying the implement patch; QA passed because it tested the
+runner workspace, not the forge branch.
+
+Fixed:
+
+- `forgeOpenPullRequest` now checks out the new branch, applies `patch.diff` to a temp copy of the base snapshot
+  with `git apply`, and commits the resulting files (add/modify/delete). Missing/empty patches fail with
+  `patch_missing`; unapplicable patches with `patch_apply_failed`; binary patches are rejected.
+- The Forgejo repo was deleted and recreated clean; the bootstrap now resolves the factory id and posts the
+  integration to `/api/v1/factories/:id/integrations/github` (it was still using the old global path).
+- Fresh lights-off run `wi_01M6ED4H1FDRQFHJ29R5MGS5TG` merged **PR #1** with zero human decisions. The PR and
+  `main` now contain `site/package.json`, `site/app/layout.tsx`, `site/app/page.tsx`, `site/next.config.ts`,
+  `site/tsconfig.json` and `site/README.md`; QA ran Playwright/Chromium and reported `1 passed (635ms)`.
 
 ### Factory identity + purge v2 (2026-11-02)
 

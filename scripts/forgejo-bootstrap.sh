@@ -193,9 +193,18 @@ curl -s -o /dev/null -b "$COOKIE_JAR" -X POST -H 'content-type: application/json
   -d '{"name":"GITHUB_TOKEN","provider":"env","scope":"factory","description":"Local forge (Forgejo) API token"}' \
   "${API}/secrets" || true
 
+# Factory-scoped API: resolve the committed factory id, then post the integration under it.
+factory_id="$(curl -s -b "$COOKIE_JAR" "${API}/factories" | python3 -c '
+import json, sys
+key = sys.argv[1]
+data = json.load(sys.stdin)
+match = next((f for f in data.get("factories", []) if f.get("key") == key or f.get("name") == key), None)
+print(match["id"] if match else "")
+' "${FACTORY}")"
+[ -n "$factory_id" ] || fail "factory '${FACTORY}' is not registered; create/commit its definition first"
 integration="$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIE_JAR" -X POST -H 'content-type: application/json' \
-  -d "{\"factory\":\"${FACTORY}\",\"secretRef\":\"GITHUB_TOKEN\",\"repos\":[{\"owner\":\"${ORG}\",\"name\":\"${REPO}\"}],\"events\":[\"issues\"],\"labels\":[\"factory-ready\"],\"dryRun\":false,\"mergeQueue\":false,\"enabled\":true}" \
-  "${API}/integrations/github")"
+  -d "{\"secretRef\":\"GITHUB_TOKEN\",\"repos\":[{\"owner\":\"${ORG}\",\"name\":\"${REPO}\"}],\"events\":[\"issues\"],\"labels\":[\"factory-ready\"],\"dryRun\":false,\"mergeQueue\":false,\"enabled\":true}" \
+  "${API}/factories/${factory_id}/integrations/github")"
 case "$integration" in
   200|201) log "integration for '${FACTORY}' points at ${ORG}/${REPO} (secret GITHUB_TOKEN)" ;;
   *) fail "could not record the integration for '${FACTORY}' (HTTP ${integration})" ;;

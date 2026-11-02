@@ -9,13 +9,13 @@ import {
   type ChecksResult,
   type CodeForge,
   type Comment,
-  type FileChange,
   type MergeResult,
   type RepoRef,
 } from '@factory/forge';
 import { getIntegration, loadDefinition } from '@factory/core';
 import { loadConfig } from '../config';
 import { getSql } from '../db';
+import { applyPatch, PatchError } from './patch';
 
 /**
  * Forge activities — the only place the loop touches a repository.
@@ -137,6 +137,19 @@ function asForgeFailure(error: unknown): never {
   throw error;
 }
 
+/** Patch failures are non-retryable: retrying the same stale diff cannot succeed. */
+function asPatchFailure(error: unknown): never {
+  if (error instanceof PatchError) {
+    throw ApplicationFailure.create({
+      type: error.code,
+      nonRetryable: true,
+      message: error.message,
+      details: [error.details ?? {}],
+    });
+  }
+  throw error;
+}
+
 /** The fake backend starts empty; seed the factory repo the first time it is used. */
 function ensureSeeded(forge: CodeForge, repo: RepoRef): void {
   if (forge instanceof FakeForge) {
@@ -166,8 +179,9 @@ export interface OpenPullRequestResult {
 }
 
 /**
- * Creates the branch, commits the run's patch and opens a pull request referencing the
- * work item (spec: forge abstraction / branch and PR). Never touches the default branch.
+ * Creates the branch, applies the run's patch to the branch snapshot and commits the
+ * resulting files, then opens a pull request referencing the work item (spec: forge
+ * abstraction / branch and PR). Never touches the default branch.
  */
 export async function forgeOpenPullRequest(
   args: OpenPullRequestArgs,
@@ -177,13 +191,14 @@ export async function forgeOpenPullRequest(
   ensureSeeded(forge, repo);
 
   const branch = `factory/${args.workItemId}`;
-  const patch = await readPatch(args.runId);
-  const files: FileChange[] = [
-    { path: `changes/${args.workItemId}.patch`, content: patch },
-  ];
 
   try {
     await forge.createBranch({ repo, name: branch });
+    // The PR must contain the code, not the diff text: apply the captured patch to the
+    // branch snapshot and commit the resulting files.
+    const base = await forge.checkout({ repo, ref: branch });
+    const patch = await readPatch(args.runId);
+    const files = await applyPatch(base.files, patch).catch(asPatchFailure);
     const commit = await forge.commit({
       repo,
       branch,
@@ -269,12 +284,30 @@ export async function forgeComment(args: {
   }
 }
 
-/** Reads the run's captured patch, or synthesises a placeholder when there is none. */
+/**
+ * Reads the run's captured patch. A missing or empty diff is a hard failure: the forge
+ * must never open a PR that pretends to contain a change it does not have.
+ */
 async function readPatch(runId: string): Promise<string> {
   const { runsDir } = loadConfig();
+  let patch: string;
   try {
-    return await readFile(join(runsDir, runId, 'patch.diff'), 'utf8');
+    patch = await readFile(join(runsDir, runId, 'patch.diff'), 'utf8');
   } catch {
-    return `# factory stage patch placeholder for ${runId}\n`;
+    throw ApplicationFailure.create({
+      type: 'patch_missing',
+      nonRetryable: true,
+      message: `run "${runId}" has no patch.diff`,
+      details: [{ runId }],
+    });
   }
+  if (patch.trim().length === 0) {
+    throw ApplicationFailure.create({
+      type: 'patch_missing',
+      nonRetryable: true,
+      message: `run "${runId}" captured an empty patch.diff`,
+      details: [{ runId }],
+    });
+  }
+  return patch;
 }

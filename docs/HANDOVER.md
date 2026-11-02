@@ -100,7 +100,7 @@ lets you validate wiring without touching a repo. GitHub delivers to
 `harden-runtime` · `secrets-mcp` · `api-v1-help` · `help-center` · `live-api-explorer` · `api-explorer-parity` ·
 `fix-ui-audit` · `fix-run-failures` · `run-actions` · `readiness-hello-nextjs` · `console-ops` · `forgejo` ·
 `agent-verdicts` · `console-auth` · `harden-runners` · `forge-ssh-public` · `factory-identity` · `factory-purge` ·
-`readiness-identity` · `unify-factory-api`.
+`readiness-identity` · `unify-factory-api` · `fix-forge-pr-files` · `readiness-forge-files`.
 
 ## Latest state (2026-11-01)
 
@@ -132,6 +132,9 @@ lets you validate wiring without touching a repo. GitHub delivers to
   `/api/v1/factories/:factoryId/…`; no `?factory=` remains. Browser score detail and MCPs moved to
   `/factories/<id>/scores/<id>` and `/factories/<id>/mcps`. No DB migration; breaking `/api/v1` rewrite recorded
   in ADR-039.
+- **Forge PR content fix (2026-11-02)**: `forgeOpenPullRequest` now applies the implement patch to the base
+  branch snapshot and commits the resulting files; it no longer commits `changes/<workItem>.patch`. The clean
+  Forgejo repo's PR #1 contains the actual `site/` Next.js code and QA Playwright passed (`1 passed (635ms)`).
 - **Local forge**: Forgejo at `http://localhost:3000/extras/forgejo/`, enabled by default, proxied by the console
   and asserting the signed-in user (admin fallback when auth is off). Bootstrap:
   `bash scripts/forgejo-bootstrap.sh` (admin, token to `.env`, org/repo). The forge client speaks Gitea's dialect;

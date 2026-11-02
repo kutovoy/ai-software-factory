@@ -358,6 +358,14 @@ suite('factory loop on the fake forge + fake harness', () => {
     const pulls = forge.listPullRequests(REPO);
     const pull = pulls.find((candidate) => candidate.workItemId === workItemId);
     expect(pull?.state).toBe('merged');
+
+    // The PR branch holds the code the implement stage produced, not `changes/<id>.patch`.
+    expect(pull?.head).toBeTruthy();
+    const branch = await forge.checkout({ repo: REPO, ref: pull?.head });
+    const created = Object.keys(branch.files).find((path) => path.startsWith('site/app/page-'));
+    expect(created).toBeTruthy();
+    expect(branch.files[created as string]).toContain('Hello, world!');
+    expect(Object.keys(branch.files).some((path) => path.startsWith('changes/'))).toBe(false);
   }, 180_000);
 
   test('continueAsNew bounds history on a long loop and resumes the stage index', async () => {

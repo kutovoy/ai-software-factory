@@ -859,3 +859,17 @@ pages live at `/factories/<id>/…`; only `/factories` (list), `/inbox` (cross-f
 ADR-030 prefix-bump rule), with all clients updated in the same change. No DB migration is needed.
 **Consequences:** one predictable path shape, no factory query leakage in logs/links, and nested browser parity.
 Cost: another breaking v1 rewrite; release notes must call it out and all API clients/smoke/E2E move together.
+
+## ADR-040 — Forge PRs contain applied files, not patch artifacts
+
+**Status:** accepted (2026-11-02). **Context:** `forgeOpenPullRequest` committed a single
+`changes/<workItemId>.patch` file containing the implement diff instead of applying it. Forgejo PRs therefore
+showed only that patch file (plus seeded README/probe files), while QA passed because it tested the runner
+workspace, not the PR branch.
+**Decision:** opening a factory PR checks out the new branch, applies `patch.diff` to a temporary copy of the base
+snapshot with `git apply`, and commits the resulting add/modify/delete `FileChange[]`. A missing or empty patch
+fails with `patch_missing`; an unapplicable patch fails with `patch_apply_failed`; binary patches are rejected
+because the forge file API is text-only. The `.patch` artifact is never committed. The Forgejo bootstrap resolves
+the factory id and posts the integration to `/api/v1/factories/:factoryId/integrations/github`.
+**Consequences:** PRs and the default branch contain the real web code, and a PR cannot silently degrade into a
+patch-only artifact. QA remains workspace-based, but a dedicated integration test asserts the PR branch files.

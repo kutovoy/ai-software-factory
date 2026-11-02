@@ -222,14 +222,29 @@ export class FakeAdapter implements HarnessAdapter {
     ];
   }
 
-  async getDiff(_handle: SessionHandle): Promise<FileDiff[]> {
+  async getDiff(handle: SessionHandle): Promise<FileDiff[]> {
+    // A complete unified diff, not just a hunk: orchestration applies this to the branch
+    // snapshot before the forge commits, so the fake path must produce applicable text.
+    // A new file needs no context, so it applies to any seeded repository; the path is
+    // per-run because a fixed path would collide once an earlier PR is merged.
+    const path = `site/app/page-${handle.runId}.tsx`;
     return [
       {
-        path: 'README.md',
-        diff: '@@ -1 +1 @@\n-# Factory\n+# Factory\n',
-        status: 'modified',
-        additions: 1,
-        deletions: 1,
+        path,
+        diff: [
+          `diff --git a/${path} b/${path}`,
+          'new file mode 100644',
+          '--- /dev/null',
+          `+++ b/${path}`,
+          '@@ -0,0 +1,3 @@',
+          '+export default function Page() {',
+          '+  return <h1>Hello, world!</h1>;',
+          '+}',
+          '',
+        ].join('\n'),
+        status: 'added',
+        additions: 3,
+        deletions: 0,
       },
     ];
   }
