@@ -169,14 +169,13 @@ export default async function ScorersPage({ params }: { params: Promise<{ id: st
 
   const detail = await loadFactory(factory);
   const factoryName = factoryNameOf(detail, factory);
-  // `/scores` is a global read keyed by the internal factory key.
-  const factoryKey = detail?.key ?? factory;
+  // Scores are nested under the factory (change `unify-factory-api`); no `?factory=`.
   const [registry, scores] = await Promise.all([
     safeGet<ScorersResponse | null>(`/factories/${encoded}/scorers`, null),
-    safeGet<ScoresResponse>(
-      `/scores?factory=${encodeURIComponent(factoryKey)}&limit=1`,
-      { scores: [], aggregate: [] },
-    ),
+    safeGet<ScoresResponse>(`/factories/${encoded}/scores?limit=1`, {
+      scores: [],
+      aggregate: [],
+    }),
   ]);
 
   const scorers = registry?.scorers ?? [];

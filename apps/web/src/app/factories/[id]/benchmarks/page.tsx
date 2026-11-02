@@ -40,7 +40,7 @@ export default async function BenchmarksPage({ params }: { params: Promise<{ id:
   const latestId = response?.latestRun?.id ?? null;
   const detail = latestId
     ? await safeGet<BenchmarkRunDetailResponse | null>(
-        `/benchmarks/${encodeURIComponent(latestId)}`,
+        `/factories/${encoded}/benchmarks/${encodeURIComponent(latestId)}`,
         null,
       )
     : null;

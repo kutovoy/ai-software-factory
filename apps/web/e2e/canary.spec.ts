@@ -35,17 +35,19 @@ async function calibrateScope(page: Page, request: APIRequestContext): Promise<v
   if (await allow.isVisible()) await allow.click();
   await expect(terminal).toHaveAttribute('data-status', 'ok', { timeout: 60_000 });
 
-  const response = await request.post('/api/calibration', {
-    data: {
-      factory: FACTORY,
-      scorer: 'scope',
-      name: `e2e canary calibration ${Date.now()}`,
-      minSize: 1,
-      threshold: 1,
-      items: [{ runId: run.id, humanLabel: 'compliant' }],
+  const response = await request.post(
+    await factoryApi(request, FACTORY, 'calibration'),
+    {
+      data: {
+        scorer: 'scope',
+        name: `e2e canary calibration ${Date.now()}`,
+        minSize: 1,
+        threshold: 1,
+        items: [{ runId: run.id, humanLabel: 'compliant' }],
+      },
     },
-  });
-  expect(response.ok(), `POST /api/calibration failed: ${response.status()} ${await response.text()}`).toBeTruthy();
+  );
+  expect(response.ok(), `POST calibration failed: ${response.status()} ${await response.text()}`).toBeTruthy();
   const body = (await response.json()) as { calibration: { verdict: string } };
   expect(body.calibration.verdict).toBe('pass');
 }
@@ -77,15 +79,18 @@ async function seedFailureCorpus(page: Page, request: APIRequestContext): Promis
   );
   await expect(page.getByTestId('run-terminal')).toContainText('cancelled', { timeout: 90_000 });
 
-  const scored = await request.post('/api/scoring', {
-    data: { factory: FACTORY, runId, force: true },
-  });
-  expect(scored.ok(), `POST /api/scoring failed: ${scored.status()}`).toBeTruthy();
+  const scored = await request.post(
+    await factoryApi(request, FACTORY, 'scoring'),
+    { data: { runId, force: true } },
+  );
+  expect(scored.ok(), `POST scoring failed: ${scored.status()}`).toBeTruthy();
 
   await expect
     .poll(
       async () => {
-        const response = await request.get(`/api/scores?run=${encodeURIComponent(runId)}`);
+        const response = await request.get(
+          await factoryApi(request, FACTORY, `scores?run=${encodeURIComponent(runId)}`),
+        );
         const body = (await response.json()) as { scores: { id: string }[] };
         return body.scores.length;
       },

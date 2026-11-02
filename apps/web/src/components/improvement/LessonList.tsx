@@ -11,7 +11,17 @@ import type { LessonWire } from '@/lib/types';
  * promotion into the shared library. Another factory only sees a lesson after this
  * explicit promotion (spec: Isolation).
  */
-export function LessonList({ factory, lessons }: { factory: string; lessons: LessonWire[] }) {
+export function LessonList({
+  factoryId,
+  factoryKey,
+  lessons,
+}: {
+  /** Factory id used for the nested API path (change `unify-factory-api`). */
+  factoryId: string;
+  /** Internal factory key recorded on a lesson; used only to tell own vs promoted. */
+  factoryKey: string;
+  lessons: LessonWire[];
+}) {
   const router = useRouter();
   const [actor, setActor] = useState('local-user');
   const [busy, setBusy] = useState<string | null>(null);
@@ -21,11 +31,17 @@ export function LessonList({ factory, lessons }: { factory: string; lessons: Les
     setError(null);
     setBusy(lesson.id);
     try {
-      const response = await fetch(`/api/lessons/${encodeURIComponent(lesson.id)}/promote`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ actor: actor.trim() || 'local-user', reason: 'promote to shared library' }),
-      });
+      const response = await fetch(
+        `/api/v1/factories/${encodeURIComponent(factoryId)}/lessons/${encodeURIComponent(lesson.id)}/promote`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            actor: actor.trim() || 'local-user',
+            reason: 'promote to shared library',
+          }),
+        },
+      );
       const payload = (await response.json().catch(() => ({}))) as { message?: string; code?: string };
       if (!response.ok) {
         throw new Error(payload.message ?? payload.code ?? `promotion failed (${response.status})`);
@@ -58,7 +74,7 @@ export function LessonList({ factory, lessons }: { factory: string; lessons: Les
       ) : (
         <ul className="space-y-2">
           {lessons.map((lesson) => {
-            const own = lesson.factory === factory;
+            const own = lesson.factory === factoryKey;
             return (
               <li
                 key={lesson.id}

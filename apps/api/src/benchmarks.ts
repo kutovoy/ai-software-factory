@@ -494,10 +494,13 @@ export interface BenchmarkRunDetailResponse {
   attestation: BenchmarkAttestationRecord | null;
 }
 
-export async function getBenchmarkRunForApi(id: string): Promise<BenchmarkRunDetailResponse> {
+export async function getBenchmarkRunForApi(
+  factory: string,
+  id: string,
+): Promise<BenchmarkRunDetailResponse> {
   const sql = getSql();
   const run = await getBenchmarkRun(sql, id);
-  if (!run) throw benchmarkNotFound(id);
+  if (!run || run.factory !== factory) throw benchmarkNotFound(id);
 
   const [trials, results, events, attestation] = await Promise.all([
     listBenchmarkTrials(sql, id),

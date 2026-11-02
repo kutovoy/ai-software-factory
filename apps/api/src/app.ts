@@ -453,12 +453,13 @@ export function createApp(config: ApiConfig): Hono {
 
   /* --------------------------------------------------------------- scores */
 
-  api.get('/scores', async (c) => {
+  api.get('/factories/:factoryId/scores', async (c) => {
+    const factory = (await factoryOf(c)).key;
     const limit = Number(c.req.query('limit') ?? '100');
     const offset = Number(c.req.query('offset') ?? '0');
     return c.json(
       await listScoresForApi({
-        ...(c.req.query('factory') ? { factory: c.req.query('factory') as string } : {}),
+        factory,
         ...(c.req.query('run') ? { run: c.req.query('run') as string } : {}),
         ...(c.req.query('workItem') ? { workItem: c.req.query('workItem') as string } : {}),
         ...(c.req.query('stage') ? { stage: c.req.query('stage') as string } : {}),
@@ -470,20 +471,22 @@ export function createApp(config: ApiConfig): Hono {
     );
   });
 
-  api.get('/scores/:id', async (c) => c.json(await getScoreForApi(c.req.param('id'))));
+  api.get('/factories/:factoryId/scores/:id', async (c) =>
+    c.json(await getScoreForApi((await factoryOf(c)).key, c.req.param('id'))),
+  );
 
   /* ---------------------------------------------------------- calibration */
 
-  api.post('/calibration', async (c) => {
+  api.post('/factories/:factoryId/calibration', async (c) => {
     const body = await json<CalibrationBody>(c, calibrationBodySchema);
-    return c.json(await startCalibrationForApi(config, body), 201);
+    return c.json(await startCalibrationForApi(config, (await factoryOf(c)).key, body), 201);
   });
 
-  api.get('/calibration/:scorer', async (c) =>
+  api.get('/factories/:factoryId/calibration/:scorer', async (c) =>
     c.json(
       await getCalibrationForApi(
         config,
-        c.req.query('factory') ?? config.defaultFactory,
+        (await factoryOf(c)).key,
         c.req.param('scorer'),
       ),
     ),
@@ -491,9 +494,9 @@ export function createApp(config: ApiConfig): Hono {
 
   /* -------------------------------------------------------------- scoring */
 
-  api.post('/scoring', async (c) => {
+  api.post('/factories/:factoryId/scoring', async (c) => {
     const body = await json<ScoringBody>(c, scoringBodySchema);
-    return c.json(await startScoringForApi(config, body), 202);
+    return c.json(await startScoringForApi(config, (await factoryOf(c)).key, body), 202);
   });
 
   /* ------------------------------------------------------------ benchmarks */
@@ -514,7 +517,9 @@ export function createApp(config: ApiConfig): Hono {
     return c.json(result, 'workflow' in result ? 202 : 200);
   });
 
-  api.get('/benchmarks/:id', async (c) => c.json(await getBenchmarkRunForApi(c.req.param('id'))));
+  api.get('/factories/:factoryId/benchmarks/:id', async (c) =>
+    c.json(await getBenchmarkRunForApi((await factoryOf(c)).key, c.req.param('id'))),
+  );
 
   api.get('/factories/:factoryId/attestations', async (c) =>
     c.json(await listAttestationsForApi(config, (await factoryOf(c)).key)),
@@ -540,36 +545,46 @@ export function createApp(config: ApiConfig): Hono {
     return c.json(await changeAuthorityForApi(config, (await factoryOf(c)).key, body));
   });
 
-  api.get('/improvements/:id', async (c) => c.json(await getImprovementRunForApi(c.req.param('id'))));
+  api.get('/factories/:factoryId/improvements/:id', async (c) =>
+    c.json(await getImprovementRunForApi((await factoryOf(c)).key, c.req.param('id'))),
+  );
 
-  api.get('/proposals', async (c) => {
+  api.get('/factories/:factoryId/proposals', async (c) => {
+    const factory = (await factoryOf(c)).key;
     const limit = Number(c.req.query('limit') ?? '50');
     return c.json({
       proposals: await listProposalsForApi({
-        ...(c.req.query('factory') ? { factory: c.req.query('factory') as string } : {}),
+        factory,
         ...(c.req.query('status') ? { status: c.req.query('status') as never } : {}),
         limit: Number.isFinite(limit) ? limit : 50,
       }),
     });
   });
 
-  api.get('/proposals/:id', async (c) => c.json(await getProposalForApi(c.req.param('id'))));
+  api.get('/factories/:factoryId/proposals/:id', async (c) =>
+    c.json(await getProposalForApi((await factoryOf(c)).key, c.req.param('id'))),
+  );
 
-  api.post('/proposals/:id/decision', async (c) => {
+  api.post('/factories/:factoryId/proposals/:id/decision', async (c) => {
     const body = await json<ProposalDecisionBody>(c, proposalDecisionBodySchema);
-    return c.json(await decideProposalForApi(config, c.req.param('id'), body));
+    return c.json(
+      await decideProposalForApi(config, (await factoryOf(c)).key, c.req.param('id'), body),
+    );
   });
 
-  api.post('/proposals/:id/apply', async (c) => {
+  api.post('/factories/:factoryId/proposals/:id/apply', async (c) => {
     const body = await json<ProposalApplyBody>(c, proposalApplyBodySchema);
-    return c.json(await applyProposalForApi(config, c.req.param('id'), body));
+    return c.json(
+      await applyProposalForApi(config, (await factoryOf(c)).key, c.req.param('id'), body),
+    );
   });
 
-  api.get('/lessons', async (c) => {
+  api.get('/factories/:factoryId/lessons', async (c) => {
+    const factory = (await factoryOf(c)).key;
     const limit = Number(c.req.query('limit') ?? '100');
     return c.json(
       await listLessonsForApi(config, {
-        ...(c.req.query('factory') ? { factory: c.req.query('factory') as string } : {}),
+        factory,
         ...(c.req.query('includeShared') !== undefined
           ? { includeShared: c.req.query('includeShared') === 'true' }
           : {}),
@@ -578,9 +593,11 @@ export function createApp(config: ApiConfig): Hono {
     );
   });
 
-  api.post('/lessons/:id/promote', async (c) => {
+  api.post('/factories/:factoryId/lessons/:id/promote', async (c) => {
     const body = await json<PromoteLessonBody>(c, promoteLessonBodySchema);
-    return c.json({ lesson: await promoteLessonForApi(c.req.param('id'), body) });
+    return c.json({
+      lesson: await promoteLessonForApi((await factoryOf(c)).key, c.req.param('id'), body),
+    });
   });
 
   /* -------------------------------------------------------------- canary */
@@ -979,7 +996,7 @@ export function createApp(config: ApiConfig): Hono {
     });
   }
 
-  registerWebhooks(api, config);
+  registerWebhooks(api, config, factoryOf);
 
   // One prefix for every resource route (ADR-030): the sub-app's routes are copied here
   // with `API_PREFIX` prepended. Unversioned resource paths therefore 404.

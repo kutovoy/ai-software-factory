@@ -655,7 +655,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'list',
         items: [
-          'Factory: the switcher in the sidebar selects the factory by its `fac_<ulid>` id; the URL carries `?factory=<id>`.',
+          'Factory: the switcher in the sidebar selects the factory by its `fac_<ulid>` id; factory pages carry it in the path (`/factories/<id>/...`), and New Chat remembers the selected factory.',
           'Composer: sends the prompt and starts streaming; tool calls, messages and terminal events render in order.',
           'Permissions: when the harness asks for approval, the prompt is inline — approve or deny with feedback.',
           'Cancel: stops the run; the terminal event closes the stream.',
@@ -822,13 +822,13 @@ export const HELP_ENTRIES: HelpEntry[] = [
     ],
   },
   {
-    slug: 'mcps',
+    slug: 'factories/mcps',
     title: 'MCPs and apps',
     section: 'menu',
     status: 'Shipped — Phase 6a (ADR-027)',
     summary:
       'The MCP registry: servers declared in `factory.yaml`, their transport, health, bound agents, tool globs and credential names.',
-    pageHref: '/mcps',
+    pageHref: '/factories/example/mcps',
     blocks: [
       {
         kind: 'prose',
@@ -943,7 +943,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'prose',
         text:
-          'Every public resource lives under `/api/v1` — factories, scoring, benchmarks, self-improvement, secrets, integrations and webhooks. Factory-scoped resources are nested and addressed by the factory id: `/api/v1/factories/<factoryId>/work-items`, `/runs`, `/gates`, `/autonomy`, `/mcp`, `/benchmarks`, `/canary`, `/improvement`, `/merge-queue` and `/automations`. There is no global `/work-items` or `/runs` route. `GET /health` stays unversioned for probes, and `GET /api/v1/health` serves the same check to versioned clients. The document below is `GET /api/v1/openapi.json`; the API contract test fails when a served route is missing from it (or the document lists a route that is not served), so this page lists exactly what is live.',
+          'Every public resource lives under `/api/v1` — factories, scoring, benchmarks, self-improvement, secrets, integrations and webhooks. Every factory-scoped resource is nested and addressed by the factory id: `/api/v1/factories/<factoryId>/work-items`, `/runs`, `/gates`, `/autonomy`, `/mcp`, `/scores`, `/calibration`, `/scoring`, `/benchmarks`, `/canary`, `/improvement`, `/proposals`, `/lessons`, `/merge-queue` and `/automations`. There is no global `/work-items`, `/runs`, `/scores` or `/proposals` route, and factory-scoped requests carry the factory in the path — never `?factory=`. `GET /health` stays unversioned for probes, and `GET /api/v1/health` serves the same check to versioned clients. The document below is `GET /api/v1/openapi.json`; the API contract test fails when a served route is missing from it (or the document lists a route that is not served), so this page lists exactly what is live.',
       },
       {
         kind: 'callout',
@@ -1743,7 +1743,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
       },
     ],
     related: [
-      { label: 'MCPs and apps', href: '/help/mcps' },
+      { label: 'MCPs and apps', href: '/help/factories/mcps' },
       { label: 'Register a secret', href: '/help/secrets/register' },
       { label: 'Agents page', href: '/help/factories/agents' },
     ],
@@ -1916,18 +1916,19 @@ export interface HelpContext {
 const TOP_LEVEL_ROUTES: Record<string, string> = {
   '/chat': 'chat',
   '/inbox': 'inbox',
-  // A score detail belongs to the run it scored.
-  '/scores': 'runs',
-  '/mcps': 'mcps',
   '/secrets': 'secrets',
   '/users': 'users',
 };
 
-/** Factory pages: the sidebar group plus the nested work-item and run pages. */
+/**
+ * Factory pages: the sidebar group plus the nested work-item, run and score pages. A
+ * score detail belongs to the run it scored, so it reuses the `runs` entry.
+ */
 const FACTORY_SEGMENTS = new Set([
   ...FACTORY_NAV.map((item) => item.segment),
   'work-items',
   'runs',
+  'scores',
 ]);
 
 /**
@@ -1947,8 +1948,10 @@ export function helpSlugForPath(pathname: string): string | null {
 
   if (first === 'factories') {
     const segment = segments[2] ?? 'dashboard';
-    // Work items and runs are their own help entries even though they live under a factory.
+    // Work items, runs and score detail are their own help entries even though they live
+    // under a factory. A score detail points at the run it scored.
     if (segment === 'work-items' || segment === 'runs') return segment;
+    if (segment === 'scores') return 'runs';
     if (!FACTORY_SEGMENTS.has(segment)) return null;
     return `factories/${segment}`;
   }

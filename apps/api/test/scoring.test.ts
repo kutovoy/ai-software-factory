@@ -10,7 +10,6 @@ const WINDOW = parseMetricsWindow('30d', new Date('2026-10-29T00:00:00Z'));
 describe('scoring request schemas', () => {
   test('accepts an on-demand run score request', () => {
     const parsed = scoringBodySchema.safeParse({
-      factory: 'example',
       runId: 'run_123',
       force: true,
     });
@@ -19,27 +18,25 @@ describe('scoring request schemas', () => {
 
   test('rejects unknown fields and unknown stages', () => {
     expect(
-      scoringBodySchema.safeParse({ factory: 'example', bogus: true }).success,
+      scoringBodySchema.safeParse({ bogus: true }).success,
     ).toBe(false);
     expect(
-      scoringBodySchema.safeParse({ factory: 'example', stage: 'deploy' }).success,
+      scoringBodySchema.safeParse({ stage: 'deploy' }).success,
     ).toBe(false);
   });
 
   test('calibration requires items or an existing set', () => {
     expect(
-      calibrationBodySchema.safeParse({ factory: 'example', scorer: 'scope' }).success,
+      calibrationBodySchema.safeParse({ scorer: 'scope' }).success,
     ).toBe(false);
     expect(
       calibrationBodySchema.safeParse({
-        factory: 'example',
         scorer: 'scope',
         items: [{ runId: 'run_1', humanLabel: 'compliant' }],
       }).success,
     ).toBe(true);
     expect(
       calibrationBodySchema.safeParse({
-        factory: 'example',
         scorer: 'scope',
         setId: 'cal_1',
       }).success,

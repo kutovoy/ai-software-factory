@@ -14,8 +14,8 @@ State as of 2026-11-01. Everything below is committed and tagged. Public-release
 | Code forges | `packages/forge` | `CodeForge` contract, fake + GitHub (token by ref, dry-run, offline contract tests) |
 | Merge queue | `packages/merge` | serialized merge train, bisect on red, single-commit revert, manual revert |
 | Evals | `packages/evals` | scorers (deterministic + judge), calibration, benchmarks, Pareto, self-improvement, lessons |
-| API | `apps/api` | path-versioned under `/api/v1` (ADR-030); OpenAPI 3.1 at `GET /api/v1/openapi.json`; runs/SSE, permissions, chat, inference proxy, factories, work items, gates, autonomy, scores, benchmarks, proposals, canary, merge queue, integrations, webhooks |
-| Web console | `apps/web` | full nav parity; chat/runs/inbox/work-items/factory pages/benchmarks/self-improvement/settings |
+| API | `apps/api` | path-versioned under `/api/v1` (ADR-030); OpenAPI 3.1 at `GET /api/v1/openapi.json`; every factory-scoped resource nested under `/api/v1/factories/<factoryId>/…` (runs/SSE, permissions, chat, work items, gates, autonomy, scores, calibration, scoring, benchmarks, improvement, proposals, lessons, canary, MCPs, merge queue, automations); global factories/auth/secrets/integrations/webhooks |
+| Web console | `apps/web` | full nav parity; global chat/inbox/secrets/users/help; factory pages nested under `/factories/<id>/…` including score detail and MCPs |
 | Examples | `factories/example`, `factories/example-lights-off` | lights-on (spec/plan/PR human) vs canary authority |
 
 ## Run it
@@ -100,7 +100,7 @@ lets you validate wiring without touching a repo. GitHub delivers to
 `harden-runtime` · `secrets-mcp` · `api-v1-help` · `help-center` · `live-api-explorer` · `api-explorer-parity` ·
 `fix-ui-audit` · `fix-run-failures` · `run-actions` · `readiness-hello-nextjs` · `console-ops` · `forgejo` ·
 `agent-verdicts` · `console-auth` · `harden-runners` · `forge-ssh-public` · `factory-identity` · `factory-purge` ·
-`readiness-identity`.
+`readiness-identity` · `unify-factory-api`.
 
 ## Latest state (2026-11-01)
 
@@ -127,6 +127,11 @@ lets you validate wiring without touching a repo. GitHub delivers to
   (404 otherwise). `DELETE /api/v1/factories/:factoryId` is a verified hard purge (DB rows, Temporal schedules,
   running workflows, run dirs; git/forge kept). A fresh run `wi_01M6DF5HG9EMWWPKN4JB4YGCDG` merged PR #5 with
   Playwright QA passing (`1 passed (687ms)`).
+- **Unified factory paths (2026-11-02)**: every factory-scoped API resource (scores, calibration, scoring,
+  benchmark/improvement detail, proposals, lessons, webhook deliveries) now lives under
+  `/api/v1/factories/:factoryId/…`; no `?factory=` remains. Browser score detail and MCPs moved to
+  `/factories/<id>/scores/<id>` and `/factories/<id>/mcps`. No DB migration; breaking `/api/v1` rewrite recorded
+  in ADR-039.
 - **Local forge**: Forgejo at `http://localhost:3000/extras/forgejo/`, enabled by default, proxied by the console
   and asserting the signed-in user (admin fallback when auth is off). Bootstrap:
   `bash scripts/forgejo-bootstrap.sh` (admin, token to `.env`, org/repo). The forge client speaks Gitea's dialect;

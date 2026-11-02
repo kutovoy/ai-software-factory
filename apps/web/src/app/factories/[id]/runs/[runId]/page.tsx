@@ -43,7 +43,7 @@ export default async function RunDetailPage({
   }
 
   const scores = await safeGet<ScoresResponse>(
-    `/scores?run=${encodeURIComponent(runId)}&limit=50`,
+    `/factories/${encoded}/scores?run=${encodeURIComponent(runId)}&limit=50`,
     { scores: [], aggregate: [] },
   );
 
@@ -238,7 +238,7 @@ export default async function RunDetailPage({
             <EmptyState
               testId="run-scores-empty"
               title="No scores for this run yet"
-              description="Scoring runs after the run reaches a terminal state. On-demand scoring is available via POST /scoring."
+              description="Scoring runs after the run reaches a terminal state. On-demand scoring is available via POST /api/v1/factories/:factoryId/scoring."
             />
           </CardBody>
         ) : (
@@ -287,7 +287,7 @@ export default async function RunDetailPage({
                     </td>
                     <td className="px-4 py-2 text-right">
                       <Link
-                        href={`/scores/${encodeURIComponent(score.id)}`}
+                        href={`/factories/${encoded}/scores/${encodeURIComponent(score.id)}`}
                         data-testid="run-score-link"
                         className="text-xs font-medium text-slate-700 underline decoration-slate-300 underline-offset-2"
                       >

@@ -845,3 +845,17 @@ nested-only API shape is a deliberate exception to the ADR-030 prefix-bump rule:
 all clients updated in the same change, rather than maintaining a second version.
 **Consequences:** deletion cannot silently leave rows behind; closed Temporal histories remain until retention;
 the API break is recorded here and must be called out in release notes.
+
+## ADR-039 — One factory path for every factory-scoped resource
+
+**Status:** accepted (2026-11-02). **Context:** after the factory identity change, most resources were nested under
+`/api/v1/factories/:factoryId/…`, but scores, calibration, scoring, benchmark/improvement detail, proposals,
+lessons and webhook deliveries still used global paths with `?factory=`. The console also had global
+`/scores/[id]` and `/mcps` pages.
+**Decision:** every factory-scoped API resource is addressed through `/api/v1/factories/:factoryId/…`; no
+factory query parameter remains. Work-item/run creation takes the factory from the path. Browser factory-scoped
+pages live at `/factories/<id>/…`; only `/factories` (list), `/inbox` (cross-factory queue), `/chat`, `/secrets`,
+`/users` and `/help` stay global. The shape is rewritten in place in `/api/v1` (a second explicit exception to the
+ADR-030 prefix-bump rule), with all clients updated in the same change. No DB migration is needed.
+**Consequences:** one predictable path shape, no factory query leakage in logs/links, and nested browser parity.
+Cost: another breaking v1 rewrite; release notes must call it out and all API clients/smoke/E2E move together.

@@ -13,23 +13,19 @@ export const dynamic = 'force-dynamic';
  * agents bound, tool globs and a runner-side connection test. The definition is the source
  * of truth; this page never edits it.
  */
-export default async function McpsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ factory?: string }>;
-}) {
-  const params = await searchParams;
+export default async function McpsPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  // The factory is the path segment (change `unify-factory-api`), exactly like every other
+  // factory page; the chips only offer a jump to another factory's MCP projection.
+  const factoryId = decodeURIComponent(id);
   const factories = await safeGet<{ factories: FactoryListItem[] }>('/factories', { factories: [] });
   // Factories are addressed by id (change `add-factory-identity`); the label stays human.
   const entries = factories.factories.map((entry) => ({
     id: entry.id ?? entry.key,
     name: entry.alias?.trim() || entry.name,
   }));
-  const requested = params.factory ? decodeURIComponent(params.factory) : undefined;
-  const selected =
-    entries.find((entry) => entry.id === requested) ?? entries[0] ?? null;
-  const factoryId = selected?.id ?? null;
-  const factory = selected?.name ?? 'no factory';
+  const selected = entries.find((entry) => entry.id === factoryId) ?? null;
+  const factory = selected?.name ?? factoryId;
 
   const projection = factoryId
     ? await getOrError<McpProjectionWire>(
@@ -55,7 +51,7 @@ export default async function McpsPage({
           {entries.map((entry) => (
             <a
               key={entry.id}
-              href={`/mcps?factory=${encodeURIComponent(entry.id)}`}
+              href={`/factories/${encodeURIComponent(entry.id)}/mcps`}
               data-testid="mcp-factory-link"
               data-factory={entry.name}
               className={`rounded-md border px-2 py-1 text-xs ${

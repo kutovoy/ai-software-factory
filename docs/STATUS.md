@@ -51,8 +51,25 @@ Fixes that the test forced (all committed):
 Latest tags: `harden-runtime`, `secrets-mcp`, `api-v1-help`, `help-center`, `live-api-explorer`,
 `api-explorer-parity`, `fix-ui-audit`, `fix-run-failures`, `run-actions`, `readiness-hello-nextjs`, `console-ops`,
 `forgejo`, `agent-verdicts`, `console-auth`, `harden-runners`, `forge-ssh-public`, `readiness-qa`,
-`factory-identity`, `factory-purge`, `readiness-identity`. `bun run ci` 735 pass; smoke passes; Playwright 56;
-UI audit clean.
+`factory-identity`, `factory-purge`, `readiness-identity`, `unify-factory-api`. `bun run ci` 735 pass; smoke
+passes; Playwright 56; UI audit clean.
+
+### Unified factory paths (2026-11-02)
+
+Every factory-scoped API and browser resource is now addressed through the factory id. The remaining global
+scoring group moved under `/api/v1/factories/:factoryId/...`:
+
+- scores, score detail, calibration, scoring, benchmark-run detail, improvement-run detail, proposals
+  (+ decision/apply), lessons (+ promote), and webhook deliveries.
+- No factory-scoped request uses `?factory=` or `?factoryId=`; the path supplies the factory.
+- Work-item/run creation takes the factory from the path; no `factoryId` in the body.
+- Browser score detail and MCPs moved to `/factories/<id>/scores/<id>` and `/factories/<id>/mcps`.
+- Global: `/factories`, `/inbox` (cross-factory queue), `/chat`, `/secrets`, `/users`, `/help`.
+- No DB migration; the identity/registry schema is unchanged.
+- Breaking `/api/v1` rewrite; ADR-039 records the exception. `bun run ci` 735, smoke passes, Playwright 56,
+  UI audit clean.
+
+### Second lights-off run with Playwright QA (2026-11-02)
 
 ### Factory identity + purge v2 (2026-11-02)
 

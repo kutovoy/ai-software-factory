@@ -26,18 +26,17 @@ export default async function SelfImprovementPage({ params }: { params: Promise<
 
   const detail = await loadFactory(factory);
   const factoryName = factoryNameOf(detail, factory);
-  // `/proposals` and `/lessons` are global reads keyed by the internal factory key.
   const factoryKey = detail?.key ?? factory;
 
+  // Proposals and lessons are nested under the factory (change `unify-factory-api`).
   const [overview, proposalsResponse, lessonsResponse, canary] = await Promise.all([
     safeGet<ImprovementOverviewWire | null>(`/factories/${encoded}/improvement`, null),
-    safeGet<{ proposals: ProposalWire[] }>(
-      `/proposals?factory=${encodeURIComponent(factoryKey)}&limit=20`,
-      { proposals: [] },
-    ),
+    safeGet<{ proposals: ProposalWire[] }>(`/factories/${encoded}/proposals?limit=20`, {
+      proposals: [],
+    }),
     safeGet<{ lessons: LessonWire[]; factory: string; includeShared: boolean }>(
-      `/lessons?factory=${encodeURIComponent(factoryKey)}&includeShared=true&limit=100`,
-      { lessons: [], factory: factoryKey, includeShared: true },
+      `/factories/${encoded}/lessons?includeShared=true&limit=100`,
+      { lessons: [], factory, includeShared: true },
     ),
     safeGet<CanaryOverviewWire | null>(`/factories/${encoded}/canary`, null),
   ]);
@@ -266,7 +265,9 @@ export default async function SelfImprovementPage({ params }: { params: Promise<
               description="Nothing has been observed yet, or the observer found no failure signal. Run an improvement pass to produce one from real scored runs."
             />
           ) : (
-            proposals.map((proposal) => <ProposalCard key={proposal.id} proposal={proposal} />)
+            proposals.map((proposal) => (
+              <ProposalCard key={proposal.id} factoryId={factory} proposal={proposal} />
+            ))
           )}
           {proposals.length > 0 ? (
             <p className="text-[11px] text-slate-500">
@@ -284,7 +285,7 @@ export default async function SelfImprovementPage({ params }: { params: Promise<
           hint="INDEX.md + EXPERIENCE.md per factory; promotion to the shared library is opt-in."
         />
         <CardBody>
-          <LessonList factory={factoryKey} lessons={lessons} />
+          <LessonList factoryId={factory} factoryKey={factoryKey} lessons={lessons} />
         </CardBody>
       </Card>
     </div>

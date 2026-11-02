@@ -319,16 +319,16 @@ pass "run reached status ok"
 
 # ------------------------------------------------------- 6b. scoring (4a)
 log "scoring the completed run (deterministic registry + stub judge)"
-scoring_resp="$(api -X POST "$API/scoring" \
+scoring_resp="$(api -X POST "$API/factories/$FACTORY_ID/scoring" \
   -H 'content-type: application/json' \
-  -d "{\"factory\":\"example\",\"runId\":\"$run_id\",\"force\":true}")"
+  -d "{\"runId\":\"$run_id\",\"force\":true}")"
 score_workflow="$(printf '%s' "$scoring_resp" | jget workflow.workflowId)"
 [ -n "$score_workflow" ] || fail "scoring workflow did not start: $scoring_resp"
 
 score_id=""
 score_status=""
 for _ in $(seq 1 120); do
-  scores_resp="$(api "$API/scores?run=$run_id")"
+  scores_resp="$(api "$API/factories/$FACTORY_ID/scores?run=$run_id")"
   score_id="$(printf '%s' "$scores_resp" | jget scores.0.id)"
   score_status="$(printf '%s' "$scores_resp" | jget scores.0.status)"
   [ -n "$score_id" ] && break
@@ -344,7 +344,7 @@ case "$score_uncalibrated" in
   *) fail "judge score has no uncalibrated flag (got '$score_uncalibrated')" ;;
 esac
 
-score_detail="$(api "$API/scores/$score_id")"
+score_detail="$(api "$API/factories/$FACTORY_ID/scores/$score_id")"
 [ "$(printf '%s' "$score_detail" | jget events.0.type)" = "score.completed" ] \
   || fail "score detail has no score.completed event"
 [ "$(printf '%s' "$score_detail" | jget score.rubricHash)" != "" ] \
@@ -480,9 +480,9 @@ pass "one-stage loop verified and cleaned up"
 
 # ---------------------------------------- 12. benchmarks (Phase 4b, fake stack)
 log "calibrating the judge, then running a tiny benchmark (1 task × 2 configs)"
-calibration_resp="$(api -X POST "$API/calibration" \
+calibration_resp="$(api -X POST "$API/factories/$FACTORY_ID/calibration" \
   -H 'content-type: application/json' \
-  -d "{\"factory\":\"example\",\"scorer\":\"scope\",\"name\":\"smoke benchmark calibration\",\"minSize\":1,\"threshold\":1,\"items\":[{\"runId\":\"$run_id\",\"humanLabel\":\"compliant\"}]}")"
+  -d "{\"scorer\":\"scope\",\"name\":\"smoke benchmark calibration\",\"minSize\":1,\"threshold\":1,\"items\":[{\"runId\":\"$run_id\",\"humanLabel\":\"compliant\"}]}")"
 [ "$(printf '%s' "$calibration_resp" | jget calibration.verdict)" = "pass" ] \
   || fail "calibration did not pass: $calibration_resp"
 pass "judge calibrated against the smoke run"
@@ -499,7 +499,7 @@ pass "benchmark $benchmark_id started (configHash ${benchmark_config_hash:0:12})
 benchmark_detail=""
 benchmark_status=""
 for _ in $(seq 1 240); do
-  benchmark_detail="$(api "$API/benchmarks/$benchmark_id")"
+  benchmark_detail="$(api "$API/factories/$FACTORY_ID/benchmarks/$benchmark_id")"
   benchmark_status="$(printf '%s' "$benchmark_detail" | jget benchmark.status)"
   started_event="$(printf '%s' "$benchmark_detail" | jget events.0.type)"
   completed_event="$(printf '%s' "$benchmark_detail" | jget events.1.type)"
@@ -584,12 +584,12 @@ done
 [ "$cancel_status" = "cancelled" ] || fail "corpus run did not reach cancelled (got ${cancel_status:-none})"
 pass "corpus run $cancel_run_id cancelled"
 
-api -X POST "$API/scoring" \
+api -X POST "$API/factories/$FACTORY_ID/scoring" \
   -H 'content-type: application/json' \
-  -d "{\"factory\":\"example\",\"runId\":\"$cancel_run_id\",\"force\":true}" >/dev/null
+  -d "{\"runId\":\"$cancel_run_id\",\"force\":true}" >/dev/null
 corpus_score_id=""
 for _ in $(seq 1 120); do
-  corpus_scores="$(api "$API/scores?run=$cancel_run_id")"
+  corpus_scores="$(api "$API/factories/$FACTORY_ID/scores?run=$cancel_run_id")"
   corpus_score_id="$(printf '%s' "$corpus_scores" | jget scores.0.id)"
   [ -n "$corpus_score_id" ] && break
   sleep 0.5
@@ -618,7 +618,7 @@ improvement_detail=""
 improvement_status=""
 improvement_decision=""
 for _ in $(seq 1 240); do
-  improvement_detail="$(api "$API/improvements/$improvement_id")"
+  improvement_detail="$(api "$API/factories/$FACTORY_ID/improvements/$improvement_id")"
   improvement_status="$(printf '%s' "$improvement_detail" | jget improvement.status)"
   improvement_decision="$(printf '%s' "$improvement_detail" | jget improvement.decision)"
   case "$improvement_status" in
@@ -668,7 +668,7 @@ printf '%s' "$improvement_detail" | bun -e '
 ' || fail "improvement proposal / probe / candidate / PR / lesson assertions failed"
 pass "improvement $improvement_id: proposal + probes + candidate + PR + lesson recorded"
 
-lessons_resp="$(api "$API/lessons?factory=example")"
+lessons_resp="$(api "$API/factories/$FACTORY_ID/lessons")"
 printf '%s' "$lessons_resp" | bun -e '
   const d = JSON.parse(await Bun.stdin.text());
   const lessons = d.lessons ?? [];
@@ -701,12 +701,12 @@ for _ in $(seq 1 120); do
 done
 [ "$canary_run_status" = "cancelled" ] || fail "canary corpus run did not reach cancelled (got ${canary_run_status:-none})"
 
-api -X POST "$API/scoring" \
+api -X POST "$API/factories/$CANARY_FACTORY_ID/scoring" \
   -H 'content-type: application/json' \
-  -d "{\"factory\":\"$CANARY_FACTORY\",\"runId\":\"$canary_run_id\",\"force\":true}" >/dev/null
+  -d "{\"runId\":\"$canary_run_id\",\"force\":true}" >/dev/null
 canary_score_id=""
 for _ in $(seq 1 120); do
-  canary_score_id="$(api "$API/scores?run=$canary_run_id" | jget scores.0.id)"
+  canary_score_id="$(api "$API/factories/$CANARY_FACTORY_ID/scores?run=$canary_run_id" | jget scores.0.id)"
   [ -n "$canary_score_id" ] && break
   sleep 0.5
 done
@@ -714,9 +714,9 @@ done
 
 # Calibration is per factory: the canary factory needs its own passing judge calibration
 # before the observer is eligible.
-canary_calibration="$(api -X POST "$API/calibration" \
+canary_calibration="$(api -X POST "$API/factories/$CANARY_FACTORY_ID/calibration" \
   -H 'content-type: application/json' \
-  -d "{\"factory\":\"$CANARY_FACTORY\",\"scorer\":\"scope\",\"name\":\"smoke canary calibration\",\"minSize\":1,\"threshold\":1,\"items\":[{\"runId\":\"$canary_run_id\",\"humanLabel\":\"compliant\"}]}")"
+  -d "{\"scorer\":\"scope\",\"name\":\"smoke canary calibration\",\"minSize\":1,\"threshold\":1,\"items\":[{\"runId\":\"$canary_run_id\",\"humanLabel\":\"compliant\"}]}")"
 [ "$(printf '%s' "$canary_calibration" | jget calibration.verdict)" = "pass" ] \
   || fail "canary calibration did not pass: $canary_calibration"
 pass "canary corpus run scored and the judge calibrated for $CANARY_FACTORY"
@@ -731,7 +731,7 @@ canary_improvement_id="$(printf '%s' "$canary_improvement" | jget improvement.id
 canary_improvement_status=""
 canary_improvement_decision=""
 for _ in $(seq 1 240); do
-  canary_improvement_detail="$(api "$API/improvements/$canary_improvement_id")"
+  canary_improvement_detail="$(api "$API/factories/$CANARY_FACTORY_ID/improvements/$canary_improvement_id")"
   canary_improvement_status="$(printf '%s' "$canary_improvement_detail" | jget improvement.status)"
   canary_improvement_decision="$(printf '%s' "$canary_improvement_detail" | jget improvement.decision)"
   case "$canary_improvement_status" in

@@ -114,8 +114,12 @@ describe('contextual help routing', () => {
     expect(helpSlugForPath('/factories/fac_01ARZ3NDEKTSV4RRFFQ69G5FAV/work-items')).toBe(
       'work-items',
     );
-    expect(helpSlugForPath('/scores/score_123')).toBe('runs');
-    expect(helpSlugForPath('/mcps')).toBe('mcps');
+    expect(helpSlugForPath('/factories/fac_01ARZ3NDEKTSV4RRFFQ69G5FAV/scores/score_123')).toBe(
+      'runs',
+    );
+    expect(helpSlugForPath('/factories/fac_01ARZ3NDEKTSV4RRFFQ69G5FAV/mcps')).toBe(
+      'factories/mcps',
+    );
     expect(helpSlugForPath('/secrets')).toBe('secrets');
     expect(helpSlugForPath('/users')).toBe('users');
   });
@@ -155,12 +159,12 @@ describe('contextual help routing', () => {
     for (const path of [
       '/chat',
       '/inbox',
-      '/scores',
-      '/mcps',
       '/secrets',
       '/users',
       '/factories/fac_01ARZ3NDEKTSV4RRFFQ69G5FAV/work-items',
       '/factories/fac_01ARZ3NDEKTSV4RRFFQ69G5FAV/runs',
+      '/factories/fac_01ARZ3NDEKTSV4RRFFQ69G5FAV/scores/score_123',
+      '/factories/fac_01ARZ3NDEKTSV4RRFFQ69G5FAV/mcps',
     ]) {
       const slug = helpSlugForPath(path);
       expect(slug, path).not.toBeNull();

@@ -23,13 +23,16 @@ async function resolvePermissionIfBlocked(page: Page): Promise<void> {
 
 async function scoreRun(
   request: APIRequestContext,
+  factory: string,
   runId: string,
 ): Promise<{ id: string; label: string; status: string; uncalibrated: boolean }> {
+  const factoryIdValue = await factoryId(request, factory);
   let accepted = false;
   for (let attempt = 0; attempt < 120; attempt += 1) {
-    const response = await request.post('/api/scoring', {
-      data: { factory: 'example', runId, force: true },
-    });
+    const response = await request.post(
+      `/api/v1/factories/${encodeURIComponent(factoryIdValue)}/scoring`,
+      { data: { runId, force: true } },
+    );
     if (response.ok()) {
       accepted = true;
       break;
@@ -48,13 +51,15 @@ async function scoreRun(
     }
     expect(
       response.ok(),
-      `POST /api/scoring failed: ${response.status()} ${JSON.stringify(body)}`,
+      `POST /api/v1/factories/${factoryIdValue}/scoring failed: ${response.status()} ${JSON.stringify(body)}`,
     ).toBeTruthy();
   }
   expect(accepted, 'scoring was never accepted for a terminal run').toBeTruthy();
 
   for (let attempt = 0; attempt < 120; attempt += 1) {
-    const scoresResponse = await request.get(`/api/scores?run=${runId}`);
+    const scoresResponse = await request.get(
+      `/api/v1/factories/${encodeURIComponent(factoryIdValue)}/scores?run=${encodeURIComponent(runId)}`,
+    );
     if (scoresResponse.ok()) {
       const body = (await scoresResponse.json()) as {
         scores?: { id: string; label: string | null; status: string; uncalibrated: boolean }[];
@@ -103,13 +108,15 @@ test.describe('Scoring and measurement', () => {
       timeout: 60_000,
     });
 
-    const score = await scoreRun(request, run.id);
+    const score = await scoreRun(request, run.factory, run.id);
     expect(score.status).toBe('ok');
     expect(score.label).toBeTruthy();
 
     // Smoke (which runs before Playwright) calibrates `scope` on the shared stack, so the
     // uncalibrated flag depends on whether a passing calibration exists for this rubric hash.
-    const calibrationResponse = await request.get('/api/calibration/scope?factory=example');
+    const calibrationResponse = await request.get(
+      await factoryApi(request, 'example', 'calibration/scope'),
+    );
     expect(calibrationResponse.ok()).toBeTruthy();
     const calibrationStatus = (await calibrationResponse.json()) as { calibrated: boolean };
     expect(score.uncalibrated).toBe(!calibrationStatus.calibrated);
@@ -139,7 +146,8 @@ test.describe('Scoring and measurement', () => {
     }
 
     // Score detail: label/score/rationale/evidence/provenance/cost.
-    await page.goto(`/scores/${score.id}`);
+    const exampleId = await factoryId(page.request, 'example');
+    await page.goto(`/factories/${encodeURIComponent(exampleId)}/scores/${encodeURIComponent(score.id)}`);
     await expect(page.getByTestId('score-status')).toHaveText('ok');
     await expect(page.getByTestId('score-label')).toHaveText('compliant');
     await expect(page.getByTestId('score-value')).toHaveText('1');
@@ -164,7 +172,10 @@ test.describe('Scoring and measurement', () => {
     const scoreRow = page.locator('[data-testid="run-score-row"][data-scorer="scope"]');
     await expect(scoreRow).toBeVisible();
     await expect(scoreRow.getByTestId('run-score-label')).toHaveText('compliant');
-    await expect(scoreRow.getByTestId('run-score-link')).toHaveAttribute('href', `/scores/${score.id}`);
+    await expect(scoreRow.getByTestId('run-score-link')).toHaveAttribute(
+      'href',
+      `/factories/${encodeURIComponent(exampleId)}/scores/${encodeURIComponent(score.id)}`,
+    );
   });
 
   test('dashboard renders metric cards with definitions and per-stage cost', async ({ page, request }) => {

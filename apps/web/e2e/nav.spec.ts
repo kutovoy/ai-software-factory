@@ -1,13 +1,14 @@
 import { expect, test } from '@playwright/test';
 import { factoryId, factoryPage } from './helpers';
 
-const TOP_LEVEL = ['nav-chat', 'nav-inbox', 'nav-runs', 'nav-mcps', 'nav-secrets', 'nav-users'];
+const TOP_LEVEL = ['nav-chat', 'nav-inbox', 'nav-runs', 'nav-secrets', 'nav-users'];
 
 const FACTORY_LEVEL = [
   'nav-dashboard',
   'nav-agents',
   'nav-automations',
   'nav-scorers',
+  'nav-mcps',
   'nav-self-improvement',
   'nav-benchmarks',
   'nav-definition',
@@ -24,6 +25,7 @@ const FACTORY_PAGE_MARKERS: Record<string, string[]> = {
   'nav-agents': ['agent-card'],
   'nav-automations': ['automations-table'],
   'nav-scorers': ['scorers-registry'],
+  'nav-mcps': ['mcp-registry', 'mcp-unavailable'],
   'nav-self-improvement': ['self-improvement-settings'],
   'nav-benchmarks': ['benchmark-suite'],
   'nav-definition': ['definition-readonly-banner'],
@@ -32,10 +34,9 @@ const FACTORY_PAGE_MARKERS: Record<string, string[]> = {
   'nav-settings': ['settings-manifest'],
 };
 
-/** Top-level pages that must render real data (Secrets and MCPs shipped in Phase 6). */
+/** Top-level pages that must render real data (Secrets shipped in Phase 6). */
 const TOP_LEVEL_MARKERS: Record<string, string[]> = {
   'nav-secrets': ['secrets-registry', 'secrets-unavailable'],
-  'nav-mcps': ['mcp-registry', 'mcp-unavailable'],
   'nav-users': ['users-admin', 'users-forbidden', 'users-unavailable'],
 };
 

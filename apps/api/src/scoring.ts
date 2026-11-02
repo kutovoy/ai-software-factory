@@ -62,7 +62,6 @@ const LOOP_STAGES = ['triage', 'spec', 'plan', 'implement', 'review', 'verify', 
 
 export const scoringBodySchema = z
   .object({
-    factory: z.string().min(1),
     runId: z.string().min(1).optional(),
     workItemId: z.string().min(1).optional(),
     stage: z.enum(LOOP_STAGES).optional(),
@@ -84,7 +83,6 @@ export const calibrationItemSchema = z
 
 export const calibrationBodySchema = z
   .object({
-    factory: z.string().min(1),
     scorer: z.string().min(1),
     name: z.string().min(1).max(120).optional(),
     /** Re-run an existing set instead of creating a new one. */
@@ -271,10 +269,10 @@ export interface ScoreDetailResponse {
   calibration: CalibrationResultRecord | null;
 }
 
-export async function getScoreForApi(id: string): Promise<ScoreDetailResponse> {
+export async function getScoreForApi(factory: string, id: string): Promise<ScoreDetailResponse> {
   const sql = getSql();
   const found = await getScore(sql, id);
-  if (!found) throw scoreNotFound(id);
+  if (!found || found.score.factory !== factory) throw scoreNotFound(id);
 
   const calibration =
     found.score.scorerClass === 'judge' && found.score.provenance.judgeModel
@@ -318,13 +316,14 @@ export interface CalibrationResponse {
 
 export async function startCalibrationForApi(
   config: ApiConfig,
+  factory: string,
   body: CalibrationBody,
 ): Promise<CalibrationResponse> {
-  const { registry } = registryOf(config, body.factory);
+  const { registry } = registryOf(config, factory);
   const scorer = findScorer(registry, body.scorer);
   if (!scorer) {
-    throw invalidRequest(`scorer "${body.scorer}" is not declared by factory "${body.factory}"`, {
-      factory: body.factory,
+    throw invalidRequest(`scorer "${body.scorer}" is not declared by factory "${factory}"`, {
+      factory,
       scorer: body.scorer,
       available: registry.map((entry) => entry.name),
     });
@@ -378,7 +377,7 @@ export async function startCalibrationForApi(
   };
 
   if (body.setId) {
-    const sets = await listCalibrationSets(sql, { factory: body.factory, scorer: scorer.name });
+    const sets = await listCalibrationSets(sql, { factory, scorer: scorer.name });
     const set = sets.find((candidate) => candidate.id === body.setId);
     if (!set) {
       throw invalidRequest(`calibration set "${body.setId}" does not exist`, {
@@ -400,7 +399,7 @@ export async function startCalibrationForApi(
     setName = body.name ?? `${scorer.name} golden set`;
     await createCalibrationSet(sql, {
       id: setId,
-      factory: body.factory,
+      factory,
       scorer: scorer.name,
       name: setName,
       minSize,
@@ -418,7 +417,7 @@ export async function startCalibrationForApi(
         'judge_unavailable',
         503,
         error instanceof Error ? error.message : String(error),
-        { factory: body.factory, scorer: scorer.name, mode: config.scoringJudgeMode },
+        { factory, scorer: scorer.name, mode: config.scoringJudgeMode },
       );
     }
   })();
@@ -435,7 +434,7 @@ export async function startCalibrationForApi(
       error = 'calibration item has no run reference';
     } else {
       try {
-        const context = await buildRunContext({ runId: item.runId, factory: body.factory });
+        const context = await buildRunContext({ runId: item.runId, factory });
         const result = await runJudgeScorer({ scorer, client, context });
         judgeLabel = result.label;
         judgeScore = result.score;
@@ -462,7 +461,7 @@ export async function startCalibrationForApi(
   const computation = computeCalibration(observations, { minSize, threshold, tolerance });
   const result = await recordCalibrationResult(sql, {
     setId,
-    factory: body.factory,
+    factory,
     scorer: scorer.name,
     rubricHash: scorer.rubricHash,
     judgeModel: scorer.judgeModel,
@@ -477,7 +476,7 @@ export async function startCalibrationForApi(
   });
 
   log('info', 'calibration_completed', {
-    factory: body.factory,
+    factory,
     scorer: scorer.name,
     setId,
     verdict: computation.verdict,
@@ -485,7 +484,7 @@ export async function startCalibrationForApi(
   });
 
   return {
-    factory: body.factory,
+    factory,
     scorer: scorer.name,
     setId,
     setName,
@@ -634,9 +633,10 @@ export interface StartScoringResponse {
 
 export async function startScoringForApi(
   config: ApiConfig,
+  factory: string,
   body: ScoringBody,
 ): Promise<StartScoringResponse> {
-  const { dir } = loadFactory(config, body.factory);
+  const { dir } = loadFactory(config, factory);
 
   if (body.runId) {
     const run = await getRun(body.runId);
@@ -651,7 +651,7 @@ export async function startScoringForApi(
 
   const workflow = await startScoringWorkflow(
     {
-      factory: body.factory,
+      factory,
       factoryRoot: dir,
       trigger: 'on_demand',
       ...(body.runId ? { runIds: [body.runId] } : {}),
@@ -664,21 +664,21 @@ export async function startScoringForApi(
     toOrchestrationConfig(config),
   ).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
-    log('error', 'scoring_start_failed', { factory: body.factory, message });
+    log('error', 'scoring_start_failed', { factory, message });
     throw new ApiError('orchestrator_unavailable', 503, 'could not start the scoring workflow', {
-      factory: body.factory,
+      factory,
       error: message,
     });
   });
 
   log('info', 'scoring_started', {
-    factory: body.factory,
+    factory,
     workflowId: workflow.workflowId,
     runId: body.runId ?? null,
   });
 
   return {
-    factory: body.factory,
+    factory,
     trigger: 'on_demand',
     workflow,
     runs: body.runId ? [body.runId] : [],

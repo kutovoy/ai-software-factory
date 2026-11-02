@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { factoryApi, factoryId, factoryPage } from './helpers';
+import { factoryApi, factoryPage } from './helpers';
 
 /**
  * Secrets + MCPs (change `add-secrets-and-mcp`).
@@ -77,7 +77,9 @@ test.describe('secrets and MCPs', () => {
   }) => {
     test.setTimeout(180_000);
 
-    await page.goto(`/mcps?factory=${encodeURIComponent(await factoryId(page.request, FACTORY))}`);
+    await page.goto(
+      await factoryPage(page.request, FACTORY, 'mcps'),
+    );
     await expect(page.getByTestId('mcp-registry')).toBeVisible();
     // `factories/example` declares one server: the count must read `1 server`.
     await expect(page.getByTestId('mcp-server-count')).toHaveText('1 server');

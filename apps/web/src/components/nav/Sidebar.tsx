@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Fragment, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { FACTORY_NAV, FOOTER_NAV, TOP_NAV, factoryHref, navHref } from '@/lib/nav';
 import type { FactoryListItem, UserWire } from '@/lib/types';
@@ -39,7 +39,7 @@ export function Sidebar({
   factories: FactoryListItem[];
   /** Value of the `factory` cookie (a factory id), resolved by the root layout. */
   initialFactory?: string | null;
-  /** Local Forgejo is enabled (spec `forge`); the menu links to it under "MCPs and apps". */
+  /** Local Forgejo is enabled (spec `forge`); the menu links to it in the factory group. */
   forgejoEnabled?: boolean;
   /** Signed-in user resolved by the root layout (`null` when auth is off). */
   user?: UserWire | null;
@@ -137,8 +137,7 @@ export function Sidebar({
             const href = navHref(item, activeFactoryId);
             const active = isActive(href);
             return (
-            <Fragment key={item.href}>
-              <li>
+              <li key={item.href}>
                 {item.factoryScoped && !activeFactoryId ? (
                   <span
                     data-testid={item.testId}
@@ -164,20 +163,6 @@ export function Sidebar({
                   </Link>
                 )}
               </li>
-              {item.href === '/mcps' && forgejoEnabled ? (
-                <li>
-                  <a
-                    href="/extras/forgejo/"
-                    target="_blank"
-                    rel="noreferrer"
-                    data-testid="nav-forgejo"
-                    className="block rounded-md px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
-                  >
-                    Forgejo <span className="text-slate-400">↗</span>
-                  </a>
-                </li>
-              ) : null}
-            </Fragment>
             );
           })}
         </ul>
@@ -219,6 +204,19 @@ export function Sidebar({
               </li>
             );
           })}
+          {forgejoEnabled && activeFactoryId ? (
+            <li>
+              <a
+                href="/extras/forgejo/"
+                target="_blank"
+                rel="noreferrer"
+                data-testid="nav-forgejo"
+                className="block rounded-md px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
+              >
+                Forgejo <span className="text-slate-400">↗</span>
+              </a>
+            </li>
+          ) : null}
         </ul>
       </div>
 

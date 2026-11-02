@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { req } from './helpers';
+import { factoryIdOf, req } from './helpers';
 import { SQL } from 'bun';
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
@@ -33,6 +33,7 @@ let app: Hono;
 let sql: SQL;
 let runsDir: string;
 let factoryRoot: string;
+let factoryId: string;
 
 async function migrate(databaseUrl: string): Promise<void> {
   const client = new SQL(databaseUrl, { max: 1 });
@@ -69,7 +70,7 @@ async function insertTerminalRun(runId: string): Promise<void> {
 }
 
 async function postCalibration(body: unknown): Promise<Response> {
-  return await req(app, '/calibration', {
+  return await req(app, `/factories/${factoryId}/calibration`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -95,6 +96,7 @@ suite('calibration API', () => {
     sql = new SQL(process.env.DATABASE_URL as string, { max: 2 });
     config = loadApiConfig();
     app = createApp(config);
+    factoryId = await factoryIdOf(app, FACTORY);
   }, 60_000);
 
   afterAll(async () => {
@@ -109,7 +111,6 @@ suite('calibration API', () => {
     await insertTerminalRun(runId);
 
     const tooSmall = await postCalibration({
-      factory: FACTORY,
       scorer: 'scope',
       name: 'small golden set',
       minSize: 5,
@@ -131,7 +132,7 @@ suite('calibration API', () => {
     expect(small.calibration.agreementExact).toBeNull();
     expect(small.calibration.reason).toContain('at least 5');
 
-    const before = await req(app, `/calibration/scope?factory=${FACTORY}`);
+    const before = await req(app, `/factories/${factoryId}/calibration/scope`);
     expect(before.status).toBe(200);
     const beforeBody = (await before.json()) as {
       calibrated: boolean;
@@ -141,7 +142,6 @@ suite('calibration API', () => {
     expect(beforeBody.latest?.verdict).toBe('insufficient_data');
 
     const passing = await postCalibration({
-      factory: FACTORY,
       scorer: 'scope',
       name: 'passing golden set',
       minSize: 1,
@@ -172,7 +172,7 @@ suite('calibration API', () => {
     expect(pass.items[0]?.judgeLabel).toBe('compliant');
     expect(pass.items[0]?.error).toBeNull();
 
-    const after = await req(app, `/calibration/scope?factory=${FACTORY}`);
+    const after = await req(app, `/factories/${factoryId}/calibration/scope`);
     expect(after.status).toBe(200);
     const afterBody = (await after.json()) as {
       calibrated: boolean;
@@ -189,7 +189,6 @@ suite('calibration API', () => {
     const runId = `run_cal_bad_${Date.now()}`;
     await insertTerminalRun(runId);
     const response = await postCalibration({
-      factory: FACTORY,
       scorer: 'scope',
       minSize: 1,
       items: [{ runId, humanLabel: 'great' }],

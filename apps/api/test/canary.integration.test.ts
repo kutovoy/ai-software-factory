@@ -383,7 +383,7 @@ suite('canary API', () => {
       winner: true,
     });
 
-    const applied = await postJson(`/proposals/${proposalId}/apply`, {
+    const applied = await postJson(`/factories/${factoryId}/proposals/${proposalId}/apply`, {
       actor: 'ada',
       reason: 'itest: apply canary',
     });

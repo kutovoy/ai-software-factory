@@ -48,23 +48,24 @@ test('deep audit every page', async ({ page }) => {
   const workItemId = exampleId
     ? await firstId(`/factories/${exampleId}/work-items?limit=1`, 'workItems')
     : null;
-  const scoreId = await firstId('/scores?limit=1', 'scores');
+  const scoreId = exampleId
+    ? await firstId(`/factories/${exampleId}/scores?limit=1`, 'scores')
+    : null;
 
   const routes: string[] = [
     '/',
     '/chat',
     '/inbox',
     '/secrets',
-    '/mcps',
     '/users',
     '/help',
     '/help/quick-start',
     '/help/api',
     ...(runId && exampleId ? [`/factories/${exampleId}/runs/${runId}`] : []),
     ...(workItemId && exampleId ? [`/factories/${exampleId}/work-items/${workItemId}`] : []),
-    ...(scoreId ? [`/scores/${scoreId}`] : []),
+    ...(scoreId && exampleId ? [`/factories/${exampleId}/scores/${scoreId}`] : []),
   ];
-  const factoryPages = ['', '/dashboard', '/agents', '/automations', '/benchmarks', '/definition', '/gates', '/merge-queue', '/scorers', '/self-improvement', '/settings', '/work-items', '/runs'];
+  const factoryPages = ['', '/dashboard', '/agents', '/automations', '/benchmarks', '/definition', '/gates', '/merge-queue', '/mcps', '/scorers', '/self-improvement', '/settings', '/work-items', '/runs'];
   for (const factory of [exampleId, lightsOffId].filter((id): id is string => Boolean(id))) {
     for (const p of factoryPages) routes.push(`/factories/${factory}${p}`);
   }

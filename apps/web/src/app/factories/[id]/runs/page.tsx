@@ -46,7 +46,7 @@ export default async function RunsPage({
           </p>
         </div>
         <Link
-          href={`/chat?factory=${encoded}`}
+          href="/chat"
           data-testid="runs-new-chat"
           className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
         >
@@ -111,7 +111,7 @@ export default async function RunsPage({
               description="Start a chat or dispatch a factory run; it will appear here newest-first."
               action={
                 <Link
-                  href={`/chat?factory=${encoded}`}
+                  href="/chat"
                   className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-800"
                 >
                   Open New Chat

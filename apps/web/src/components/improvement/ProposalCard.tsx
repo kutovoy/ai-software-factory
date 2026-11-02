@@ -16,7 +16,13 @@ import type { ProposalWire } from '@/lib/types';
  * probe results, and the accept / reject / apply actions. Applying routes by the authority
  * recorded on the proposal; a canary proposal reports `canary_not_available` (Phase 5b).
  */
-export function ProposalCard({ proposal }: { proposal: ProposalWire }) {
+export function ProposalCard({
+  factoryId,
+  proposal,
+}: {
+  factoryId: string;
+  proposal: ProposalWire;
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState<'accept' | 'reject' | 'apply' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,11 +50,14 @@ export function ProposalCard({ proposal }: { proposal: ProposalWire }) {
     setNotice(null);
     setBusy(decision);
     try {
-      await post(`/api/proposals/${encodeURIComponent(proposal.id)}/decision`, {
-        decision,
-        actor: 'local-user',
-        reason: decision === 'accept' ? 'reviewed and accepted' : 'reviewed and rejected',
-      });
+      await post(
+        `/api/v1/factories/${encodeURIComponent(factoryId)}/proposals/${encodeURIComponent(proposal.id)}/decision`,
+        {
+          decision,
+          actor: 'local-user',
+          reason: decision === 'accept' ? 'reviewed and accepted' : 'reviewed and rejected',
+        },
+      );
       setNotice(
         decision === 'accept'
           ? proposal.status === 'pr_open'
@@ -69,10 +78,13 @@ export function ProposalCard({ proposal }: { proposal: ProposalWire }) {
     setNotice(null);
     setBusy('apply');
     try {
-      await post(`/api/proposals/${encodeURIComponent(proposal.id)}/apply`, {
-        actor: 'local-user',
-        reason: 'apply the accepted improvement',
-      });
+      await post(
+        `/api/v1/factories/${encodeURIComponent(factoryId)}/proposals/${encodeURIComponent(proposal.id)}/apply`,
+        {
+          actor: 'local-user',
+          reason: 'apply the accepted improvement',
+        },
+      );
       setNotice('Applied by the recorded authority.');
       router.refresh();
     } catch (submitError) {

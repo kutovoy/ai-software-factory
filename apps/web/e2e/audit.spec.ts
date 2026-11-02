@@ -58,7 +58,9 @@ test('audit every page', async ({ page }) => {
   const workItemId = exampleId
     ? await firstId(`/factories/${exampleId}/work-items?limit=1`, 'workItems')
     : null;
-  const scoreId = await firstId('/scores?limit=1', 'scores');
+  const scoreId = exampleId
+    ? await firstId(`/factories/${exampleId}/scores?limit=1`, 'scores')
+    : null;
 
   const factories = [exampleId, lightsOffId].filter((id): id is string => Boolean(id));
   const routes: string[] = [
@@ -66,13 +68,12 @@ test('audit every page', async ({ page }) => {
     '/chat',
     '/inbox',
     '/secrets',
-    '/mcps',
     '/users',
     '/help',
     '/help/api',
     ...(runId && exampleId ? [`/factories/${exampleId}/runs/${runId}`] : []),
     ...(workItemId && exampleId ? [`/factories/${exampleId}/work-items/${workItemId}`] : []),
-    ...(scoreId ? [`/scores/${scoreId}`] : []),
+    ...(scoreId && exampleId ? [`/factories/${exampleId}/scores/${scoreId}`] : []),
   ];
 
   const factoryPages = [
@@ -84,6 +85,7 @@ test('audit every page', async ({ page }) => {
     '/definition',
     '/gates',
     '/merge-queue',
+    '/mcps',
     '/scorers',
     '/self-improvement',
     '/settings',

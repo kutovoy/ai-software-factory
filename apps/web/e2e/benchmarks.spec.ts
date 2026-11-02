@@ -1,5 +1,12 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
-import { cleanupRuns, createFakeRun, factoryId, factoryPage, pauseAutonomy } from './helpers';
+import {
+  cleanupRuns,
+  createFakeRun,
+  factoryApi,
+  factoryId,
+  factoryPage,
+  pauseAutonomy,
+} from './helpers';
 
 const FACTORY = 'example-lights-off';
 
@@ -25,17 +32,19 @@ async function calibrateScope(page: Page, request: APIRequestContext): Promise<v
   if (await allow.isVisible()) await allow.click();
   await expect(terminal).toHaveAttribute('data-status', 'ok', { timeout: 60_000 });
 
-  const response = await request.post('/api/calibration', {
-    data: {
-      factory: FACTORY,
-      scorer: 'scope',
-      name: `e2e benchmark calibration ${Date.now()}`,
-      minSize: 1,
-      threshold: 1,
-      items: [{ runId: run.id, humanLabel: 'compliant' }],
+  const response = await request.post(
+    await factoryApi(request, FACTORY, 'calibration'),
+    {
+      data: {
+        scorer: 'scope',
+        name: `e2e benchmark calibration ${Date.now()}`,
+        minSize: 1,
+        threshold: 1,
+        items: [{ runId: run.id, humanLabel: 'compliant' }],
+      },
     },
-  });
-  expect(response.ok(), `POST /api/calibration failed: ${response.status()} ${await response.text()}`).toBeTruthy();
+  );
+  expect(response.ok(), `POST calibration failed: ${response.status()} ${await response.text()}`).toBeTruthy();
   const body = (await response.json()) as { calibration: { verdict: string } };
   expect(body.calibration.verdict).toBe('pass');
 }

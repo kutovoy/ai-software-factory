@@ -3,9 +3,9 @@ import { notFound } from 'next/navigation';
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { ApiClientError, apiGet, safeGet } from '@/lib/api';
+import { ApiClientError, apiGet } from '@/lib/api';
 import { formatCost, formatDateTime, formatTokens, statusTone } from '@/lib/format';
-import type { FactoryListItem, ScoreDetailResponse, ScoreEvidenceWire } from '@/lib/types';
+import type { ScoreDetailResponse, ScoreEvidenceWire } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,29 +47,27 @@ function EvidenceRow({
   );
 }
 
-export default async function ScoreDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export default async function ScoreDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string; scoreId: string }>;
+}) {
+  const { id, scoreId } = await params;
+  // The factory is the path segment (change `unify-factory-api`): a score is read inside
+  // its factory namespace, so no viewer-side factory lookup is needed for links.
+  const factoryId = decodeURIComponent(id);
 
   let detail: ScoreDetailResponse;
   try {
-    detail = await apiGet<ScoreDetailResponse>(`/scores/${encodeURIComponent(id)}`);
+    detail = await apiGet<ScoreDetailResponse>(
+      `/factories/${encodeURIComponent(factoryId)}/scores/${encodeURIComponent(scoreId)}`,
+    );
   } catch (error) {
     if (error instanceof ApiClientError && error.status === 404) notFound();
     throw error;
   }
 
   const { score, evidence, events, calibration } = detail;
-
-  // A score belongs to a factory; resolve its id from the viewer's factory list so every
-  // link stays inside that factory's id namespace.
-  const factories = await safeGet<{ factories: FactoryListItem[] }>('/factories', {
-    factories: [],
-  });
-  const owner = factories.factories.find(
-    (entry) => entry.key === score.factory || entry.name === score.factory,
-  );
-  const factoryId = owner?.id ?? owner?.key ?? null;
-  if (!factoryId) notFound();
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 px-6 py-6">

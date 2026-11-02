@@ -80,8 +80,10 @@ in the `forgejo-data` volume), and an optional Caddy mode serves the forge on `:
 
 ### Console
 One event renderer for chat and factory runs, runs and work items with live SSE, an inbox for gates and
-permissions, factory dashboards (state, work, deliverables), scorers and benchmarks, a live Swagger UI at
-`/help/api`, and an in-product help centre.
+permissions, factory dashboards (state, work, deliverables), scorers, MCPs and benchmarks, a live Swagger UI at
+`/help/api`, and an in-product help centre. Every factory page is nested under `/factories/<factory-id>/…`
+(dashboard, agents, automations, scorers, MCPs, self-improvement, benchmarks, gates, merge queue, settings,
+work items, runs and score detail); only chat, inbox, secrets, users and help are global.
 
 ## Architecture
 
@@ -175,7 +177,9 @@ is opt-in — the default `docker compose up -d` keeps the single origin at :300
 
 Create your first work item from the factory's **Work items → New work item** page, or via the API (sign in
 once and keep the session cookie when `AUTH_REQUIRED=1`). Factories are addressed by their committed
-`fac_<ulid>` id — discover it from `GET /api/v1/factories`:
+`fac_<ulid>` id — discover it from `GET /api/v1/factories`. Every factory-scoped resource is nested under
+`/api/v1/factories/<factory-id>/…` (work items, runs, scores, calibration, scoring, benchmarks, improvement,
+proposals, lessons, canary, MCPs, merge queue, automations); there is no `?factory=` query:
 
 ```bash
 curl -sS -c /tmp/factory-cookies.txt -X POST localhost:8080/api/v1/auth/login \

@@ -221,7 +221,17 @@ function workItemTitle(context: WebhookContext): string {
   return trimmed.length > MAX_TITLE ? `${trimmed.slice(0, MAX_TITLE - 1)}…` : trimmed;
 }
 
-export function registerWebhooks<E extends Hono<any, any, any>>(app: E, config: ApiConfig): void {
+/**
+ * `factoryOf` resolves the `:factoryId` path parameter to the factory record (owner scope,
+ * `404` for a foreign id). It is injected by `app.ts` so this module does not depend on the
+ * auth context type.
+ */
+export function registerWebhooks<E extends Hono<any, any, any>>(
+  app: E,
+  config: ApiConfig,
+  // The Hono context is typed at the call site; here only `factoryOf(c)` matters.
+  factoryOf: (c: any) => Promise<{ key: string }>,
+): void {
   app.post('/webhooks/:provider', async (c) => {
     const provider = c.req.param('provider');
     if (provider !== 'github') {
@@ -414,19 +424,23 @@ export function registerWebhooks<E extends Hono<any, any, any>>(app: E, config: 
     );
   });
 
-  app.get('/webhook-deliveries', async (c) => {
+  app.get('/factories/:factoryId/webhook-deliveries', async (c) => {
+    const factory = (await factoryOf(c)).key;
     const limit = Number(c.req.query('limit') ?? '50');
     const deliveries = await listWebhookDeliveries(getSql(), {
-      ...(c.req.query('factory') ? { factory: c.req.query('factory') as string } : {}),
+      factory,
       ...(c.req.query('provider') ? { provider: c.req.query('provider') as string } : {}),
       limit: Number.isFinite(limit) ? limit : 50,
     });
     return c.json({ deliveries });
   });
 
-  app.get('/webhook-deliveries/:deliveryId', async (c) => {
+  app.get('/factories/:factoryId/webhook-deliveries/:deliveryId', async (c) => {
+    const factory = (await factoryOf(c)).key;
     const delivery = await getWebhookDelivery(getSql(), 'github', c.req.param('deliveryId'));
-    if (!delivery) {
+    // A delivery that no factory claimed (`factory: null`, e.g. a bot sender or a
+    // non-matching filter) is not part of any factory's log.
+    if (!delivery || delivery.factory !== factory) {
       throw new ApiError('delivery_not_found', 404, 'no such webhook delivery', {
         deliveryId: c.req.param('deliveryId'),
       });

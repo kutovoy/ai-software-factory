@@ -8,16 +8,12 @@ import type { FactoryDetail, FactoryListItem } from '@/lib/types';
 export const dynamic = 'force-dynamic';
 
 /**
- * New Chat is a factory-scoped run (`POST /factories/:factoryId/chat`). The factory comes
- * from `?factory=<id>` (the sidebar's nested links), the persisted `factory` cookie, or the
- * first factory the viewer owns — never a directory name (change `add-factory-identity`).
+ * New Chat is a factory-scoped run (`POST /factories/:factoryId/chat`). `/chat` itself is a
+ * global page (change `unify-factory-api`): the factory comes from the persisted `factory`
+ * cookie, or the first factory the viewer owns — never a directory name and never a query
+ * parameter (change `add-factory-identity`).
  */
-export default async function ChatPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ factory?: string }>;
-}) {
-  const { factory } = await searchParams;
+export default async function ChatPage() {
   const [list, cookieStore] = await Promise.all([
     safeGet<{ factories: FactoryListItem[] }>('/factories', { factories: [] }),
     cookies(),
@@ -33,7 +29,6 @@ export default async function ChatPage({
   }
 
   const selected =
-    (factory && known.has(factory) ? factory : null) ??
     (persisted && known.has(persisted) ? persisted : null) ??
     list.factories[0]?.id ??
     list.factories[0]?.key ??

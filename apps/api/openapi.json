@@ -302,13 +302,23 @@
         ]
       }
     },
-    "/api/v1/benchmarks/{id}": {
+    "/api/v1/factories/{factoryId}/benchmarks/{id}": {
       "get": {
         "tags": [
           "benchmarks"
         ],
         "summary": "Get a benchmark run",
         "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
+          },
           {
             "name": "id",
             "in": "path",
@@ -353,7 +363,7 @@
         }
       }
     },
-    "/api/v1/calibration/{scorer}": {
+    "/api/v1/factories/{factoryId}/calibration/{scorer}": {
       "get": {
         "tags": [
           "scoring"
@@ -361,21 +371,22 @@
         "summary": "Calibration state for a scorer",
         "parameters": [
           {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
+          },
+          {
             "name": "scorer",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "name": "factory",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Factory name (defaults to the configured default)."
           }
         ],
         "responses": {
@@ -1623,13 +1634,23 @@
         "security": []
       }
     },
-    "/api/v1/improvements/{id}": {
+    "/api/v1/factories/{factoryId}/improvements/{id}": {
       "get": {
         "tags": [
           "improvement"
         ],
         "summary": "Get an improvement run",
         "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
+          },
           {
             "name": "id",
             "in": "path",
@@ -1674,7 +1695,7 @@
         }
       }
     },
-    "/api/v1/lessons": {
+    "/api/v1/factories/{factoryId}/lessons": {
       "get": {
         "tags": [
           "improvement"
@@ -1682,13 +1703,14 @@
         "summary": "List lessons",
         "parameters": [
           {
-            "name": "factory",
-            "in": "query",
-            "required": false,
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
             },
-            "description": "Filter by factory."
+            "description": "Stable factory id (`fac_<ulid>`)."
           },
           {
             "name": "includeShared",
@@ -1777,7 +1799,7 @@
         "security": []
       }
     },
-    "/api/v1/proposals": {
+    "/api/v1/factories/{factoryId}/proposals": {
       "get": {
         "tags": [
           "improvement"
@@ -1785,13 +1807,14 @@
         "summary": "List improvement proposals",
         "parameters": [
           {
-            "name": "factory",
-            "in": "query",
-            "required": false,
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
             },
-            "description": "Filter by factory."
+            "description": "Stable factory id (`fac_<ulid>`)."
           },
           {
             "name": "status",
@@ -1847,13 +1870,23 @@
         }
       }
     },
-    "/api/v1/proposals/{id}": {
+    "/api/v1/factories/{factoryId}/proposals/{id}": {
       "get": {
         "tags": [
           "improvement"
         ],
         "summary": "Get a proposal",
         "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
+          },
           {
             "name": "id",
             "in": "path",
@@ -2163,7 +2196,7 @@
         }
       }
     },
-    "/api/v1/scores": {
+    "/api/v1/factories/{factoryId}/scores": {
       "get": {
         "tags": [
           "scoring"
@@ -2171,13 +2204,14 @@
         "summary": "List scores",
         "parameters": [
           {
-            "name": "factory",
-            "in": "query",
-            "required": false,
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
             },
-            "description": "Filter by factory."
+            "description": "Stable factory id (`fac_<ulid>`)."
           },
           {
             "name": "run",
@@ -2278,13 +2312,23 @@
         }
       }
     },
-    "/api/v1/scores/{id}": {
+    "/api/v1/factories/{factoryId}/scores/{id}": {
       "get": {
         "tags": [
           "scoring"
         ],
         "summary": "Get a score",
         "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
+          },
           {
             "name": "id",
             "in": "path",
@@ -2471,7 +2515,7 @@
         }
       }
     },
-    "/api/v1/webhook-deliveries": {
+    "/api/v1/factories/{factoryId}/webhook-deliveries": {
       "get": {
         "tags": [
           "webhooks"
@@ -2479,13 +2523,14 @@
         "summary": "List webhook deliveries",
         "parameters": [
           {
-            "name": "factory",
-            "in": "query",
-            "required": false,
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
             },
-            "description": "Filter by factory."
+            "description": "Stable factory id (`fac_<ulid>`)."
           },
           {
             "name": "provider",
@@ -2541,13 +2586,23 @@
         }
       }
     },
-    "/api/v1/webhook-deliveries/{deliveryId}": {
+    "/api/v1/factories/{factoryId}/webhook-deliveries/{deliveryId}": {
       "get": {
         "tags": [
           "webhooks"
         ],
         "summary": "Get a webhook delivery",
         "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
+          },
           {
             "name": "deliveryId",
             "in": "path",
@@ -2880,12 +2935,24 @@
         "security": []
       }
     },
-    "/api/v1/calibration": {
+    "/api/v1/factories/{factoryId}/calibration": {
       "post": {
         "tags": [
           "scoring"
         ],
         "summary": "Start a calibration",
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
+          }
+        ],
         "responses": {
           "201": {
             "description": "Success.",
@@ -3752,13 +3819,23 @@
         ]
       }
     },
-    "/api/v1/lessons/{id}/promote": {
+    "/api/v1/factories/{factoryId}/lessons/{id}/promote": {
       "post": {
         "tags": [
           "improvement"
         ],
         "summary": "Promote a lesson to shared",
         "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
+          },
           {
             "name": "id",
             "in": "path",
@@ -3898,13 +3975,23 @@
         ]
       }
     },
-    "/api/v1/proposals/{id}/apply": {
+    "/api/v1/factories/{factoryId}/proposals/{id}/apply": {
       "post": {
         "tags": [
           "improvement"
         ],
         "summary": "Apply a proposal",
         "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
+          },
           {
             "name": "id",
             "in": "path",
@@ -3970,13 +4057,23 @@
         }
       }
     },
-    "/api/v1/proposals/{id}/decision": {
+    "/api/v1/factories/{factoryId}/proposals/{id}/decision": {
       "post": {
         "tags": [
           "improvement"
         ],
         "summary": "Decide a proposal",
         "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
+          },
           {
             "name": "id",
             "in": "path",
@@ -4225,12 +4322,24 @@
         }
       }
     },
-    "/api/v1/scoring": {
+    "/api/v1/factories/{factoryId}/scoring": {
       "post": {
         "tags": [
           "scoring"
         ],
         "summary": "Start a scoring pass",
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
+          }
+        ],
         "responses": {
           "202": {
             "description": "Success.",

@@ -15,7 +15,6 @@ export const TOP_NAV: NavItem[] = [
   { href: '/inbox', label: 'Inbox', testId: 'nav-inbox' },
   { href: '/work-items', label: 'Work items', testId: 'nav-work-items', factoryScoped: true },
   { href: '/runs', label: 'Runs', testId: 'nav-runs', factoryScoped: true },
-  { href: '/mcps', label: 'MCPs and apps', testId: 'nav-mcps' },
   { href: '/secrets', label: 'Secrets', testId: 'nav-secrets' },
   { href: '/users', label: 'Users', testId: 'nav-users' },
 ];
@@ -38,6 +37,7 @@ export const FACTORY_NAV: FactoryNavItem[] = [
   { segment: 'agents', label: 'Agents', testId: 'nav-agents' },
   { segment: 'automations', label: 'Automations', testId: 'nav-automations' },
   { segment: 'scorers', label: 'Scorers', testId: 'nav-scorers' },
+  { segment: 'mcps', label: 'MCPs and apps', testId: 'nav-mcps' },
   { segment: 'self-improvement', label: 'Self-improvement', testId: 'nav-self-improvement' },
   { segment: 'benchmarks', label: 'Benchmarks', testId: 'nav-benchmarks' },
   { segment: 'definition', label: 'Definition', testId: 'nav-definition' },

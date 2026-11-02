@@ -369,10 +369,13 @@ export interface ProposalDetailResponse {
   events: { type: string; subject: string; payload: Record<string, unknown>; createdAt: string | null }[];
 }
 
-export async function getProposalForApi(id: string): Promise<ProposalDetailResponse> {
+export async function getProposalForApi(
+  factory: string,
+  id: string,
+): Promise<ProposalDetailResponse> {
   const sql = getSql();
   const proposal = await getProposal(sql, id);
-  if (!proposal) throw proposalNotFound(id);
+  if (!proposal || proposal.factory !== factory) throw proposalNotFound(id);
 
   const [edits, probes, events] = await Promise.all([
     listProposalEdits(sql, id),
@@ -441,12 +444,13 @@ export async function listLessonsForApi(
 }
 
 export async function promoteLessonForApi(
+  factory: string,
   id: string,
   body: PromoteLessonBody,
 ): Promise<LessonRecord> {
   const sql = getSql();
   const lesson = await getLesson(sql, id);
-  if (!lesson) throw lessonNotFound(id);
+  if (!lesson || lesson.factory !== factory) throw lessonNotFound(id);
   if (lesson.promoted) return lesson;
   const promoted = await promoteLesson(sql, { id, actor: body.actor, reason: body.reason ?? null });
   log('info', 'lesson_promoted', {
@@ -938,12 +942,13 @@ export interface ProposalDecisionResponse {
  */
 export async function decideProposalForApi(
   config: ApiConfig,
+  factory: string,
   id: string,
   body: ProposalDecisionBody,
 ): Promise<ProposalDecisionResponse> {
   const sql = getSql();
   const proposal = await getProposal(sql, id);
-  if (!proposal) throw proposalNotFound(id);
+  if (!proposal || proposal.factory !== factory) throw proposalNotFound(id);
   if (proposal.status !== 'open' && proposal.status !== 'pr_open') {
     throw proposalNotDecidable(id, proposal.status);
   }
@@ -1025,12 +1030,13 @@ export interface ProposalApplyResponse {
  */
 export async function applyProposalForApi(
   config: ApiConfig,
+  factory: string,
   id: string,
   body: ProposalApplyBody,
 ): Promise<ProposalApplyResponse> {
   const sql = getSql();
   const proposal = await getProposal(sql, id);
-  if (!proposal) throw proposalNotFound(id);
+  if (!proposal || proposal.factory !== factory) throw proposalNotFound(id);
   if (proposal.status === 'pr_open' || proposal.status === 'merged' || proposal.prUrl) {
     return {
       proposal,
@@ -1479,7 +1485,7 @@ export async function startImprovementForApi(
   };
 }
 
-export async function getImprovementRunForApi(id: string): Promise<{
+export async function getImprovementRunForApi(factory: string, id: string): Promise<{
   improvement: ImprovementRunRecord;
   proposals: ProposalView[];
   lessons: LessonRecord[];
@@ -1487,7 +1493,7 @@ export async function getImprovementRunForApi(id: string): Promise<{
 }> {
   const sql = getSql();
   const improvement = await getImprovementRun(sql, id);
-  if (!improvement) {
+  if (!improvement || improvement.factory !== factory) {
     throw new ApiError('improvement_not_found', 404, `improvement run "${id}" does not exist`, {
       improvementRunId: id,
     });

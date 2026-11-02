@@ -198,7 +198,7 @@ suite('webhook ingestion', () => {
     });
 
     // The delivery row records the acceptance and the item it produced.
-    const delivery = await req(app, `/webhook-deliveries/${deliveryId}`);
+    const delivery = await req(app, `/factories/${factoryId}/webhook-deliveries/${deliveryId}`);
     const deliveryBody = (await delivery.json()) as {
       delivery: { status: string; workItemId: string; factory: string };
     };
@@ -231,7 +231,7 @@ suite('webhook ingestion', () => {
     // No second work item for the redelivery.
     expect(await forgeItems()).toBe(before + 1);
 
-    const delivery = await req(app, `/webhook-deliveries/${deliveryId}`);
+    const delivery = await req(app, `/factories/${factoryId}/webhook-deliveries/${deliveryId}`);
     const body = (await delivery.json()) as {
       delivery: { status: string; workItemId: string; factory: string };
     };
@@ -249,10 +249,18 @@ suite('webhook ingestion', () => {
     expect(result.body.status).toBe('ignored');
     expect(result.body.reason).toBe('bot_sender');
 
-    const delivery = await req(app, `/webhook-deliveries/${deliveryId}`);
-    const body = (await delivery.json()) as { delivery: { status: string; reason: string } };
-    expect(body.delivery.status).toBe('ignored');
-    expect(body.delivery.reason).toBe('bot_sender');
+    // The delivery is recorded, but it claimed no factory (bot senders are dropped
+    // before routing), so it is not part of the factory's delivery log.
+    const rows = (await getSql()`
+      select status, reason, factory from webhook_deliveries
+      where provider = 'github' and delivery_id = ${deliveryId}
+    `) as { status: string; reason: string | null; factory: string | null }[];
+    expect(rows[0]?.status).toBe('ignored');
+    expect(rows[0]?.reason).toBe('bot_sender');
+    expect(rows[0]?.factory ?? null).toBeNull();
+
+    const delivery = await req(app, `/factories/${factoryId}/webhook-deliveries/${deliveryId}`);
+    expect(delivery.status).toBe(404);
   }, 30_000);
 
   test('a non-matching event is acknowledged and ignored with a reason', async () => {

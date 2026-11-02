@@ -603,7 +603,7 @@ export default async function DashboardPage({
           description="Dispatch work through New Chat; counts, status split and cost will appear here."
           action={
             <Link
-              href={`/chat?factory=${encoded}`}
+              href="/chat"
               className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-800"
             >
               Open New Chat
