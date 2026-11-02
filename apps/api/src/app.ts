@@ -21,6 +21,15 @@ import {
   type AutomationPauseBody,
 } from './automations';
 import {
+  authMiddleware,
+  canAccess,
+  ownerFilter,
+  registerAuth,
+  sessionUserId,
+  viewerOf,
+  type AuthVariables,
+} from './auth';
+import {
   benchmarkGateStatus,
   benchmarkRunBodySchema,
   getBenchmarkRunForApi,
@@ -117,6 +126,7 @@ import {
   type RotateSecretBody,
 } from './secrets';
 import {
+  assertRunAccess,
   createRun,
   retryRun,
   getRunDetail,
@@ -244,8 +254,13 @@ export function createApp(config: ApiConfig): Hono {
 
   const app = new Hono();
   /** Versioned resource surface: mounted under `API_PREFIX` at the end of this function. */
-  const api = new Hono();
+  const api = new Hono<{ Variables: AuthVariables }>();
   const startedAt = Date.now();
+
+  // Auth runs before every versioned route (change `add-console-auth`): it resolves the
+  // session cookie, attaches `user` to the context and enforces `AUTH_REQUIRED`. Registering
+  // it here — not per route — is what makes "a route cannot forget it" true.
+  api.use('*', authMiddleware(config));
 
   app.onError((error, c) => {
     const { status, body } = toEnvelope(error);
@@ -300,6 +315,10 @@ export function createApp(config: ApiConfig): Hono {
   /* ---------------------------------------------------------------- openapi */
 
   api.get('/openapi.json', (c) => c.json(loadOpenApiDocument() as Record<string, unknown>));
+
+  /* ---------------------------------------------------------------- auth */
+
+  registerAuth(api, config);
 
   /* ------------------------------------------------------------ factories */
 
@@ -585,7 +604,12 @@ export function createApp(config: ApiConfig): Hono {
 
   api.post('/runs', async (c) => {
     const body = await json<CreateRunBody>(c, runBodySchema);
-    const created = await createRun(config, body, { kind: 'run' });
+    const created = await createRun(
+      config,
+      body,
+      { kind: 'run' },
+      sessionUserId(config, c.get('user')),
+    );
     return c.json(
       {
         run: summarize(created.run),
@@ -604,12 +628,16 @@ export function createApp(config: ApiConfig): Hono {
       offset: Number.isFinite(offset) ? offset : 0,
       status: c.req.query('status') ?? undefined,
       factory: c.req.query('factory') ?? undefined,
+      createdBy: ownerFilter(viewerOf(config, c.get('user'))),
     });
     return c.json({ runs });
   });
 
   api.get('/runs/:id', async (c) => {
-    const detail = await getRunDetail(c.req.param('id'));
+    const detail = await getRunDetail(
+      c.req.param('id'),
+      viewerOf(config, c.get('user')),
+    );
     return c.json(detail);
   });
 
@@ -617,7 +645,7 @@ export function createApp(config: ApiConfig): Hono {
 
   api.get('/runs/:id/events', async (c) => {
     const runId = c.req.param('id');
-    const run = await getRun(runId);
+    const run = await assertRunAccess(runId, viewerOf(config, c.get('user')));
     if (!run) throw runNotFound(runId);
 
     const lastEventId = parseLastEventId(
@@ -656,7 +684,7 @@ export function createApp(config: ApiConfig): Hono {
 
   api.post('/runs/:id/cancel', async (c) => {
     const runId = c.req.param('id');
-    const run = await getRun(runId);
+    const run = await assertRunAccess(runId, viewerOf(config, c.get('user')));
     if (!run) throw runNotFound(runId);
 
     if (TERMINAL.has(run.status)) {
@@ -679,7 +707,11 @@ export function createApp(config: ApiConfig): Hono {
   });
 
   api.post('/runs/:id/retry', async (c) => {
-    const result = await retryRun(config, c.req.param('id'));
+    const result = await retryRun(
+      config,
+      c.req.param('id'),
+      viewerOf(config, c.get('user')),
+    );
     log('info', 'run_retried', {
       from: result.retryOf,
       to: result.run.id,
@@ -702,7 +734,7 @@ export function createApp(config: ApiConfig): Hono {
   api.post('/runs/:id/permissions/:requestId', async (c) => {
     const runId = c.req.param('id');
     const requestId = c.req.param('requestId');
-    const run = await getRun(runId);
+    const run = await assertRunAccess(runId, viewerOf(config, c.get('user')));
     if (!run) throw runNotFound(runId);
 
     const mode = PERMISSIONS[run.harness as HarnessId] ?? 'none';
@@ -747,33 +779,56 @@ export function createApp(config: ApiConfig): Hono {
 
   api.post('/work-items', async (c) => {
     const body = await json<CreateWorkItemBody>(c, createWorkItemBodySchema);
-    const created = await createWorkItemForApi(config, body);
+    const created = await createWorkItemForApi(
+      config,
+      body,
+      sessionUserId(config, c.get('user')),
+    );
     return c.json(created, 201);
   });
 
   api.get('/work-items', async (c) => {
     const limit = Number(c.req.query('limit') ?? '50');
     const offset = Number(c.req.query('offset') ?? '0');
-    const workItems = await listWorkItemsForApi({
-      ...(c.req.query('factory') ? { factory: c.req.query('factory') as string } : {}),
-      ...(c.req.query('stage') ? { stage: c.req.query('stage') as string } : {}),
-      ...(c.req.query('status') ? { status: c.req.query('status') as string } : {}),
-      limit: Number.isFinite(limit) ? limit : 50,
-      offset: Number.isFinite(offset) ? offset : 0,
-    });
+    const workItems = await listWorkItemsForApi(
+      {
+        ...(c.req.query('factory') ? { factory: c.req.query('factory') as string } : {}),
+        ...(c.req.query('stage') ? { stage: c.req.query('stage') as string } : {}),
+        ...(c.req.query('status') ? { status: c.req.query('status') as string } : {}),
+        limit: Number.isFinite(limit) ? limit : 50,
+        offset: Number.isFinite(offset) ? offset : 0,
+      },
+      viewerOf(config, c.get('user')),
+    );
     return c.json({ workItems });
   });
 
-  api.get('/work-items/:id', async (c) => c.json(await getWorkItemDetail(c.req.param('id'))));
+  api.get('/work-items/:id', async (c) =>
+    c.json(
+      await getWorkItemDetail(c.req.param('id'), viewerOf(config, c.get('user'))),
+    ),
+  );
 
   api.post('/work-items/:id/cancel', async (c) => {
     const body = await json<CancelWorkItemBody>(c, cancelWorkItemBodySchema);
-    return c.json(await cancelWorkItemForApi(config, c.req.param('id'), body));
+    return c.json(
+      await cancelWorkItemForApi(
+        config,
+        c.req.param('id'),
+        body,
+        viewerOf(config, c.get('user')),
+      ),
+    );
   });
 
   api.post('/work-items/:id/retry', async (c) => {
     const body = await json<RetryWorkItemBody>(c, retryWorkItemBodySchema);
-    const result = await retryWorkItemForApi(config, c.req.param('id'), body);
+    const result = await retryWorkItemForApi(
+      config,
+      c.req.param('id'),
+      body,
+      viewerOf(config, c.get('user')),
+    );
     log('info', 'work_item_retry_requested', {
       workItemId: c.req.param('id'),
       actor: body.actor,
@@ -790,6 +845,7 @@ export function createApp(config: ApiConfig): Hono {
       c.req.param('id'),
       c.req.param('stage'),
       body,
+      viewerOf(config, c.get('user')),
     );
     return c.json(result);
   });
@@ -818,6 +874,7 @@ export function createApp(config: ApiConfig): Hono {
       config,
       { ...body, factory: body.factory ?? config.defaultFactory },
       { kind: 'chat' },
+      sessionUserId(config, c.get('user')),
     );
     return c.json(
       {
@@ -853,7 +910,11 @@ export function createApp(config: ApiConfig): Hono {
 
   // One prefix for every resource route (ADR-030): the sub-app's routes are copied here
   // with `API_PREFIX` prepended. Unversioned resource paths therefore 404.
-  app.route(API_PREFIX, api);
+  //
+  // The cast is a Hono typing artefact: `Variables` is invariant, so a sub-app that declares
+  // the auth context cannot be passed to an untyped parent. The runtime contract is the
+  // same — `authMiddleware` populates `user` for every route registered on `api`.
+  app.route(API_PREFIX, api as unknown as Hono);
 
   // The OpenAI-compatible inference passthrough (`/v1/*`) and the dev-only stub upstream
   // (`/internal/*`) are protocol endpoints, not versioned resources (see `routes.ts`).
@@ -865,7 +926,7 @@ export function createApp(config: ApiConfig): Hono {
 /** Public route table (`METHOD path`, OpenAPI templated) used by the parity contract test. */
 export function servedRoutes(config: ApiConfig): RouteEntry[] {
   return createApp(config)
-    .routes.filter((route) => isPublicRoute(route.path))
+    .routes.filter((route) => route.method !== 'ALL' && isPublicRoute(route.path))
     .map((route) => ({ method: route.method.toUpperCase(), path: openApiPath(route.path) }))
     .sort((left, right) => `${left.method} ${left.path}`.localeCompare(`${right.method} ${right.path}`));
 }

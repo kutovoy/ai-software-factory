@@ -40,3 +40,4 @@ export * from './webhooks/index';
 export * from './automations/index';
 export * from './secrets/index';
 export * from './mcp/index';
+export * from './auth/index';

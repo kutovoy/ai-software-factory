@@ -3,8 +3,9 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Fragment, useEffect, useState } from 'react';
+import { Badge } from '@/components/ui/Badge';
 import { FACTORY_NAV, FOOTER_NAV, TOP_NAV, factoryHref } from '@/lib/nav';
-import type { FactoryListItem } from '@/lib/types';
+import type { FactoryListItem, UserWire } from '@/lib/types';
 
 const FACTORY_COOKIE = 'factory';
 
@@ -21,15 +22,32 @@ export function Sidebar({
   factories,
   initialFactory = null,
   forgejoEnabled = false,
+  user = null,
+  authRequired = false,
 }: {
   factories: FactoryListItem[];
   /** Value of the `factory` cookie, resolved by the root layout. */
   initialFactory?: string | null;
   /** Local Forgejo is enabled (spec `forge`); the menu links to it under "MCPs and apps". */
   forgejoEnabled?: boolean;
+  /** Signed-in user resolved by the root layout (`null` when auth is off). */
+  user?: UserWire | null;
+  /** `AUTH_REQUIRED=1`: show the account/sign-out block instead of the local-user label. */
+  authRequired?: boolean;
 }) {
   const pathname = usePathname() ?? '/';
   const router = useRouter();
+  const [signingOut, setSigningOut] = useState(false);
+
+  const signOut = async (): Promise<void> => {
+    setSigningOut(true);
+    try {
+      await fetch('/api/v1/auth/logout', { method: 'POST' });
+    } finally {
+      router.replace('/login');
+      router.refresh();
+    }
+  };
 
   /**
    * Stable selection (`web-console` spec: "Stable factory selection"): the path wins on
@@ -207,8 +225,50 @@ export function Sidebar({
           Usage available
         </div>
         <div data-testid="nav-account" className="mt-2 text-sm text-slate-700">
-          Local user <span className="text-slate-400">/</span> Engineering
+          {authRequired ? (
+            user ? (
+              <div className="space-y-1">
+                <p data-testid="nav-user-name" className="truncate font-medium text-slate-800">
+                  {user.name ?? user.username}
+                </p>
+                <p data-testid="nav-user-email" className="truncate text-xs text-slate-500">
+                  {user.email}
+                </p>
+                <Badge tone={user.role === 'admin' ? 'info' : 'neutral'} testId="nav-user-role">
+                  {user.role}
+                </Badge>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <p data-testid="nav-user-name" className="font-medium text-slate-800">
+                  Not signed in
+                </p>
+                <Link
+                  href={`/login?next=${encodeURIComponent(pathname)}`}
+                  data-testid="nav-signin"
+                  className="text-xs font-medium text-slate-600 underline hover:text-slate-900"
+                >
+                  Sign in
+                </Link>
+              </div>
+            )
+          ) : (
+            <span data-testid="nav-local-user">
+              Local user <span className="text-slate-400">/</span> auth off
+            </span>
+          )}
         </div>
+        {authRequired && user ? (
+          <button
+            type="button"
+            data-testid="nav-signout"
+            onClick={() => void signOut()}
+            disabled={signingOut}
+            className="mt-2 w-full rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:opacity-60"
+          >
+            {signingOut ? 'Signing out…' : 'Sign out'}
+          </button>
+        ) : null}
       </div>
     </nav>
   );

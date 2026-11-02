@@ -221,7 +221,7 @@ function workItemTitle(context: WebhookContext): string {
   return trimmed.length > MAX_TITLE ? `${trimmed.slice(0, MAX_TITLE - 1)}…` : trimmed;
 }
 
-export function registerWebhooks(app: Hono, config: ApiConfig): void {
+export function registerWebhooks<E extends Hono<any, any, any>>(app: E, config: ApiConfig): void {
   app.post('/webhooks/:provider', async (c) => {
     const provider = c.req.param('provider');
     if (provider !== 'github') {

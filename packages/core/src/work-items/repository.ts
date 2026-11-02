@@ -47,6 +47,8 @@ interface WorkItemRow {
   cancel_actor: string | null;
   cancel_reason: string | null;
   input?: unknown;
+  /** Owner (`users.id`); null for pre-auth rows and automation-created items. */
+  created_by?: string | null;
   /** Derived from `work_item.retried` events by `getWorkItem`/`listWorkItems`. */
   retry_count?: number | string;
   retried_at?: unknown;
@@ -177,6 +179,7 @@ function mapWorkItem(row: WorkItemRow): WorkItem {
     cancelRequestedAt: iso(row.cancel_requested_at),
     cancelActor: row.cancel_actor ?? null,
     cancelReason: row.cancel_reason ?? null,
+    createdBy: row.created_by ?? null,
     ...(iso(row.created_at) ? { createdAt: iso(row.created_at) as string } : {}),
     ...(iso(row.updated_at) ? { updatedAt: iso(row.updated_at) as string } : {}),
   };
@@ -245,6 +248,8 @@ export interface CreateWorkItemArgs {
   definitionVersion?: WorkItemVersion;
   workflowId?: string | null;
   input?: Record<string, unknown>;
+  /** Owner (`users.id`); null when auth is off or an automation created the item. */
+  createdBy?: string | null;
 }
 
 export async function createWorkItem(sql: SQL, args: CreateWorkItemArgs): Promise<WorkItem> {
@@ -253,13 +258,13 @@ export async function createWorkItem(sql: SQL, args: CreateWorkItemArgs): Promis
       insert into work_items (
         id, factory, type, source, source_ref, title, stage, status, parent_id,
         definition_commit, definition_dirty, canary_rollout_id, definition_version,
-        workflow_id, input
+        workflow_id, input, created_by
       ) values (
         ${args.id}, ${args.factory}, ${args.type}, ${args.source},
         ${(args.sourceRef ?? {})}::jsonb, ${args.title}, ${args.stage}, 'active',
         ${args.parentId ?? null}, ${args.definitionCommit}, ${args.definitionDirty ?? false},
         ${args.canaryRolloutId ?? null}, ${args.definitionVersion ?? 'stable'},
-        ${args.workflowId ?? null}, ${(args.input ?? {})}::jsonb
+        ${args.workflowId ?? null}, ${(args.input ?? {})}::jsonb, ${args.createdBy ?? null}
       )
       returning *
     `) as WorkItemRow[];
@@ -315,13 +320,13 @@ export async function createWorkItemIdempotent(
       insert into work_items (
         id, factory, type, source, source_ref, title, stage, status, parent_id,
         definition_commit, definition_dirty, canary_rollout_id, definition_version,
-        workflow_id, input
+        workflow_id, input, created_by
       ) values (
         ${args.id}, ${args.factory}, ${args.type}, ${args.source},
         ${(args.sourceRef ?? {})}::jsonb, ${args.title}, ${args.stage}, 'active',
         ${args.parentId ?? null}, ${args.definitionCommit}, ${args.definitionDirty ?? false},
         ${args.canaryRolloutId ?? null}, ${args.definitionVersion ?? 'stable'},
-        ${args.workflowId ?? null}, ${(args.input ?? {})}::jsonb
+        ${args.workflowId ?? null}, ${(args.input ?? {})}::jsonb, ${args.createdBy ?? null}
       )
       on conflict (id) do nothing
       returning *
@@ -358,6 +363,11 @@ export interface ListWorkItemsFilters {
   status?: string;
   limit?: number;
   offset?: number;
+  /**
+   * Owner scope (change `add-console-auth`): when set, only items whose `created_by`
+   * matches are returned. Admins pass `null` and see everything.
+   */
+  createdBy?: string | null;
 }
 
 export async function listWorkItems(
@@ -369,6 +379,7 @@ export async function listWorkItems(
   const factory = filters.factory ?? null;
   const stage = filters.stage ?? null;
   const status = filters.status ?? null;
+  const createdBy = filters.createdBy ?? null;
 
   const rows = (await sql`
     select w.*, r.retry_count, r.retried_at
@@ -381,6 +392,7 @@ export async function listWorkItems(
     where (${factory}::text is null or w.factory = ${factory})
       and (${stage}::text is null or w.stage = ${stage})
       and (${status}::text is null or w.status = ${status})
+      and (${createdBy}::uuid is null or w.created_by = ${createdBy}::uuid)
     order by w.created_at desc
     limit ${limit} offset ${offset}
   `) as WorkItemRow[];

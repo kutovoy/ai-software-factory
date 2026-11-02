@@ -174,7 +174,7 @@ const EXPLORER_UI: ExplorerUiProps = {
 
 /**
  * The part of Swagger UI's Standalone topbar that matters here: what is versioned, where
- * requests actually go, and that nothing is authenticated.
+ * requests actually go, and that console auth is carried by the session cookie.
  */
 function ExplorerToolbar({ version }: { version?: string }) {
   return (
@@ -191,9 +191,9 @@ function ExplorerToolbar({ version }: { version?: string }) {
       </span>
       <span
         data-testid="api-explorer-no-auth"
-        className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-900"
+        className="rounded border border-sky-200 bg-sky-50 px-2 py-0.5 font-medium text-sky-900"
       >
-        No authentication — try-it-out runs as the single local user
+        Session cookie forwarded — sign in when AUTH_REQUIRED=1
       </span>
     </div>
   );

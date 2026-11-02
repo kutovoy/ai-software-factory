@@ -57,6 +57,7 @@ import {
 } from '@factory/orchestration';
 import type { ApiConfig } from './config';
 import { toOrchestrationConfig } from './config';
+import { canAccess, ownerFilter, type Viewer } from './auth';
 import {
   ApiError,
   autonomyRefused,
@@ -274,6 +275,8 @@ export interface CreatedWorkItem {
 export async function createWorkItemForApi(
   config: ApiConfig,
   body: CreateWorkItemBody,
+  /** Owner (`users.id`) from the session; null when auth is off (change `add-console-auth`). */
+  createdBy: string | null = null,
 ): Promise<CreatedWorkItem> {
   const factory = body.factory;
   const sql = getSql();
@@ -389,6 +392,7 @@ export async function createWorkItemForApi(
     canaryRolloutId: canary?.rolloutId ?? null,
     definitionVersion,
     workflowId,
+    createdBy,
     input: {
       stageGraph: compiled.stageGraph.order,
       gates: compiled.gates,
@@ -457,6 +461,7 @@ export interface ListWorkItemsFilters {
 
 export async function listWorkItemsForApi(
   filters: ListWorkItemsFilters = {},
+  viewer: Viewer | null = null,
 ): Promise<WorkItemSummary[]> {
   const items = await listWorkItems(getSql(), {
     ...(filters.factory ? { factory: filters.factory } : {}),
@@ -464,6 +469,7 @@ export async function listWorkItemsForApi(
     ...(filters.status ? { status: filters.status } : {}),
     ...(filters.limit !== undefined ? { limit: filters.limit } : {}),
     ...(filters.offset !== undefined ? { offset: filters.offset } : {}),
+    createdBy: ownerFilter(viewer),
   });
   return items.map(summarize);
 }
@@ -476,10 +482,15 @@ export interface WorkItemDetail {
   workflowId: string;
 }
 
-export async function getWorkItemDetail(workItemId: string): Promise<WorkItemDetail> {
+export async function getWorkItemDetail(
+  workItemId: string,
+  viewer: Viewer | null = null,
+): Promise<WorkItemDetail> {
   const sql = getSql();
   const item = await getWorkItem(sql, workItemId);
   if (!item) throw workItemNotFound(workItemId);
+  // A member asking for someone else's item gets 404: ownership is not leaked.
+  if (!canAccess(viewer, item.createdBy)) throw workItemNotFound(workItemId);
 
   const [events, gates, pendingGate] = await Promise.all([
     listWorkItemEvents(sql, workItemId),
@@ -518,6 +529,7 @@ export async function submitGateDecisionForApi(
   workItemId: string,
   stage: string,
   request: GateDecisionRequest,
+  viewer: Viewer | null = null,
 ): Promise<GateDecisionResult> {
   if (!(LOOP_STAGES as readonly string[]).includes(stage)) {
     throw invalidRequest(`unknown stage "${stage}"`, {
@@ -529,6 +541,7 @@ export async function submitGateDecisionForApi(
   const sql = getSql();
   const item = await getWorkItem(sql, workItemId);
   if (!item) throw workItemNotFound(workItemId);
+  if (!canAccess(viewer, item.createdBy)) throw workItemNotFound(workItemId);
 
   const pending = await getPendingGate(sql, { workItemId, stage });
   if (!pending) throw gateNotFound(workItemId, stage);
@@ -841,10 +854,12 @@ export async function cancelWorkItemForApi(
   config: ApiConfig,
   workItemId: string,
   body: CancelWorkItemBody,
+  viewer: Viewer | null = null,
 ): Promise<CancelWorkItemResult> {
   const sql = getSql();
   const item = await getWorkItem(sql, workItemId);
   if (!item) throw workItemNotFound(workItemId);
+  if (!canAccess(viewer, item.createdBy)) throw workItemNotFound(workItemId);
 
   if (item.status === 'done') {
     throw invalidState(
@@ -1133,10 +1148,12 @@ export async function retryWorkItemForApi(
   config: ApiConfig,
   workItemId: string,
   body: RetryWorkItemBody,
+  viewer: Viewer | null = null,
 ): Promise<RetryWorkItemResult> {
   const sql = getSql();
   const item = await getWorkItem(sql, workItemId);
   if (!item) throw workItemNotFound(workItemId);
+  if (!canAccess(viewer, item.createdBy)) throw workItemNotFound(workItemId);
 
   const latest = await latestWorkItemRetry(sql, workItemId);
 

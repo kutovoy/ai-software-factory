@@ -4,6 +4,9 @@
  * no harness — see ADR-012 and the `web-console` spec).
  */
 
+import { cookies } from 'next/headers';
+import { SESSION_COOKIE } from './auth';
+
 export class ApiClientError extends Error {
   readonly code: string;
   readonly status: number;
@@ -59,10 +62,31 @@ async function parseError(response: Response): Promise<ApiClientError> {
   );
 }
 
+/**
+ * Forward the browser's `factory_session` cookie on server-side reads/writes. The API
+ * authenticates the request; the console never sees the token (it stays HttpOnly in the
+ * browser and is passed through here). Auth-off works unchanged: no cookie means the API
+ * treats the caller as the implicit local user (design decision 3).
+ */
+async function sessionCookie(): Promise<{ cookie?: string }> {
+  const cookie = await sessionCookieHeader();
+  return cookie ? { cookie } : {};
+}
+
+/**
+ * The `Cookie` header to forward upstream, or `undefined` when the browser has no session.
+ * Route handlers that bypass `forwardToApi` (SSE, streaming bodies) use this directly.
+ */
+export async function sessionCookieHeader(): Promise<string | undefined> {
+  const store = await cookies();
+  const value = store.get(SESSION_COOKIE)?.value;
+  return value ? `${SESSION_COOKIE}=${value}` : undefined;
+}
+
 export async function apiGet<T>(path: string): Promise<T> {
   const response = await fetch(apiUrl(path), {
     cache: 'no-store',
-    headers: { accept: 'application/json' },
+    headers: { accept: 'application/json', ...(await sessionCookie()) },
   });
   if (!response.ok) throw await parseError(response);
   return (await response.json()) as T;
@@ -74,6 +98,7 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
     cache: 'no-store',
     headers: {
       accept: 'application/json',
+      ...(await sessionCookie()),
       ...(body === undefined ? {} : { 'content-type': 'application/json' }),
     },
     body: body === undefined ? undefined : JSON.stringify(body),

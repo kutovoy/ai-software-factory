@@ -84,6 +84,24 @@ export interface ApiConfig {
   githubDryRun: boolean;
   /** Public base URL of this API, used to render the webhook URL in the console. */
   webhookPublicUrl: string;
+  /**
+   * Console auth (change `add-console-auth`). `AUTH_REQUIRED=1` (compose) makes a session
+   * mandatory; the default off keeps unit/integration tests and local development in the
+   * old single-user mode.
+   */
+  authRequired: boolean;
+  /** `AUTH_COOKIE_SECURE=1` marks the session cookie `Secure` (HTTPS deployments). */
+  authCookieSecure: boolean;
+  /** Bootstrap admin identity, created once when no user exists. */
+  adminEmail: string;
+  /** Bootstrap admin password; when unset a random one is generated and logged once. */
+  adminPassword?: string;
+  /** Forge backend base URL (`GITHUB_API_BASE_URL`) for personal-org provisioning. */
+  forgeApiBaseUrl: string;
+  /** Forge admin token (`GITHUB_TOKEN`); used only for best-effort org provisioning. */
+  forgeAdminToken: string;
+  /** Personal org prefix (`FORGEJO_ORG_PREFIX`, default `u-`). */
+  forgeOrgPrefix: string;
 }
 
 function boolFromEnv(value: string | undefined, fallback: boolean): boolean {
@@ -160,6 +178,15 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     githubBaseUrl: env.GITHUB_API_BASE_URL ?? 'https://api.github.com',
     githubDryRun: boolFromEnv(env.GITHUB_DRY_RUN, false),
     webhookPublicUrl: env.WEBHOOK_PUBLIC_URL ?? 'http://localhost:8080',
+    authRequired: boolFromEnv(env.AUTH_REQUIRED, false),
+    authCookieSecure: boolFromEnv(env.AUTH_COOKIE_SECURE, false),
+    adminEmail: env.FACTORY_ADMIN_EMAIL ?? 'admin@factory.local',
+    ...(env.FACTORY_ADMIN_PASSWORD ? { adminPassword: env.FACTORY_ADMIN_PASSWORD } : {}),
+    // Deliberately no default: an unset forge URL means "do not provision personal orgs",
+    // so a laptop never accidentally creates orgs on the public GitHub API.
+    forgeApiBaseUrl: env.GITHUB_API_BASE_URL ?? '',
+    forgeAdminToken: env.GITHUB_TOKEN ?? '',
+    forgeOrgPrefix: env.FORGEJO_ORG_PREFIX ?? 'u-',
   };
 }
 

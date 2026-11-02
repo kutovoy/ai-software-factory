@@ -71,6 +71,8 @@ export interface RunRow {
   input_tokens: string | number | null;
   output_tokens: string | number | null;
   artifacts: unknown;
+  /** Owner (`users.id`) of a chat run; stage runs inherit their work item's owner. */
+  created_by?: string | null;
 }
 
 export interface CreateRunRow {
@@ -86,6 +88,8 @@ export interface CreateRunRow {
   input: RunInput;
   workflowId: string;
   temporalRunId?: string | null;
+  /** Owner (`users.id`) when the run is created by a signed-in user (chat runs). */
+  createdBy?: string | null;
 }
 
 export async function insertRun(row: CreateRunRow): Promise<void> {
@@ -93,12 +97,12 @@ export async function insertRun(row: CreateRunRow): Promise<void> {
   await sql`
     insert into runs (
       id, factory, definition_commit, definition_dirty, harness, model, runner, kind,
-      title, input, status, workflow_id, temporal_run_id, started_at
+      title, input, status, workflow_id, temporal_run_id, started_at, created_by
     ) values (
       ${row.runId}, ${row.factory}, ${row.definitionCommit}, ${row.definitionDirty},
       ${row.harness}, ${row.model ?? null}, ${row.runner}, ${row.kind}, ${row.title ?? null},
       ${row.input}::jsonb, 'pending', ${row.workflowId},
-      ${row.temporalRunId ?? null}, now()
+      ${row.temporalRunId ?? null}, now(), ${row.createdBy ?? null}
     )
     on conflict (id) do nothing
   `;

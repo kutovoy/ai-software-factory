@@ -40,10 +40,19 @@ RUNS_DIR="${RUNS_DIR:-runs}"
 PROVIDER_KEY="${OPENAI_API_KEY:-sk-provider-secret}"
 TMP_DIR="$(mktemp -d)"
 SSE_PID=""
+COOKIE_JAR="$TMP_DIR/cookies.txt"
+: > "$COOKIE_JAR"
+ADMIN_EMAIL="${FACTORY_ADMIN_EMAIL:-admin@factory.local}"
+ADMIN_PASSWORD="${FACTORY_ADMIN_PASSWORD:-factory-admin}"
 
 log() { printf '[smoke] %s\n' "$*"; }
 fail() { printf '[smoke] FAIL: %s\n' "$*" >&2; exit 1; }
 pass() { printf '[smoke] ok: %s\n' "$*"; }
+
+# Every curl call carries the session cookie (change `add-console-auth`). The jar is
+# written once by the login below; reads are concurrent-safe, so the background SSE curl
+# never rewrites it.
+curl() { command curl -sS -b "$COOKIE_JAR" "$@"; }
 
 cleanup() {
   if [ -n "$SSE_PID" ] && kill -0 "$SSE_PID" 2>/dev/null; then
@@ -107,6 +116,23 @@ unversioned_code="$(curl -sS -o "$TMP_DIR/unversioned.json" -w '%{http_code}' "$
 [ "$unversioned_code" = "404" ] \
   || fail "unversioned GET /runs must 404 (got ${unversioned_code:-none})"
 pass "versioned health + openapi served; unversioned /runs 404s"
+
+# 1a-bis. console auth (change `add-console-auth`): sign in once and keep the cookie jar.
+# Login stays public even when AUTH_REQUIRED=1; a failure here means the bootstrap admin
+# was not created (or the credentials were overridden), so fail with the API's own reason.
+log "signing in as $ADMIN_EMAIL"
+login_body="$(ADMIN_EMAIL="$ADMIN_EMAIL" ADMIN_PASSWORD="$ADMIN_PASSWORD" bun -e '
+  process.stdout.write(JSON.stringify({ email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD }));
+')"
+login_code="$(curl -o "$TMP_DIR/login.json" -w '%{http_code}' -c "$COOKIE_JAR" \
+  -X POST "$API/auth/login" -H 'content-type: application/json' -d "$login_body")"
+if [ "$login_code" != "200" ]; then
+  fail "login failed (HTTP ${login_code}) for ${ADMIN_EMAIL}: $(cat "$TMP_DIR/login.json"). Set FACTORY_ADMIN_EMAIL / FACTORY_ADMIN_PASSWORD to the API bootstrap admin."
+fi
+grep -q 'factory_session' "$COOKIE_JAR" || fail "login did not set the factory_session cookie"
+[ "$(jget user.email < "$TMP_DIR/login.json")" = "$ADMIN_EMAIL" ] \
+  || fail "login returned a different user: $(cat "$TMP_DIR/login.json")"
+pass "signed in as $ADMIN_EMAIL (factory_session cookie stored)"
 
 # ------------------------------------------------------------ 1b. web console
 log "waiting for $WEB_URL/"

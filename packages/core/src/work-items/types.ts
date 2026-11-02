@@ -94,6 +94,12 @@ export const workItemSchema = z
     cancelRequestedAt: z.string().nullable().default(null),
     cancelActor: z.string().nullable().default(null),
     cancelReason: z.string().nullable().default(null),
+    /**
+     * Owner (change `add-console-auth`): the `users.id` that created the item, or null for
+     * rows written before auth / by automations. Members only see their own items; admins
+     * see everything (design decision 4).
+     */
+    createdBy: z.string().nullable().default(null),
     createdAt: z.string().optional(),
     updatedAt: z.string().optional(),
   })

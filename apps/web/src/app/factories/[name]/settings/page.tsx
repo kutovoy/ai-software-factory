@@ -228,21 +228,22 @@ export default async function SettingsPage({ params }: { params: Promise<{ name:
           hint="Forgejo, served by this console at /extras/forgejo/ — pull request links recorded by the factory open here."
           action={
             <Badge tone="info" testId="settings-forgejo-mode">
-              single-user
+              console identity
             </Badge>
           }
         />
         <CardBody className="space-y-3 text-sm">
           <p className="text-xs text-slate-600">
-            The console proxies <span className="font-mono">/extras/forgejo/</span> to the local Forgejo instance and
-            asserts the seeded admin identity with a trusted header, so there is no second password prompt. This is{' '}
-            <span className="font-semibold">single-user local mode</span>: anyone who can reach the console is that
-            admin, and the forge itself has no published host port.
+            The console proxies <span className="font-mono">/extras/forgejo/</span> to the local Forgejo instance,
+            resolves the session through <span className="font-mono">/auth/me</span> and asserts the signed-in username
+            with a trusted header, so there is no second password prompt. Signed out with auth required, forge pages
+            redirect to <span className="font-mono">/login</span>; with auth off the proxy falls back to the seeded
+            admin. The forge itself has no published host port.
           </p>
           <p className="text-xs text-slate-600">
-            Multi-user isolation is the documented path, not built yet: Phase 6 console auth makes the proxy assert the
-            authenticated user instead of the admin, and Forgejo OIDC group mappings place each user in their own
-            organization/team. Keycloak is optional — any OIDC provider works.
+            Each user gets a best-effort personal organization <span className="font-mono">u-&lt;username&gt;</span>.
+            OIDC group→organization mapping (<span className="font-mono">FORGEJO_OIDC_GROUP_MAP</span>) is the
+            documented path for a later IdP phase, not built yet. Keycloak is optional — any OIDC provider works.
           </p>
           <a
             href="/extras/forgejo/"

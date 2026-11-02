@@ -9,6 +9,9 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './e2e',
+  // The suite signs in once as the compose bootstrap admin (change `add-console-auth`);
+  // auth.spec.ts opts out with an empty storage state for the logged-out scenarios.
+  globalSetup: './e2e/global-setup.ts',
   // The audit specs are a manual tool, not part of the CI suite:
   //   UI_AUDIT=1 bunx playwright test audit.spec.ts
   testIgnore: process.env.UI_AUDIT ? [] : ['**/audit*.spec.ts'],
@@ -21,6 +24,7 @@ export default defineConfig({
   reporter: process.env.CI ? [['list'], ['github']] : [['list']],
   use: {
     baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:3000',
+    storageState: './e2e/.auth/admin.json',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'off',

@@ -25,6 +25,10 @@ API_URL="${API_URL:-http://localhost:8080}"
 # Every public resource route is versioned (ADR-030); /health stays unversioned.
 API="${API_URL}/api/v1"
 TMP_DIR="$(mktemp -d)"
+COOKIE_JAR="$TMP_DIR/cookies.txt"
+: > "$COOKIE_JAR"
+ADMIN_EMAIL="${FACTORY_ADMIN_EMAIL:-admin@factory.local}"
+ADMIN_PASSWORD="${FACTORY_ADMIN_PASSWORD:-factory-admin}"
 BLOCKED=()
 
 log() { printf '[smoke-permissions] %s\n' "$*"; }
@@ -47,7 +51,18 @@ jget() {
   '
 }
 
-api() { curl -sS "$@"; }
+api() { curl -sS -b "$COOKIE_JAR" "$@"; }
+
+# Auth is on in compose: sign in once so every run/API call below carries the session.
+log "signing in as $ADMIN_EMAIL"
+login_body="$(ADMIN_EMAIL="$ADMIN_EMAIL" ADMIN_PASSWORD="$ADMIN_PASSWORD" bun -e '
+  process.stdout.write(JSON.stringify({ email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD }));
+')"
+login_code="$(curl -sS -o "$TMP_DIR/login.json" -w '%{http_code}' -c "$COOKIE_JAR" \
+  -X POST "$API/auth/login" -H 'content-type: application/json' -d "$login_body")"
+[ "$login_code" = "200" ] \
+  || fail "login failed (HTTP ${login_code}): $(cat "$TMP_DIR/login.json"). Set FACTORY_ADMIN_EMAIL / FACTORY_ADMIN_PASSWORD."
+grep -q 'factory_session' "$COOKIE_JAR" || fail "login did not set the factory_session cookie"
 
 create_run() {
   local label="$1"

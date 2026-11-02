@@ -4,7 +4,7 @@
     "title": "Software Factory API",
     "version": "1.0.0",
     "summary": "Versioned HTTP surface for runs, work items, factories, scoring, benchmarks, self-improvement, secrets, integrations and webhooks.",
-    "description": "Every public resource route lives under `/api/v1`. Breaking changes bump the prefix and the old version keeps serving until it is removed deliberately. `GET /health` stays unversioned for probes.\n\n**Servers.** The canonical document declares the direct API origin, `http://localhost:8080` — use it from Swagger UI, Postman or a script. The console serves the same document at `/api/openapi.json`, and `/api/openapi.json?servers=console` rewrites `servers` to the console origin (`/`): the browser then calls `/api/v1/…` same-origin and the console proxies those requests server-side, so the API host never appears in the browser and CORS never applies.\n\n**Authentication.** The API has no authentication yet: it runs as a single implicit local user, so no security scheme is declared and try-it-out needs no credentials — anything you can read here you can also change.\n\nThis document is the source of truth: `apps/api/test/openapi.test.ts` fails when the served routes and this spec diverge."
+    "description": "Every public resource route lives under `/api/v1`. Breaking changes bump the prefix and the old version keeps serving until it is removed deliberately. `GET /health` stays unversioned for probes.\n\n**Servers.** The canonical document declares the direct API origin, `http://localhost:8080` — use it from Swagger UI, Postman or a script. The console serves the same document at `/api/openapi.json`, and `/api/openapi.json?servers=console` rewrites `servers` to the console origin (`/`): the browser then calls `/api/v1/…` same-origin and the console proxies those requests server-side, so the API host never appears in the browser and CORS never applies.\n\n**Authentication.** Accounts and opaque sessions (change `add-console-auth`). `POST /api/v1/auth/login` sets the HttpOnly `factory_session` cookie; only a SHA-256 hash of the token is stored, so a database leak does not hand out live sessions. With `AUTH_REQUIRED=1` (compose) every route except `/health`, `/auth/login` and `/openapi.json` needs a session and answers `401 auth_required` otherwise. Roles: `admin` manages users and sees all work, `member` sees only the rows they created. With `AUTH_REQUIRED=0` (tests, local development) the API runs as the implicit local user and no cookie is needed.\n\nThis document is the source of truth: `apps/api/test/openapi.test.ts` fails when the served routes and this spec diverge."
   },
   "servers": [
     {
@@ -13,6 +13,10 @@
     }
   ],
   "tags": [
+    {
+      "name": "auth",
+      "description": "Sign-in, sessions and the signed-in identity."
+    },
     {
       "name": "automations",
       "description": "Automation schedules declared by a factory, plus pause and sync controls."
@@ -76,6 +80,10 @@
     {
       "name": "secrets",
       "description": "Secret names referenced by definitions; values resolve at run time and never appear in logs."
+    },
+    {
+      "name": "users",
+      "description": "User administration (admin only): list, create, change role, disable."
     },
     {
       "name": "webhooks",
@@ -1443,7 +1451,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     },
     "/api/v1/improvements/{id}": {
@@ -1596,7 +1605,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     },
     "/api/v1/proposals": {
@@ -1796,7 +1806,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Members only see their own runs: chat runs by `created_by`, stage runs through the work item that owns them. Admins see all. Auth off keeps the old behaviour."
       },
       "post": {
         "tags": [
@@ -2465,7 +2476,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Members only see work items they created (`created_by`); admins see all. Rows written before auth have no owner and are admin-only. Auth off keeps the old behaviour (everything is returned)."
       },
       "post": {
         "tags": [
@@ -2640,7 +2652,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     },
     "/api/v1/calibration": {
@@ -4519,6 +4532,440 @@
           }
         }
       }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Sign in",
+        "description": "Verifies the password and creates an opaque session. Sets `factory_session` (HttpOnly, SameSite=Lax, Path=/, 7 days, `Secure` when configured). The same `401 invalid_credentials` covers a wrong password, an unknown email and a disabled account.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email",
+                  "password"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Signed in; the session cookie is set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "$ref": "#/components/schemas/User"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request — malformed body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_credentials — wrong password, unknown email or disabled account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error — unexpected server failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Sign out",
+        "description": "Revokes the current session and clears the cookie.",
+        "responses": {
+          "200": {
+            "description": "Signed out.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "auth_required — no valid session when auth is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Current user",
+        "description": "Returns the signed-in user, or `{user: null}` when auth is disabled.",
+        "responses": {
+          "200": {
+            "description": "The signed-in user, or null.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "user"
+                  ],
+                  "properties": {
+                    "user": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/User"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "auth_required — no valid session when auth is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "List users",
+        "description": "Admin only. Members get `403 forbidden`.",
+        "responses": {
+          "200": {
+            "description": "Users, oldest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "users"
+                  ],
+                  "properties": {
+                    "users": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/User"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "auth_required — no valid session when auth is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden — the caller is not an admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Create a user",
+        "description": "Admin only. The password is hashed with argon2id and never stored in clear.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email",
+                  "username",
+                  "password"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "username": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]{1,38}$"
+                  },
+                  "name": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "member"
+                    ],
+                    "default": "member"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "minLength": 8
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "user"
+                  ],
+                  "properties": {
+                    "user": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_user — invalid email, username, role or password.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "auth_required — no valid session when auth is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden — the caller is not an admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "user_exists — the email or username is already taken.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{id}": {
+      "patch": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Update a user",
+        "description": "Admin only. Change the role and/or disable the account.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "User id."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "member"
+                    ]
+                  },
+                  "disabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "user"
+                  ],
+                  "properties": {
+                    "user": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_user — invalid user id, role or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "auth_required — no valid session when auth is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden — the caller is not an admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "invalid_user — the user does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4648,7 +5095,82 @@
           }
         },
         "additionalProperties": true
+      },
+      "User": {
+        "type": "object",
+        "description": "A console user. The password hash is never returned.",
+        "required": [
+          "id",
+          "email",
+          "username",
+          "role",
+          "disabled"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "username": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{1,38}$",
+            "description": "Slug used for the forge identity and the personal org `u-<username>`."
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "member"
+            ]
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "forgeOrg": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "factory_session",
+        "description": "Opaque session cookie set by `POST /api/v1/auth/login` (HttpOnly, SameSite=Lax, Path=/, 7-day expiry). Send it as a cookie; the value is never accepted in a header or query."
       }
     }
-  }
+  },
+  "security": [
+    {
+      "cookieAuth": []
+    }
+  ]
 }

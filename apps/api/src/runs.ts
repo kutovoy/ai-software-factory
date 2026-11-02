@@ -26,6 +26,7 @@ import {
 } from '@factory/orchestration';
 import type { ApiConfig } from './config';
 import { toOrchestrationConfig } from './config';
+import { canAccess, type Viewer } from './auth';
 import {
   ApiError,
   definitionInvalid,
@@ -156,6 +157,8 @@ export async function createRun(
   config: ApiConfig,
   body: CreateRunBody,
   options: { kind: 'chat' | 'run'; retryOf?: string },
+  /** Owner (`users.id`) of the run; null when auth is off (change `add-console-auth`). */
+  createdBy: string | null = null,
 ): Promise<CreatedRun> {
   const factory = body.factory;
   const dir = resolveFactoryRoot(config, factory);
@@ -216,6 +219,7 @@ export async function createRun(
     title: input.title ?? null,
     input,
     workflowId,
+    createdBy,
   });
 
   let started: { workflowId: string; temporalRunId: string };
@@ -263,6 +267,7 @@ export async function createRun(
 export async function retryRun(
   config: ApiConfig,
   runId: string,
+  viewer: Viewer | null = null,
 ): Promise<{
   run: RunRow;
   workflow?: CreatedRun['workflow'];
@@ -270,8 +275,7 @@ export async function retryRun(
   retryOf: string;
   deduped: boolean;
 }> {
-  const original = await getRun(runId);
-  if (!original) throw runNotFound(runId);
+  const original = await assertRunAccess(runId, viewer);
 
   if (original.kind !== 'chat') {
     throw new ApiError(
@@ -316,6 +320,7 @@ export async function retryRun(
       agent: input.agent,
     },
     { kind: 'chat', retryOf: runId },
+    original.created_by ?? null,
   );
 
   return {
@@ -338,6 +343,34 @@ export function workItemIdForRun(row: Pick<RunRow, 'id' | 'kind'>): string | nul
   if (row.kind !== 'run') return null;
   const match = STAGE_RUN_ID_RE.exec(row.id);
   return match?.[1] ? `wi_${match[1]}` : null;
+}
+
+/**
+ * Owner of a run: a chat run carries `created_by`; a stage run inherits its work item's
+ * owner (the column stays null for stage runs).
+ */
+export async function runOwnerId(row: RunRow): Promise<string | null> {
+  if (row.created_by) return row.created_by;
+  const workItemId = workItemIdForRun(row);
+  if (!workItemId) return null;
+  const rows = (await getSql()`
+    select created_by from work_items where id = ${workItemId} limit 1
+  `) as { created_by: string | null }[];
+  return rows[0]?.created_by ?? null;
+}
+
+/**
+ * Read/mutate guard for run-scoped routes (`/runs/:id`, its events, cancel, permissions).
+ * A member asking for someone else's run gets `run_not_found` — existence is not leaked.
+ */
+export async function assertRunAccess(
+  runId: string,
+  viewer: Viewer | null,
+): Promise<RunRow> {
+  const run = await getRun(runId);
+  if (!run) throw runNotFound(runId);
+  if (!canAccess(viewer, await runOwnerId(run))) throw runNotFound(runId);
+  return run;
 }
 
 export interface RunSummary {
@@ -365,20 +398,41 @@ export interface ListRunsFilters {
   offset?: number;
   status?: string;
   factory?: string;
+  /**
+   * Owner scope (change `add-console-auth`): when set, only runs owned by that user are
+   * returned — a chat run's `created_by`, or the owner of the work item behind a stage run.
+   * Admins pass `null` and see everything.
+   */
+  createdBy?: string | null;
 }
 
+/**
+ * `run_<ULID>_<stage>_<attempt>` embeds the work item id: stage runs are owned by their
+ * work item, so the owner join reads the item id back out of the run id (no extra column).
+ * Chat run ids never match a work item, so the `exists` simply fails for them.
+ */
 /** Read-model query for the run list (spec: newest-first, no Temporal calls). */
 export async function listRuns(filters: ListRunsFilters = {}): Promise<RunSummary[]> {
   const limit = Math.min(Math.max(filters.limit ?? 20, 1), 100);
   const offset = Math.max(filters.offset ?? 0, 0);
   const status = filters.status ?? null;
   const factory = filters.factory ?? null;
+  const createdBy = filters.createdBy ?? null;
 
   const rows = (await getSql()`
-    select * from runs
-    where (${status}::text is null or status = ${status})
-      and (${factory}::text is null or factory = ${factory})
-    order by started_at desc
+    select r.* from runs r
+    where (${status}::text is null or r.status = ${status})
+      and (${factory}::text is null or r.factory = ${factory})
+      and (
+        ${createdBy}::uuid is null
+        or r.created_by = ${createdBy}::uuid
+        or exists (
+          select 1 from work_items w
+          where w.id = 'wi_' || substr(r.id, 5, 26)
+            and w.created_by = ${createdBy}::uuid
+        )
+      )
+    order by r.started_at desc
     limit ${limit} offset ${offset}
   `) as RunRow[];
 
@@ -406,7 +460,10 @@ export function summarize(row: RunRow): RunSummary {
   };
 }
 
-export async function getRunDetail(runId: string): Promise<{
+export async function getRunDetail(
+  runId: string,
+  viewer: Viewer | null = null,
+): Promise<{
   run: RunRow;
   summary: RunSummary;
   steps: unknown[];
@@ -419,6 +476,7 @@ export async function getRunDetail(runId: string): Promise<{
 }> {
   const run = await getRun(runId);
   if (!run) throw runNotFound(runId);
+  if (!canAccess(viewer, await runOwnerId(run))) throw runNotFound(runId);
   const permissions = await listPermissions(runId);
   const input = run.input as RunInput;
   const children = (await getSql()`

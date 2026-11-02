@@ -1,4 +1,4 @@
-import { apiUrl } from '@/lib/api';
+import { apiUrl, sessionCookieHeader } from '@/lib/api';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -7,7 +7,8 @@ export const runtime = 'nodejs';
  * Same-origin SSE proxy. The browser never talks to `apps/api` directly, so there is no
  * CORS preflight and no cross-origin EventSource limitation. `Last-Event-ID` (or the
  * `lastEventId` query the hook uses) is forwarded verbatim so replay is strictly
- * `seq > cursor`; the upstream already sends `x-accel-buffering: no`.
+ * `seq > cursor`; the upstream already sends `x-accel-buffering: no`. The session cookie
+ * is forwarded too, so an authenticated run stream works through this proxy.
  */
 export async function GET(
   request: Request,
@@ -17,11 +18,16 @@ export async function GET(
   const url = new URL(request.url);
   const lastEventId =
     request.headers.get('last-event-id') ?? url.searchParams.get('lastEventId') ?? '0';
+  const cookie = await sessionCookieHeader();
 
   let upstream: Response;
   try {
     upstream = await fetch(apiUrl(`/runs/${encodeURIComponent(id)}/events`), {
-      headers: { accept: 'text/event-stream', 'Last-Event-ID': lastEventId },
+      headers: {
+        accept: 'text/event-stream',
+        'Last-Event-ID': lastEventId,
+        ...(cookie ? { cookie } : {}),
+      },
       cache: 'no-store',
       signal: request.signal,
     });

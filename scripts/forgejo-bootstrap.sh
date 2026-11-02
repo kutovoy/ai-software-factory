@@ -160,12 +160,26 @@ if printf '%s' "$repo_json" | grep -q '"empty":true'; then
 fi
 
 # ---------------------------------------------------------------- 6. secret + integration
+# Console auth is on in compose, so the API calls below need a session. Sign in once as the
+# bootstrap admin; the forge calls above stay token-authenticated and untouched.
+COOKIE_JAR="$(mktemp)"
+trap 'rm -f "$COOKIE_JAR"' EXIT
+API_ADMIN_EMAIL="${FACTORY_ADMIN_EMAIL:-admin@factory.local}"
+API_ADMIN_PASSWORD="${FACTORY_ADMIN_PASSWORD:-factory-admin}"
+login_body="$(API_ADMIN_EMAIL="$API_ADMIN_EMAIL" API_ADMIN_PASSWORD="$API_ADMIN_PASSWORD" bun -e '
+  process.stdout.write(JSON.stringify({ email: process.env.API_ADMIN_EMAIL, password: process.env.API_ADMIN_PASSWORD }));
+')"
+login_code="$(curl -sS -o /dev/null -w '%{http_code}' -c "$COOKIE_JAR" \
+  -X POST -H 'content-type: application/json' -d "$login_body" "${API}/auth/login")"
+[ "$login_code" = "200" ] \
+  || fail "API login failed (HTTP ${login_code}); set FACTORY_ADMIN_EMAIL / FACTORY_ADMIN_PASSWORD"
+
 # Metadata only: the registry stores the *name*; the value stays in the environment (ADR-026).
-curl -s -o /dev/null -X POST -H 'content-type: application/json' \
+curl -s -o /dev/null -b "$COOKIE_JAR" -X POST -H 'content-type: application/json' \
   -d '{"name":"GITHUB_TOKEN","provider":"env","scope":"factory","description":"Local forge (Forgejo) API token"}' \
   "${API}/secrets" || true
 
-integration="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' \
+integration="$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIE_JAR" -X POST -H 'content-type: application/json' \
   -d "{\"factory\":\"${FACTORY}\",\"secretRef\":\"GITHUB_TOKEN\",\"repos\":[{\"owner\":\"${ORG}\",\"name\":\"${REPO}\"}],\"events\":[\"issues\"],\"labels\":[\"factory-ready\"],\"dryRun\":false,\"mergeQueue\":false,\"enabled\":true}" \
   "${API}/integrations/github")"
 case "$integration" in

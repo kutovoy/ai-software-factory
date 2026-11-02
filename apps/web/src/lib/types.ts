@@ -1332,3 +1332,20 @@ export interface AutomationsResponseWire {
   webhook: { url: string; secretRef: string | null };
   schedules: unknown[];
 }
+
+/* ------------------------------------------------------------ auth (Phase 6) */
+
+export type UserRole = 'admin' | 'member';
+
+/** Public user shape returned by `/auth/me` and `/users` (never carries a hash). */
+export interface UserWire {
+  id: string;
+  email: string;
+  username: string;
+  name: string | null;
+  role: UserRole;
+  disabled: boolean;
+  forgeOrg: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}

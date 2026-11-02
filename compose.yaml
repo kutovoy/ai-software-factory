@@ -162,6 +162,16 @@ services:
       # Secrets registry (ADR-026): a dummy execution secret so the smoke run resolves one
       # name and records usage. Never a real credential.
       GITHUB_TOKEN: ${GITHUB_TOKEN:-smoke-github-token}
+      # Console auth (change `add-console-auth`). LOCAL DEVELOPMENT ONLY: this bootstrap
+      # admin and password are checked into git for the compose demo — never reuse them on
+      # a reachable host (see SECURITY.md). Override every value from the environment.
+      AUTH_REQUIRED: ${AUTH_REQUIRED:-1}
+      FACTORY_ADMIN_EMAIL: ${FACTORY_ADMIN_EMAIL:-admin@factory.local}
+      FACTORY_ADMIN_PASSWORD: ${FACTORY_ADMIN_PASSWORD:-factory-admin}
+      # `AUTH_COOKIE_SECURE=1` when the console is served over HTTPS.
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-0}
+      # Personal forge org created on first login: `u-<username>`.
+      FORGEJO_ORG_PREFIX: ${FORGEJO_ORG_PREFIX:-u-}
     ports:
       - '8080:8080'
     volumes:
@@ -202,6 +212,10 @@ services:
       FORGEJO_URL: ${FORGEJO_URL:-http://forgejo:3000}
       FORGEJO_ADMIN_USER: ${FORGEJO_ADMIN_USER:-factory}
       FORGEJO_ENABLED: ${FORGEJO_ENABLED:-1}
+      # Console auth (change `add-console-auth`): the console redirects unauthenticated
+      # visitors to /login and forwards the `factory_session` cookie. LOCAL DEV ONLY —
+      # the bootstrap credentials live in the api service above.
+      AUTH_REQUIRED: ${AUTH_REQUIRED:-1}
       NODE_ENV: production
       PORT: '3000'
     ports:

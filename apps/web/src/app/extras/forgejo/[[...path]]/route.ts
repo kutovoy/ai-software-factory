@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { apiUrl } from '@/lib/api';
+import { authRequired } from '@/lib/auth';
 
 /**
  * Same-origin proxy for the local forge (spec `forge` › Served under the console).
@@ -25,7 +27,7 @@ export const runtime = 'nodejs';
 
 /** Where the forge listens inside the compose network. Server-side only. */
 const FORGE_URL = (process.env.FORGEJO_URL ?? 'http://forgejo:3000').replace(/\/+$/, '');
-/** The seeded admin asserted by the proxy in single-user mode. */
+/** Fallback identity asserted by the proxy when auth is off. */
 const ADMIN_USER = process.env.FORGEJO_ADMIN_USER ?? 'factory';
 /** Public prefix the forge believes it is served under. */
 const PREFIX = '/extras/forgejo';
@@ -74,19 +76,64 @@ function forgeUnavailable(error: unknown): Response {
   );
 }
 
+/**
+ * Resolve the signed-in console user through the API's public `/auth/me` route, forwarding
+ * the browser's `factory_session` cookie. Auth-off also returns `{user:null}`, which the
+ * caller turns into the seeded-admin fallback (spec `forge-identity` › Auth disabled).
+ */
+async function sessionUsername(request: Request): Promise<string | null> {
+  const cookie = request.headers.get('cookie');
+  if (!cookie) return null;
+  try {
+    const response = await fetch(apiUrl('/auth/me'), {
+      headers: { accept: 'application/json', cookie },
+      cache: 'no-store',
+    });
+    if (!response.ok) return null;
+    const body = (await response.json()) as { user?: { username?: string } | null };
+    return body.user?.username ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function loginRedirect(request: Request): Response {
+  const url = new URL(request.url);
+  const target = new URL('/login', url);
+  target.searchParams.set('next', `${url.pathname}${url.search}`);
+  return NextResponse.redirect(target);
+}
+
 async function forward(request: Request, context: RouteContext): Promise<Response> {
   const { path } = await context.params;
   const resource = `/${(path ?? []).join('/')}`;
   const query = new URL(request.url).search;
   const target = `${FORGE_URL}${resource}${query}`;
 
+  const authOn = authRequired();
+  const sessionUser = await sessionUsername(request);
+  if (authOn && !sessionUser) {
+    const method = request.method.toUpperCase();
+    if (method === 'GET' || method === 'HEAD') return loginRedirect(request);
+    return NextResponse.json(
+      {
+        code: 'auth_required',
+        message: 'sign in to use the local forge',
+        hint: 'open the console, sign in, then reload the forge',
+      },
+      { status: 401 },
+    );
+  }
+  // The proxy is the only trusted client of the forge; assert the signed-in user, or the
+  // seeded admin when auth is off (single-user mode).
+  const forgeUser = sessionUser ?? ADMIN_USER;
+
   const headers = new Headers();
   request.headers.forEach((value, key) => {
     if (!HOP_BY_HOP_REQUEST.has(key.toLowerCase())) headers.set(key, value);
   });
   headers.set('accept-encoding', 'identity');
-  // The proxy is the only trusted client of the forge; assert the seeded admin.
-  headers.set('x-webauth-user', ADMIN_USER);
+  headers.set('x-webauth-user', forgeUser);
 
   const method = request.method.toUpperCase();
   const sendsBody = method !== 'GET' && method !== 'HEAD' && request.body !== null;

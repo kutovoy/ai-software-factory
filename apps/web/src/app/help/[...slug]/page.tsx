@@ -90,10 +90,13 @@ export default async function HelpEntryPage({ params }: HelpPageProps) {
                 &ldquo;Try it out&rdquo; sends real requests — including <span className="font-mono">POST</span>,{' '}
                 <span className="font-mono">PUT</span>, <span className="font-mono">PATCH</span> and{' '}
                 <span className="font-mono">DELETE</span> calls that change runs, work items, gates, secrets and
-                factories. The local API has <strong>no authentication</strong>: it runs as a single implicit local
-                user, so anything you can read here you can also change. Requests go to the console origin
-                (<span className="font-mono">/api/v1/…</span>) and are proxied server-side to the API — no CORS, and
-                the API host never appears in the browser.
+                factories. Console auth applies: sign in first and the same-origin proxy forwards the{' '}
+                <span className="font-mono">factory_session</span> cookie. With{' '}
+                <span className="font-mono">AUTH_REQUIRED=1</span> every route except{' '}
+                <span className="font-mono">/health</span>, <span className="font-mono">/auth/login</span> and{' '}
+                <span className="font-mono">/openapi.json</span> needs a session; with it off the API runs as the
+                implicit local user. Requests go to the console origin (<span className="font-mono">/api/v1/…</span>)
+                and are proxied server-side to the API — no CORS, and the API host never appears in the browser.
               </p>
             </div>
 

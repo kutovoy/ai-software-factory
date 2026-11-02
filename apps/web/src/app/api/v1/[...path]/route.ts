@@ -58,6 +58,10 @@ async function forward(request: Request, context: RouteContext): Promise<Respons
   request.headers.forEach((value, key) => {
     if (!HOP_BY_HOP_REQUEST.has(key.toLowerCase())) headers.set(key, value);
   });
+  // `cookie` is forwarded by the loop above; make the session pass-through explicit so a
+  // future header allow-list cannot silently break login-protected SSE/API calls.
+  const cookie = request.headers.get('cookie');
+  if (cookie) headers.set('cookie', cookie);
   headers.set('accept-encoding', 'identity');
 
   const method = request.method.toUpperCase();
@@ -86,8 +90,21 @@ async function forward(request: Request, context: RouteContext): Promise<Respons
 
   const responseHeaders = new Headers();
   upstream.headers.forEach((value, key) => {
-    if (!HOP_BY_HOP_RESPONSE.has(key.toLowerCase())) responseHeaders.set(key, value);
+    if (HOP_BY_HOP_RESPONSE.has(key.toLowerCase())) return;
+    // `Set-Cookie` is appended below so multiple cookies survive (login/logout).
+    if (key.toLowerCase() === 'set-cookie') return;
+    responseHeaders.set(key, value);
   });
+  const getSetCookie = (upstream.headers as Headers & { getSetCookie?: () => string[] })
+    .getSetCookie;
+  if (typeof getSetCookie === 'function') {
+    for (const value of getSetCookie.call(upstream.headers)) {
+      responseHeaders.append('set-cookie', value);
+    }
+  } else {
+    const single = upstream.headers.get('set-cookie');
+    if (single) responseHeaders.append('set-cookie', single);
+  }
 
   return new Response(upstream.body, {
     status: upstream.status,

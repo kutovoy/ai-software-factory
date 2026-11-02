@@ -157,7 +157,16 @@ export const HELP_ENTRIES: HelpEntry[] = [
             title: 'Open the console',
             command: 'open http://localhost:3000',
             expected:
-              'New Chat loads with the sidebar, the factory switcher on `example`, and a composer. `?` in the top right opens the help entry for the page you are on.',
+              'The console redirects to `/login`. Sign in with the compose bootstrap admin `admin@factory.local` / `factory-admin` (override `FACTORY_ADMIN_EMAIL` / `FACTORY_ADMIN_PASSWORD`; see SECURITY.md). New Chat then loads with the sidebar, the factory switcher on `example`, your account block and a composer. `?` in the top right opens the help entry for the page you are on.',
+          },
+          {
+            title: 'Get a session cookie for API calls',
+            detail:
+              'Compose sets `AUTH_REQUIRED=1`, so the direct API commands below need the same session the browser has. This logs in once and stores the HttpOnly cookie in a jar.',
+            command:
+              'curl -sS -c /tmp/factory-cookies.txt -X POST http://localhost:8080/api/v1/auth/login \\\n  -H \'content-type: application/json\' \\\n  -d \'{"email":"admin@factory.local","password":"factory-admin"}\'',
+            expected:
+              'The response contains `"user"` and the jar holds `factory_session`. Every API call below passes `-b /tmp/factory-cookies.txt`.',
           },
           {
             title: 'Prove the whole pipeline',
@@ -169,7 +178,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
           {
             title: 'Create a work item',
             command:
-              'curl -sS -X POST http://localhost:8080/api/v1/work-items \\\n  -H \'content-type: application/json\' \\\n  -d \'{"factory":"example","title":"Fix the README link","type":"task","source":"manual","harness":"fake","prompt":"fix the broken readme link"}\'',
+              'curl -sS -b /tmp/factory-cookies.txt -X POST http://localhost:8080/api/v1/work-items \\\n  -H \'content-type: application/json\' \\\n  -d \'{"factory":"example","title":"Fix the README link","type":"task","source":"manual","harness":"fake","prompt":"fix the broken readme link"}\'',
             expected:
               'The response contains `workItem.id`, `"stage":"triage"` and the pinned `definitionCommit`. The item appears on the Work items board.',
           },
@@ -178,7 +187,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
             detail:
               'Use the id from the previous step. The same decision is available in Inbox, where each gate shows its SLA countdown.',
             command:
-              'curl -sS -X POST http://localhost:8080/api/v1/work-items/<work-item-id>/gates/triage \\\n  -H \'content-type: application/json\' \\\n  -d \'{"decision":"approve","actor":"you","reason":"scope looks right"}\'',
+              'curl -sS -b /tmp/factory-cookies.txt -X POST http://localhost:8080/api/v1/work-items/<work-item-id>/gates/triage \\\n  -H \'content-type: application/json\' \\\n  -d \'{"decision":"approve","actor":"you","reason":"scope looks right"}\'',
             expected:
               'The response reports `"decision":"approve"` and `"delivery":"update"`; the item advances past triage and the next stage starts.',
           },
@@ -196,7 +205,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
         title: 'What success looks like',
         items: [
           '`docker compose ps` shows every service up, and `curl /health` returns `status: ok`.',
-          'The console loads at http://localhost:3000 with the sidebar, the factory switcher and New Chat.',
+          'The console loads at http://localhost:3000 after signing in with the bootstrap admin, with the sidebar, the factory switcher and New Chat.',
           '`bash scripts/smoke.sh` ends with `SMOKE PASSED`.',
           'A work item you created moves from `triage` to a later stage after one approval.',
           'The run behind that item lists its events, cost and pinned `definitionCommit`.',
@@ -284,6 +293,81 @@ export const HELP_ENTRIES: HelpEntry[] = [
       { label: 'Definition page', href: '/help/factories/definition' },
       { label: 'Add a factory', href: '/help/factories/add' },
       { label: 'Choose the model through the environment', href: '/help/factories/model-env' },
+    ],
+  },
+  {
+    slug: 'concepts/signing-in',
+    title: 'Signing in',
+    section: 'concepts',
+    status: 'Shipped — change `add-console-auth`',
+    summary:
+      'Email + password creates an opaque session cookie; the console redirects signed-out visitors to /login and forwards the cookie to the API.',
+    pageHref: '/login',
+    pageHrefLabel: 'Open the sign-in page',
+    blocks: [
+      {
+        kind: 'prose',
+        text:
+          'The console and API share one identity. `POST /api/v1/auth/login` verifies the password (argon2id) and sets an opaque `factory_session` cookie: HttpOnly, SameSite=Lax, Path=/, 7-day sliding expiry. Only the token’s SHA-256 hash is stored, so the database never holds a usable credential.',
+      },
+      {
+        kind: 'list',
+        items: [
+          'Signed-out page requests redirect to `/login?next=<path>`; `/login`, `/help/api`, Next assets, the favicon, `/api/*` and the forge proxy stay reachable.',
+          'A protected API route without a session answers `401 auth_required` when `AUTH_REQUIRED=1`.',
+          'Sign out revokes the session server-side and clears the cookie; the console returns to `/login`.',
+          'With `AUTH_REQUIRED=0` (local development/unit tests) there is no redirect: the console and API behave as the implicit local user.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Bootstrap admin',
+        text:
+          'If no user exists, the API creates the admin from `FACTORY_ADMIN_EMAIL` / `FACTORY_ADMIN_PASSWORD` on start. If the password is unset it generates one and logs it once — that log line is the only disclosure. Compose supplies local-development defaults; override them on any reachable host.',
+      },
+    ],
+    related: [
+      { label: 'Users page', href: '/help/users' },
+      { label: 'Roles and scope', href: '/help/concepts/roles-and-scope' },
+      { label: 'API', href: '/help/api' },
+    ],
+  },
+  {
+    slug: 'concepts/roles-and-scope',
+    title: 'Roles and scope',
+    section: 'concepts',
+    status: 'Shipped — change `add-console-auth`',
+    summary:
+      'Admins manage users and see all work; members see only the work items and runs they created. The forge sees the signed-in username.',
+    pageHref: '/users',
+    blocks: [
+      {
+        kind: 'prose',
+        text:
+          'Every user has one of two roles. `admin` can manage accounts (`GET/POST /users`, `PATCH /users/:id`) and reads every work item and run. `member` gets `403 forbidden` from user management and only lists rows whose `created_by` is their own id; rows created before auth (null owner) are admin-only.',
+      },
+      {
+        kind: 'list',
+        items: [
+          'Work items and runs record the creator; the inbox follows the same owner filter.',
+          'Gate approvals are still attributed to the actor string supplied with the decision, and the audit trail records it.',
+          'The Forgejo proxy resolves `/auth/me` and asserts the session username as `X-WebAuth-User`, so the forge sees the real user instead of a shared admin. With auth off it falls back to `FORGEJO_ADMIN_USER`.',
+          'Each user gets a best-effort personal organization `u-<username>` on first sign-in.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'OIDC is deferred',
+        text:
+          '`FORGEJO_OIDC_GROUP_MAP` reserves group→organization mappings for a later IdP phase; no external identity provider is required for console auth.',
+      },
+    ],
+    related: [
+      { label: 'Users page', href: '/help/users' },
+      { label: 'Signing in', href: '/help/concepts/signing-in' },
+      { label: 'Forgejo', href: '/help/forgejo' },
     ],
   },
   {
@@ -580,21 +664,23 @@ export const HELP_ENTRIES: HelpEntry[] = [
     slug: 'forgejo',
     title: 'Forgejo (local forge)',
     section: 'menu',
-    status: 'Shipped — local single-user forge; OIDC multi-user is Phase 6',
+    status: 'Shipped — console identity; OIDC group mapping is deferred',
     summary:
-      'The git forge behind every PR link, served under /extras/forgejo with proxy auto-login.',
+      'The git forge behind every PR link, served under /extras/forgejo with proxy auto-login as the signed-in user.',
     pageHref: '/extras/forgejo/',
     blocks: [
       {
         kind: 'prose',
         text:
-          'The factory ships its own Forgejo instance, enabled by default and reachable at `/extras/forgejo/`. Pull requests opened by the loop live there, so the PR link on a work item resolves from your machine. It is internal to the compose network; the console proxies it and asserts the seeded admin identity, so there is no second login.',
+          'The factory ships its own Forgejo instance, enabled by default and reachable at `/extras/forgejo/`. Pull requests opened by the loop live there, so the PR link on a work item resolves from your machine. It is internal to the compose network; the console proxy resolves the `factory_session` cookie through `/auth/me` and asserts that username as `X-WebAuth-User`, so the forge sees the signed-in user without a second login.',
       },
       {
         kind: 'list',
         items: [
-          'Single-user local mode: anyone who can reach the console is the seeded admin. Do not expose the console publicly in this mode.',
-          'Multi-user (Phase 6): console auth asserts the real user, and Forgejo OIDC group mappings put each user in their own organization so they only see their projects.',
+          'Signed in: the proxy asserts your username and Forgejo auto-registers the reverse-proxy identity; each user gets a best-effort personal organization `u-<username>`.',
+          'Signed out with `AUTH_REQUIRED=1`: forge GETs redirect to `/login?next=…`; other verbs (including git push) answer `401 auth_required`.',
+          'Auth off: the proxy falls back to `FORGEJO_ADMIN_USER` — the old single-user behaviour for local development.',
+          'OIDC group→organization mapping (`FORGEJO_OIDC_GROUP_MAP`) is a documented config contract for a later IdP phase, not built yet.',
           'SSH and websockets are out of scope; git-over-HTTP through the console proxy works.',
         ],
       },
@@ -795,27 +881,37 @@ export const HELP_ENTRIES: HelpEntry[] = [
     slug: 'users',
     title: 'Users',
     section: 'menu',
-    status: 'Stub — Phase 6b (not built yet)',
+    status: 'Shipped — change `add-console-auth`',
     summary:
-      'Today there is a single implicit local user. Team membership, roles and per-gate approver lists are a Phase 6b stub.',
+      'Admins list accounts, create users, change roles and disable/enable accounts; members see only the work they created.',
     pageHref: '/users',
     blocks: [
       {
         kind: 'prose',
         text:
-          'This page names what is missing rather than pretending to have it: there is no auth, no orgs, no per-user inbox and no role model yet. Gate approvals are attributed to the actor string you supply, and the audit trail records that string.',
+          'The page is admin-only. It lists each account’s email, username, name, role, active/disabled status and personal forge organization (`u-<username>`, created best-effort on first sign-in). A member who opens `/users` sees an “Admin only” message instead of the table.',
+      },
+      {
+        kind: 'list',
+        items: [
+          'Create: email, username, optional name, role and a password of at least 8 characters. The account can sign in immediately.',
+          'Change role: `admin` manages users and sees all work; `member` sees only work items and runs they created.',
+          'Disable/enable: a disabled account cannot sign in; its sessions are refused by the API.',
+          'Every mutation goes through the console’s same-origin `/api/v1` proxy with the session cookie.',
+        ],
       },
       {
         kind: 'callout',
-        tone: 'info',
-        title: 'Phase 6b',
+        tone: 'warning',
+        title: 'Compose credentials are local development only',
         text:
-          'Planned: team membership, per-gate approver lists, roles, and an audit of who approved what. Auth, orgs and quotas are out of scope for the shipped phases.',
+          'Compose bootstraps `FACTORY_ADMIN_EMAIL` / `FACTORY_ADMIN_PASSWORD` (defaults `admin@factory.local` / `factory-admin`). They are checked into git for the demo; override both and set `AUTH_COOKIE_SECURE=1` before exposing the console. With `AUTH_REQUIRED=0` the console and API run as the implicit local user and this page is reachable without a session.',
       },
     ],
     related: [
+      { label: 'Signing in', href: '/help/concepts/signing-in' },
+      { label: 'Roles and scope', href: '/help/concepts/roles-and-scope' },
       { label: 'Gates and autonomy', href: '/help/concepts/gates-and-autonomy' },
-      { label: 'Inbox', href: '/help/inbox' },
     ],
   },
   {
@@ -842,7 +938,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'prose',
         text:
-          'The raw document is a standard OpenAPI 3.1 file: point Swagger UI at it, or import it in Postman (Import → Link) to get a request collection. The live explorer at the top of this page is Swagger UI itself, loaded from that document: open an operation, press “Try it out”, edit the parameters and execute it — the status and response body come back inline. Requests go to this console’s origin (`/api/v1/…`) and are proxied server-side to the API, so the browser never talks to the API host and CORS never applies. Authentication is not modelled yet — the API runs as a single implicit local user (Phase 6b adds auth), so no security scheme is declared and try-it-out needs no credentials.',
+          'The raw document is a standard OpenAPI 3.1 file: point Swagger UI at it, or import it in Postman (Import → Link) to get a request collection. The live explorer at the top of this page is Swagger UI itself, loaded from that document: open an operation, press “Try it out”, edit the parameters and execute it — the status and response body come back inline. Requests go to this console’s origin (`/api/v1/…`) and are proxied server-side to the API, so the browser never talks to the API host and CORS never applies. Console auth adds a session cookie: with `AUTH_REQUIRED=1`, sign in first and the same-origin proxy forwards `factory_session`; `/auth/login`, `/health` and the OpenAPI document stay public.',
       },
       {
         kind: 'list',
@@ -898,9 +994,9 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'callout',
         tone: 'info',
-        title: 'The local forge is single-user',
+        title: 'The local forge follows your session',
         text:
-          'Pull request links point at the local Forgejo instance, proxied by the console under /extras/forgejo/. The proxy asserts the seeded admin identity with a trusted header, so opening a PR never asks for a password — but anyone who can reach the console is that admin, and the forge has no published host port. Multi-user isolation is the documented path, not built yet: Phase 6 console auth makes the proxy assert the signed-in user instead of the admin, and Forgejo OIDC group mappings place each user in their own organization/team. Keycloak is optional — any OIDC provider fits.',
+          'Pull request links point at the local Forgejo instance, proxied by the console under /extras/forgejo/. The proxy resolves the session and asserts the signed-in username with a trusted header, so opening a PR never asks for a second password. Signed out with auth required, forge pages redirect to `/login`; with auth off the proxy falls back to the seeded admin. Multi-user isolation beyond the personal `u-<username>` organization is the documented OIDC path, not built yet.',
       },
       {
         kind: 'callout',

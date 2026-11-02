@@ -15,7 +15,7 @@ const FACTORY_LEVEL = [
   'nav-settings',
 ];
 
-const STUBS = new Set(['nav-users']);
+const STUBS = new Set<string>();
 
 /** Factory pages ship in Phase 2b; each must render real data, not a stub. */
 const FACTORY_PAGE_MARKERS: Record<string, string[]> = {
@@ -35,6 +35,7 @@ const FACTORY_PAGE_MARKERS: Record<string, string[]> = {
 const TOP_LEVEL_MARKERS: Record<string, string[]> = {
   'nav-secrets': ['secrets-registry', 'secrets-unavailable'],
   'nav-mcps': ['mcp-registry', 'mcp-unavailable'],
+  'nav-users': ['users-admin', 'users-forbidden', 'users-unavailable'],
 };
 
 /** Every nav item renders; stubs name their phase; no console errors anywhere. */

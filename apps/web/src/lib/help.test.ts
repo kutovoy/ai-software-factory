@@ -85,10 +85,12 @@ describe('help registry', () => {
     }
   });
 
-  test('the Users page is described as a stub, not as shipped', () => {
+  test('the Users page describes shipped console auth, not a stub', () => {
     const users = getHelpEntry('users');
-    expect(users?.status.toLowerCase()).toContain('stub');
-    expect(users?.summary.toLowerCase()).toContain('phase 6');
+    expect(users?.status.toLowerCase()).toContain('shipped');
+    expect(users?.summary.toLowerCase()).toContain('admin');
+    expect(getHelpEntry('concepts/signing-in')?.section).toBe('concepts');
+    expect(getHelpEntry('concepts/roles-and-scope')?.section).toBe('concepts');
   });
 
   test('the quick start carries the three diagrams and a success checklist', () => {

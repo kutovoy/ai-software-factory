@@ -1,4 +1,4 @@
-import { apiUrl } from '@/lib/api';
+import { apiUrl, sessionCookieHeader } from '@/lib/api';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -9,12 +9,17 @@ export async function POST(
 ): Promise<Response> {
   const { id } = await context.params;
   const body = await request.text();
+  const cookie = await sessionCookieHeader();
 
   let upstream: Response;
   try {
     upstream = await fetch(apiUrl(`/runs/${encodeURIComponent(id)}/cancel`), {
       method: 'POST',
-      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        ...(cookie ? { cookie } : {}),
+      },
       body: body.length > 0 ? body : JSON.stringify({ reason: 'cancelled from console' }),
       cache: 'no-store',
     });

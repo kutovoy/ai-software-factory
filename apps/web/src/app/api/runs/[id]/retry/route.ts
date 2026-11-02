@@ -1,4 +1,4 @@
-import { apiUrl } from '@/lib/api';
+import { apiUrl, sessionCookieHeader } from '@/lib/api';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -12,12 +12,13 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const { id } = await context.params;
+  const cookie = await sessionCookieHeader();
 
   let upstream: Response;
   try {
     upstream = await fetch(apiUrl(`/runs/${encodeURIComponent(id)}/retry`), {
       method: 'POST',
-      headers: { accept: 'application/json' },
+      headers: { accept: 'application/json', ...(cookie ? { cookie } : {}) },
       cache: 'no-store',
     });
   } catch (error) {

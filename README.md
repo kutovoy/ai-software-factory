@@ -117,6 +117,11 @@ Start the stack:
 docker compose up -d --build
 ```
 
+The console redirects to `/login`. Compose bootstraps the admin from `FACTORY_ADMIN_EMAIL` /
+`FACTORY_ADMIN_PASSWORD` (defaults `admin@factory.local` / `factory-admin`). These are **local development
+credentials**, checked into git for the demo — override both and set `AUTH_COOKIE_SECURE=1` before exposing
+the console. Set `AUTH_REQUIRED=0` to run as the implicit local user.
+
 | Service | URL |
 |---|---|
 | Console | http://localhost:3000 |
@@ -140,10 +145,14 @@ bash scripts/forgejo-bootstrap.sh
 It provisions the admin, an API token (written to `.env` only), and the `acme/hello-nextjs` repository, then
 restarts the API and worker.
 
-Create your first work item from **Work items → New work item**, or via the API:
+Create your first work item from **Work items → New work item**, or via the API (sign in once and keep the
+session cookie when `AUTH_REQUIRED=1`):
 
 ```bash
-curl -X POST localhost:8080/api/v1/work-items \
+curl -sS -c /tmp/factory-cookies.txt -X POST localhost:8080/api/v1/auth/login \
+  -H 'content-type: application/json' \
+  -d '{"email":"admin@factory.local","password":"factory-admin"}'
+curl -sS -b /tmp/factory-cookies.txt -X POST localhost:8080/api/v1/work-items \
   -H 'content-type: application/json' \
   -d '{"factory":"hello-nextjs","type":"task","title":"Hello world","prompt":"Create a minimal Next.js hello-world site in site/"}'
 ```
@@ -186,9 +195,10 @@ original creator (see [NOTICE](NOTICE)) — a link back or a mention in your REA
 
 ## Security
 
-Please report vulnerabilities privately (see [SECURITY.md](SECURITY.md)). The default stack is a local,
-single-user setup: the console and the local forge have no authentication yet, so do not expose their ports
-publicly until Phase 6 auth lands.
+Please report vulnerabilities privately (see [SECURITY.md](SECURITY.md)). Compose enables console auth
+(`AUTH_REQUIRED=1`) with a checked-in local-development bootstrap admin; override `FACTORY_ADMIN_EMAIL` /
+`FACTORY_ADMIN_PASSWORD`, set `AUTH_COOKIE_SECURE=1` behind HTTPS, and do not expose the default ports
+publicly with the demo credentials.
 
 ## Contributing
 

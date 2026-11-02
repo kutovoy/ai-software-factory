@@ -37,7 +37,7 @@ test.describe('Integrations, merge queue and automations', () => {
     await page.goto(`/factories/${FACTORY}/settings`);
     const card = page.getByTestId('settings-local-forge');
     await expect(card).toBeVisible();
-    await expect(page.getByTestId('settings-forgejo-mode')).toContainText('single-user');
+    await expect(page.getByTestId('settings-forgejo-mode')).toContainText('console identity');
     // The multi-user path is stated, not implied (spec `forge` › Mode is stated).
     await expect(card).toContainText('OIDC');
     await expect(page.getByTestId('settings-open-forgejo')).toHaveAttribute('href', '/extras/forgejo/');

@@ -155,14 +155,15 @@ test('the API nav opens the reference generated from the served document', async
 
   // Tag metadata: every group carries a description, so the explorer renders context.
   const tags = document.tags ?? [];
-  expect(tags.length).toBe(18);
+  expect(tags.length).toBe(20);
   expect(tags.filter((tag) => (tag.description ?? '').trim().length === 0)).toEqual([]);
 
-  // The document explains versioning, both base URLs and the missing authentication.
+  // The document explains versioning, both base URLs and console auth.
   const description = document.info?.description ?? '';
   expect(description).toContain('http://localhost:8080');
   expect(description).toContain('servers=console');
-  expect(description).toContain('no authentication');
+  expect(description).toContain('factory_session');
+  expect(description).toContain('AUTH_REQUIRED');
 });
 
 /**
@@ -175,18 +176,18 @@ test('the API help page renders a live explorer that executes through the proxy'
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('/help/api');
 
-  // The banner is explicit about blast radius: real actions, no auth on the local API.
+  // The banner is explicit about blast radius: real actions, carried by the session cookie.
   const banner = page.getByTestId('api-explorer-banner');
   await expect(banner).toBeVisible();
   await expect(banner).toContainText('Actions run against this stack');
-  await expect(banner).toContainText('no authentication');
+  await expect(banner).toContainText('factory_session');
 
-  // The toolbar replaces Swagger UI's Standalone topbar: version, base URL, no auth.
+  // The toolbar replaces Swagger UI's Standalone topbar: version, base URL, auth note.
   const toolbar = page.getByTestId('api-explorer-toolbar');
   await expect(toolbar).toBeVisible();
   await expect(page.getByTestId('api-explorer-version')).toContainText('v1.0.0');
   await expect(page.getByTestId('api-explorer-base-url')).toContainText('/api/v1');
-  await expect(page.getByTestId('api-explorer-no-auth')).toContainText('No authentication');
+  await expect(page.getByTestId('api-explorer-no-auth')).toContainText('Session cookie forwarded');
 
   // Full width: the page is no longer clamped to a 4xl column (1280px viewport, 256px sidebar).
   await expect(page.getByTestId('help-page')).toHaveAttribute('data-width', 'full');

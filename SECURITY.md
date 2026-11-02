@@ -30,6 +30,10 @@ commit or tag if you need stability.
 
 ## Deployment note
 
-The default compose stack is a **local, single-user** setup: the console and the
-local forge have no authentication yet (Phase 6). Do not expose ports 3000/8080
-to an untrusted network until console auth lands.
+The default compose stack enables console auth (`AUTH_REQUIRED=1`) but ships a **local
+development** bootstrap admin: `FACTORY_ADMIN_EMAIL=admin@factory.local` /
+`FACTORY_ADMIN_PASSWORD=factory-admin`, checked into git for the demo. These are not
+secrets and must never be reused on a reachable host. Override both from the environment,
+set `AUTH_COOKIE_SECURE=1` when the console is served over HTTPS, and keep ports 3000/8080
+off untrusted networks. Set `AUTH_REQUIRED=0` only for local development where the console
+and API intentionally run as the implicit local user.
