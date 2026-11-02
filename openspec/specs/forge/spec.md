@@ -1,7 +1,9 @@
 # forge Specification
 
 ## Purpose
-TBD - created by archiving change add-forgejo. Update Purpose after archive.
+A local Forgejo forge for factory pull requests: served under the console origin through an
+identity-asserting proxy, reachable over SSH, and optionally served through a websocket-capable
+Caddy proxy.
 
 ## Requirements
 

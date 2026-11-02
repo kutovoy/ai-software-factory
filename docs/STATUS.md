@@ -69,8 +69,8 @@ What is left:
 2. **Live GitHub path** — implemented and contract-tested, not exercised against a real repository (needs a PAT).
 3. **Replay integration** — the replay adapter and trial plan are unit-tested; a Temporal benchmark trial that
    replays a recording end to end is still pending.
-4. **Forge proxy mode** — SSH ships on the default stack; the Caddy websocket mode is config-validated but has not
-   been brought up live.
+4. **Forge proxy mode** — SSH ships on the default stack; the Caddy mode is live-validated for session auth and
+   HTTP reverse-proxying (on a test port), but a websocket upgrade has not been exercised end to end.
 5. **Benchmark replay scope** — replays our canonical events + patch, not arbitrary harness tool-response traces.
 
 ### Forge transport + public polish (polish-forge-and-public, 2026-11-01)

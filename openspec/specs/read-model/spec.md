@@ -1,7 +1,8 @@
 # read-model Specification
 
 ## Purpose
-TBD - created by archiving change harden-runtime. Update Purpose after archive.
+A Postgres read model derived from the canonical event log: projections can be rebuilt at any
+time, and the append-only log remains the audit trail.
 
 ## Requirements
 

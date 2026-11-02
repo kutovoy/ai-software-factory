@@ -89,7 +89,8 @@ lets you validate wiring without touching a repo. GitHub delivers to
 1. **Phase 6c**: external OIDC/IdP group→org mappings, remote runners, Temporal Cloud, per-tenant isolation.
 2. **Live GitHub path**: implemented and contract-tested, not exercised against a real repo.
 3. **Replay integration**: adapter + plan are unit-tested; a live Temporal replay trial is pending.
-4. **Forge proxy mode**: SSH ships by default; the Caddy websocket overlay is config-validated only.
+4. **Forge proxy mode**: SSH ships by default; the Caddy overlay is live-validated for session auth and HTTP,
+   but a websocket upgrade has not been exercised end to end.
 5. **Promotion** merges the definition repo but does not rewrite the local checkout; `runs/canary/` GC is manual.
 
 ## Version tags
@@ -152,8 +153,9 @@ Then open http://localhost:3000, pick a factory, and create a work item. `hello-
 2. **Live GitHub path**: implemented and contract-tested, never exercised against a real repository (needs a PAT).
 3. **Replay integration**: the replay adapter and trial plan are unit-tested; a Temporal benchmark trial that
    replays a recording end to end is still pending.
-4. **Forge proxy mode**: SSH ships by default; the Caddy websocket overlay is config-validated, not yet brought up
-   live. The default single-origin setup proxies HTTP through the console.
+4. **Forge proxy mode**: SSH ships by default; the Caddy overlay is live-validated for session auth and HTTP, but
+   a websocket upgrade has not been exercised end to end. The default single-origin setup proxies HTTP through the
+   console.
 5. **Replay scope**: a replay is a recording of *our* canonical events + patch, not an arbitrary harness
    tool-response trace.
 6. **Promotion** merges the definition repo but does not rewrite the local checkout; `runs/canary/` GC is manual.
