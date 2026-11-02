@@ -111,8 +111,9 @@ lets you validate wiring without touching a repo. GitHub delivers to
   request changes/reject without a human, and `agentVerdict: required` makes a missing verdict a request-changes.
   Verdicts are stored on `gate_decisions` and shown in the inbox.
 - **Console auth**: users/sessions (migration 016), argon2id, hashed opaque tokens, HttpOnly `factory_session`,
-  `AUTH_REQUIRED=1` in compose, bootstrap admin, `/login`, real Users page, admin/member roles, per-user
-  work-item/run scope. The Forgejo proxy asserts the signed-in username; each user gets org `u-<username>`.
+  `AUTH_REQUIRED=1` in compose, bootstrap admin, `/login`, real Users page (create, role, disable, delete with
+  self/last-admin guards), admin/member roles, per-user work-item/run scope. The Forgejo proxy asserts the
+  signed-in username; each user gets org `u-<username>`.
 - **Runner hardening**: Linux `bwrap` sandbox (ro-root, rw workspace, optional network unshare), explicit
   `runner.sandbox_unavailable` when missing; recorded replay for benchmark trials (`replayFrom: run_…`); hydration
   mismatch fixed via `TimeAgo`.

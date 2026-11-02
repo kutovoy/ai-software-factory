@@ -35,7 +35,13 @@ interface ApiErrorBody {
   message?: string;
 }
 
-export function UsersAdmin({ initialUsers }: { initialUsers: UserWire[] }) {
+export function UsersAdmin({
+  initialUsers,
+  currentUserId,
+}: {
+  initialUsers: UserWire[];
+  currentUserId: string | null;
+}) {
   const router = useRouter();
   const [users, setUsers] = useState<UserWire[]>(initialUsers);
   const [form, setForm] = useState<CreateForm>(EMPTY_FORM);
@@ -129,6 +135,40 @@ export function UsersAdmin({ initialUsers }: { initialUsers: UserWire[] }) {
     }
   };
 
+  const remove = async (user: UserWire): Promise<void> => {
+    if (user.id === currentUserId) {
+      setError('You cannot delete the account you are signed in as.');
+      return;
+    }
+    if (!window.confirm(`Delete ${user.email}? Their sessions are revoked and their work becomes admin-only.`)) {
+      return;
+    }
+
+    setError(null);
+    setNotice(null);
+    setPending(user.id);
+    try {
+      const response = await fetch(`/api/v1/users/${encodeURIComponent(user.id)}`, {
+        method: 'DELETE',
+      });
+      const body = (await response.json().catch(() => ({}))) as ApiErrorBody & {
+        deleted?: boolean;
+      };
+      if (!response.ok || !body.deleted) {
+        throw new Error(
+          `${body.code ? `${body.code}: ` : ''}${body.message ?? `delete failed (${response.status})`}`,
+        );
+      }
+      setUsers((current) => current.filter((candidate) => candidate.id !== user.id));
+      setNotice(`Deleted ${user.email}.`);
+      router.refresh();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : String(deleteError));
+    } finally {
+      setPending(null);
+    }
+  };
+
   const columns: Column<UserWire>[] = [
     {
       header: 'Email',
@@ -196,6 +236,25 @@ export function UsersAdmin({ initialUsers }: { initialUsers: UserWire[] }) {
         <code data-testid="user-forge-org" className="text-xs text-slate-600">
           {user.forgeOrg ?? '—'}
         </code>
+      ),
+    },
+    {
+      header: 'Actions',
+      cell: (user) => (
+        <button
+          type="button"
+          data-testid="user-delete"
+          disabled={pending === user.id || user.id === currentUserId}
+          title={
+            user.id === currentUserId
+              ? 'You cannot delete the account you are signed in as'
+              : `Delete ${user.email}`
+          }
+          onClick={() => void remove(user)}
+          className="rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Delete
+        </button>
       ),
     },
   ];

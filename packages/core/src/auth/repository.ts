@@ -343,6 +343,25 @@ export async function updateUser(
   return rows[0] ? publicUser(mapUser(rows[0])) : null;
 }
 
+/** Active admins, optionally excluding one account (the delete guard). */
+export async function countActiveAdmins(
+  sql: SQL,
+  excludeId: string | null = null,
+): Promise<number> {
+  const rows = (await sql`
+    select count(*)::int as count from users
+    where role = 'admin' and disabled = false
+      and (${excludeId}::uuid is null or id <> ${excludeId}::uuid)
+  `) as { count: number }[];
+  return Number(rows[0]?.count ?? 0);
+}
+
+/** Hard-deletes an account; sessions cascade and ownership columns become null. */
+export async function deleteUser(sql: SQL, id: string): Promise<boolean> {
+  const rows = (await sql`delete from users where id = ${id} returning id`) as { id: string }[];
+  return rows.length > 0;
+}
+
 /** Records the personal forge org provisioned on first login (best effort). */
 export async function setForgeOrg(sql: SQL, userId: string, forgeOrg: string): Promise<void> {
   await sql`

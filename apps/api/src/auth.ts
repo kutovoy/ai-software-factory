@@ -7,11 +7,14 @@ import {
   USERNAME_RE,
   USER_ROLES,
   AuthRepositoryError,
+  countActiveAdmins,
   countUsers,
   createSession,
   createUser,
+  deleteUser,
   findSessionUser,
   findUserByEmail,
+  findUserById,
   isUniqueViolation,
   listUsers,
   publicUser,
@@ -387,6 +390,32 @@ export function registerAuth(api: Hono<{ Variables: AuthVariables }>, config: Ap
     }
   });
 
+  api.delete('/users/:id', async (c) => {
+    requireAdmin(config, c.get('user'));
+    const id = c.req.param('id');
+    if (!USER_ID_RE.test(id)) throw new ApiError('invalid_user', 400, 'invalid user id', { id });
+
+    const me = c.get('user');
+    if (me && me.id === id) {
+      throw new ApiError('invalid_user', 400, 'cannot delete your own account', { id });
+    }
+
+    const sql = getSql();
+    const target = await findUserById(sql, id);
+    if (!target) throw new ApiError('invalid_user', 404, `user "${id}" does not exist`, { id });
+
+    // Deleting the last active admin would lock the deployment out.
+    if (target.role === 'admin' && !target.disabled) {
+      const remaining = await countActiveAdmins(sql, id);
+      if (remaining === 0) {
+        throw new ApiError('invalid_user', 400, 'cannot delete the last active admin', { id });
+      }
+    }
+
+    await deleteUser(sql, id);
+    log('info', 'user_deleted', { userId: id, username: target.username });
+    return c.json({ deleted: true, id });
+  });
 }
 
 /* ------------------------------------------------------------ scope helpers */

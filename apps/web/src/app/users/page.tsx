@@ -1,7 +1,7 @@
 import { UsersAdmin } from '@/components/users/UsersAdmin';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { getOrError } from '@/lib/api';
+import { getOrError, safeGet } from '@/lib/api';
 import { authRequired } from '@/lib/auth';
 import type { UserWire } from '@/lib/types';
 
@@ -14,6 +14,7 @@ export const dynamic = 'force-dynamic';
  */
 export default async function UsersPage() {
   const result = await getOrError<{ users: UserWire[] }>('/users');
+  const me = await safeGet<{ user: UserWire | null }>('/auth/me', { user: null });
   const forbidden = result.error?.status === 403 || result.error?.status === 401;
 
   return (
@@ -48,7 +49,10 @@ export default async function UsersPage() {
           </CardBody>
         </Card>
       ) : (
-        <UsersAdmin initialUsers={result.data?.users ?? []} />
+        <UsersAdmin
+          initialUsers={result.data?.users ?? []}
+          currentUserId={me.user?.id ?? null}
+        />
       )}
     </div>
   );

@@ -884,7 +884,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     section: 'menu',
     status: 'Shipped — change `add-console-auth`',
     summary:
-      'Admins list accounts, create users, change roles and disable/enable accounts; members see only the work they created.',
+      'Admins list accounts, create users, change roles, disable/enable and delete accounts; members see only the work they created.',
     pageHref: '/users',
     blocks: [
       {
@@ -898,6 +898,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
           'Create: email, username, optional name, role and a password of at least 8 characters. The account can sign in immediately.',
           'Change role: `admin` manages users and sees all work; `member` sees only work items and runs they created.',
           'Disable/enable: a disabled account cannot sign in; its sessions are refused by the API.',
+          'Delete: removes the account and cascades its sessions; work it created becomes admin-only. You cannot delete the account you are signed in as, and the last active admin cannot be deleted.',
           'Every mutation goes through the console’s same-origin `/api/v1` proxy with the session cookie.',
         ],
       },

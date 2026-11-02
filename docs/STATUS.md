@@ -53,9 +53,10 @@ passes; Playwright 55; UI audit 33 routes clean without the hydration tolerance.
   (`VERDICT: FAIL`), the factory-level `agentVerdict: advisory | required` decides what a missing verdict means,
   and `gate_decisions.verdict` stores the decision + source for audit. `hello-nextjs` is `required`.
 - **Console auth:** `users` + `sessions` (migration 016), argon2id hashes, opaque session tokens hashed at rest,
-  `AUTH_REQUIRED=1` in compose, bootstrap admin from env, `/login`, real Users page, admin/member roles,
-  per-user work-item/run scope, and cookie forwarding through the console proxy. The Forgejo proxy asserts the
-  signed-in username; each user gets a best-effort personal org `u-<username>`.
+  `AUTH_REQUIRED=1` in compose, bootstrap admin from env, `/login`, real Users page (create, role, disable and
+  delete with self/last-admin guards), admin/member roles, per-user work-item/run scope, and cookie forwarding
+  through the console proxy. The Forgejo proxy asserts the signed-in username; each user gets a best-effort
+  personal org `u-<username>`.
 - **Runner hardening:** bubblewrap (`bwrap`) sandbox for Linux with read-only root, writable workspace and
   optional network unshare; a requested-but-missing sandbox fails with `runner.sandbox_unavailable`. Recorded
   replay (`replayFrom: run_…`) re-emits a run's events and applies its patch for model-free benchmark trials.

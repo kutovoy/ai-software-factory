@@ -275,6 +275,13 @@ suite('console auth API', () => {
     );
     expect(create.status).toBe(403);
     expect(((await create.json()) as { code: string }).code).toBe('forbidden');
+
+    const remove = await req(app, `/users/${admin.id}`, {
+      method: 'DELETE',
+      headers: { cookie: cookie as string },
+    });
+    expect(remove.status).toBe(403);
+    expect(((await remove.json()) as { code: string }).code).toBe('forbidden');
   });
 
   test('an admin lists, creates and updates users', async () => {
@@ -359,6 +366,24 @@ suite('console auth API', () => {
     );
     expect(unknown.status).toBe(404);
     expect(((await unknown.json()) as { code: string }).code).toBe('invalid_user');
+
+    // Deleting removes the account and its sessions; the login stops working.
+    const deleted = await req(app, `/users/${newUser.id}`, {
+      method: 'DELETE',
+      headers: { cookie: cookie as string },
+    });
+    expect(deleted.status).toBe(200);
+    expect(((await deleted.json()) as { deleted: boolean }).deleted).toBe(true);
+    const gone = await login(`${PREFIX}-new@factory.local`, 'new-member-pass');
+    expect(gone.response.status).toBe(401);
+
+    // Self-deletion is refused.
+    const self = await req(app, `/users/${admin.id}`, {
+      method: 'DELETE',
+      headers: { cookie: cookie as string },
+    });
+    expect(self.status).toBe(400);
+    expect(((await self.json()) as { code: string }).code).toBe('invalid_user');
   });
 
   test('members only see their own work items; admins see all', async () => {

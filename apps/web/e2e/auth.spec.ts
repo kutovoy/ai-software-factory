@@ -47,7 +47,7 @@ test.describe('signed out', () => {
     await page.getByTestId('login-password').fill(ADMIN_PASSWORD);
     await page.getByTestId('login-submit').click();
 
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/(chat)?$/);
     await expect(page.getByTestId('nav-user-email')).toHaveText(ADMIN_EMAIL);
     await expect(page.getByTestId('nav-signout')).toBeVisible();
     await page.getByTestId('nav-signout').click();
@@ -97,5 +97,10 @@ test.describe('signed in as admin', () => {
 
     await row.getByTestId('user-toggle-disabled').click();
     await expect(row.getByTestId('user-status')).toHaveText('active');
+
+    page.once('dialog', (dialog) => void dialog.accept());
+    await row.getByTestId('user-delete').click();
+    await expect(page.getByTestId('users-notice')).toContainText(`Deleted ${email}`);
+    await expect(page.getByTestId('user-row').filter({ hasText: email })).toHaveCount(0);
   });
 });
