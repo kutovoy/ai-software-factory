@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/kutovoy/ai-software-factory/blob/main/SECURITY.md
+    about: Report vulnerabilities privately — please do not open a public issue.
+  - name: Usage questions and design discussion
+    url: https://github.com/kutovoy/ai-software-factory/blob/main/docs/HANDOVER.md
+    about: Start with the handover and help centre; open an issue if the answer is missing.
+  - name: Contributing guide
+    url: https://github.com/kutovoy/ai-software-factory/blob/main/CONTRIBUTING.md
+    about: How changes, specs and tests fit together.

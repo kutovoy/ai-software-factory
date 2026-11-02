@@ -9,8 +9,13 @@ stubs are real pages: a name-only secret registry with presence checks and a usa
 registry with per-agent tool permissions and a runner-side connection test. Values never enter the
 database, events, logs, API responses or definitions.
 
-Next: **Phase 6b** (auth/users, multi-tenant/ops, a managed secret provider behind the same
-registry), then hardening the agent-gate verdict channel.
+**Phase 6b — console auth/users + forge identity: complete** (2026-11-01). Real accounts and
+sessions (argon2id hashes, opaque hashed tokens, HttpOnly cookie), an admin bootstrap, a real
+Users page, admin/member roles, per-user work-item/run scope, and a forge proxy that asserts the
+signed-in username. Compose runs with `AUTH_REQUIRED=1` and a documented local-development admin.
+
+Next: **Phase 6c** — external OIDC/IdP (group→org mappings), remote runners, Temporal Cloud and
+multi-tenant isolation. Also pending: a live replay-trial integration test and the live GitHub path.
 
 ### Readiness and public-release prep (2026-11-01)
 
@@ -38,16 +43,71 @@ Fixes that the test forced (all committed):
 
 Latest tags: `harden-runtime`, `secrets-mcp`, `api-v1-help`, `help-center`, `live-api-explorer`,
 `api-explorer-parity`, `fix-ui-audit`, `fix-run-failures`, `run-actions`, `readiness-hello-nextjs`, `console-ops`,
-`forgejo`. `bun run ci` 516 pass; smoke passes; Playwright 50; UI audit 36 routes clean.
+`forgejo`, `agent-verdicts`, `console-auth`, `harden-runners`, `forge-ssh-public`. `bun run ci` 569 pass; smoke
+passes; Playwright 55; UI audit 33 routes clean without the hydration tolerance.
+
+### Agent verdicts, auth and runner hardening (2026-11-01)
+
+- **Agent verdicts:** agent-gated stages are prompted to end with a fenced JSON verdict
+  (`approve | request_changes | reject`); the parser accepts structured and explicit textual signals
+  (`VERDICT: FAIL`), the factory-level `agentVerdict: advisory | required` decides what a missing verdict means,
+  and `gate_decisions.verdict` stores the decision + source for audit. `hello-nextjs` is `required`.
+- **Console auth:** `users` + `sessions` (migration 016), argon2id hashes, opaque session tokens hashed at rest,
+  `AUTH_REQUIRED=1` in compose, bootstrap admin from env, `/login`, real Users page, admin/member roles,
+  per-user work-item/run scope, and cookie forwarding through the console proxy. The Forgejo proxy asserts the
+  signed-in username; each user gets a best-effort personal org `u-<username>`.
+- **Runner hardening:** bubblewrap (`bwrap`) sandbox for Linux with read-only root, writable workspace and
+  optional network unshare; a requested-but-missing sandbox fails with `runner.sandbox_unavailable`. Recorded
+  replay (`replayFrom: run_…`) re-emits a run's events and applies its patch for model-free benchmark trials.
+  Hydration mismatches are gone: `TimeAgo` renders a deterministic value first, and the UI audit no longer
+  tolerates React #418.
 
 What is left:
 
-1. **Phase 6b** — console auth/users/roles; the forge proxy then asserts the real user and OIDC group mappings
-   give per-user organizations (Keycloak optional).
-2. **Agent-gate verdict channel** — gates currently approve whenever a stage run ends `ok`; a textual FAIL is
-   advisory. A structured verdict must be able to reject/request-changes without a human.
-3. **Remote runners + Temporal Cloud** for team/cloud; local runner has an opt-in macOS sandbox only.
-4. **SSH/websockets** for the forge; a dedicated reverse proxy if pushes outgrow the console proxy.
+1. **Phase 6c** — external OIDC/IdP and group→org mappings (Keycloak/Authentik/Zitadel), remote runners,
+   Temporal Cloud, multi-tenant credential isolation.
+2. **Live GitHub path** — implemented and contract-tested, not exercised against a real repository (needs a PAT).
+3. **Replay integration** — the replay adapter and trial plan are unit-tested; a Temporal benchmark trial that
+   replays a recording end to end is still pending.
+4. **Forge proxy mode** — SSH ships on the default stack; the Caddy websocket mode is config-validated but has not
+   been brought up live.
+5. **Benchmark replay scope** — replays our canonical events + patch, not arbitrary harness tool-response traces.
+
+### Forge transport + public polish (polish-forge-and-public, 2026-11-01)
+
+The forge was HTTP-only behind the console proxy: no `git push` over SSH, no websocket
+upgrades, and the public repo had no issue/PR templates or a screenshot. All three are fixed
+without changing the default single-origin setup (ADR-034).
+
+- **SSH (default stack).** `forgejo` publishes `2222:22`; `DISABLE_SSH=false`,
+  `START_SSH_SERVER=true`, `SSH_PORT=2222`, `SSH_LISTEN_PORT=22`, `SSH_DOMAIN=localhost`, so
+  clone URLs are `ssh://git@localhost:2222/<org>/<repo>.git` and host keys persist under
+  `/data/gitea/ssh` in `forgejo-data`. The image's OpenSSH s6 service also binds `:22`, so it is
+  masked with `tmpfs: /etc/s6/openssh` — otherwise the container exits with
+  `bind: address already in use`. No key is seeded; add one in Forgejo → Settings → SSH keys.
+- **Optional websocket mode.** `compose.proxy.yaml` + `Caddyfile` add Caddy on `:3001`, set the
+  forge `ROOT_URL=http://localhost:3001/` with an empty `STATIC_URL_PREFIX`, and reverse-proxy
+  everything (upgrades included). Identity stays asserted: `GET /api/v1/auth/forge-identity`
+  answers `200` + `X-WebAuth-User` for a session (`401` otherwise; the auth-off fallback is
+  `FORGEJO_ADMIN_USER`), and Caddy's `forward_auth` copies the header onto the proxied request.
+  The console stays on `:3000`; `docker compose up -d` alone is unchanged.
+- **Bootstrap.** `scripts/forgejo-bootstrap.sh` signs in once as the bootstrap admin before
+  talking to the forge (the console proxy redirects every request without a session, token or
+  not), and prints both HTTP and SSH clone URLs.
+- **Public repo.** `.github/ISSUE_TEMPLATE/{bug_report,feature_request,config}.yml` and
+  `.github/PULL_REQUEST_TEMPLATE.md`; a real console screenshot at `docs/assets/console.png`
+  embedded in `README.md`; a CI badge for `kutovoy/ai-software-factory` next to the
+  license/stack badges. Creator/attribution section untouched.
+- **Docs/help.** README (SSH clone, proxy mode, services table), `docs/HANDOVER.md` (transport
+  commands, known gaps) and the `forgejo` help entry now describe SSH and the proxy mode.
+
+Verification: `bun run ci` → pass; `openspec validate polish-forge-and-public` → valid;
+`docker compose config` and `docker compose -f compose.yaml -f compose.proxy.yaml config` →
+valid; `caddy validate` on the Caddyfile → valid; `ssh -p 2222 git@localhost` → reaches the
+built-in server (`SSH-2.0-Go`), `Permission denied (publickey)` without a key as expected;
+`GET /api/v1/auth/forge-identity` → `200` + `X-WebAuth-User: admin` with a session and `401`
+without; `bash scripts/smoke.sh` → `SMOKE PASSED`; the screenshot is a real dashboard at
+1440×900 with data (25 runs, 4 done work items).
 
 ### Local forge: Forgejo served by the console (add-forgejo, 2026-11-01)
 
@@ -90,8 +150,9 @@ the console origin (ADR-032).
   (enabled + not dry-run + a secret that resolves ⇒ real forge), so smoke and CI stay on the
   fake backend and credential-free.
 - **Git over HTTP** works through the console:
-  `git clone http://localhost:3000/extras/forgejo/acme/hello-nextjs.git`. SSH and websockets
-  are out of scope in v1.
+  `git clone http://localhost:3000/extras/forgejo/acme/hello-nextjs.git`. SSH (published on
+  `localhost:2222`) and an opt-in websocket proxy (`compose.proxy.yaml`) were added later —
+  see "Forge transport" below.
 
 Verification (2026-11-01): `docker compose up -d --build` → forgejo healthy;
 `GET /extras/forgejo/` → 200 (auto-login as `factory`, assets and redirects on the console
@@ -108,9 +169,9 @@ resolving through the console); `bunx playwright test` → 50 passed; `UI_AUDIT=
 playwright test audit-deep.spec.ts` → 36 routes, 0 problems; `openspec validate add-forgejo`
 → valid. The token appears in no run directory, event or container log (checked by grep).
 
-Deferred: SSH and websockets through the proxy; multi-user identity (Phase 6 + OIDC group
-mappings); a dedicated proxy if pushes ever outgrow the Next handler; Forgejo Actions/CI
-(checks are commit statuses, and an empty status set is green).
+Deferred: multi-user identity (Phase 6 + OIDC group mappings); a dedicated proxy if pushes
+ever outgrow the console handler; Forgejo Actions/CI (checks are commit statuses, and an empty
+status set is green).
 
 ### Console operations: auto-refresh, operational dashboard, stable selection, board filters (improve-console-ops, 2026-11-01)
 

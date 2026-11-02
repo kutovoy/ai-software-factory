@@ -45,11 +45,13 @@ services:
       retries: 40
       start_period: 10s
 
-  # Local forge (spec `forge`). Served at the console origin under /extras/forgejo by the
-  # web app's same-origin proxy (apps/web/src/app/extras/forgejo/[[...path]]/route.ts),
+  # Local forge (spec `forge`). HTTP is served at the console origin under /extras/forgejo by
+  # the web app's same-origin proxy (apps/web/src/app/extras/forgejo/[[...path]]/route.ts),
   # which injects the trusted `X-WebAuth-User` header (single-user mode, ADR-032).
-  # No host port: the forge is reachable only from the compose network, so the identity
-  # header cannot be spoofed from the browser. Enabled by default; to opt out run
+  # The HTTP port stays unpublished: the forge is reachable only from the compose network, so
+  # the identity header cannot be spoofed from the browser. SSH *is* published (2222) because
+  # git-over-SSH needs a host port; it authenticates with keys, not that header.
+  # Enabled by default; to opt out run
   #   FORGEJO_ENABLED=0 docker compose -f compose.yaml -f compose.no-forgejo.yaml up -d
   forgejo:
     image: codeberg.org/forgejo/forgejo:17.0.1
@@ -60,8 +62,15 @@ services:
       FORGEJO__server__STATIC_URL_PREFIX: /extras/forgejo
       FORGEJO__server__DOMAIN: localhost
       FORGEJO__server__HTTP_PORT: '3000'
-      FORGEJO__server__DISABLE_SSH: 'true'
-      FORGEJO__server__START_SSH_SERVER: 'false'
+      # Built-in SSH server (spec `forge-transport` › SSH access). SSH_LISTEN_PORT is the
+      # port inside the container; SSH_PORT is what clone URLs advertise (the published
+      # host port). Host keys persist in the `forgejo-data` volume, so the host fingerprint
+      # survives restarts. Clone: ssh://git@localhost:2222/<org>/<repo>.git
+      FORGEJO__server__DISABLE_SSH: 'false'
+      FORGEJO__server__START_SSH_SERVER: 'true'
+      FORGEJO__server__SSH_PORT: '2222'
+      FORGEJO__server__SSH_LISTEN_PORT: '22'
+      FORGEJO__server__SSH_DOMAIN: localhost
       FORGEJO__server__OFFLINE_MODE: 'true'
       FORGEJO__repository__DEFAULT_BRANCH: main
       FORGEJO__database__DB_TYPE: postgres
@@ -79,6 +88,16 @@ services:
       FORGEJO__security__REVERSE_PROXY_TRUSTED_PROXIES: '*'
       FORGEJO__service__DISABLE_REGISTRATION: 'true'
       FORGEJO__actions__ENABLED: 'false'
+    ports:
+      # git-over-SSH only. HTTP stays on the compose network and is proxied by the console.
+      - '2222:22'
+    # The Forgejo image ships an OpenSSH daemon as an s6 service bound to :22. The built-in
+    # SSH server (START_SSH_SERVER=true) listens on the same port, so the two would fight and
+    # the container would exit with "bind: address already in use". Masking that service
+    # directory leaves s6 running the forge alone and lets the built-in server own :22;
+    # host keys live under APP_DATA_PATH (/data/gitea/ssh) inside `forgejo-data`.
+    tmpfs:
+      - /etc/s6/openssh
     volumes:
       - forgejo-data:/data
     depends_on:

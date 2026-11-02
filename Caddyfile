@@ -1,0 +1,29 @@
+# Optional websocket-capable proxy for the local forge (spec `forge-transport`).
+# Mounted read-only into the `caddy` service of `compose.proxy.yaml`:
+#
+#   docker compose -f compose.yaml -f compose.proxy.yaml up -d
+#
+# Forgejo is pointed at http://localhost:3001/ by that overlay (ROOT_URL without the
+# /extras/forgejo subpath, empty STATIC_URL_PREFIX), so every link it generates stays on
+# this origin. The console keeps serving on :3000.
+{
+	# No admin API and no automatic HTTPS: this is a local, single-port mode.
+	admin off
+	auto_https off
+}
+
+:3001 {
+	# Identity: ask the API who the session cookie belongs to. `forward_auth` sends a GET
+	# (the request body is not consumed), so git-over-HTTP pushes still reach the forge
+	# intact. A 200 copies X-WebAuth-User onto the request; any other status (401 when
+	# nobody is signed in) is returned to the browser unchanged.
+	forward_auth api:8080 {
+		uri /api/v1/auth/forge-identity
+		copy_headers X-WebAuth-User
+	}
+
+	# Everything else — pages, git-over-HTTP and the websocket upgrades Forgejo's UI and
+	# Actions use — goes to the forge. reverse_proxy passes Upgrade/Connection through and
+	# keeps the original Host, which matches Forgejo's ROOT_URL.
+	reverse_proxy forgejo:3000
+}

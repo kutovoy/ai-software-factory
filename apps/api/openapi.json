@@ -4703,6 +4703,58 @@
         }
       }
     },
+    "/api/v1/auth/forge-identity": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Forge identity for the reverse proxy",
+        "description": "Identity probe for the optional websocket-capable proxy (`compose.proxy.yaml`). Caddy's `forward_auth` calls it before reverse-proxying to the local forge: a `200` carries `X-WebAuth-User: <username>`, which Caddy copies onto the proxied request so Forgejo auto-logs-in the signed-in console user; `401 auth_required` stops the request when nobody is signed in. With `AUTH_REQUIRED=0` there is no session, so it returns the `FORGEJO_ADMIN_USER` fallback (`fallback: true`) — the same single-user mode the console proxy uses.",
+        "responses": {
+          "200": {
+            "description": "The username to assert to the forge.",
+            "headers": {
+              "X-WebAuth-User": {
+                "description": "Username the proxy asserts to the forge.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "username",
+                    "fallback"
+                  ],
+                  "properties": {
+                    "username": {
+                      "type": "string"
+                    },
+                    "fallback": {
+                      "type": "boolean",
+                      "description": "True when auth is off and the configured admin identity is asserted."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "auth_required — no valid session when auth is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/users": {
       "get": {
         "tags": [

@@ -12,6 +12,15 @@
 #
 # Re-runnable: a second invocation changes nothing and exits 0.
 #
+# The forge is HTTP-only from the script's point of view: compose serves it through the
+# console proxy at /extras/forgejo, and console auth is on, so every request here carries a
+# `factory_session` cookie obtained once with the bootstrap admin. Git itself can also use
+# SSH on the published port (spec `forge-transport` › SSH access):
+#
+#   git clone ssh://git@localhost:2222/<org>/<repo>.git
+#
+# No SSH key is seeded: add yours in Forgejo → Settings → SSH keys, then clone.
+#
 # Environment:
 #   FORGEJO_ENABLED=0        skip (the forge is off; nothing to bootstrap)
 #   FORGEJO_ADMIN_USER       default `factory`
@@ -20,6 +29,8 @@
 #   FORGEJO_REPO             default `hello-nextjs`
 #   FORGEJO_FACTORY          factory whose integration is wired, default `hello-nextjs`
 #   FORGEJO_PUBLIC_URL       default `http://localhost:3000/extras/forgejo` (through the console)
+#   FORGEJO_SSH_HOST         default `localhost` (host advertised in SSH clone URLs)
+#   FORGEJO_SSH_PORT         default `2222` (published SSH port)
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -34,6 +45,8 @@ ADMIN_EMAIL="${FORGEJO_ADMIN_EMAIL:-factory@localhost}"
 ORG="${FORGEJO_ORG:-acme}"
 REPO="${FORGEJO_REPO:-hello-nextjs}"
 FACTORY="${FORGEJO_FACTORY:-hello-nextjs}"
+SSH_HOST="${FORGEJO_SSH_HOST:-localhost}"
+SSH_PORT="${FORGEJO_SSH_PORT:-2222}"
 ENV_FILE=".env"
 
 log() { printf '[forgejo] %s\n' "$*"; }
@@ -62,15 +75,30 @@ env_set() {
 }
 
 # ---------------------------------------------------------------- 1. health
+# The forge is served through the console proxy, which enforces `AUTH_REQUIRED=1`: without a
+# session every request (even one carrying an API token) is redirected to /login. Sign in once
+# as the bootstrap admin and reuse the cookie for the forge calls below.
+COOKIE_JAR="$(mktemp)"
+trap 'rm -f "$COOKIE_JAR"' EXIT
+API_ADMIN_EMAIL="${FACTORY_ADMIN_EMAIL:-admin@factory.local}"
+API_ADMIN_PASSWORD="${FACTORY_ADMIN_PASSWORD:-factory-admin}"
+login_body="$(API_ADMIN_EMAIL="$API_ADMIN_EMAIL" API_ADMIN_PASSWORD="$API_ADMIN_PASSWORD" bun -e '
+  process.stdout.write(JSON.stringify({ email: process.env.API_ADMIN_EMAIL, password: process.env.API_ADMIN_PASSWORD }));
+')"
+login_code="$(curl -sS -o /dev/null -w '%{http_code}' -c "$COOKIE_JAR" \
+  -X POST -H 'content-type: application/json' -d "$login_body" "${API}/auth/login")"
+[ "$login_code" = "200" ] \
+  || fail "API login failed (HTTP ${login_code}); set FACTORY_ADMIN_EMAIL / FACTORY_ADMIN_PASSWORD"
+
 log "waiting for the forge at ${FORGE_PUBLIC}/"
 healthy=""
 for _ in $(seq 1 60); do
-  code="$(curl -s -o /dev/null -w '%{http_code}' "${FORGE_PUBLIC}/api/healthz" || true)"
+  code="$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIE_JAR" "${FORGE_PUBLIC}/api/healthz" || true)"
   if [ "$code" = "200" ]; then healthy="yes"; break; fi
   sleep 2
 done
 [ -n "$healthy" ] || fail "forge is not healthy through the console proxy (start it with: docker compose up -d forgejo web)"
-pass_health="$(curl -s "${FORGE_PUBLIC}/api/healthz" || true)"
+pass_health="$(curl -s -b "$COOKIE_JAR" "${FORGE_PUBLIC}/api/healthz" || true)"
 log "forge healthy: ${pass_health}"
 
 forgejo() { docker compose exec -T -u git forgejo forgejo "$@"; }
@@ -98,7 +126,7 @@ fi
 token="$(env_get GITHUB_TOKEN)"
 token_ok=""
 if [ -n "$token" ]; then
-  status="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: token ${token}" "${FORGE_API}/user" || true)"
+  status="$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIE_JAR" -H "Authorization: token ${token}" "${FORGE_API}/user" || true)"
   if [ "$status" = "200" ]; then token_ok="yes"; fi
 fi
 
@@ -121,7 +149,7 @@ env_set GITHUB_API_BASE_URL "http://forgejo:3000/api/v1"
 env_set FORGEJO_ADMIN_USER "$ADMIN_USER"
 [ -n "$(env_get FORGEJO_PUBLIC_URL)" ] || env_set FORGEJO_PUBLIC_URL "$FORGE_PUBLIC"
 
-auth=(-H "Authorization: token ${token}" -H 'content-type: application/json')
+auth=(-H "Authorization: token ${token}" -H 'content-type: application/json' -b "$COOKIE_JAR")
 
 # ---------------------------------------------------------------- 4. organization
 org_status="$(curl -s -o /dev/null -w '%{http_code}' "${auth[@]}" "${FORGE_API}/orgs/${ORG}")"
@@ -160,20 +188,6 @@ if printf '%s' "$repo_json" | grep -q '"empty":true'; then
 fi
 
 # ---------------------------------------------------------------- 6. secret + integration
-# Console auth is on in compose, so the API calls below need a session. Sign in once as the
-# bootstrap admin; the forge calls above stay token-authenticated and untouched.
-COOKIE_JAR="$(mktemp)"
-trap 'rm -f "$COOKIE_JAR"' EXIT
-API_ADMIN_EMAIL="${FACTORY_ADMIN_EMAIL:-admin@factory.local}"
-API_ADMIN_PASSWORD="${FACTORY_ADMIN_PASSWORD:-factory-admin}"
-login_body="$(API_ADMIN_EMAIL="$API_ADMIN_EMAIL" API_ADMIN_PASSWORD="$API_ADMIN_PASSWORD" bun -e '
-  process.stdout.write(JSON.stringify({ email: process.env.API_ADMIN_EMAIL, password: process.env.API_ADMIN_PASSWORD }));
-')"
-login_code="$(curl -sS -o /dev/null -w '%{http_code}' -c "$COOKIE_JAR" \
-  -X POST -H 'content-type: application/json' -d "$login_body" "${API}/auth/login")"
-[ "$login_code" = "200" ] \
-  || fail "API login failed (HTTP ${login_code}); set FACTORY_ADMIN_EMAIL / FACTORY_ADMIN_PASSWORD"
-
 # Metadata only: the registry stores the *name*; the value stays in the environment (ADR-026).
 curl -s -o /dev/null -b "$COOKIE_JAR" -X POST -H 'content-type: application/json' \
   -d '{"name":"GITHUB_TOKEN","provider":"env","scope":"factory","description":"Local forge (Forgejo) API token"}' \
@@ -197,4 +211,6 @@ for _ in $(seq 1 60); do
 done
 
 log "done — forge: ${FORGE_PUBLIC}/  repo: ${FORGE_PUBLIC}/${ORG}/${REPO}"
-log "clone: git clone ${FORGE_PUBLIC}/${ORG}/${REPO}.git"
+log "clone (HTTP): git clone ${FORGE_PUBLIC}/${ORG}/${REPO}.git"
+log "clone (SSH):  git clone ssh://git@${SSH_HOST}:${SSH_PORT}/${ORG}/${REPO}.git"
+log "SSH needs a key: Forgejo → Settings → SSH keys, then retry the SSH clone"

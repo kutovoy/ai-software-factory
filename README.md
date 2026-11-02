@@ -5,10 +5,13 @@ triage → spec → implement → review → verify → ship — with human gate
 
 [Documentation](docs/HANDOVER.md) | [Architecture](docs/ARCHITECTURE.md) | [API](docs/HANDOVER.md) | [Contributing](CONTRIBUTING.md) | [Security](SECURITY.md)
 
+[![CI](https://github.com/kutovoy/ai-software-factory/actions/workflows/ci.yml/badge.svg)](https://github.com/kutovoy/ai-software-factory/actions/workflows/ci.yml)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6)
 ![Bun](https://img.shields.io/badge/Bun-1.4-f9f1e1)
 ![Temporal](https://img.shields.io/badge/Temporal-durable%20workflows-000000)
+
+![The factory console: a dashboard with autonomy state, work items, runs and deliverables](docs/assets/console.png)
 
 ## Introduction
 
@@ -67,8 +70,10 @@ authority: **propose-only PR**, **auto-merge on benchmark win**, or **canary** w
 automatic rollback. Lessons live per factory, with opt-in promotion.
 
 ### Local forge
-The stack ships **Forgejo** at `/extras/forgejo` so PR links resolve. Single-user mode auto-logs you in through the
-console proxy; multi-user isolation is a documented OIDC + per-organization path (Phase 6).
+The stack ships **Forgejo** at `/extras/forgejo` so PR links resolve. The console proxy asserts the signed-in
+user (admin fallback when auth is off), and each user gets a personal organization `u-<username>`; external
+OIDC group→org mappings are reserved for Phase 6c. Git also works over SSH on `localhost:2222` (host keys persist
+in the `forgejo-data` volume), and an optional Caddy mode serves the forge on `:3001` with websocket upgrades.
 
 ### Console
 One event renderer for chat and factory runs, runs and work items with live SSE, an inbox for gates and
@@ -128,6 +133,7 @@ the console. Set `AUTH_REQUIRED=0` to run as the implicit local user.
 | API (versioned) | http://localhost:8080/api/v1 |
 | OpenAPI + Swagger UI | http://localhost:3000/help/api |
 | Local forge | http://localhost:3000/extras/forgejo/ |
+| Local forge (SSH) | `ssh://git@localhost:2222/<org>/<repo>.git` |
 | Temporal UI | http://localhost:8233 |
 
 Verify without credentials (fake harness + fake forge):
@@ -144,6 +150,25 @@ bash scripts/forgejo-bootstrap.sh
 
 It provisions the admin, an API token (written to `.env` only), and the `acme/hello-nextjs` repository, then
 restarts the API and worker.
+
+Git over SSH works out of the box on the published port — clone URLs are
+`ssh://git@localhost:2222/acme/hello-nextjs.git`. No key is seeded: add yours in
+**Forgejo → Settings → SSH keys** first, then clone (the host key lives in the `forgejo-data` volume, so the
+fingerprint survives restarts).
+
+#### Optional: websocket proxy mode
+
+A Next route handler cannot upgrade websockets, so if you need them (Forgejo's live UI updates), run the
+optional Caddy overlay instead of the default single-origin setup:
+
+```bash
+docker compose -f compose.yaml -f compose.proxy.yaml up -d
+```
+
+The console stays on http://localhost:3000; the forge moves to http://localhost:3001, where Caddy reverse-proxies
+everything (including upgrades) to Forgejo. Auth is preserved: Caddy asks `GET /api/v1/auth/forge-identity`, which
+returns the signed-in username in `X-WebAuth-User` (401 when signed out), and forwards it to the forge. This mode
+is opt-in — the default `docker compose up -d` keeps the single origin at :3000.
 
 Create your first work item from **Work items → New work item**, or via the API (sign in once and keep the
 session cookie when `AUTH_REQUIRED=1`):

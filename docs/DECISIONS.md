@@ -747,3 +747,70 @@ of the public surface.
 **Consequences:** the license stays MIT-compatible and GitHub-detectable; attribution is a
 social request rather than a restriction, so downstream use remains unencumbered. The README
 becomes a maintained artifact, not a one-off.
+
+## ADR-034 — Forge transport: SSH on the default stack, websockets as an opt-in proxy mode
+
+**Status:** accepted, implemented (2026-11-01, polish-forge-and-public)
+**Context:** ADR-032 shipped the forge behind the console's same-origin proxy: HTTP works, but
+git over SSH is impossible through a route handler and websocket upgrades cannot be performed
+by one either. Operators pushing real branches want `git push` over SSH, and Forgejo's live UI
+uses websockets.
+**Options:** keep HTTP-only · add SSH to the default stack and websockets behind an optional
+proxy · make the proxy the only mode (single origin on :3001) · run a proxy in front of
+everything.
+**Decision:** SSH is **additive on the default stack**: Forgejo's built-in SSH server runs on
+`:22` inside the container, published as `2222:22`, with `SSH_PORT=2222`, `SSH_DOMAIN=localhost`
+so clone URLs are `ssh://git@localhost:2222/<org>/<repo>.git`. Host keys persist under
+`/data/gitea/ssh` in `forgejo-data`. The image also ships an OpenSSH daemon as an s6 service on
+`:22`, which collides with the built-in server, so that service directory is masked with a
+`tmpfs` mount — one SSH server, one owner of the port. Keys are not seeded: the operator adds
+one in Forgejo → Settings → SSH keys. Websockets are an **opt-in mode**: `compose.proxy.yaml`
+adds Caddy on `:3001`, points `ROOT_URL` at `http://localhost:3001/` with an empty
+`STATIC_URL_PREFIX`, and reverse-proxies everything (upgrades included). Auth is preserved by a
+new `GET /api/v1/auth/forge-identity` route: a signed-in session answers `200` with
+`X-WebAuth-User` (401 otherwise), and Caddy's `forward_auth` copies that header onto the
+proxied request, so the forge keeps auto-login and the browser still cannot spoof the header.
+The default single-origin setup (`:3000`, `/extras/forgejo`) is unchanged.
+**Consequences:** `git clone`/`push` work over SSH without touching the console proxy, and
+websockets are available where they matter without making a proxy mandatory. Costs: the host
+publishes a port (SSH authenticates by key, not by the trusted header, so the spoofing argument
+of ADR-032 still holds), the `tmpfs` mask is an image-specific workaround that must be revisited
+if Forgejo changes its s6 layout, and in proxy mode the forge's own links leave the
+`/extras/forgejo` subpath, so the console subpath proxy is not the primary path there
+(documented in README/HANDOVER/help).
+
+## ADR-035 — Console auth: hashed opaque sessions, env bootstrap, per-user scope
+
+**Status:** accepted (2026-11-01). **Context:** the console and API were unauthenticated, the
+Users page was a stub, and the forge proxy asserted one seeded admin for every visitor.
+**Decision:** add `users` + `sessions` (migration 016). Passwords are argon2id via
+`Bun.password`; sessions are 32-byte opaque tokens stored only as SHA-256 hashes, carried in
+an HttpOnly `SameSite=Lax` cookie with a 7-day sliding expiry. `AUTH_REQUIRED` is the single
+switch (off for unit/integration tests and local dev, on in compose); public routes are
+`/health`, `/auth/login`, `/openapi.json`. The first admin is bootstrapped from
+`FACTORY_ADMIN_EMAIL`/`FACTORY_ADMIN_PASSWORD` (random one-time password if unset); compose
+ships documented local-development credentials. Roles are `admin` (all work, user management)
+and `member` (only rows they created). Work items and chat runs carry `created_by`; stage runs
+inherit their item's owner. The console forwards the session cookie server-side and copies
+`Set-Cookie` through its proxy. The Forgejo proxy resolves `/auth/me` and asserts the user's
+username; a best-effort personal org `u-<username>` is created on login.
+**Consequences:** a database leak does not yield live sessions; auth-off keeps the old
+single-user behaviour. OIDC/IdP and group→org mappings are deferred to Phase 6c (the
+`FORGEJO_OIDC_GROUP_MAP` contract is reserved), and compose credentials must be rotated before
+exposing the console.
+
+## ADR-036 — Agent verdicts: JSON first, textual fallback, policy per factory
+
+**Status:** accepted (2026-11-01). **Context:** agent gates approved whenever a stage run ended
+`ok`; a reviewer that wrote “FAIL” still passed, which is unsafe for lights-off.
+**Decision:** agent-gated stage prompts ask for a final fenced JSON block
+`{"verdict":"approve|request_changes|reject","summary":…,"findings":[…]}`. The parser takes
+the last structured block, accepts explicit textual signals (`VERDICT: FAIL`, a `FAIL` line,
+`REQUEST_CHANGES`) as a fallback, and reports `structured | textual | none`. The factory field
+`agentVerdict` is `advisory` (default: unknown → approve, preserving old behaviour) or
+`required` (unknown → request_changes). `request_changes` feeds the existing loop/escalation
+path; `reject` rejects. The parsed verdict (`decision`, `source`, `summary`, `findings`) is
+stored on `gate_decisions.verdict` and surfaced in the inbox/API.
+**Consequences:** a lights-off factory can make reviewer agents authoritative without a human,
+while existing factories keep working until they opt in. A textual FAIL can no longer be
+silently ignored.

@@ -209,7 +209,7 @@ suite('console auth API', () => {
   });
 
   test('AUTH_REQUIRED=1 refuses protected routes with 401 auth_required', async () => {
-    for (const path of ['/runs', '/work-items', '/users', '/auth/me']) {
+    for (const path of ['/runs', '/work-items', '/users', '/auth/me', '/auth/forge-identity']) {
       const response = await req(app, path);
       expect({ path, status: response.status }).toEqual({ path, status: 401 });
       expect(((await response.json()) as { code: string }).code).toBe('auth_required');
@@ -231,6 +231,19 @@ suite('console auth API', () => {
     const body = (await response.json()) as { user: { email: string; role: string } | null };
     expect(body.user?.email).toBe(MEMBER_EMAIL);
     expect(body.user?.role).toBe('member');
+  });
+
+  test('GET /auth/forge-identity asserts the signed-in username', async () => {
+    const { cookie } = await login(MEMBER_EMAIL, MEMBER_PASSWORD);
+    const response = await req(app, '/auth/forge-identity', {
+      headers: { cookie: cookie as string },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('x-webauth-user')).toBe(`${PREFIX}-member`);
+    expect((await response.json()) as { username: string; fallback: boolean }).toEqual({
+      username: `${PREFIX}-member`,
+      fallback: false,
+    });
   });
 
   test('logout revokes the session and clears the cookie', async () => {

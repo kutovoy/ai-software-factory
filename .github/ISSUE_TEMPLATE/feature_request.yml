@@ -1,0 +1,61 @@
+name: Feature request
+description: Propose a capability, a definition change or an integration.
+title: '[feature] '
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Bigger changes go through OpenSpec (`openspec/changes/`) so the spec and the tests move
+        with the code. This issue is fine for scoping the idea first.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is hard or impossible today, and who hits it.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: Describe the observable contract — inputs, outputs, errors, gates — not the internals.
+    validations:
+      required: true
+  - type: dropdown
+    id: capability
+    attributes:
+      label: Capability
+      description: Which part of the factory does this touch?
+      options:
+        - Factory definitions (agents, gates, routing, automations)
+        - Run lifecycle / harness adapter / runner
+        - Console / help
+        - API surface
+        - Forge / merge queue
+        - Measurement / benchmarks / self-improvement
+        - Deployment / compose
+        - Docs
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds, other designs, or why the obvious approach does not fit.
+    validations:
+      required: false
+  - type: textarea
+    id: verification
+    attributes:
+      label: How we would verify it
+      description: The test or observable check that proves the feature works (unit, Playwright, smoke section).
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked `openspec/specs/` and existing issues for overlap.
+          required: true

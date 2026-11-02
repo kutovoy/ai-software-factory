@@ -102,6 +102,11 @@ export interface ApiConfig {
   forgeAdminToken: string;
   /** Personal org prefix (`FORGEJO_ORG_PREFIX`, default `u-`). */
   forgeOrgPrefix: string;
+  /**
+   * Fallback forge identity when auth is off (`FORGEJO_ADMIN_USER`, default `factory`): the
+   * single-user mode the console forge proxy already assumes (ADR-032).
+   */
+  forgeAdminUser: string;
 }
 
 function boolFromEnv(value: string | undefined, fallback: boolean): boolean {
@@ -187,6 +192,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     forgeApiBaseUrl: env.GITHUB_API_BASE_URL ?? '',
     forgeAdminToken: env.GITHUB_TOKEN ?? '',
     forgeOrgPrefix: env.FORGEJO_ORG_PREFIX ?? 'u-',
+    forgeAdminUser: env.FORGEJO_ADMIN_USER ?? 'factory',
   };
 }
 

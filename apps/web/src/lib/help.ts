@@ -664,9 +664,9 @@ export const HELP_ENTRIES: HelpEntry[] = [
     slug: 'forgejo',
     title: 'Forgejo (local forge)',
     section: 'menu',
-    status: 'Shipped — console identity; OIDC group mapping is deferred',
+    status: 'Shipped — console identity + SSH; OIDC group mapping is deferred',
     summary:
-      'The git forge behind every PR link, served under /extras/forgejo with proxy auto-login as the signed-in user.',
+      'The git forge behind every PR link: served under /extras/forgejo with proxy auto-login, git over SSH on port 2222, and an optional websocket proxy mode.',
     pageHref: '/extras/forgejo/',
     blocks: [
       {
@@ -680,8 +680,9 @@ export const HELP_ENTRIES: HelpEntry[] = [
           'Signed in: the proxy asserts your username and Forgejo auto-registers the reverse-proxy identity; each user gets a best-effort personal organization `u-<username>`.',
           'Signed out with `AUTH_REQUIRED=1`: forge GETs redirect to `/login?next=…`; other verbs (including git push) answer `401 auth_required`.',
           'Auth off: the proxy falls back to `FORGEJO_ADMIN_USER` — the old single-user behaviour for local development.',
+          'Git over SSH: the built-in server is published on `localhost:2222`, so `git clone ssh://git@localhost:2222/<org>/<repo>.git` works. Host keys persist in the `forgejo-data` volume; add your key in Forgejo → Settings → SSH keys (no key is seeded).',
+          'Websockets: a route handler cannot upgrade them, so the default mode is HTTP through the console. The opt-in `docker compose -f compose.yaml -f compose.proxy.yaml up -d` adds Caddy on `http://localhost:3001` and reverse-proxies everything, including upgrades; it asks `GET /api/v1/auth/forge-identity` (200 + `X-WebAuth-User`, 401 when signed out) so the forge keeps auto-login.',
           'OIDC group→organization mapping (`FORGEJO_OIDC_GROUP_MAP`) is a documented config contract for a later IdP phase, not built yet.',
-          'SSH and websockets are out of scope; git-over-HTTP through the console proxy works.',
         ],
       },
     ],

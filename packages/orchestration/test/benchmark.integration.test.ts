@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { SQL } from 'bun';
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -372,4 +372,43 @@ suite('benchmark workflow on the fake harness + fake forge', () => {
       expect((error as { type?: string }).type).toBe('network_denied');
     }
   });
+
+  test('a replay trial carries its recording and a missing one fails with replay_missing', async () => {
+    const benchmarkRunId = `bench_replay_${Date.now()}`;
+    const input = planInput({ benchmarkRunId, maxCostUsd: 10, estimateUsd: 1 });
+    await createBenchmarkRun(sql, {
+      id: benchmarkRunId,
+      factory: input.factory,
+      suite: input.suite,
+      definitionCommit: input.definitionCommit,
+      configHash: input.configHash,
+      tasks: [...new Set(input.trials.map((trial) => trial.task))],
+      configurations: [...new Set(input.trials.map((trial) => trial.configuration))],
+      matrix: input.trials.map((trial) => ({ configuration: trial.configuration, task: trial.task })),
+      estimateUsd: input.estimateUsd,
+      maxCostUsd: input.maxCostUsd,
+      partial: true,
+      workflowId: `benchmark-${benchmarkRunId}`,
+    });
+
+    const recordingId = `run_replay_${Date.now()}`;
+    const recording = join(runsDir, recordingId);
+    mkdirSync(recording, { recursive: true });
+    writeFileSync(join(recording, 'events.jsonl'), '');
+    writeFileSync(join(recording, 'patch.diff'), '');
+
+    const trial = { ...input.trials[0]!, replayFrom: recordingId };
+    const run = await startBenchmarkTrial({ input, trial });
+    expect(run.replayFrom).toBe(recordingId);
+    expect(run.proxyModels).toEqual([]);
+    expect(run.hermetic).toBe(true);
+
+    const missing = { ...input.trials[1]!, replayFrom: 'run_missing_replay' };
+    try {
+      await startBenchmarkTrial({ input, trial: missing });
+      throw new Error('expected replay_missing');
+    } catch (error) {
+      expect((error as { type?: string }).type).toBe('replay_missing');
+    }
+  }, 120_000);
 });

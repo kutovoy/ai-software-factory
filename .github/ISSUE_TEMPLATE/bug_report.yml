@@ -1,0 +1,90 @@
+name: Bug report
+description: Something in the factory broke — a run, a gate, the console, the forge.
+title: '[bug] '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please do not paste provider keys, tokens or `.env` contents —
+        secrets live in the environment and are never needed to reproduce a bug.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The observable failure, with the exact error text or screenshot.
+      placeholder: |
+        The work item stayed in `review` and the run ended with `error`.
+        Event: {"type":"error","payload":{"code":"checks_timeout"}}
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: The behaviour you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The smallest sequence that reproduces it. Include the request or UI path.
+      placeholder: |
+        1. docker compose up -d --build
+        2. bash scripts/smoke.sh
+        3. POST /api/v1/work-items with {factory: hello-nextjs, type: task, ...}
+        4. Open the run in the console → the review gate never resolves
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: Tag or `git rev-parse --short HEAD`, and `FACTORY_VERSION` if set.
+      placeholder: 'e.g. forgejo tag, commit 1a2b3c4, FACTORY_VERSION=0.0.0-dev'
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where
+      multiple: true
+      options:
+        - Console (web UI)
+        - API (/api/v1)
+        - Run / harness / runner
+        - Gates / inbox / autonomy
+        - Forge (Forgejo / GitHub)
+        - Benchmarks / scoring / self-improvement
+        - Compose / deployment
+        - Docs / help
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Docker/Compose version, Bun version, harness and model reference.
+      placeholder: |
+        macOS 15, Docker 27, Compose v2.30, Bun 1.4
+        harness: fake (compose smoke) | model: env:FACTORY_MODEL
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or event excerpt
+      description: Relevant lines from `docker compose logs api worker web`, or the run's JSONL events.
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues for the same failure.
+          required: true
+        - label: This is not a security vulnerability (those go to SECURITY.md, privately).
+          required: true

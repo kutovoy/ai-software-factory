@@ -302,6 +302,26 @@ export function registerAuth(api: Hono<{ Variables: AuthVariables }>, config: Ap
     return c.json({ user: user ?? null });
   });
 
+  /**
+   * Forge identity for the optional websocket proxy (change `polish-forge-and-public`).
+   *
+   * `Caddyfile` runs this through `forward_auth` before reverse-proxying to Forgejo: a 200
+   * copies `X-WebAuth-User` onto the proxied request, anything else stops it. With
+   * `AUTH_REQUIRED=1` the session middleware already answers 401 when nobody is signed in,
+   * so the forge is never reached anonymously. With auth off the API is the implicit local
+   * user, so it asserts `FORGEJO_ADMIN_USER` — the same fallback the console proxy uses
+   * (ADR-032) — keeping the proxy mode usable for local development.
+   */
+  api.get('/auth/forge-identity', (c) => {
+    const user = c.get('user');
+    if (!user && config.authRequired) {
+      throw new ApiError('auth_required', 401, 'sign in to use the local forge');
+    }
+    const username = user?.username ?? config.forgeAdminUser;
+    c.header('X-WebAuth-User', username);
+    return c.json({ username, fallback: user === null });
+  });
+
   /* ---------------------------------------------------------- user admin */
 
   api.get('/users', async (c) => {
