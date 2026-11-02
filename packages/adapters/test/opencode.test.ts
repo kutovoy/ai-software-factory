@@ -198,7 +198,7 @@ describe('OpencodeAdapter mapping', () => {
 
     expect(
       mapper.map({ type: 'session.execution.succeeded', data: { sessionID: session } }),
-    ).toEqual([{ type: 'run.completed', status: 'ok' }]);
+    ).toEqual([{ type: 'run.completed', status: 'ok', summary: 'Done.' }]);
     expect(mapper.finished).toBe(true);
   });
 

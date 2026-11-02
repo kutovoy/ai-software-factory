@@ -309,6 +309,8 @@ export class OpencodeEventMapper {
   private readonly sessionRef: string | undefined;
   private cancelled = false;
   private failure: string | undefined;
+  /** Last assistant message text; becomes the run summary for agent verdicts. */
+  private lastAssistantText: string | undefined;
   private done = false;
   private droppedCount = 0;
   private mappedCount = 0;
@@ -377,8 +379,10 @@ export class OpencodeEventMapper {
       case 'session.reasoning.delta':
         return [{ type: 'message.delta', role: 'reasoning', text: asString(data.delta) }];
 
-      case 'session.text.ended':
+      case 'session.text.ended': {
+        this.lastAssistantText = asString(data.text) || undefined;
         return [{ type: 'message.completed', role: 'assistant', text: asString(data.text) }];
+      }
 
       case 'session.tool.input.started': {
         const callId = toolCallId(data);
@@ -466,7 +470,13 @@ export class OpencodeEventMapper {
         if (this.failure) {
           return [{ type: 'run.completed', status: 'error', summary: this.failure }];
         }
-        return [{ type: 'run.completed', status: 'ok' }];
+        return [
+          {
+            type: 'run.completed',
+            status: 'ok',
+            ...(this.lastAssistantText ? { summary: this.lastAssistantText } : {}),
+          },
+        ];
       }
 
       /* ---------------------------------------------------------------- v2.0 */
@@ -477,8 +487,10 @@ export class OpencodeEventMapper {
       case 'session.next.reasoning.delta':
         return [{ type: 'message.delta', role: 'reasoning', text: asString(data.delta) }];
 
-      case 'session.next.text.ended':
+      case 'session.next.text.ended': {
+        this.lastAssistantText = asString(data.text) || undefined;
         return [{ type: 'message.completed', role: 'assistant', text: asString(data.text) }];
+      }
 
       // v1 compatibility: `message.part.delta` carries the same streaming text delta.
       case 'message.part.delta':
@@ -629,7 +641,13 @@ export class OpencodeEventMapper {
         if (this.failure) {
           return [{ type: 'run.completed', status: 'error', summary: this.failure }];
         }
-        return [{ type: 'run.completed', status: 'ok' }];
+        return [
+          {
+            type: 'run.completed',
+            status: 'ok',
+            ...(this.lastAssistantText ? { summary: this.lastAssistantText } : {}),
+          },
+        ];
       }
 
       default:

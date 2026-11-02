@@ -66,7 +66,7 @@ describe('adapter contract', () => {
     const sse = await loadFixture('opencode-run.sse');
     const transport = new ReplayTransport({ sse });
     const opencode = new OpencodeAdapter({ baseUrl: 'http://fixture', transport });
-    const fake = new FakeAdapter();
+    const fake = new FakeAdapter({ summary: 'Reading file.' });
 
     const fakeEvents = await runScenario(fake);
     const opencodeEvents = await runScenario(opencode);
@@ -79,7 +79,7 @@ describe('adapter contract', () => {
     const sse = await loadFixture('opencode-run-denied.sse');
     const transport = new ReplayTransport({ sse });
     const opencode = new OpencodeAdapter({ baseUrl: 'http://fixture', transport });
-    const fake = new FakeAdapter();
+    const fake = new FakeAdapter({ summary: 'Reading file.' });
 
     const fakeEvents = await runScenario(fake, 'deny');
     const opencodeEvents = await runScenario(opencode, 'deny');

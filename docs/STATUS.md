@@ -43,8 +43,25 @@ Fixes that the test forced (all committed):
 
 Latest tags: `harden-runtime`, `secrets-mcp`, `api-v1-help`, `help-center`, `live-api-explorer`,
 `api-explorer-parity`, `fix-ui-audit`, `fix-run-failures`, `run-actions`, `readiness-hello-nextjs`, `console-ops`,
-`forgejo`, `agent-verdicts`, `console-auth`, `harden-runners`, `forge-ssh-public`. `bun run ci` 569 pass; smoke
-passes; Playwright 55; UI audit 33 routes clean without the hydration tolerance.
+`forgejo`, `agent-verdicts`, `console-auth`, `harden-runners`, `forge-ssh-public`, `readiness-qa`. `bun run ci`
+569 pass; smoke passes; Playwright 55; UI audit 33 routes clean without the hydration tolerance.
+
+### Second lights-off run with Playwright QA (2026-11-02)
+
+The deleted `hello-nextjs` factory was recreated with a dedicated **QA agent** (role `verify`) that builds the
+generated site, starts it on port 3100 and runs a real Playwright browser test (`@playwright/test@1.64.1`,
+Chromium 156) asserting the exact `<h1>Hello, world!</h1>`. The runner image now bakes Playwright + Chromium so
+the verify stage does not download a browser per run.
+
+Work item `wi_01M6D66NASJ95RN86JVTZKTBF0` (attempt 2) went `triage → spec → implement → review (2 reviewers) →
+verify → ship` with **zero human decisions** and merged **PR #4**:
+`http://localhost:3000/extras/forgejo/acme/hello-nextjs/pulls/4`. The patch contains
+`site/package.json`, `site/app/layout.tsx`, `site/app/page.tsx`, `site/next.config.ts`, `site/tsconfig.json` and
+`site/README.md`; the QA verdict records a passing Playwright run (`1 passed (543ms)`).
+
+The first attempt escalated at triage because the opencode adapter emitted `run.completed` without the final
+assistant text, so the required verdict parser saw nothing. Fixed: the adapter now carries the last assistant
+message as the run summary (unit + contract tests updated), which is what the structured verdict channel reads.
 
 ### Agent verdicts, auth and runner hardening (2026-11-01)
 
@@ -68,11 +85,9 @@ What is left:
 1. **Phase 6c** — external OIDC/IdP and group→org mappings (Keycloak/Authentik/Zitadel), remote runners,
    Temporal Cloud, multi-tenant credential isolation.
 2. **Live GitHub path** — implemented and contract-tested, not exercised against a real repository (needs a PAT).
-3. **Replay integration** — the replay adapter and trial plan are unit-tested; a Temporal benchmark trial that
-   replays a recording end to end is still pending.
-4. **Forge proxy mode** — SSH ships on the default stack; the Caddy mode is live-validated for session auth and
+3. **Forge proxy mode** — SSH ships on the default stack; the Caddy mode is live-validated for session auth and
    HTTP reverse-proxying (on a test port), but a websocket upgrade has not been exercised end to end.
-5. **Benchmark replay scope** — replays our canonical events + patch, not arbitrary harness tool-response traces.
+4. **Benchmark replay scope** — replays our canonical events + patch, not arbitrary harness tool-response traces.
 
 ### Forge transport + public polish (polish-forge-and-public, 2026-11-01)
 

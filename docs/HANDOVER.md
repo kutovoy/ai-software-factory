@@ -88,10 +88,9 @@ lets you validate wiring without touching a repo. GitHub delivers to
 
 1. **Phase 6c**: external OIDC/IdP group→org mappings, remote runners, Temporal Cloud, per-tenant isolation.
 2. **Live GitHub path**: implemented and contract-tested, not exercised against a real repo.
-3. **Replay integration**: adapter + plan are unit-tested; a live Temporal replay trial is pending.
-4. **Forge proxy mode**: SSH ships by default; the Caddy overlay is live-validated for session auth and HTTP,
+3. **Forge proxy mode**: SSH ships by default; the Caddy overlay is live-validated for session auth and HTTP,
    but a websocket upgrade has not been exercised end to end.
-5. **Promotion** merges the definition repo but does not rewrite the local checkout; `runs/canary/` GC is manual.
+4. **Promotion** merges the definition repo but does not rewrite the local checkout; `runs/canary/` GC is manual.
 
 ## Version tags
 
@@ -117,6 +116,10 @@ lets you validate wiring without touching a repo. GitHub delivers to
 - **Runner hardening**: Linux `bwrap` sandbox (ro-root, rw workspace, optional network unshare), explicit
   `runner.sandbox_unavailable` when missing; recorded replay for benchmark trials (`replayFrom: run_…`); hydration
   mismatch fixed via `TimeAgo`.
+- **Second lights-off run (2026-11-02)**: `hello-nextjs` recreated with a Playwright QA verify agent. Runner image
+  bakes `@playwright/test@1.64.1` + Chromium; work item `wi_01M6D66NASJ95RN86JVTZKTBF0` reached `done` with zero
+  human decisions and merged PR #4. The opencode adapter now carries the last assistant message as the run
+  summary, so `agentVerdict: required` gates can parse the structured verdict.
 - **Local forge**: Forgejo at `http://localhost:3000/extras/forgejo/`, enabled by default, proxied by the console
   and asserting the signed-in user (admin fallback when auth is off). Bootstrap:
   `bash scripts/forgejo-bootstrap.sh` (admin, token to `.env`, org/repo). The forge client speaks Gitea's dialect;
