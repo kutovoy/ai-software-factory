@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { req } from './helpers';
+import { factoryIdOf, req } from './helpers';
 import { SQL } from 'bun';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -36,6 +36,10 @@ const MIGRATIONS = join(REPO_ROOT, 'packages', 'core', 'migrations');
 let config: ApiConfig;
 let app: Hono;
 let fixturesApp: Hono;
+let exampleId: string;
+let lightsOffId: string;
+let cycleId: string;
+let spawnDeniedId: string;
 
 async function migrate(databaseUrl: string): Promise<void> {
   const sql = new SQL(databaseUrl, { max: 1 });
@@ -86,6 +90,10 @@ suite('work item API', () => {
       ...config,
       factoryRoot: join(REPO_ROOT, 'apps', 'api', 'test', 'fixtures'),
     });
+    exampleId = await factoryIdOf(app, 'example');
+    lightsOffId = await factoryIdOf(app, 'example-lights-off');
+    cycleId = await factoryIdOf(fixturesApp, 'cycle-factory');
+    spawnDeniedId = await factoryIdOf(fixturesApp, 'spawn-denied-factory');
   }, 60_000);
 
   afterAll(async () => {
@@ -97,8 +105,7 @@ suite('work item API', () => {
   }, 30_000);
 
   test('POST /work-items creates a manual item, compiles the graph and starts the workflow', async () => {
-    const response = await postJson(app, '/work-items', {
-      factory: 'example',
+    const response = await postJson(app, `/factories/${exampleId}/work-items`, {
       title: 'Add retry to the API client',
       source: 'manual',
       sourceRef: { kind: 'issue', id: '123', url: 'https://forge.local/acme/api-service/issues/123' },
@@ -117,12 +124,12 @@ suite('work item API', () => {
     expect(body.workItem.sourceRef).toMatchObject({ kind: 'issue', id: '123' });
     expect(body.workflow?.workflowId).toBe(`factory-${body.workItem.id}`);
 
-    const list = await req(app, '/work-items?factory=example&stage=triage&status=active');
+    const list = await req(app, `/factories/${exampleId}/work-items?stage=triage&status=active`);
     expect(list.status).toBe(200);
     const listed = (await list.json()) as { workItems: Array<{ id: string }> };
     expect(listed.workItems.some((item) => item.id === body.workItem.id)).toBe(true);
 
-    const detail = await req(app, `/work-items/${body.workItem.id}`);
+    const detail = await req(app, `/factories/${exampleId}/work-items/${body.workItem.id}`);
     expect(detail.status).toBe(200);
     const detailBody = (await detail.json()) as {
       workItem: { id: string };
@@ -135,21 +142,20 @@ suite('work item API', () => {
   }, 60_000);
 
   test('GET /work-items/:id returns 404 for an unknown item', async () => {
-    const response = await req(app, '/work-items/wi_00000000000000000000000000');
+    const response = await req(app, `/factories/${exampleId}/work-items/wi_00000000000000000000000000`);
     expect(response.status).toBe(404);
     const body = (await response.json()) as { code: string };
     expect(body.code).toBe('work_item_not_found');
   });
 
   test('POST /work-items/:id/gates/:stage returns 404 when no gate is pending', async () => {
-    const created = await postJson(app, '/work-items', {
-      factory: 'example',
+    const created = await postJson(app, `/factories/${exampleId}/work-items`, {
       title: 'Add retry to the API client',
       harness: 'fake',
     });
     const { workItem } = (await created.json()) as { workItem: { id: string } };
 
-    const response = await postJson(app, `/work-items/${workItem.id}/gates/spec`, {
+    const response = await postJson(app, `/factories/${exampleId}/work-items/${workItem.id}/gates/spec`, {
       decision: 'approve',
       actor: 'ada',
     });
@@ -157,7 +163,7 @@ suite('work item API', () => {
     const body = (await response.json()) as { code: string };
     expect(body.code).toBe('gate_not_found');
 
-    const unknownStage = await postJson(app, `/work-items/${workItem.id}/gates/deploy`, {
+    const unknownStage = await postJson(app, `/factories/${exampleId}/work-items/${workItem.id}/gates/deploy`, {
       decision: 'approve',
       actor: 'ada',
     });
@@ -170,8 +176,7 @@ suite('work item API', () => {
     await getSql()`
       delete from benchmark_attestations where factory = 'example-lights-off'
     `;
-    const refused = await postJson(app, '/autonomy', {
-      factory: 'example-lights-off',
+    const refused = await postJson(app, `/factories/${lightsOffId}/autonomy`, {
       enabled: true,
       actor: 'ada',
       reason: 'run lights-off',
@@ -187,8 +192,7 @@ suite('work item API', () => {
     expect(refusedBody.details?.factory).toBe('example-lights-off');
     expect(refusedBody.details?.definitionCommit).toMatch(/^[0-9a-f]{40}$/);
 
-    const allowed = await postJson(app, '/autonomy', {
-      factory: 'example-lights-off',
+    const allowed = await postJson(app, `/factories/${lightsOffId}/autonomy`, {
       enabled: true,
       actor: 'ada',
       reason: 'run lights-off',
@@ -212,8 +216,7 @@ suite('work item API', () => {
   }, 60_000);
 
   test('POST /autonomy pauses autonomy (kill switch) with an actor and reason', async () => {
-    const response = await postJson(app, '/autonomy', {
-      factory: 'example',
+    const response = await postJson(app, `/factories/${exampleId}/autonomy`, {
       enabled: false,
       actor: 'grace',
       reason: 'incident 42',
@@ -229,8 +232,7 @@ suite('work item API', () => {
   }, 60_000);
 
   test('POST /work-items rejects a cyclic stage graph with invalid_stage_graph', async () => {
-    const response = await postJson(fixturesApp, '/work-items', {
-      factory: 'cycle-factory',
+    const response = await postJson(fixturesApp, `/factories/${cycleId}/work-items`, {
       title: 'anything',
       harness: 'fake',
     });
@@ -241,8 +243,7 @@ suite('work item API', () => {
   }, 30_000);
 
   test('POST /work-items rejects a dispatch the foreman is not allowed to make', async () => {
-    const response = await postJson(fixturesApp, '/work-items', {
-      factory: 'spawn-denied-factory',
+    const response = await postJson(fixturesApp, `/factories/${spawnDeniedId}/work-items`, {
       title: 'anything',
       harness: 'fake',
     });
@@ -256,7 +257,7 @@ suite('work item API', () => {
     const sql = getSql();
     await sql`delete from autonomy_state where factory = 'example'`;
 
-    const initial = await req(app, '/autonomy?factory=example');
+    const initial = await req(app, `/factories/${exampleId}/autonomy`);
     expect(initial.status).toBe(200);
     const initialBody = (await initial.json()) as {
       autonomy: {
@@ -289,15 +290,14 @@ suite('work item API', () => {
     // read model reports it as evidence. It never invents one.
     if (read.lastEvent) expect(read.lastEvent.type.startsWith('autonomy.')).toBe(true);
 
-    const enabled = await postJson(app, '/autonomy', {
-      factory: 'example',
+    const enabled = await postJson(app, `/factories/${exampleId}/autonomy`, {
       enabled: true,
       actor: 'ada',
       reason: 'itest: autonomy read',
     });
     expect(enabled.status).toBe(200);
 
-    const after = await req(app, '/autonomy?factory=example');
+    const after = await req(app, `/factories/${exampleId}/autonomy`);
     const afterBody = (await after.json()) as {
       autonomy: {
         enabled: boolean;
@@ -320,14 +320,13 @@ suite('work item API', () => {
   }, 60_000);
 
   test('POST /work-items/:id/cancel records once, is idempotent and refuses a done item', async () => {
-    const created = await postJson(app, '/work-items', {
-      factory: 'example',
+    const created = await postJson(app, `/factories/${exampleId}/work-items`, {
       title: 'itest: cancellable item',
       harness: 'fake',
     });
     const { workItem } = (await created.json()) as { workItem: { id: string } };
 
-    const first = await postJson(app, `/work-items/${workItem.id}/cancel`, {
+    const first = await postJson(app, `/factories/${exampleId}/work-items/${workItem.id}/cancel`, {
       actor: 'ada',
       reason: 'itest: cancel',
     });
@@ -345,7 +344,7 @@ suite('work item API', () => {
     expect(firstBody.workItem.cancelActor).toBe('ada');
     expect(firstBody.workItem.cancelReason).toBe('itest: cancel');
 
-    const repeat = await postJson(app, `/work-items/${workItem.id}/cancel`, {
+    const repeat = await postJson(app, `/factories/${exampleId}/work-items/${workItem.id}/cancel`, {
       actor: 'grace',
       reason: 'itest: repeat',
     });
@@ -359,7 +358,7 @@ suite('work item API', () => {
     expect(repeatBody.eventRecorded).toBe(false);
     expect(repeatBody.cancelRequestedAt).toBe(firstBody.cancelRequestedAt);
 
-    const detail = await req(app, `/work-items/${workItem.id}`);
+    const detail = await req(app, `/factories/${exampleId}/work-items/${workItem.id}`);
     const detailBody = (await detail.json()) as {
       workItem: { cancelActor: string | null; cancelReason: string | null };
       events: { type: string }[];
@@ -370,7 +369,7 @@ suite('work item API', () => {
     // Terminal item: a done item is refused with invalid_state.
     const sql = getSql();
     await sql`update work_items set status = 'done' where id = ${workItem.id}`;
-    const refused = await postJson(app, `/work-items/${workItem.id}/cancel`, {
+    const refused = await postJson(app, `/factories/${exampleId}/work-items/${workItem.id}/cancel`, {
       actor: 'ada',
       reason: 'itest: too late',
     });
@@ -380,7 +379,7 @@ suite('work item API', () => {
 
     // An already-cancelled item returns the same state without a second event.
     await sql`update work_items set status = 'cancelled' where id = ${workItem.id}`;
-    const already = await postJson(app, `/work-items/${workItem.id}/cancel`, {
+    const already = await postJson(app, `/factories/${exampleId}/work-items/${workItem.id}/cancel`, {
       actor: 'ada',
       reason: 'itest: already cancelled',
     });
@@ -391,8 +390,7 @@ suite('work item API', () => {
   }, 60_000);
 
   test('POST /work-items/:id/retry re-opens an escalated item under a new attempt', async () => {
-    const created = await postJson(app, '/work-items', {
-      factory: 'example',
+    const created = await postJson(app, `/factories/${exampleId}/work-items`, {
       title: 'itest: retry an escalated item',
       harness: 'fake',
     });
@@ -401,7 +399,7 @@ suite('work item API', () => {
     // The original attempt escalated (a failed stage run does this in production).
     await getSql()`update work_items set status = 'escalated' where id = ${workItem.id}`;
 
-    const response = await postJson(app, `/work-items/${workItem.id}/retry`, {
+    const response = await postJson(app, `/factories/${exampleId}/work-items/${workItem.id}/retry`, {
       actor: 'ada',
       reason: 'itest: retry after escalation',
     });
@@ -427,7 +425,7 @@ suite('work item API', () => {
     expect(body.workflow?.workflowId).toBe(`factory-${workItem.id}-a2`);
     expect(body.workItem.workflowId).toBe(`factory-${workItem.id}-a2`);
 
-    const detail = await req(app, `/work-items/${workItem.id}`);
+    const detail = await req(app, `/factories/${exampleId}/work-items/${workItem.id}`);
     const detailBody = (await detail.json()) as {
       workItem: { status: string; attempt: number; workflowId: string };
       workflowId: string;
@@ -452,21 +450,20 @@ suite('work item API', () => {
     expect(retried[0]?.actor).toBe('ada');
 
     // The list projection exposes the attempt too.
-    const list = await req(app, '/work-items?factory=example&status=active&limit=200');
+    const list = await req(app, `/factories/${exampleId}/work-items?status=active&limit=200`);
     const listed = (await list.json()) as { workItems: { id: string; attempt: number }[] };
     expect(listed.workItems.find((item) => item.id === workItem.id)?.attempt).toBe(2);
   }, 60_000);
 
   test('a double retry submit returns the existing dispatch and starts no second workflow', async () => {
-    const created = await postJson(app, '/work-items', {
-      factory: 'example',
+    const created = await postJson(app, `/factories/${exampleId}/work-items`, {
       title: 'itest: idempotent retry',
       harness: 'fake',
     });
     const { workItem } = (await created.json()) as { workItem: { id: string } };
     await getSql()`update work_items set status = 'blocked' where id = ${workItem.id}`;
 
-    const first = await postJson(app, `/work-items/${workItem.id}/retry`, {
+    const first = await postJson(app, `/factories/${exampleId}/work-items/${workItem.id}/retry`, {
       actor: 'ada',
       reason: 'itest: first retry',
     });
@@ -476,7 +473,7 @@ suite('work item API', () => {
       workflow: { workflowId: string } | null;
     };
 
-    const second = await postJson(app, `/work-items/${workItem.id}/retry`, {
+    const second = await postJson(app, `/factories/${exampleId}/work-items/${workItem.id}/retry`, {
       actor: 'grace',
       reason: 'itest: double submit',
     });
@@ -494,21 +491,20 @@ suite('work item API', () => {
     expect(secondBody.previousStatus).toBe('blocked');
     expect(secondBody.workflow?.workflowId).toBe(firstBody.workflow?.workflowId);
 
-    const detail = await req(app, `/work-items/${workItem.id}`);
+    const detail = await req(app, `/factories/${exampleId}/work-items/${workItem.id}`);
     const detailBody = (await detail.json()) as { events: { type: string }[] };
     expect(detailBody.events.filter((event) => event.type === 'work_item.retried')).toHaveLength(1);
   }, 60_000);
 
   test('POST /work-items/:id/retry refuses active and done items', async () => {
-    const created = await postJson(app, '/work-items', {
-      factory: 'example',
+    const created = await postJson(app, `/factories/${exampleId}/work-items`, {
       title: 'itest: not retryable',
       harness: 'fake',
     });
     const { workItem } = (await created.json()) as { workItem: { id: string } };
 
     // A fresh item is `active`: no retry has re-opened it, so it is refused.
-    const active = await postJson(app, `/work-items/${workItem.id}/retry`, {
+    const active = await postJson(app, `/factories/${exampleId}/work-items/${workItem.id}/retry`, {
       actor: 'ada',
     });
     expect(active.status).toBe(409);
@@ -518,7 +514,7 @@ suite('work item API', () => {
     expect(activeBody.details?.status).toBe('active');
 
     await getSql()`update work_items set status = 'done' where id = ${workItem.id}`;
-    const done = await postJson(app, `/work-items/${workItem.id}/retry`, {
+    const done = await postJson(app, `/factories/${exampleId}/work-items/${workItem.id}/retry`, {
       actor: 'ada',
     });
     expect(done.status).toBe(409);
@@ -529,8 +525,7 @@ suite('work item API', () => {
   }, 60_000);
 
   test('retrying a cancelled item clears the cancellation flags and keeps the audit', async () => {
-    const created = await postJson(app, '/work-items', {
-      factory: 'example',
+    const created = await postJson(app, `/factories/${exampleId}/work-items`, {
       title: 'itest: retry a cancelled item',
       harness: 'fake',
     });
@@ -538,7 +533,7 @@ suite('work item API', () => {
 
     // Record the request through the API, then write the terminal state the workflow
     // would write (no worker runs in this suite).
-    const cancelled = await postJson(app, `/work-items/${workItem.id}/cancel`, {
+    const cancelled = await postJson(app, `/factories/${exampleId}/work-items/${workItem.id}/cancel`, {
       actor: 'ada',
       reason: 'itest: cancel before retry',
     });
@@ -550,7 +545,7 @@ suite('work item API', () => {
       reason: 'itest: cancel before retry',
     });
 
-    const before = await req(app, `/work-items/${workItem.id}`);
+    const before = await req(app, `/factories/${exampleId}/work-items/${workItem.id}`);
     const beforeBody = (await before.json()) as {
       workItem: { status: string; cancelRequestedAt: string | null; cancelActor: string | null };
     };
@@ -558,7 +553,7 @@ suite('work item API', () => {
     expect(beforeBody.workItem.cancelRequestedAt).toBeTruthy();
     expect(beforeBody.workItem.cancelActor).toBe('ada');
 
-    const retry = await postJson(app, `/work-items/${workItem.id}/retry`, {
+    const retry = await postJson(app, `/factories/${exampleId}/work-items/${workItem.id}/retry`, {
       actor: 'grace',
       reason: 'itest: retry the cancelled item',
     });
@@ -581,7 +576,7 @@ suite('work item API', () => {
     expect(retryBody.workItem.cancelReason).toBeNull();
 
     // The prior cancellation stays in the event log as history.
-    const detail = await req(app, `/work-items/${workItem.id}`);
+    const detail = await req(app, `/factories/${exampleId}/work-items/${workItem.id}`);
     const detailBody = (await detail.json()) as { events: { type: string }[] };
     const types = detailBody.events.map((event) => event.type);
     expect(types).toContain('cancel.requested');

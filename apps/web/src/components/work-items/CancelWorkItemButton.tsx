@@ -10,10 +10,12 @@ import { useRouter } from 'next/navigation';
  * model, so nothing is inferred locally.
  */
 export function CancelWorkItemButton({
+  factoryId,
   workItemId,
   status,
   cancelRequestedAt,
 }: {
+  factoryId: string;
   workItemId: string;
   status: string;
   cancelRequestedAt?: string | null;
@@ -41,7 +43,9 @@ export function CancelWorkItemButton({
     }
     setBusy(true);
     try {
-      const response = await fetch(`/api/work-items/${encodeURIComponent(workItemId)}/cancel`, {
+      const response = await fetch(
+        `/api/v1/factories/${encodeURIComponent(factoryId)}/work-items/${encodeURIComponent(workItemId)}/cancel`,
+        {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ actor: actor.trim(), reason: reason.trim() }),

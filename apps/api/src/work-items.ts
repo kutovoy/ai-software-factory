@@ -73,7 +73,7 @@ import {
 } from './errors';
 import { benchmarkGateStatus } from './benchmarks';
 import { log } from './logger';
-import { resolveFactoryDir } from './factories';
+import { factoryIdForKey, loadFactoryDefinition, resolveFactoryDir } from './factories';
 import { pinVersion, resolveRunDefaults } from './runs';
 
 /**
@@ -91,7 +91,6 @@ const GATE_DECISIONS = ['approve', 'reject', 'request_changes'] as const;
 
 export const createWorkItemBodySchema = z
   .object({
-    factory: z.string().min(1),
     title: z.string().min(1).max(200),
     type: z.enum(['task', 'bug', 'incident', 'pr_review']).optional(),
     source: z.enum(['forge', 'slack', 'cron', 'manual']).optional(),
@@ -123,7 +122,6 @@ export const gateDecisionBodySchema = z
 
 export const autonomyBodySchema = z
   .object({
-    factory: z.string().min(1),
     enabled: z.boolean(),
     actor: z.string().min(1).max(120),
     reason: z.string().min(1).max(2000),
@@ -138,7 +136,10 @@ export type AutonomyBody = z.infer<typeof autonomyBodySchema>;
 
 export interface WorkItemSummary {
   id: string;
+  /** Internal factory key. */
   factory: string;
+  /** Stable `fac_<ulid>` identity of the factory. */
+  factoryId: string | null;
   type: string;
   source: string;
   sourceRef: Record<string, unknown>;
@@ -170,6 +171,7 @@ function summarize(item: WorkItem): WorkItemSummary {
   return {
     id: item.id,
     factory: item.factory,
+    factoryId: item.factoryId,
     type: item.type,
     source: item.source,
     sourceRef: item.sourceRef,
@@ -204,7 +206,7 @@ interface CompiledLoop {
 
 /** Compiles the definition's stage graph and resolves per-stage configs (spawnableBy). */
 function compileLoopAt(dir: string, factory: string): CompiledLoop {
-  const { definition, errors } = loadDefinition(dir);
+  const { definition, errors } = loadDefinition(dir, { requireFactoryId: true });
   if (!definition) {
     // A bad stage graph is reported with its own code (spec: `invalid_stage_graph`).
     const stageError = errors.find((error) => error.code === 'invalid_stage_graph');
@@ -274,13 +276,19 @@ export interface CreatedWorkItem {
 
 export async function createWorkItemForApi(
   config: ApiConfig,
+  /** Internal factory key resolved from the nested route's `:factoryId`. */
+  factory: string,
   body: CreateWorkItemBody,
   /** Owner (`users.id`) from the session; null when auth is off (change `add-console-auth`). */
   createdBy: string | null = null,
+  /** Stable `fac_<ulid>` identity of the factory the nested route resolved. */
+  factoryId: string | null = null,
 ): Promise<CreatedWorkItem> {
-  const factory = body.factory;
   const sql = getSql();
   const workItemId = newWorkItemId();
+  // Automations and webhooks know only the internal key; resolve the identity from the
+  // registry so every row carries it (change `add-factory-identity`).
+  const resolvedFactoryId = factoryId ?? (await factoryIdForKey(factory));
 
   // Canary routing (ADR-021): assign once, at creation, by a deterministic hash of the
   // item id. A candidate item runs the materialised candidate tree and pins its commit, so
@@ -348,6 +356,7 @@ export async function createWorkItemForApi(
   const input: FactoryWorkflowInput = {
     workItemId,
     factory,
+    ...(resolvedFactoryId ? { factoryId: resolvedFactoryId } : {}),
     factoryRoot: dir,
     definitionCommit: commit,
     definitionDirty: dirty,
@@ -381,6 +390,7 @@ export async function createWorkItemForApi(
   const item = await createWorkItemRow(sql, {
     id: workItemId,
     factory,
+    ...(resolvedFactoryId ? { factoryId: resolvedFactoryId } : {}),
     type: body.type ?? 'task',
     source: body.source ?? 'manual',
     sourceRef,
@@ -485,12 +495,15 @@ export interface WorkItemDetail {
 export async function getWorkItemDetail(
   workItemId: string,
   viewer: Viewer | null = null,
+  factoryId: string | null = null,
 ): Promise<WorkItemDetail> {
   const sql = getSql();
   const item = await getWorkItem(sql, workItemId);
   if (!item) throw workItemNotFound(workItemId);
   // A member asking for someone else's item gets 404: ownership is not leaked.
   if (!canAccess(viewer, item.createdBy)) throw workItemNotFound(workItemId);
+  // A nested route also asserts the item belongs to the factory in the URL.
+  if (factoryId && item.factoryId !== factoryId) throw workItemNotFound(workItemId);
 
   const [events, gates, pendingGate] = await Promise.all([
     listWorkItemEvents(sql, workItemId),
@@ -530,6 +543,7 @@ export async function submitGateDecisionForApi(
   stage: string,
   request: GateDecisionRequest,
   viewer: Viewer | null = null,
+  factoryId: string | null = null,
 ): Promise<GateDecisionResult> {
   if (!(LOOP_STAGES as readonly string[]).includes(stage)) {
     throw invalidRequest(`unknown stage "${stage}"`, {
@@ -542,6 +556,7 @@ export async function submitGateDecisionForApi(
   const item = await getWorkItem(sql, workItemId);
   if (!item) throw workItemNotFound(workItemId);
   if (!canAccess(viewer, item.createdBy)) throw workItemNotFound(workItemId);
+  if (factoryId && item.factoryId !== factoryId) throw workItemNotFound(workItemId);
 
   const pending = await getPendingGate(sql, { workItemId, stage });
   if (!pending) throw gateNotFound(workItemId, stage);
@@ -626,15 +641,16 @@ export interface AutonomyResult {
  */
 export async function setAutonomyForApi(
   config: ApiConfig,
+  factory: string,
   body: AutonomyBody,
 ): Promise<AutonomyResult> {
-  const dir = resolveFactoryDir(config, body.factory);
-  const { definition, errors } = loadDefinition(dir);
-  if (!definition) throw definitionInvalid(body.factory, errors);
+  const dir = resolveFactoryDir(config, factory);
+  const { definition, errors } = loadDefinition(dir, { requireFactoryId: true });
+  if (!definition) throw definitionInvalid(factory, errors);
   const resolution = resolveAllGates(definition.manifest);
   const sql = getSql();
-  const current = await getAutonomyState(sql, body.factory);
-  const gate = await benchmarkGateStatus(config, body.factory);
+  const current = await getAutonomyState(sql, factory);
+  const gate = await benchmarkGateStatus(config, factory);
 
   const decision = evaluateAutonomyRequest({
     resolution,
@@ -650,17 +666,17 @@ export async function setAutonomyForApi(
 
   if (!decision.allowed) {
     if (gate.required && !gate.satisfied && !body.override) {
-      throw benchmarkAttestationMissing(body.factory, gate.definitionCommit, gate.suites);
+      throw benchmarkAttestationMissing(factory, gate.definitionCommit, gate.suites);
     }
     throw autonomyRefused(decision.message ?? 'autonomy refused', {
-      factory: body.factory,
+      factory,
       benchmarkGateRequired: decision.benchmarkGateRequired,
       benchmarkGateSatisfied: decision.benchmarkGateSatisfied,
     });
   }
 
   const state = await setAutonomyState(sql, {
-    factory: body.factory,
+    factory,
     enabled: body.enabled,
     paused: !body.enabled,
     actor: body.actor,
@@ -673,7 +689,7 @@ export async function setAutonomyForApi(
   let signaled = 0;
   if (!body.enabled) {
     const active = await listWorkItems(sql, {
-      factory: body.factory,
+      factory,
       status: 'active',
       limit: 200,
     });
@@ -695,7 +711,7 @@ export async function setAutonomyForApi(
   }
 
   log('info', body.enabled ? 'autonomy_enabled' : 'autonomy_paused', {
-    factory: body.factory,
+    factory,
     actor: body.actor,
     reason: body.reason,
     signaled,
@@ -777,7 +793,7 @@ export async function getAutonomyForApi(
   factory: string,
 ): Promise<AutonomyReadModel> {
   const dir = resolveFactoryDir(config, factory);
-  const { definition, errors } = loadDefinition(dir);
+  const { definition, errors } = loadDefinition(dir, { requireFactoryId: true });
   if (!definition) throw definitionInvalid(factory, errors);
 
   const resolution = resolveAllGates(definition.manifest);
@@ -855,11 +871,13 @@ export async function cancelWorkItemForApi(
   workItemId: string,
   body: CancelWorkItemBody,
   viewer: Viewer | null = null,
+  factoryId: string | null = null,
 ): Promise<CancelWorkItemResult> {
   const sql = getSql();
   const item = await getWorkItem(sql, workItemId);
   if (!item) throw workItemNotFound(workItemId);
   if (!canAccess(viewer, item.createdBy)) throw workItemNotFound(workItemId);
+  if (factoryId && item.factoryId !== factoryId) throw workItemNotFound(workItemId);
 
   if (item.status === 'done') {
     throw invalidState(
@@ -1102,6 +1120,7 @@ async function buildRetryInput(
   return {
     workItemId: item.id,
     factory,
+    ...(item.factoryId ? { factoryId: item.factoryId } : {}),
     factoryRoot: dir,
     definitionCommit: item.definitionCommit,
     definitionDirty: item.definitionDirty,
@@ -1149,11 +1168,13 @@ export async function retryWorkItemForApi(
   workItemId: string,
   body: RetryWorkItemBody,
   viewer: Viewer | null = null,
+  factoryId: string | null = null,
 ): Promise<RetryWorkItemResult> {
   const sql = getSql();
   const item = await getWorkItem(sql, workItemId);
   if (!item) throw workItemNotFound(workItemId);
   if (!canAccess(viewer, item.createdBy)) throw workItemNotFound(workItemId);
+  if (factoryId && item.factoryId !== factoryId) throw workItemNotFound(workItemId);
 
   const latest = await latestWorkItemRetry(sql, workItemId);
 

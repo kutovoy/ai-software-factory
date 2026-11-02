@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { factoryId, factoryPage } from './helpers';
 
 const TOP_LEVEL = ['nav-chat', 'nav-inbox', 'nav-runs', 'nav-mcps', 'nav-secrets', 'nav-users'];
 
@@ -81,12 +82,14 @@ test('every nav item renders and stubs name their phase', async ({ page }) => {
     }
   }
 
-  // The factory switcher changes the per-factory group without a full reload.
+  // The factory switcher changes the per-factory group without a full reload. Its option
+  // values are factory ids (change `add-factory-identity`), never directory names.
   const switcher = page.getByTestId('factory-switcher');
+  const exampleId = await factoryId(page.request, 'example');
   const options = await switcher.locator('option').evaluateAll((nodes) =>
     nodes.map((node) => (node as HTMLOptionElement).value),
   );
-  const other = options.find((value) => value !== 'example');
+  const other = options.find((value) => value !== exampleId);
   if (other) {
     const optionLabel = (await switcher.locator(`option[value="${other}"]`).textContent())?.trim() ?? '';
     // The switcher shows `alias (name)`; the sidebar label is the alias, falling back to
@@ -107,10 +110,11 @@ test('nav is operable with the keyboard only', async ({ page }) => {
   await page.goto('/chat');
   await expect(page.getByTestId('nav-sidebar')).toBeVisible();
 
+  const exampleId = await factoryId(page.request, 'example');
   await page.getByTestId('nav-runs').focus();
   await expect(page.getByTestId('nav-runs')).toBeFocused();
   await page.keyboard.press('Enter');
-  await expect(page).toHaveURL(/\/runs$/);
+  await expect(page).toHaveURL(new RegExp(`/factories/${exampleId}/runs$`));
   await expect(page.getByTestId('runs-filters')).toBeVisible();
 });
 
@@ -139,7 +143,7 @@ test('factory pages share the heading prefix and fit 1280px', async ({ page }) =
   for (const factory of ['example', 'example-lights-off']) {
     const expected = factory === 'example' ? 'Example' : 'Example — lights off';
     for (const segment of pages) {
-      await page.goto(`/factories/${factory}${segment}`);
+      await page.goto(await factoryPage(page.request, factory, segment.replace(/^\//, '')));
       const h1 = page.locator('h1').first();
       await expect(h1, `${factory}${segment} heading`).toContainText(expected);
       await expect(h1).toContainText('›');

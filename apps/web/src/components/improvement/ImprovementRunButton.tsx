@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 /** Starts one on-demand improvement run (eligibility → observe → probe → compose → decide). */
-export function ImprovementRunButton({ factory }: { factory: string }) {
+export function ImprovementRunButton({ factoryId }: { factoryId: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -15,7 +15,9 @@ export function ImprovementRunButton({ factory }: { factory: string }) {
     setStarted(null);
     setBusy(true);
     try {
-      const response = await fetch(`/api/factories/${encodeURIComponent(factory)}/improvement/run`, {
+      const response = await fetch(
+        `/api/v1/factories/${encodeURIComponent(factoryId)}/improvement/run`,
+        {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ trigger: 'on_demand' }),

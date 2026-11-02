@@ -20,13 +20,22 @@ export default async function McpsPage({
 }) {
   const params = await searchParams;
   const factories = await safeGet<{ factories: FactoryListItem[] }>('/factories', { factories: [] });
-  const names = factories.factories.map((factory) => factory.name);
+  // Factories are addressed by id (change `add-factory-identity`); the label stays human.
+  const entries = factories.factories.map((entry) => ({
+    id: entry.id ?? entry.key,
+    name: entry.alias?.trim() || entry.name,
+  }));
   const requested = params.factory ? decodeURIComponent(params.factory) : undefined;
-  const factory = requested && names.includes(requested) ? requested : (names[0] ?? 'example');
+  const selected =
+    entries.find((entry) => entry.id === requested) ?? entries[0] ?? null;
+  const factoryId = selected?.id ?? null;
+  const factory = selected?.name ?? 'no factory';
 
-  const projection = await getOrError<McpProjectionWire>(
-    `/factories/${encodeURIComponent(factory)}/mcp`,
-  );
+  const projection = factoryId
+    ? await getOrError<McpProjectionWire>(
+        `/factories/${encodeURIComponent(factoryId)}/mcp`,
+      )
+    : { data: null, error: null };
 
   const unregistered = (projection.data?.servers ?? [])
     .filter((server) => !server.registered)
@@ -43,19 +52,19 @@ export default async function McpsPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {names.map((name) => (
+          {entries.map((entry) => (
             <a
-              key={name}
-              href={`/mcps?factory=${encodeURIComponent(name)}`}
+              key={entry.id}
+              href={`/mcps?factory=${encodeURIComponent(entry.id)}`}
               data-testid="mcp-factory-link"
-              data-factory={name}
+              data-factory={entry.name}
               className={`rounded-md border px-2 py-1 text-xs ${
-                name === factory
+                entry.id === factoryId
                   ? 'border-slate-900 bg-slate-900 text-white'
                   : 'border-slate-300 text-slate-700'
               }`}
             >
-              {name}
+              {entry.name}
             </a>
           ))}
         </div>
@@ -82,7 +91,7 @@ export default async function McpsPage({
             />
           ) : (
             <McpPanel
-              factory={factory}
+              factoryId={factoryId ?? ''}
               projection={projection.data as McpProjectionWire}
               unregistered={unregistered}
             />

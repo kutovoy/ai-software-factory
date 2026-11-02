@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { cleanupRuns, cleanupWorkItems, trackWorkItem } from './helpers';
+import { cleanupRuns, cleanupWorkItems, factoryId, factoryPage, trackWorkItem } from './helpers';
 
 /**
  * Phase 3a loop, lights-on: a manual work item runs triage → spec → implement → review
@@ -18,25 +18,24 @@ test.describe('Factory loop (lights on)', () => {
   }) => {
     test.setTimeout(300_000);
 
+    const exampleId = await factoryId(page.request, 'example');
+    const boardPath = `/factories/${encodeURIComponent(exampleId)}/work-items`;
+
     // Board: all seven stage columns, in order, even when a factory has no agent for one.
-    await page.goto('/work-items');
+    await page.goto(boardPath);
     await expect(page.getByTestId('work-items-board').or(page.getByTestId('work-items-empty'))).toBeVisible();
     const columns = await page.getByTestId('board-column').evaluateAll((nodes) =>
       nodes.map((node) => node.getAttribute('data-stage')),
     );
     expect(columns).toEqual(['triage', 'spec', 'plan', 'implement', 'review', 'verify', 'ship']);
 
-    // Filter by factory is server-side and narrows the board.
-    await page.getByTestId('work-items-filter-factory').selectOption('example');
-    await page.getByTestId('work-items-filter-submit').click();
-    await expect(page).toHaveURL(/factory=example/);
+    // The board is factory-scoped: every card belongs to this factory.
     const factories = await page.getByTestId('work-item-card').evaluateAll((nodes) =>
       nodes.map((node) => node.getAttribute('data-factory')),
     );
     for (const factory of factories) expect(factory).toBe('example');
 
-    // Manual creation through the console (POST /api/work-items → POST /work-items).
-    await page.getByTestId('create-factory').selectOption('example');
+    // Manual creation through the console (POST /factories/:id/work-items).
     await page.getByTestId('create-type').selectOption('task');
     await page.getByTestId('create-harness').selectOption('fake');
     const title = `e2e: factory loop ${Date.now()}`;
@@ -44,9 +43,13 @@ test.describe('Factory loop (lights on)', () => {
     await page.getByTestId('create-prompt').fill('fix the broken README link');
     await page.getByTestId('create-submit').click();
 
-    await expect(page).toHaveURL(/\/work-items\/wi_[0-9A-HJKMNP-TV-Z]{26}$/, { timeout: 30_000 });
+    await expect(page).toHaveURL(
+      new RegExp(`/factories/${exampleId}/work-items/wi_[0-9A-HJKMNP-TV-Z]{26}$`),
+      { timeout: 30_000 },
+    );
     const workItemId = new URL(page.url()).pathname.split('/').pop() as string;
-    trackWorkItem(workItemId);
+    const detailPath = `/factories/${encodeURIComponent(exampleId)}/work-items/${workItemId}`;
+    trackWorkItem(exampleId, workItemId);
 
     await expect(page.getByTestId('work-item-detail')).toHaveAttribute(
       'data-work-item-id',
@@ -55,7 +58,7 @@ test.describe('Factory loop (lights on)', () => {
     await expect(page.getByTestId('work-item-title')).toHaveText(title);
 
     // The card is on the board, with its source, age and a link to the triage run.
-    await page.goto('/work-items?factory=example');
+    await page.goto(boardPath);
     const card = page.locator(`[data-testid="work-item-card"][data-work-item-id="${workItemId}"]`);
     await expect(card).toBeVisible({ timeout: 60_000 });
     await expect(card.getByTestId('work-item-card-status')).toHaveText('active');
@@ -63,24 +66,24 @@ test.describe('Factory loop (lights on)', () => {
     await expect(card.getByTestId('work-item-card-age')).toBeVisible();
     await expect(card.getByTestId('work-item-card-link')).toHaveAttribute(
       'href',
-      `/work-items/${workItemId}`,
+      detailPath,
     );
     await expect(card.getByTestId('work-item-card-run-link').first()).toBeVisible({
       timeout: 60_000,
     });
 
     // Gate 1: triage (human, aliased to the spec policy).
-    await expectGate(page, workItemId, 'triage', 120_000);
+    await expectGate(page, detailPath, 'triage', 120_000);
     await expect(page.getByTestId('gate-actions')).toHaveAttribute('data-stage', 'triage');
     await expect(page.getByTestId('gate-sla')).toBeVisible();
     await page.getByTestId('gate-approve').click();
 
     // Gate 2: spec.
-    await expectGate(page, workItemId, 'spec', 120_000);
+    await expectGate(page, detailPath, 'spec', 120_000);
     await page.getByTestId('gate-approve').click();
 
     // implement → review (2 reviewers) → verify are agent-gated; the next human gate is ship.
-    await expectGate(page, workItemId, 'ship', 180_000);
+    await expectGate(page, detailPath, 'ship', 180_000);
 
     // Stage timeline: every transition names from → to, who and why.
     const transitions = page.getByTestId('timeline-row');
@@ -124,7 +127,7 @@ test.describe('Factory loop (lights on)', () => {
     await expect
       .poll(
         async () => {
-          await page.goto(`/work-items/${workItemId}`);
+          await page.goto(detailPath);
           return (await page.getByTestId('work-item-status').textContent())?.trim();
         },
         { timeout: 180_000, intervals: [1_000] },
@@ -165,12 +168,12 @@ test.describe('Factory loop (lights on)', () => {
 });
 
 /** Reloads the detail page until the pending gate is `stage` (or fails the expectation). */
-async function expectGate(page: Page, workItemId: string, stage: string, timeout: number): Promise<void> {
+async function expectGate(page: Page, detailPath: string, stage: string, timeout: number): Promise<void> {
   await expect
     .poll(
       async () => {
         try {
-          await page.goto(`/work-items/${workItemId}`);
+          await page.goto(detailPath);
         } catch {
           return 'navigation-error';
         }

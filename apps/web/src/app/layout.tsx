@@ -54,8 +54,8 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
 
   /**
    * Selected-factory persistence (`web-console` spec: "Stable factory selection"). The
-   * cookie is written by the sidebar; a name that no longer exists is ignored rather than
-   * shown as a phantom selection.
+   * cookie holds a factory **id** (change `add-factory-identity`); an id that no longer
+   * resolves is ignored rather than shown as a phantom selection.
    */
   const raw = cookieStore.get('factory')?.value ?? null;
   let persisted: string | null = null;
@@ -65,7 +65,10 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     persisted = null;
   }
   const initialFactory =
-    persisted && factories.factories.some((factory) => factory.name === persisted) ? persisted : null;
+    persisted &&
+    factories.factories.some((factory) => (factory.id ?? factory.key) === persisted)
+      ? persisted
+      : null;
   const forgejoEnabled = (process.env.FORGEJO_ENABLED ?? '1') !== '0';
 
   return (

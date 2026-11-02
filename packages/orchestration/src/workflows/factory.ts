@@ -307,6 +307,7 @@ export async function FactoryWorkflow(
     const common: Omit<StageWorkflowInput, 'phase' | 'gate'> = {
       workItemId: input.workItemId,
       factory: input.factory,
+      ...(input.factoryId ? { factoryId: input.factoryId } : {}),
       factoryRoot: input.factoryRoot,
       definitionCommit: input.definitionCommit,
       definitionDirty: input.definitionDirty,

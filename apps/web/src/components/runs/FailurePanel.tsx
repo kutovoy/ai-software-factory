@@ -21,10 +21,12 @@ import type { RunRow, RunStep } from '@/lib/types';
  * the actor that requested it; a healthy run renders nothing at all.
  */
 export function FailurePanel({
+  factoryId,
   run,
   steps,
   summary,
 }: {
+  factoryId: string;
   run: RunRow;
   steps: RunStep[];
   summary: string | null;
@@ -56,7 +58,7 @@ export function FailurePanel({
           <div className="min-w-0">
             <p className="text-xs uppercase tracking-wide text-slate-400">Reason</p>
             <p data-testid="run-cancel-reason" className="break-words text-sm text-slate-800">
-              {summary ?? run.summary ?? 'cancelled'}
+              {run.cancel_reason ?? summary ?? run.summary ?? 'cancelled'}
             </p>
           </div>
           <div className="min-w-0">
@@ -117,7 +119,7 @@ export function FailurePanel({
           </p>
         </div>
 
-        {run.kind === 'chat' ? <RetryRunButton runId={run.id} /> : null}
+        {run.kind === 'chat' ? <RetryRunButton factoryId={factoryId} runId={run.id} /> : null}
       </CardBody>
     </Card>
   );

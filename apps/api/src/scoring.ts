@@ -109,7 +109,7 @@ export type CalibrationBody = z.infer<typeof calibrationBodySchema>;
 
 function loadFactory(config: ApiConfig, factory: string): { dir: string; definition: FactoryDefinition } {
   const dir = resolveFactoryDir(config, factory);
-  const { definition, errors } = loadDefinition(dir);
+  const { definition, errors } = loadDefinition(dir, { requireFactoryId: true });
   if (!definition) throw definitionInvalid(factory, errors);
   return { dir, definition };
 }

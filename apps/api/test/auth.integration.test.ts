@@ -1,16 +1,17 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { SQL } from 'bun';
-import { readdir, readFile } from 'node:fs/promises';
+import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Hono } from 'hono';
 import {
   createUser,
   findUserByEmail,
   listUsers,
+  newFactoryId,
   type User,
 } from '@factory/core';
 import { closeClient, getSql, insertRun, type RunInput } from '@factory/orchestration';
-import { req, v1 } from './helpers';
+import { factoryIdOf, req, v1 } from './helpers';
 import { createApp } from '../src/app';
 import { ensureBootstrapAdmin } from '../src/auth';
 import { loadApiConfig, type ApiConfig } from '../src/config';
@@ -39,6 +40,14 @@ const suite = enabled ? describe : describe.skip;
 const REPO_ROOT = join(import.meta.dir, '..', '..', '..');
 const MIGRATIONS = join(REPO_ROOT, 'packages', 'core', 'migrations');
 const PREFIX = `itest-auth-api-${process.pid}`;
+/**
+ * Two-user isolation needs two factories: a legacy admin-owned `example` and an
+ * owner-scoped `<member>/example` (change `add-factory-identity`). They live under a
+ * scratch root inside the git repo so `pinVersion` still works, and every id is unique.
+ */
+const FIXTURE_ROOT = join(REPO_ROOT, 'runs', '.auth-itest');
+const MEMBER_USERNAME = `${PREFIX}-member`;
+const MEMBER_FACTORY_KEY = `${MEMBER_USERNAME}/example`;
 
 const ADMIN_EMAIL = `${PREFIX}-admin@factory.local`;
 const ADMIN_PASSWORD = 'itest-admin-pass';
@@ -51,6 +60,12 @@ let authOffApp: Hono;
 let sql: SQL;
 let admin: User;
 let member: User;
+let adminCookie: string | null = null;
+let memberCookie: string | null = null;
+/** Id of the legacy admin-owned factory (`example`). */
+let adminFactoryId: string;
+/** Id of the member-owned factory (`<member>/example`). */
+let memberFactoryId: string;
 const createdWorkItems: string[] = [];
 
 async function migrate(databaseUrl: string): Promise<void> {
@@ -118,8 +133,24 @@ suite('console auth API', () => {
     process.env.DATABASE_URL = process.env.DATABASE_URL as string;
     process.env.TEMPORAL_ADDRESS = process.env.TEMPORAL_ADDRESS as string;
     process.env.TEMPORAL_TASK_QUEUE = `factory-api-auth-itest-${process.pid}-${Date.now()}`;
-    process.env.FACTORY_ROOT = join(REPO_ROOT, 'factories');
+    process.env.FACTORY_ROOT = FIXTURE_ROOT;
     process.env.REPO_ROOT = REPO_ROOT;
+
+    await rm(FIXTURE_ROOT, { recursive: true, force: true });
+    await cp(join(REPO_ROOT, 'factories', 'example'), join(FIXTURE_ROOT, 'example'), {
+      recursive: true,
+    });
+    await mkdir(join(FIXTURE_ROOT, MEMBER_USERNAME), { recursive: true });
+    await cp(
+      join(REPO_ROOT, 'factories', 'example'),
+      join(FIXTURE_ROOT, MEMBER_USERNAME, 'example'),
+      { recursive: true },
+    );
+    // The two copies must not share an identity: mint a fresh `fac_<ulid>` for the
+    // member-owned one (a duplicate id would collapse both registry rows).
+    const memberManifest = join(FIXTURE_ROOT, MEMBER_USERNAME, 'example', 'factory.yaml');
+    const manifestYaml = await readFile(memberManifest, 'utf8');
+    await writeFile(memberManifest, manifestYaml.replace(/^id: .*$/m, `id: ${newFactoryId()}`));
 
     await migrate(process.env.DATABASE_URL as string);
     sql = new SQL(process.env.DATABASE_URL as string, { max: 1 });
@@ -153,6 +184,13 @@ suite('console auth API', () => {
 
     app = createApp(config);
     authOffApp = createApp({ ...config, authRequired: false });
+
+    const adminSession = await login(ADMIN_EMAIL, ADMIN_PASSWORD);
+    const memberSession = await login(MEMBER_EMAIL, MEMBER_PASSWORD);
+    adminCookie = adminSession.cookie;
+    memberCookie = memberSession.cookie;
+    adminFactoryId = await factoryIdOf(app, 'example', adminCookie as string);
+    memberFactoryId = await factoryIdOf(app, MEMBER_FACTORY_KEY, memberCookie as string);
   }, 120_000);
 
   afterAll(async () => {
@@ -161,7 +199,9 @@ suite('console auth API', () => {
     for (const id of createdWorkItems) {
       await db`delete from work_items where id = ${id}`;
     }
+    await db`delete from factories where key = ${MEMBER_FACTORY_KEY}`;
     await db`delete from users where username like ${`${PREFIX}%`}`;
+    await rm(FIXTURE_ROOT, { recursive: true, force: true });
     await sql.close();
     await closeClient();
   }, 60_000);
@@ -389,11 +429,15 @@ suite('console auth API', () => {
   test('members only see their own work items; admins see all', async () => {
     const memberSession = await login(MEMBER_EMAIL, MEMBER_PASSWORD);
     const adminSession = await login(ADMIN_EMAIL, ADMIN_PASSWORD);
+    const memberHeaders = { cookie: memberSession.cookie as string };
+    const adminHeaders = { cookie: adminSession.cookie as string };
 
+    // Both items live in the member-owned factory: the admin may create work there (an
+    // admin resolves every factory), the member must never see the admin's row.
     const mine = await postJson(
       app,
-      '/work-items',
-      { factory: 'example', title: 'Member item', harness: 'fake' },
+      `/factories/${memberFactoryId}/work-items`,
+      { title: 'Member item', harness: 'fake' },
       memberSession.cookie as string,
     );
     expect(mine.status).toBe(201);
@@ -402,54 +446,80 @@ suite('console auth API', () => {
 
     const theirs = await postJson(
       app,
-      '/work-items',
-      { factory: 'example', title: 'Admin item', harness: 'fake' },
+      `/factories/${memberFactoryId}/work-items`,
+      { title: 'Admin item', harness: 'fake' },
       adminSession.cookie as string,
     );
     expect(theirs.status).toBe(201);
     const theirsId = ((await theirs.json()) as { workItem: { id: string } }).workItem.id;
     createdWorkItems.push(theirsId);
 
-    // POST /work-items stores the session user as the owner.
+    // POST stores the session user as the owner and the factory identity on the row.
     const owners = (await sql`
-      select id, created_by from work_items where id in (${mineId}, ${theirsId})
-    `) as { id: string; created_by: string | null }[];
+      select id, created_by, factory, factory_id from work_items where id in (${mineId}, ${theirsId})
+    `) as { id: string; created_by: string | null; factory: string; factory_id: string | null }[];
     expect(owners.find((row) => row.id === mineId)?.created_by).toBe(member.id);
     expect(owners.find((row) => row.id === theirsId)?.created_by).toBe(admin.id);
+    for (const row of owners) {
+      expect(row.factory).toBe(MEMBER_FACTORY_KEY);
+      expect(row.factory_id).toBe(memberFactoryId);
+    }
 
-    const memberList = await req(app, '/work-items?factory=example', {
-      headers: { cookie: memberSession.cookie as string },
+    const memberList = await req(app, `/factories/${memberFactoryId}/work-items`, {
+      headers: memberHeaders,
     });
     expect(memberList.status).toBe(200);
     const memberItems = ((await memberList.json()) as { workItems: Array<{ id: string }> }).workItems;
     expect(memberItems.map((item) => item.id)).toContain(mineId);
     expect(memberItems.map((item) => item.id)).not.toContain(theirsId);
 
-    const adminList = await req(app, '/work-items?factory=example', {
-      headers: { cookie: adminSession.cookie as string },
+    const adminList = await req(app, `/factories/${memberFactoryId}/work-items`, {
+      headers: adminHeaders,
     });
     expect(adminList.status).toBe(200);
     const adminItems = ((await adminList.json()) as { workItems: Array<{ id: string }> }).workItems;
     expect(adminItems.map((item) => item.id)).toContain(mineId);
     expect(adminItems.map((item) => item.id)).toContain(theirsId);
 
+    // Factory scope: the member list contains only the factory they own, and the
+    // admin-owned legacy factory is a 404 (existence is not leaked, never 403).
+    const memberFactories = await req(app, '/factories', { headers: memberHeaders });
+    expect(memberFactories.status).toBe(200);
+    const keys = ((await memberFactories.json()) as {
+      factories: Array<{ key: string; owner: string | null }>;
+    }).factories;
+    expect(keys.map((factory) => factory.key)).toEqual([MEMBER_FACTORY_KEY]);
+    expect(keys[0]?.owner).toBe(MEMBER_USERNAME);
+
+    const foreignFactory = await req(app, `/factories/${adminFactoryId}`, {
+      headers: memberHeaders,
+    });
+    expect(foreignFactory.status).toBe(404);
+    expect(((await foreignFactory.json()) as { code: string }).code).toBe('factory_not_found');
+
     // Detail and gate routes hide the other user's item behind 404.
-    const foreign = await req(app, `/work-items/${theirsId}`, {
-      headers: { cookie: memberSession.cookie as string },
+    const foreign = await req(app, `/factories/${memberFactoryId}/work-items/${theirsId}`, {
+      headers: memberHeaders,
     });
     expect(foreign.status).toBe(404);
     expect(((await foreign.json()) as { code: string }).code).toBe('work_item_not_found');
 
     const foreignGate = await postJson(
       app,
-      `/work-items/${theirsId}/gates/spec`,
+      `/factories/${memberFactoryId}/work-items/${theirsId}/gates/spec`,
       { decision: 'approve', actor: 'eve' },
       memberSession.cookie as string,
     );
     expect(foreignGate.status).toBe(404);
 
-    const own = await req(app, `/work-items/${mineId}`, {
-      headers: { cookie: memberSession.cookie as string },
+    // A work item reached through the wrong factory id is also a 404.
+    const wrongFactory = await req(app, `/factories/${adminFactoryId}/work-items/${mineId}`, {
+      headers: adminHeaders,
+    });
+    expect(wrongFactory.status).toBe(404);
+
+    const own = await req(app, `/factories/${memberFactoryId}/work-items/${mineId}`, {
+      headers: memberHeaders,
     });
     expect(own.status).toBe(200);
   }, 120_000);
@@ -457,13 +527,16 @@ suite('console auth API', () => {
   test('members only see their own runs; admins see all', async () => {
     const memberSession = await login(MEMBER_EMAIL, MEMBER_PASSWORD);
     const adminSession = await login(ADMIN_EMAIL, ADMIN_PASSWORD);
+    const memberHeaders = { cookie: memberSession.cookie as string };
+    const adminHeaders = { cookie: adminSession.cookie as string };
 
     const makeRun = async (suffix: string, createdBy: string | null): Promise<string> => {
       const runId = `run_itest_auth_${suffix}`;
       const input: RunInput = {
         runId,
-        factory: 'example',
-        factoryRoot: join(REPO_ROOT, 'factories', 'example'),
+        factory: MEMBER_FACTORY_KEY,
+        factoryId: memberFactoryId,
+        factoryRoot: join(FIXTURE_ROOT, MEMBER_USERNAME, 'example'),
         definitionCommit: 'a'.repeat(40),
         definitionDirty: false,
         harness: 'fake',
@@ -475,7 +548,8 @@ suite('console auth API', () => {
       };
       await insertRun({
         runId,
-        factory: 'example',
+        factory: MEMBER_FACTORY_KEY,
+        factoryId: memberFactoryId,
         definitionCommit: input.definitionCommit,
         definitionDirty: false,
         harness: 'fake',
@@ -494,8 +568,8 @@ suite('console auth API', () => {
     const adminRun = await makeRun(`${process.pid}-admin`, admin.id);
     const orphanRun = await makeRun(`${process.pid}-orphan`, null);
 
-    const memberList = await req(app, '/runs?limit=100', {
-      headers: { cookie: memberSession.cookie as string },
+    const memberList = await req(app, `/factories/${memberFactoryId}/runs?limit=100`, {
+      headers: memberHeaders,
     });
     expect(memberList.status).toBe(200);
     const memberRuns = ((await memberList.json()) as { runs: Array<{ id: string }> }).runs;
@@ -503,22 +577,28 @@ suite('console auth API', () => {
     expect(memberRuns.map((run) => run.id)).not.toContain(adminRun);
     expect(memberRuns.map((run) => run.id)).not.toContain(orphanRun);
 
-    const adminList = await req(app, '/runs?limit=100', {
-      headers: { cookie: adminSession.cookie as string },
+    const adminList = await req(app, `/factories/${memberFactoryId}/runs?limit=100`, {
+      headers: adminHeaders,
     });
     const adminRuns = ((await adminList.json()) as { runs: Array<{ id: string }> }).runs;
     expect(adminRuns.map((run) => run.id)).toContain(memberRun);
     expect(adminRuns.map((run) => run.id)).toContain(adminRun);
     expect(adminRuns.map((run) => run.id)).toContain(orphanRun);
 
-    const foreign = await req(app, `/runs/${adminRun}`, {
-      headers: { cookie: memberSession.cookie as string },
+    const foreign = await req(app, `/factories/${memberFactoryId}/runs/${adminRun}`, {
+      headers: memberHeaders,
     });
     expect(foreign.status).toBe(404);
     expect(((await foreign.json()) as { code: string }).code).toBe('run_not_found');
 
-    const own = await req(app, `/runs/${memberRun}`, {
-      headers: { cookie: memberSession.cookie as string },
+    // A run is unreachable through a factory the member does not own.
+    const crossFactory = await req(app, `/factories/${adminFactoryId}/runs/${memberRun}`, {
+      headers: memberHeaders,
+    });
+    expect(crossFactory.status).toBe(404);
+
+    const own = await req(app, `/factories/${memberFactoryId}/runs/${memberRun}`, {
+      headers: memberHeaders,
     });
     expect(own.status).toBe(200);
   }, 60_000);
@@ -528,10 +608,10 @@ suite('console auth API', () => {
     expect(me.status).toBe(200);
     expect((await me.json()) as { user: null }).toEqual({ user: null });
 
-    const runs = await req(authOffApp, '/runs?limit=100');
+    const runs = await req(authOffApp, `/factories/${adminFactoryId}/runs?limit=100`);
     expect(runs.status).toBe(200);
 
-    const workItems = await req(authOffApp, '/work-items?factory=example');
+    const workItems = await req(authOffApp, `/factories/${adminFactoryId}/work-items`);
     expect(workItems.status).toBe(200);
 
     // User management stays reachable as the implicit local user.

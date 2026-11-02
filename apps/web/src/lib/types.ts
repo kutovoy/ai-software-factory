@@ -114,7 +114,16 @@ export interface FactoryVersionSummary {
 }
 
 export interface FactoryListItem {
+  /** Stable `fac_<ulid>` identity — the only value a console URL may carry. */
+  id: string | null;
+  /** Internal key: `<name>` (legacy) or `<owner>/<name>`. */
+  key: string;
+  /** Directory name (last key segment). */
   name: string;
+  /** Definition path below the factory root (equal to `key`). */
+  path: string;
+  /** Console username of the owner, or null for a pre-auth deployment. */
+  owner: string | null;
   manifestName: string | null;
   alias: string | null;
   description: string | null;
@@ -170,7 +179,12 @@ export interface FactoryManifest {
 }
 
 export interface FactoryDetail {
+  /** Stable `fac_<ulid>` identity. */
+  id: string | null;
+  /** Internal definition key (`<name>` or `<owner>/<name>`); the display fallback. */
   name: string;
+  /** Definition path below the factory root (equal to `name`). */
+  key: string;
   manifest: FactoryManifest;
   manifestName: string;
   alias: string | null;
@@ -241,7 +255,10 @@ export type WorkItemStage = (typeof WORK_ITEM_STAGES)[number];
 
 export interface WorkItemSummary {
   id: string;
+  /** Internal factory key. */
   factory: string;
+  /** Stable factory id; the segment every console link uses. */
+  factoryId?: string | null;
   type: string;
   source: string;
   sourceRef: Record<string, unknown>;
@@ -315,7 +332,7 @@ export interface CreatedWorkItem {
   workflow: { workflowId: string; temporalRunId: string } | null;
 }
 
-/** `GET /autonomy?factory=` — the declared policy + live state + newest event. */
+/** `GET /factories/:factoryId/autonomy` — the declared policy + live state + newest event. */
 export interface AutonomyReadWire {
   factory: string;
   declared: {

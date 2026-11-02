@@ -9,11 +9,11 @@ import { useRouter } from 'next/navigation';
  * and reason supplied here.
  */
 export function CanaryActions({
-  factory,
+  factoryId,
   rolloutId,
   active,
 }: {
-  factory: string;
+  factoryId: string;
   rolloutId: string;
   active: boolean;
 }) {
@@ -33,11 +33,12 @@ export function CanaryActions({
     }
     setBusy(action);
     try {
-      const response = await fetch(`/api/canary/${action}`, {
+      const response = await fetch(
+        `/api/v1/factories/${encodeURIComponent(factoryId)}/canary/${action}`,
+        {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          factory,
           rolloutId,
           actor: actor.trim(),
           reason: reason.trim(),

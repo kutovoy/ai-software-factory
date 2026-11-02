@@ -14,8 +14,15 @@ sessions (argon2id hashes, opaque hashed tokens, HttpOnly cookie), an admin boot
 Users page, admin/member roles, per-user work-item/run scope, and a forge proxy that asserts the
 signed-in username. Compose runs with `AUTH_REQUIRED=1` and a documented local-development admin.
 
+**Factory identity + complete purge — complete** (2026-11-02). Factories now have a committed
+`fac_<ulid>` id, an owner-scoped path (`factories/<owner>/<name>`; legacy top-level directories are
+admin-owned), and nested URLs (`/factories/<id>/…`, work items and runs nested under the factory).
+The API is nested-only under `/api/v1/factories/:factoryId/…`; members see only their factories and
+unauthorized IDs return 404. The delete path is a verified hard purge: DB rows, Temporal schedules,
+running workflows and run directories, with git history and forge repos kept.
+
 Next: **Phase 6c** — external OIDC/IdP (group→org mappings), remote runners, Temporal Cloud and
-multi-tenant isolation. Also pending: a live replay-trial integration test and the live GitHub path.
+multi-tenant isolation. Also pending: the live GitHub path.
 
 ### Readiness and public-release prep (2026-11-01)
 
@@ -43,8 +50,27 @@ Fixes that the test forced (all committed):
 
 Latest tags: `harden-runtime`, `secrets-mcp`, `api-v1-help`, `help-center`, `live-api-explorer`,
 `api-explorer-parity`, `fix-ui-audit`, `fix-run-failures`, `run-actions`, `readiness-hello-nextjs`, `console-ops`,
-`forgejo`, `agent-verdicts`, `console-auth`, `harden-runners`, `forge-ssh-public`, `readiness-qa`. `bun run ci`
-569 pass; smoke passes; Playwright 55; UI audit 33 routes clean without the hydration tolerance.
+`forgejo`, `agent-verdicts`, `console-auth`, `harden-runners`, `forge-ssh-public`, `readiness-qa`,
+`factory-identity`, `factory-purge`, `readiness-identity`. `bun run ci` 735 pass; smoke passes; Playwright 56;
+UI audit clean.
+
+### Factory identity + purge v2 (2026-11-02)
+
+- **Identity:** `factory.yaml` carries `id: fac_<ulid>`; a `factories` registry maps id → owner/name/key/path.
+  New factories live at `factories/<owner>/<name>`; legacy top-level directories stay admin-owned. The internal
+  `factory` key is `owner/name` (or the legacy name), so two users can both own `hello-nextjs`.
+- **URLs/API:** nested-only — `/factories/<id>/dashboard`, `/factories/<id>/work-items/<id>`,
+  `/factories/<id>/runs/<id>` and `/api/v1/factories/:factoryId/…`. The old name/global routes are removed
+  (breaking `/api/v1`; ADR-038 records the exception to the prefix-bump rule).
+- **Ownership:** members list/resolve only their factories; admins see all; cross-user IDs return 404. Playwright
+  covers the member-vs-admin isolation path.
+- **Purge v2:** `DELETE /api/v1/factories/:factoryId` is fail-closed, refuses active work unless forced, deletes
+  DB rows in one verified transaction, deletes Temporal schedules, terminates running workflows and removes
+  `runs/<id>/`; git history and the forge repo/PRs remain. The CLI logs in, resolves the ID and calls it.
+- **One-off cleanup:** stale `hello-nextjs` rows from before the recreation were purged (4 work items, 25 runs,
+  25 run dirs), keeping the PR #4 readiness rows.
+- **Fresh readiness run:** work item `wi_01M6DF5HG9EMWWPKN4JB4YGCDG` ran through the new ID URL with zero human
+  decisions and merged **PR #5**; QA ran Playwright 1.64.1/Chromium and reported `1 passed (687ms)`.
 
 ### Second lights-off run with Playwright QA (2026-11-02)
 

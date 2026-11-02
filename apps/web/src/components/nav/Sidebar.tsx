@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Fragment, useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
-import { FACTORY_NAV, FOOTER_NAV, TOP_NAV, factoryHref } from '@/lib/nav';
+import { FACTORY_NAV, FOOTER_NAV, TOP_NAV, factoryHref, navHref } from '@/lib/nav';
 import type { FactoryListItem, UserWire } from '@/lib/types';
 
 const FACTORY_COOKIE = 'factory';
@@ -14,8 +14,19 @@ function factoryFromPathname(pathname: string): string | null {
   return match?.[1] ? decodeURIComponent(match[1]) : null;
 }
 
-function persistFactory(name: string): void {
-  document.cookie = `${FACTORY_COOKIE}=${encodeURIComponent(name)}; path=/; max-age=31536000; samesite=lax`;
+function persistFactory(id: string): void {
+  document.cookie = `${FACTORY_COOKIE}=${encodeURIComponent(id)}; path=/; max-age=31536000; samesite=lax`;
+}
+
+/** The switcher value for a factory: its stable id (a URL may never carry the name). */
+function factoryValue(factory: FactoryListItem): string {
+  return factory.id ?? factory.key;
+}
+
+/** `alias (name)` for the switcher; the sidebar label is the alias or the directory name. */
+function factoryOptionLabel(factory: FactoryListItem): string {
+  const label = factory.alias?.trim() ? factory.alias : factory.name;
+  return label === factory.name ? label : `${label} (${factory.name})`;
 }
 
 export function Sidebar({
@@ -26,7 +37,7 @@ export function Sidebar({
   authRequired = false,
 }: {
   factories: FactoryListItem[];
-  /** Value of the `factory` cookie, resolved by the root layout. */
+  /** Value of the `factory` cookie (a factory id), resolved by the root layout. */
   initialFactory?: string | null;
   /** Local Forgejo is enabled (spec `forge`); the menu links to it under "MCPs and apps". */
   forgejoEnabled?: boolean;
@@ -51,16 +62,22 @@ export function Sidebar({
 
   /**
    * Stable selection (`web-console` spec: "Stable factory selection"): the path wins on
-   * `/factories/:name/*`; otherwise the persisted factory holds, so clicking Runs/Inbox
+   * `/factories/:id/*`; otherwise the persisted factory id holds, so clicking Runs/Inbox
    * never silently switches factory. `selected` starts `null` so the server and client
-   * agree on the first render, then tracks the path and the switcher.
+   * agree on the first render, then tracks the path and the switcher. The persisted value
+   * is the factory **id**, not a directory name (change `add-factory-identity`).
    */
   const pathFactory = factoryFromPathname(pathname);
   const [selected, setSelected] = useState<string | null>(null);
-  const known = (name: string | null): string | null =>
-    name && factories.some((factory) => factory.name === name) ? name : null;
-  const activeFactory = pathFactory ?? selected ?? known(initialFactory) ?? factories[0]?.name ?? 'example';
-  const activeFactoryEntry = factories.find((factory) => factory.name === activeFactory) ?? null;
+  const known = (id: string | null): string | null =>
+    id && factories.some((factory) => factoryValue(factory) === id) ? id : null;
+  const activeFactoryId =
+    pathFactory ?? selected ?? known(initialFactory) ?? (factories[0] ? factoryValue(factories[0]) : null);
+  const activeFactoryEntry =
+    factories.find((factory) => factoryValue(factory) === activeFactoryId) ?? null;
+  const activeFactoryName = activeFactoryEntry
+    ? activeFactoryEntry.alias?.trim() || activeFactoryEntry.name
+    : 'no factory';
 
   // Opening a factory route makes that factory the persisted selection.
   useEffect(() => {
@@ -96,7 +113,7 @@ export function Sidebar({
         <select
           id="factory-switcher"
           data-testid="factory-switcher"
-          value={activeFactory}
+          value={activeFactoryId ?? ''}
           onChange={(event) => {
             const next = event.target.value;
             setSelected(next);
@@ -105,10 +122,10 @@ export function Sidebar({
           }}
           className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
         >
-          {factories.length === 0 ? <option value="example">example</option> : null}
+          {factories.length === 0 ? <option value="">No factories</option> : null}
           {factories.map((factory) => (
-            <option key={factory.name} value={factory.name}>
-              {factory.alias ? `${factory.alias} (${factory.name})` : factory.name}
+            <option key={factoryValue(factory)} value={factoryValue(factory)}>
+              {factoryOptionLabel(factory)}
             </option>
           ))}
         </select>
@@ -116,22 +133,36 @@ export function Sidebar({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
         <ul className="space-y-0.5">
-          {TOP_NAV.map((item) => (
+          {TOP_NAV.map((item) => {
+            const href = navHref(item, activeFactoryId);
+            const active = isActive(href);
+            return (
             <Fragment key={item.href}>
               <li>
-                <Link
-                  href={item.href}
-                  data-testid={item.testId}
-                  data-active={isActive(item.href) ? 'true' : 'false'}
-                  aria-current={isActive(item.href) ? 'page' : undefined}
-                  className={`block rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300 ${
-                    isActive(item.href)
-                      ? 'bg-slate-900 text-white'
-                      : 'text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  {item.label}
-                </Link>
+                {item.factoryScoped && !activeFactoryId ? (
+                  <span
+                    data-testid={item.testId}
+                    data-active="false"
+                    title="Add a factory to use this page"
+                    className="block rounded-md px-3 py-1.5 text-sm text-slate-400"
+                  >
+                    {item.label}
+                  </span>
+                ) : (
+                  <Link
+                    href={href}
+                    data-testid={item.testId}
+                    data-active={active ? 'true' : 'false'}
+                    aria-current={active ? 'page' : undefined}
+                    className={`block rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300 ${
+                      active
+                        ? 'bg-slate-900 text-white'
+                        : 'text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                )}
               </li>
               {item.href === '/mcps' && forgejoEnabled ? (
                 <li>
@@ -147,7 +178,8 @@ export function Sidebar({
                 </li>
               ) : null}
             </Fragment>
-          ))}
+            );
+          })}
         </ul>
 
         <div className="mt-5 flex items-center justify-between px-3">
@@ -165,11 +197,12 @@ export function Sidebar({
           </Link>
         </div>
         <p data-testid="nav-factory-name" className="px-3 text-sm font-medium text-slate-800">
-          {activeFactoryEntry?.alias ?? activeFactory}
+          {activeFactoryName}
         </p>
         <ul className="mt-1 space-y-0.5">
           {FACTORY_NAV.map((item) => {
-            const href = factoryHref(activeFactory, item.segment);
+            if (!activeFactoryId) return null;
+            const href = factoryHref(activeFactoryId, item.segment);
             return (
               <li key={item.segment}>
                 <Link

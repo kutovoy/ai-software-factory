@@ -99,17 +99,15 @@ describe('improvement API validation', () => {
     expect(canaryStartBodySchema.safeParse({ proposalId: 'prop_1' }).success).toBe(false);
     expect(
       canaryRollbackBodySchema.safeParse({
-        factory: 'example-lights-off',
         actor: 'a',
         reason: 'r',
       }).success,
     ).toBe(true);
     expect(
-      canaryRollbackBodySchema.safeParse({ factory: 'f', actor: 'a' }).success,
+      canaryRollbackBodySchema.safeParse({ actor: 'a' }).success,
     ).toBe(false);
     expect(
       canaryPromoteBodySchema.safeParse({
-        factory: 'f',
         rolloutId: 'canary_1',
         actor: 'a',
         reason: 'r',

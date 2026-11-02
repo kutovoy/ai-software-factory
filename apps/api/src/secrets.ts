@@ -126,11 +126,11 @@ function registryError(error: unknown): never {
 }
 
 /** Every secret reference found in every definition (git is the source of truth). */
-export function collectAllSecretReferences(config: ApiConfig): SecretReference[] {
+export async function collectAllSecretReferences(config: ApiConfig): Promise<SecretReference[]> {
   const references: SecretReference[] = [];
   let factories: string[];
   try {
-    factories = listFactories(config).map((factory) => factory.name);
+    factories = (await listFactories(config)).map((factory) => factory.key);
   } catch {
     return references;
   }
@@ -138,7 +138,7 @@ export function collectAllSecretReferences(config: ApiConfig): SecretReference[]
   for (const factory of factories) {
     try {
       const dir = resolveFactoryDir(config, factory);
-      const { definition } = loadDefinition(dir);
+      const { definition } = loadDefinition(dir, { requireFactoryId: true });
       if (!definition) continue;
       const agents = definition.resources
         .filter((resource) => resource.kind === 'agent')
@@ -183,7 +183,7 @@ export async function listSecretsForApi(
   // the operator can act on it (spec `secrets` › definition validation).
   const known = new Set(registered.map((entry) => entry.secret.name));
   const missing = new Map<string, UnregisteredSecretView>();
-  for (const reference of collectAllSecretReferences(config)) {
+  for (const reference of await collectAllSecretReferences(config)) {
     if (known.has(reference.name)) continue;
     const entry = missing.get(reference.name) ?? { name: reference.name, references: [] };
     entry.references.push(reference);
@@ -247,7 +247,7 @@ export async function deleteSecretForApi(
   config: ApiConfig,
   name: string,
 ): Promise<{ name: string; deleted: boolean; references: SecretReference[] }> {
-  const references = collectAllSecretReferences(config).filter(
+  const references = (await collectAllSecretReferences(config)).filter(
     (reference) => reference.name === name,
   );
   try {
@@ -282,7 +282,7 @@ export async function getSecretUsageForApi(
     getSecret(sql, name, { resolves: isSecretConfigured }),
     getSecretUsage(sql, name),
   ]);
-  const references = collectAllSecretReferences(config).filter(
+  const references = (await collectAllSecretReferences(config)).filter(
     (reference) => reference.name === name,
   );
 

@@ -20,10 +20,10 @@ import type { CanaryOverviewWire, CanaryRolloutViewWire } from '@/lib/types';
  * is still being published, and the panel says so instead of pretending routing started.
  */
 export function CanaryPanel({
-  factory,
+  factoryId,
   overview,
 }: {
-  factory: string;
+  factoryId: string;
   overview: CanaryOverviewWire | null;
 }) {
   if (!overview) {
@@ -40,9 +40,9 @@ export function CanaryPanel({
   const history = overview.history.filter((entry) => entry.rollout.id !== active?.rollout.id);
 
   return (
-    <div data-testid="canary-panel" data-factory={factory} className="space-y-4">
+    <div data-testid="canary-panel" data-factory={factoryId} className="space-y-4">
       {active ? (
-        <RolloutView view={active} active />
+        <RolloutView view={active} active factoryId={factoryId} />
       ) : (
         <div
           data-testid="canary-empty"
@@ -57,7 +57,7 @@ export function CanaryPanel({
         </div>
       )}
 
-      <CanaryPruneButton factory={factory} />
+      <CanaryPruneButton factoryId={factoryId} />
 
       <div>
         <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -122,7 +122,15 @@ export function CanaryPanel({
   );
 }
 
-function RolloutView({ view, active }: { view: CanaryRolloutViewWire; active: boolean }) {
+function RolloutView({
+  view,
+  active,
+  factoryId,
+}: {
+  view: CanaryRolloutViewWire;
+  active: boolean;
+  factoryId: string;
+}) {
   const { rollout, split, window, metrics, series } = view;
   return (
     <div
@@ -303,7 +311,7 @@ function RolloutView({ view, active }: { view: CanaryRolloutViewWire; active: bo
       </ul>
 
       <CanaryActions
-        factory={rollout.factory}
+        factoryId={factoryId}
         rolloutId={rollout.id}
         active={active && rollout.status === 'active'}
       />

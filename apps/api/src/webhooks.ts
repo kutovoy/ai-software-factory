@@ -347,8 +347,7 @@ export function registerWebhooks<E extends Hono<any, any, any>>(app: E, config: 
     let workItemId: string | null = null;
     let workflowUnavailable: string | null = null;
     try {
-      const created = await createWorkItemForApi(config, {
-        factory,
+      const created = await createWorkItemForApi(config, factory, {
         title: workItemTitle(context),
         type: context.event === 'pull_request' ? 'pr_review' : 'task',
         source: 'forge',

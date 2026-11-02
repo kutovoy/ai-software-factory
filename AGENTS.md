@@ -63,7 +63,8 @@ docs/               STATUS, DECISIONS, ARCHITECTURE, GLOSSARY
 - **Versioned API:** every public HTTP endpoint lives under `/api/v1` (the liveness probe `/health` is the only
   unversioned route; `/api/v1/health` also exists). `apps/api/openapi.json` is the source of truth: any route
   added, changed or removed must update the spec in the same change, and the contract test fails when the route
-  table and the spec diverge. Breaking changes bump the prefix; never silently change a v1 shape.
+  table and the spec diverge. Breaking changes bump the prefix; never silently change a v1 shape, unless an ADR
+  records an explicit exception and every client moves in the same change.
 - **Help stays current:** any feature, page or route change must update the matching help entry in
   `apps/web/src/lib/help.ts`, the menu reference, and the quick start when the first-run flow changes —
   in the same OpenSpec change. Help is part of the product, not an afterthought; `apps/web/src/lib/help.test.ts`

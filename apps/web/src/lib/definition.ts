@@ -2,7 +2,7 @@ import type { ResourceSummary } from './types';
 
 /**
  * Typed, read-only views over the resource documents projected by
- * `GET /factories/:name/resources`. The console never edits a definition (ADR-012),
+ * `GET /factories/:factoryId/resources`. The console never edits a definition (ADR-012),
  * so these helpers only read: no defaults invented, no values guessed.
  */
 

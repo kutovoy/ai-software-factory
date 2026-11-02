@@ -14,11 +14,11 @@ import type {
  * only number the dialog shows before a run; nothing is fabricated.
  */
 export function BenchmarkRunDialog({
-  factory,
+  factoryId,
   suites,
   defaultMaxCostUsd,
 }: {
-  factory: string;
+  factoryId: string;
   suites: BenchmarkSuiteEntryWire[];
   defaultMaxCostUsd: number;
 }) {
@@ -53,7 +53,7 @@ export function BenchmarkRunDialog({
     setError(null);
     try {
       const response = await fetch(
-        `/api/benchmarks/${encodeURIComponent(factory)}/${encodeURIComponent(suite.name)}/run`,
+        `/api/v1/factories/${encodeURIComponent(factoryId)}/benchmarks/${encodeURIComponent(suite.name)}/run`,
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -86,7 +86,7 @@ export function BenchmarkRunDialog({
     setError(null);
     try {
       const response = await fetch(
-        `/api/benchmarks/${encodeURIComponent(factory)}/${encodeURIComponent(suite.name)}/run`,
+        `/api/v1/factories/${encodeURIComponent(factoryId)}/benchmarks/${encodeURIComponent(suite.name)}/run`,
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },

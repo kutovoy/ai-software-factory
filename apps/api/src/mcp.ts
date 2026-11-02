@@ -114,7 +114,7 @@ function agentsOf(definition: FactoryDefinition): Array<{ name: string; doc: Age
 }
 
 function loadOrFail(dir: string, factory: string): FactoryDefinition {
-  const { definition, errors } = loadDefinition(dir);
+  const { definition, errors } = loadDefinition(dir, { requireFactoryId: true });
   if (!definition) throw definitionInvalid(factory, errors);
   return definition;
 }

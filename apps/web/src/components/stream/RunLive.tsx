@@ -20,17 +20,19 @@ function statusTone(status: string): Tone {
  * `EventStream` renderer as New Chat — that is the point of the product.
  */
 export function RunLive({
+  factoryId,
   runId,
   initialStatus,
   permissions,
   focus,
 }: {
+  factoryId: string;
   runId: string;
   initialStatus: string;
   permissions: PermissionRow[];
   focus?: string;
 }) {
-  const { events, status: streamStatus, gapDetected, lastSeq } = useRunStream(runId);
+  const { events, status: streamStatus, gapDetected, lastSeq } = useRunStream(factoryId, runId);
   const terminal = useMemo(() => terminalEvent(events), [events]);
   const decisions = useMemo(() => decisionsFromPermissions(permissions), [permissions]);
   const status = terminal?.status ?? initialStatus;
@@ -49,7 +51,13 @@ export function RunLive({
           last seq {lastSeq}
         </span>
       </div>
-      <EventStream runId={runId} events={events} decisions={decisions} focus={focus} />
+      <EventStream
+        factoryId={factoryId}
+        runId={runId}
+        events={events}
+        decisions={decisions}
+        focus={focus}
+      />
     </div>
   );
 }

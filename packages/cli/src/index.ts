@@ -77,7 +77,9 @@ function requireDir(positionals: string[], command: string): string {
 }
 
 function load(dir: string, json: boolean) {
-  const result = loadDefinition(dir);
+  // The runtime loader requires the committed `fac_<ulid>` id (change
+  // `add-factory-identity`): export/import/diff/fmt refuse a definition without one.
+  const result = loadDefinition(dir, { requireFactoryId: true });
   if (!result.definition) fail(result.errors, json);
   return result.definition;
 }
@@ -120,7 +122,7 @@ function resolvedModels(definition: {
 function cmdValidate(positionals: string[], flags: Flags): void {
   const dir = requireDir(positionals, 'validate');
   const json = flags.json === true;
-  const { definition, errors, warnings } = loadDefinition(dir);
+  const { definition, errors, warnings } = loadDefinition(dir, { requireFactoryId: true });
 
   if (!definition) fail(errors, json);
 
@@ -131,6 +133,7 @@ function cmdValidate(positionals: string[], flags: Flags): void {
       `${JSON.stringify(
         {
           ok: true,
+          id: definition.manifest.id,
           factory: definition.manifest.name,
           resources: definition.resources.length,
           improvement: resolveImprovement(definition.manifest.improvement),
@@ -144,7 +147,7 @@ function cmdValidate(positionals: string[], flags: Flags): void {
   } else {
     const improvement = resolveImprovement(definition.manifest.improvement);
     process.stdout.write(
-      `ok: ${definition.manifest.name} (${definition.resources.length} resources) in ${dir}\n`,
+      `ok: ${definition.manifest.name} id=${definition.manifest.id} (${definition.resources.length} resources) in ${dir}\n`,
     );
     process.stdout.write(
       `improvement: authority=${improvement.authority} (${improvement.source})${
@@ -200,6 +203,7 @@ function cmdImport(positionals: string[], flags: Flags): void {
   const definition = load(dir, flags.json === true);
 
   const summary = {
+    id: definition.manifest.id,
     factory: definition.manifest.name,
     resources: definition.resources.map((resource) => ({
       kind: resource.kind,
@@ -212,7 +216,7 @@ function cmdImport(positionals: string[], flags: Flags): void {
     process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
   } else {
     process.stdout.write(
-      `imported ${summary.factory}: ${summary.resources.length} resources (no DB writes)\n`,
+      `imported ${summary.factory} (${summary.id}): ${summary.resources.length} resources (no DB writes)\n`,
     );
   }
 }

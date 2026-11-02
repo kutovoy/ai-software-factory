@@ -3,6 +3,9 @@ import {
   cleanupRuns,
   cleanupWorkItems,
   createFakeRun,
+  factoryApi,
+  factoryId,
+  factoryPage,
   trackWorkItem,
 } from './helpers';
 
@@ -77,7 +80,9 @@ async function waitForGate(
   stage: string,
 ): Promise<void> {
   for (let attempt = 0; attempt < 120; attempt += 1) {
-    const response = await request.get(`/api/work-items/${workItemId}`);
+    const response = await request.get(
+      await factoryApi(request, 'example', `work-items/${workItemId}`),
+    );
     if (response.ok()) {
       const body = (await response.json()) as { pendingGate?: { stage?: string } | null };
       if (body.pendingGate?.stage === stage) return;
@@ -92,7 +97,7 @@ test.describe('Scoring and measurement', () => {
     test.setTimeout(180_000);
 
     const run = await createFakeRun(request, { prompt: 'e2e: scoring detail' });
-    await page.goto(`/runs/${run.id}`);
+    await page.goto(await factoryPage(page.request, run.factory, `runs/${run.id}`));
     await resolvePermissionIfBlocked(page);
     await expect(page.getByTestId('run-terminal')).toHaveAttribute('data-status', 'ok', {
       timeout: 60_000,
@@ -110,7 +115,7 @@ test.describe('Scoring and measurement', () => {
     expect(score.uncalibrated).toBe(!calibrationStatus.calibrated);
 
     // Registry: class, labels, passing score, sampling, judge model, calibration badge.
-    await page.goto('/factories/example/scorers');
+    await page.goto(await factoryPage(page.request, 'example', 'scorers'));
     await expect(page.getByTestId('scorers-readonly-banner')).toBeVisible();
     await expect(page.getByTestId('scorers-table')).toBeVisible();
     await expect(page.getByTestId('scorers-count')).toContainText('scorer');
@@ -154,7 +159,7 @@ test.describe('Scoring and measurement', () => {
     await expect(page.getByTestId('score-events')).toContainText('score.completed');
 
     // The run detail carries the score and links to its detail page.
-    await page.goto(`/runs/${run.id}`);
+    await page.goto(await factoryPage(page.request, run.factory, `runs/${run.id}`));
     await expect(page.getByTestId('run-scores')).toBeVisible();
     const scoreRow = page.locator('[data-testid="run-score-row"][data-scorer="scope"]');
     await expect(scoreRow).toBeVisible();
@@ -166,9 +171,10 @@ test.describe('Scoring and measurement', () => {
     test.setTimeout(300_000);
 
     // A work item gives the metrics real gate/cost data (triage gate + triage run).
-    const created = await request.post('/api/work-items', {
+    const created = await request.post(
+      await factoryApi(request, 'example', 'work-items'),
+      {
       data: {
-        factory: 'example',
         title: `e2e: metrics ${Date.now()}`,
         type: 'task',
         source: 'manual',
@@ -176,18 +182,19 @@ test.describe('Scoring and measurement', () => {
         prompt: 'fix the broken readme link',
       },
     });
-    expect(created.ok(), `POST /api/work-items failed: ${created.status()}`).toBeTruthy();
+    expect(created.ok(), `POST work-items failed: ${created.status()}`).toBeTruthy();
     const body = (await created.json()) as { workItem: { id: string } };
     const workItemId = body.workItem.id;
-    trackWorkItem(workItemId);
+    trackWorkItem(await factoryId(request, 'example'), workItemId);
 
     await waitForGate(request, workItemId, 'triage');
-    const decision = await request.post(`/api/work-items/${workItemId}/gates/triage`, {
-      data: { decision: 'approve', actor: 'e2e', reason: 'e2e: metrics data' },
-    });
+    const decision = await request.post(
+      await factoryApi(request, 'example', `work-items/${workItemId}/gates/triage`),
+      { data: { decision: 'approve', actor: 'e2e', reason: 'e2e: metrics data' } },
+    );
     expect(decision.ok()).toBeTruthy();
 
-    await page.goto('/factories/example/dashboard?window=30d');
+    await page.goto(await factoryPage(page.request, 'example', 'dashboard?window=30d'));
     await expect(page.getByTestId('dashboard-metrics')).toBeVisible();
     await expect(page.getByTestId('metrics-window-label')).toContainText('30d');
     await expect(page.getByTestId('metrics-benchmark-gate')).toContainText(/satisfied|blocked|not required/);

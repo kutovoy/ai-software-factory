@@ -1,0 +1,10 @@
+schemaVersion: v1alpha1
+name: factory-id-missing
+repositories:
+  - owner: acme
+    name: api
+agentDefaults:
+  model: test-model
+gates:
+  spec: human
+mergePolicy: human

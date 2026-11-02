@@ -5,7 +5,8 @@ import { ApiExplorer } from '@/components/help/ApiExplorer';
 import { ApiReference } from '@/components/help/ApiReference';
 import { HelpBlocks, RelatedLinks } from '@/components/help/HelpBlocks';
 import { Badge } from '@/components/ui/Badge';
-import { HELP_SECTIONS, getHelpEntry } from '@/lib/help';
+import { HELP_SECTIONS, getHelpEntry, rewriteFactoryHref } from '@/lib/help';
+import { helpFactoryId } from '@/lib/factory-page';
 
 interface HelpPageProps {
   params: Promise<{ slug: string[] }>;
@@ -28,6 +29,13 @@ export default async function HelpEntryPage({ params }: HelpPageProps) {
   if (!entry) notFound();
 
   const section = HELP_SECTIONS.find((meta) => meta.id === entry.section);
+  // Help links are typed against `/factories/example/...`; point them at the real id.
+  const factoryId = await helpFactoryId();
+  const pageHref = entry.pageHref ? rewriteFactoryHref(entry.pageHref, factoryId) : null;
+  const related = entry.related.map((link) => ({
+    ...link,
+    href: rewriteFactoryHref(link.href, factoryId),
+  }));
   // The API page carries a full-width explorer (Swagger UI is unusable in a 4xl column);
   // its prose blocks and callouts keep their own `max-w-prose` reading measure.
   const isApiReference = entry.renderer === 'api-reference';
@@ -65,10 +73,10 @@ export default async function HelpEntryPage({ params }: HelpPageProps) {
         <p data-testid="help-entry-summary" className="max-w-prose text-sm text-slate-500">
           {entry.summary}
         </p>
-        {entry.pageHref ? (
+        {pageHref ? (
           <p className="text-sm">
             <Link
-              href={entry.pageHref}
+              href={pageHref}
               data-testid="help-page-link"
               className="font-medium text-slate-900 underline decoration-slate-300 underline-offset-2"
             >
@@ -128,7 +136,7 @@ export default async function HelpEntryPage({ params }: HelpPageProps) {
         ) : null}
       </article>
 
-      <RelatedLinks links={entry.related} />
+      <RelatedLinks links={related} />
 
       <footer className="border-t border-slate-200 pt-3 text-xs text-slate-500">
         <p>

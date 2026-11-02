@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test';
-import { cleanupRuns, cleanupWorkItems, trackWorkItem } from './helpers';
+import {
+  cleanupRuns,
+  cleanupWorkItems,
+  factoryApi,
+  factoryId,
+  factoryPage,
+  trackWorkItem,
+} from './helpers';
 
 const FACTORY = 'example';
 
@@ -16,9 +23,8 @@ test.describe('Integrations, merge queue and automations', () => {
   test.afterEach(async ({ request }) => {
     // Leave the factory on the Phase-3a behaviour so a later loop spec still merges on ship.
     await request
-      .post('/api/integrations/github', {
+      .post(await factoryApi(request, FACTORY, 'integrations/github'), {
         data: {
-          factory: FACTORY,
           secretRef: 'GITHUB_TOKEN',
           webhookSecretRef: 'GITHUB_WEBHOOK_SECRET',
           repos: [{ owner: 'acme', name: 'api-service' }],
@@ -34,7 +40,7 @@ test.describe('Integrations, merge queue and automations', () => {
   });
 
   test('settings names the local forge and links to it', async ({ page, request }) => {
-    await page.goto(`/factories/${FACTORY}/settings`);
+    await page.goto(await factoryPage(page.request, FACTORY, 'settings'));
     const card = page.getByTestId('settings-local-forge');
     await expect(card).toBeVisible();
     await expect(page.getByTestId('settings-forgejo-mode')).toContainText('console identity');
@@ -48,7 +54,7 @@ test.describe('Integrations, merge queue and automations', () => {
   });
 
   test('settings saves a GitHub connection by secret reference', async ({ page, request }) => {
-    await page.goto(`/factories/${FACTORY}/settings`);
+    await page.goto(await factoryPage(page.request, FACTORY, 'settings'));
     await expect(page.getByTestId('settings-github-integration')).toBeVisible();
     await expect(page.getByTestId('settings-github-webhook-url')).toContainText('/webhooks/github');
 
@@ -77,7 +83,7 @@ test.describe('Integrations, merge queue and automations', () => {
     await expect(page.getByTestId('settings-github-filters')).toContainText('factory-ready');
 
     // The API projection never carries a token value.
-    const response = await request.get(`/api/factories/${FACTORY}/integrations`);
+    const response = await request.get(await factoryApi(request, FACTORY, 'integrations'));
     expect(response.ok()).toBeTruthy();
     const body = (await response.json()) as { github: { secretRef: string } };
     expect(body.github.secretRef).toBe('GITHUB_TOKEN');
@@ -89,32 +95,37 @@ test.describe('Integrations, merge queue and automations', () => {
   }) => {
     test.setTimeout(420_000);
 
-    const created = await request.post('/api/work-items', {
+    const factoryIdValue = await factoryId(request, FACTORY);
+    const created = await request.post(
+      await factoryApi(request, FACTORY, 'work-items'),
+      {
       data: {
-        factory: FACTORY,
         title: `e2e: merge queue ${Date.now()}`,
         harness: 'fake',
         mergeQueue: true,
         prompt: 'e2e: merge queue change',
       },
     });
-    expect(created.ok(), `POST /api/work-items failed: ${created.status()}`).toBeTruthy();
+    expect(created.ok(), `POST work-items failed: ${created.status()}`).toBeTruthy();
     const workItemId = ((await created.json()) as { workItem: { id: string } }).workItem.id;
-    trackWorkItem(workItemId);
+    const detailPath = `/factories/${encodeURIComponent(factoryIdValue)}/work-items/${workItemId}`;
+    trackWorkItem(factoryIdValue, workItemId);
 
     // Lights-on gates: triage and spec are human, then the ship gate enqueues the PR.
-    await expectGate(page, workItemId, 'triage', 120_000);
+    await expectGate(page, detailPath, 'triage', 120_000);
     await page.getByTestId('gate-approve').click();
-    await expectGate(page, workItemId, 'spec', 120_000);
+    await expectGate(page, detailPath, 'spec', 120_000);
     await page.getByTestId('gate-approve').click();
-    await expectGate(page, workItemId, 'ship', 240_000);
+    await expectGate(page, detailPath, 'ship', 240_000);
     await page.getByTestId('gate-approve').click();
 
     // The queue merges the batch in the worker.
     await expect
       .poll(
         async () => {
-          const response = await request.get(`/api/factories/${FACTORY}/merge-queue`);
+          const response = await request.get(
+            await factoryApi(request, FACTORY, 'merge-queue'),
+          );
           if (!response.ok()) return 'error';
           const body = (await response.json()) as {
             batches: { status: string; items: { prNumber: number; status: string }[] }[];
@@ -126,7 +137,7 @@ test.describe('Integrations, merge queue and automations', () => {
       )
       .toBe('merged:merged');
 
-    await page.goto(`/factories/${FACTORY}/merge-queue`);
+    await page.goto(`/factories/${encodeURIComponent(factoryIdValue)}/merge-queue`);
     await expect(page.getByTestId('merge-queue-batch-size')).toContainText('batch size');
     // The projection is newest first; earlier batches from other runs may still be listed.
     const batchCard = page.getByTestId('merge-queue-batch').first();
@@ -143,7 +154,7 @@ test.describe('Integrations, merge queue and automations', () => {
     await expect(batchCard.getByTestId('merge-queue-event').first()).toBeVisible();
 
     // The item is done and links to the PR the queue merged.
-    await page.goto(`/work-items/${workItemId}`);
+    await page.goto(detailPath);
     await expect(page.getByTestId('work-item-status')).toHaveText('done');
     await expect(page.getByTestId('work-item-pr')).toHaveAttribute('href', /^https:\/\/forge\.local\//);
   });
@@ -152,10 +163,13 @@ test.describe('Integrations, merge queue and automations', () => {
     page,
     request,
   }) => {
-    const synced = await request.post('/api/automations/sync', { data: { factory: FACTORY } });
-    expect(synced.ok(), `POST /api/automations/sync failed: ${synced.status()}`).toBeTruthy();
+    const factoryIdValue = await factoryId(request, FACTORY);
+    const synced = await request.post(
+      await factoryApi(request, FACTORY, 'automations/sync'),
+    );
+    expect(synced.ok(), `POST automations/sync failed: ${synced.status()}`).toBeTruthy();
 
-    await page.goto(`/factories/${FACTORY}/automations`);
+    await page.goto(`/factories/${encodeURIComponent(factoryIdValue)}/automations`);
     await expect(page.getByTestId('automations-table')).toBeVisible();
     await expect(page.getByTestId('automations-webhook-url')).toContainText('/webhooks/github');
     await expect(page.getByTestId('automations-webhook-secret')).toContainText(
@@ -173,9 +187,10 @@ test.describe('Integrations, merge queue and automations', () => {
     await expect(intake.getByTestId('automation-webhook-events')).toContainText('issue_labeled');
 
     // Pausing the cron schedule records the operator; the projection flips to paused.
-    const paused = await request.post(`/api/automations/${FACTORY}/nightly/pause`, {
-      data: { actor: 'e2e-operator', reason: 'e2e: pause the nightly pass' },
-    });
+    const paused = await request.post(
+      await factoryApi(request, FACTORY, 'automations/nightly/pause'),
+      { data: { actor: 'e2e-operator', reason: 'e2e: pause the nightly pass' } },
+    );
     expect(paused.ok(), `pause failed: ${paused.status()}`).toBeTruthy();
     await page.reload();
     await expect(nightly.getByTestId('automation-schedule-status')).toHaveAttribute(
@@ -185,16 +200,17 @@ test.describe('Integrations, merge queue and automations', () => {
 
     // Leave the dev stack quiet: a re-sync would reactivate the nightly cron from the
     // definition, so pause it again for the next test/operator. Smoke re-syncs on demand.
-    await request.post('/api/automations/sync', { data: { factory: FACTORY } });
-    await request.post(`/api/automations/${FACTORY}/nightly/pause`, {
-      data: { actor: 'e2e-cleanup', reason: 'e2e: leave the dev stack quiet' },
-    });
+    await request.post(await factoryApi(request, FACTORY, 'automations/sync'));
+    await request.post(
+      await factoryApi(request, FACTORY, 'automations/nightly/pause'),
+      { data: { actor: 'e2e-cleanup', reason: 'e2e: leave the dev stack quiet' } },
+    );
   });
 });
 
 async function expectGate(
   page: import('@playwright/test').Page,
-  workItemId: string,
+  detailPath: string,
   stage: string,
   timeout: number,
 ): Promise<void> {
@@ -202,7 +218,7 @@ async function expectGate(
     .poll(
       async () => {
         try {
-          await page.goto(`/work-items/${workItemId}`);
+          await page.goto(detailPath);
         } catch {
           return 'navigation-error';
         }

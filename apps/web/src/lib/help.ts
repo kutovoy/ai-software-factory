@@ -105,6 +105,20 @@ export interface HelpEntry {
 
 const EXAMPLE = '/factories/example';
 
+/**
+ * Help links are typed against an illustrative factory path (`/factories/example/...`).
+ * Factory URLs carry an opaque `fac_<ulid>` id now (change `add-factory-identity`), so the
+ * help pages rewrite that prefix to the factory the reader is actually looking at.
+ */
+const FACTORY_PREFIX_RE = /^\/factories\/[^/]+\//;
+
+export function rewriteFactoryHref(href: string, factoryId: string | null | undefined): string {
+  if (!factoryId) return href;
+  const match = FACTORY_PREFIX_RE.exec(href);
+  if (!match) return href;
+  return `/factories/${encodeURIComponent(factoryId)}/${href.slice(match[0].length)}`;
+}
+
 function factoryPageHref(segment: string): string {
   return `${EXAMPLE}/${segment}`;
 }
@@ -178,7 +192,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
           {
             title: 'Create a work item',
             command:
-              'curl -sS -b /tmp/factory-cookies.txt -X POST http://localhost:8080/api/v1/work-items \\\n  -H \'content-type: application/json\' \\\n  -d \'{"factory":"example","title":"Fix the README link","type":"task","source":"manual","harness":"fake","prompt":"fix the broken readme link"}\'',
+              'curl -sS -b /tmp/factory-cookies.txt -X POST http://localhost:8080/api/v1/factories/<factory-id>/work-items \\\n  -H \'content-type: application/json\' \\\n  -d \'{"title":"Fix the README link","type":"task","source":"manual","harness":"fake","prompt":"fix the broken readme link"}\'',
             expected:
               'The response contains `workItem.id`, `"stage":"triage"` and the pinned `definitionCommit`. The item appears on the Work items board.',
           },
@@ -187,7 +201,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
             detail:
               'Use the id from the previous step. The same decision is available in Inbox, where each gate shows its SLA countdown.',
             command:
-              'curl -sS -b /tmp/factory-cookies.txt -X POST http://localhost:8080/api/v1/work-items/<work-item-id>/gates/triage \\\n  -H \'content-type: application/json\' \\\n  -d \'{"decision":"approve","actor":"you","reason":"scope looks right"}\'',
+              'curl -sS -b /tmp/factory-cookies.txt -X POST http://localhost:8080/api/v1/factories/<factory-id>/work-items/<work-item-id>/gates/triage \\\n  -H \'content-type: application/json\' \\\n  -d \'{"decision":"approve","actor":"you","reason":"scope looks right"}\'',
             expected:
               'The response reports `"decision":"approve"` and `"delivery":"update"`; the item advances past triage and the next stage starts.',
           },
@@ -337,20 +351,21 @@ export const HELP_ENTRIES: HelpEntry[] = [
     slug: 'concepts/roles-and-scope',
     title: 'Roles and scope',
     section: 'concepts',
-    status: 'Shipped — change `add-console-auth`',
+    status: 'Shipped — changes `add-console-auth`, `add-factory-identity`',
     summary:
-      'Admins manage users and see all work; members see only the work items and runs they created. The forge sees the signed-in username.',
+      'Admins manage users and see all factories and work; members see only the factories they own and the work items/runs they created. The forge sees the signed-in username.',
     pageHref: '/users',
     blocks: [
       {
         kind: 'prose',
         text:
-          'Every user has one of two roles. `admin` can manage accounts (`GET/POST /users`, `PATCH /users/:id`) and reads every work item and run. `member` gets `403 forbidden` from user management and only lists rows whose `created_by` is their own id; rows created before auth (null owner) are admin-only.',
+          'Every user has one of two roles. `admin` can manage accounts (`GET/POST /users`, `PATCH /users/:id`) and reads every factory, work item and run. `member` gets `403 forbidden` from user management, only sees factories they own and only lists rows whose `created_by` is their own id; rows created before auth (null owner) are admin-only.',
       },
       {
         kind: 'list',
         items: [
           'Work items and runs record the creator; the inbox follows the same owner filter.',
+          'Factories are owned too: a factory lives at `factories/<owner>/<name>` (or a legacy top-level `factories/<name>`, admin-owned) and carries a committed `fac_<ulid>` id. The console and the API address a factory only by that id; a member who asks for an id they do not own gets `404 factory_not_found`, so existence is never leaked.',
           'Gate approvals are still attributed to the actor string supplied with the decision, and the audit trail records it.',
           'The Forgejo proxy resolves `/auth/me` and asserts the session username as `X-WebAuth-User`, so the forge sees the real user instead of a shared admin. With auth off it falls back to `FORGEJO_ADMIN_USER`.',
           'Each user gets a best-effort personal organization `u-<username>` on first sign-in.',
@@ -395,7 +410,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'prose',
         text:
-          'Every transition is an append-only event in the run/work-item log. The read models (`/work-items`, `/runs`) are projections that can be rebuilt from `runs/<id>/events.jsonl` with `factory rebuild --dry-run`, which refuses a corrupt log (`event_log_corrupt`) instead of inventing rows.',
+          'Every transition is an append-only event in the run/work-item log. The read models (`/factories/:factoryId/work-items`, `/factories/:factoryId/runs`) are projections that can be rebuilt from `runs/<id>/events.jsonl` with `factory rebuild --dry-run`, which refuses a corrupt log (`event_log_corrupt`) instead of inventing rows.',
       },
     ],
     related: [
@@ -640,7 +655,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'list',
         items: [
-          'Factory: the switcher in the sidebar selects the factory; the URL carries `?factory=<name>`.',
+          'Factory: the switcher in the sidebar selects the factory by its `fac_<ulid>` id; the URL carries `?factory=<id>`.',
           'Composer: sends the prompt and starts streaming; tool calls, messages and terminal events render in order.',
           'Permissions: when the harness asks for approval, the prompt is inline — approve or deny with feedback.',
           'Cancel: stops the run; the terminal event closes the stream.',
@@ -731,17 +746,17 @@ export const HELP_ENTRIES: HelpEntry[] = [
     status: 'Shipped — Phase 2b / 3c',
     summary:
       'The board of work items by stage, with status filters, created/updated timestamps, create, cancel, retry and per-item gate state.',
-    pageHref: '/work-items',
+    pageHref: '/factories/example/work-items',
     blocks: [
       {
         kind: 'prose',
         text:
-          'The board groups the newest visible items by stage (triage → ship). Cancelled items are hidden by default so the board reflects live work; the status chips (all / active / escalated / done / failed / cancelled) toggle exactly the statuses you select, and an empty board says that the filters excluded everything instead of pretending there is no work. Each card carries the stage hint, the pending gate, the SLA countdown, links to the item\'s runs, and when the item was created and last updated (the exact timestamp is in the tooltip). The create form starts an item at triage and pins the current `definitionCommit`.',
+          'The board is factory-scoped: it lives at `/factories/<id>/work-items` and groups the newest visible items of that factory by stage (triage → ship). Cancelled items are hidden by default so the board reflects live work; the status chips (all / active / escalated / done / failed / cancelled) toggle exactly the statuses you select, and an empty board says that the filters excluded everything instead of pretending there is no work. Each card carries the stage hint, the pending gate, the SLA countdown, links to the item\'s runs, and when the item was created and last updated (the exact timestamp is in the tooltip). The create form starts an item at triage and pins the current `definitionCommit`.',
       },
       {
         kind: 'list',
         items: [
-          'Filters: factory (server-side) plus status chips; cancelled is off until you turn it on.',
+          'Filters: status chips; the factory is the one whose page you are on. Cancelled is off until you turn it on.',
           'Timestamps: created and last updated, relative with the absolute time in the `title`.',
           'Create: title, type, source, harness and prompt; the response returns the item id and stage.',
           'Open: the detail page lists runs, gate history, events and retries for the item.',
@@ -770,18 +785,18 @@ export const HELP_ENTRIES: HelpEntry[] = [
     status: 'Shipped — Phase 2a',
     summary:
       'Every harness run: status, factory, harness, duration, cost, pinned definition commit and a drill-down to its event stream.',
-    pageHref: '/runs',
+    pageHref: '/factories/example/runs',
     blocks: [
       {
         kind: 'prose',
         text:
-          'Runs lists the newest runs with factory/status filters. A run detail replays the event stream from `Last-Event-ID`, shows per-stage cost, artifacts, permissions and the scores attached to it. The `definitionCommit` on a run is the exact definition it executed.',
+          'Runs lives at `/factories/<id>/runs` and lists that factory\'s newest runs, filterable by status. A run detail replays the event stream from `Last-Event-ID`, shows per-stage cost, artifacts, permissions and the scores attached to it. The `definitionCommit` on a run is the exact definition it executed.',
       },
       {
         kind: 'list',
         items: [
           'Auto-refresh: the header control (Off / 15s / 30s / 60s, default 15s, remembered per browser) re-runs the server projection on that interval while the tab is visible; it pauses when the tab is hidden and shows when the data was last refreshed.',
-          'Filters: factory and status (`running`, `pending`, `ok`, `error`, `cancelled`).',
+          'Filter: status (`running`, `pending`, `ok`, `error`, `cancelled`); the factory comes from the URL.',
           'Detail: events, steps, artifacts (`runs/<runId>/artifacts/`), permissions, scores and cost.',
           'Score detail: label, value, rationale, evidence links, provenance (`rubricHash`, judge model/version), calibration state.',
           'Cancel is offered only while the run is `pending`, `running` or `cancelling`; a terminal run shows its end state instead of a dead button.',
@@ -928,7 +943,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'prose',
         text:
-          'Every public resource lives under `/api/v1` — runs, work items, factories, scoring, benchmarks, self-improvement, secrets, integrations and webhooks. `GET /health` stays unversioned for probes, and `GET /api/v1/health` serves the same check to versioned clients. The document below is `GET /api/v1/openapi.json`; the API contract test fails when a served route is missing from it (or the document lists a route that is not served), so this page lists exactly what is live.',
+          'Every public resource lives under `/api/v1` — factories, scoring, benchmarks, self-improvement, secrets, integrations and webhooks. Factory-scoped resources are nested and addressed by the factory id: `/api/v1/factories/<factoryId>/work-items`, `/runs`, `/gates`, `/autonomy`, `/mcp`, `/benchmarks`, `/canary`, `/improvement`, `/merge-queue` and `/automations`. There is no global `/work-items` or `/runs` route. `GET /health` stays unversioned for probes, and `GET /api/v1/health` serves the same check to versioned clients. The document below is `GET /api/v1/openapi.json`; the API contract test fails when a served route is missing from it (or the document lists a route that is not served), so this page lists exactly what is live.',
       },
       {
         kind: 'callout',
@@ -1062,7 +1077,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'list',
         items: [
-          'Sync: creates/updates Temporal schedules from the definition (`POST /factories/:name/automations/sync`).',
+          'Sync: creates/updates Temporal schedules from the definition (`POST /factories/:factoryId/automations/sync`).',
           'Pause: pauses the schedule (operator pause) without editing git.',
           'Webhook: shows the URL and the secret reference; delivery counts are recorded per accepted/ignored/rejected with a reason.',
         ],
@@ -1387,7 +1402,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
             title: 'Check for live work',
             detail:
               'The script refuses while the factory has active work items or pending/running runs. Cancel or retry them first, or pass `--force` if you accept losing in-flight work.',
-            command: 'curl -s "localhost:8080/api/v1/work-items?factory=<name>"',
+            command: 'curl -s "localhost:8080/api/v1/factories/<factory-id>/work-items"',
             expected: 'No `active` items and no `pending`/`running` runs.',
           },
           {
@@ -1706,14 +1721,14 @@ export const HELP_ENTRIES: HelpEntry[] = [
             detail:
               'On MCPs and apps, choose the declared server and register it — the page writes the index, not the definition.',
             command:
-              'curl -sS -X POST http://localhost:8080/api/v1/factories/example/mcp -H \'content-type: application/json\' \\\n  -d \'{"servers":[{"name":"github"}]}\'',
+              'curl -sS -X POST http://localhost:8080/api/v1/factories/<factory-id>/mcp -H \'content-type: application/json\' \\\n  -d \'{"servers":[{"name":"github"}]}\'',
             expected: 'The server appears with its transport, bound/denied agents and tool globs.',
           },
           {
             title: 'Probe it',
             detail:
               'The Test button runs in the worker/runner, resolves credentials locally by name and records transport/latency/error. A failure marks the server `unhealthy`; bound agents still validate.',
-            command: 'curl -sS -X POST http://localhost:8080/api/v1/factories/example/mcp/github/test',
+            command: 'curl -sS -X POST http://localhost:8080/api/v1/factories/<factory-id>/mcp/github/test',
             expected:
               'A result with transport, latency and status. A stdio "pass" means it exited 0 or was still alive at the timeout — not a full JSON-RPC handshake.',
           },
@@ -1779,7 +1794,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'list',
         items: [
-          'Nothing is broken if the item sits at a stage with a `human` gate: the workflow is parked on a durable wait and costs no activity slot. Decide it in Inbox or via `POST /work-items/:id/gates/:stage`.',
+          'Nothing is broken if the item sits at a stage with a `human` gate: the workflow is parked on a durable wait and costs no activity slot. Decide it in Inbox or via `POST /factories/:factoryId/work-items/:id/gates/:stage`.',
           'The gate is not the one you expected: read the Gates page. Automation overrides win over the factory gate (automation → factory → global).',
           'The kill switch is on: pausing autonomy forces every gate back to `human` and pauses new dispatch. The Gates page shows the newest `autonomy.*` event with actor/reason.',
           'A decision did not take effect: decisions are delivered as a Temporal Update (Signal fallback); if Temporal is unreachable the decision is recorded but not delivered. Check `/health` and retry.',
@@ -1901,8 +1916,6 @@ export interface HelpContext {
 const TOP_LEVEL_ROUTES: Record<string, string> = {
   '/chat': 'chat',
   '/inbox': 'inbox',
-  '/work-items': 'work-items',
-  '/runs': 'runs',
   // A score detail belongs to the run it scored.
   '/scores': 'runs',
   '/mcps': 'mcps',
@@ -1910,7 +1923,12 @@ const TOP_LEVEL_ROUTES: Record<string, string> = {
   '/users': 'users',
 };
 
-const FACTORY_SEGMENTS = new Set(FACTORY_NAV.map((item) => item.segment));
+/** Factory pages: the sidebar group plus the nested work-item and run pages. */
+const FACTORY_SEGMENTS = new Set([
+  ...FACTORY_NAV.map((item) => item.segment),
+  'work-items',
+  'runs',
+]);
 
 /**
  * Route → help slug. Pure and total: `/help` and unknown routes return `null`, which the
@@ -1929,6 +1947,8 @@ export function helpSlugForPath(pathname: string): string | null {
 
   if (first === 'factories') {
     const segment = segments[2] ?? 'dashboard';
+    // Work items and runs are their own help entries even though they live under a factory.
+    if (segment === 'work-items' || segment === 'runs') return segment;
     if (!FACTORY_SEGMENTS.has(segment)) return null;
     return `factories/${segment}`;
   }

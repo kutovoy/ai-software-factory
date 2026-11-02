@@ -1,5 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
-import { cleanupRuns, cleanupWorkItems, pauseAutonomy, trackWorkItem } from './helpers';
+import {
+  cleanupRuns,
+  cleanupWorkItems,
+  factoryId,
+  factoryPage,
+  pauseAutonomy,
+  trackWorkItem,
+} from './helpers';
 
 const FACTORY = 'example-lights-off';
 
@@ -19,7 +26,8 @@ test.describe('Factory loop (lights off)', () => {
   test('autonomy needs an override and all gates auto-resolve', async ({ page }) => {
     test.setTimeout(300_000);
 
-    await page.goto(`/factories/${FACTORY}/gates`);
+    const factoryIdValue = await factoryId(page.request, FACTORY);
+    await page.goto(`/factories/${encodeURIComponent(factoryIdValue)}/gates`);
     await expect(page.getByTestId('gates-table')).toBeVisible();
     await expect(page.getByTestId('autonomy-panel')).toBeVisible();
 
@@ -74,22 +82,27 @@ test.describe('Factory loop (lights off)', () => {
     );
 
     // A lights-off work item: no human gate anywhere.
-    await page.goto('/work-items');
-    await page.getByTestId('create-factory').selectOption(FACTORY);
+    await page.goto(
+      `/factories/${encodeURIComponent(factoryIdValue)}/work-items`,
+    );
     await page.getByTestId('create-harness').selectOption('fake');
     const title = `e2e: lights-off loop ${Date.now()}`;
     await page.getByTestId('create-title').fill(title);
     await page.getByTestId('create-prompt').fill('fix a flaky test in the api service');
     await page.getByTestId('create-submit').click();
 
-    await expect(page).toHaveURL(/\/work-items\/wi_[0-9A-HJKMNP-TV-Z]{26}$/, { timeout: 30_000 });
+    await expect(page).toHaveURL(
+      new RegExp(`/factories/${factoryIdValue}/work-items/wi_[0-9A-HJKMNP-TV-Z]{26}$`),
+      { timeout: 30_000 },
+    );
     const workItemId = new URL(page.url()).pathname.split('/').pop() as string;
-    trackWorkItem(workItemId);
+    const detailPath = `/factories/${encodeURIComponent(factoryIdValue)}/work-items/${workItemId}`;
+    trackWorkItem(factoryIdValue, workItemId);
 
     await expect
       .poll(
         async () => {
-          await page.goto(`/work-items/${workItemId}`);
+          await page.goto(detailPath);
           return (await page.getByTestId('work-item-status').textContent())?.trim();
         },
         { timeout: 240_000, intervals: [2_000] },

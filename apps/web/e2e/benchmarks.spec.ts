@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
-import { cleanupRuns, createFakeRun, pauseAutonomy } from './helpers';
+import { cleanupRuns, createFakeRun, factoryId, factoryPage, pauseAutonomy } from './helpers';
 
 const FACTORY = 'example-lights-off';
 
@@ -18,7 +18,7 @@ async function calibrateScope(page: Page, request: APIRequestContext): Promise<v
 
   // Chat runs park on the fake harness permission; approve it inline so the calibration
   // fixture reaches a terminal state.
-  await page.goto(`/runs/${encodeURIComponent(run.id)}`);
+  await page.goto(await factoryPage(page.request, FACTORY, `runs/${encodeURIComponent(run.id)}`));
   const allow = page.getByTestId('permission-allow');
   const terminal = page.getByTestId('run-terminal');
   await expect(allow.or(terminal).first()).toBeVisible({ timeout: 60_000 });
@@ -57,7 +57,8 @@ test.describe('Benchmarks', () => {
 
     await calibrateScope(page, request);
 
-    await page.goto(`/factories/${FACTORY}/benchmarks`);
+    const factoryIdValue = await factoryId(page.request, FACTORY);
+    await page.goto(`/factories/${encodeURIComponent(factoryIdValue)}/benchmarks`);
     await expect(page.getByTestId('benchmark-suite')).toHaveCount(1);
     await expect(page.getByTestId('benchmarks-count')).toContainText('1 suites');
     await expect(page.getByTestId('benchmark-run-open')).toBeVisible();
@@ -84,7 +85,8 @@ test.describe('Benchmarks', () => {
     await expect
       .poll(
         async () => {
-          await page.goto(`/factories/${FACTORY}/benchmarks`);
+          const factoryIdValue = await factoryId(page.request, FACTORY);
+    await page.goto(`/factories/${encodeURIComponent(factoryIdValue)}/benchmarks`);
           return await benchmarkStatus(page);
         },
         { timeout: 300_000, intervals: [2_000] },
@@ -104,11 +106,11 @@ test.describe('Benchmarks', () => {
     await expect(page.getByTestId('benchmark-attestation-badge')).toBeVisible();
 
     // The attestation unlocks the gate: no override needed.
-    await page.goto(`/factories/${FACTORY}/gates`);
+    await page.goto(`/factories/${encodeURIComponent(factoryIdValue)}/gates`);
     await expect(page.getByTestId('gates-attestation-status')).toHaveAttribute('data-satisfied', 'true');
     await expect(page.getByTestId('gates-attestation-link')).toHaveAttribute(
       'href',
-      `/factories/${FACTORY}/benchmarks`,
+      `/factories/${encodeURIComponent(factoryIdValue)}/benchmarks`,
     );
     await expect(page.getByTestId('autonomy-attestation-ok')).toBeVisible();
     await expect(page.getByTestId('autonomy-enable')).toBeEnabled();

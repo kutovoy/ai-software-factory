@@ -25,8 +25,10 @@ export interface RunPrompt {
 /** Everything a run needs, resolved and pinned by the API before the workflow starts. */
 export interface RunInput {
   runId: string;
-  /** Factory name as declared in `factory.yaml`. */
+  /** Internal factory key: `<name>` (legacy) or `<owner>/<name>`. */
   factory: string;
+  /** Stable `fac_<ulid>` identity of that factory (change `add-factory-identity`). */
+  factoryId?: string;
   /** Absolute path of the definition directory on the worker host. */
   factoryRoot: string;
   /** Pinned git commit of the definition (ADR-003). */
@@ -280,7 +282,10 @@ export interface FactoryWorkflowResume {
 
 export interface FactoryWorkflowInput {
   workItemId: string;
+  /** Internal factory key: `<name>` (legacy) or `<owner>/<name>`. */
   factory: string;
+  /** Stable `fac_<ulid>` identity; carried into every stage run row. */
+  factoryId?: string;
   factoryRoot: string;
   definitionCommit: string;
   definitionDirty: boolean;
@@ -374,6 +379,8 @@ export type StagePhase = 'run' | 'review' | 'gate';
 export interface StageWorkflowInput {
   workItemId: string;
   factory: string;
+  /** Stable `fac_<ulid>` identity; carried into the stage run row. */
+  factoryId?: string;
   factoryRoot: string;
   definitionCommit: string;
   definitionDirty: boolean;

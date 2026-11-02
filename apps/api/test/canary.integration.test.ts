@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { req } from './helpers';
+import { factoryIdOf, req } from './helpers';
 import { SQL } from 'bun';
 import { existsSync, rmSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
@@ -57,6 +57,7 @@ const FACTORY = 'example-lights-off';
 let config: ApiConfig;
 let app: Hono;
 let sql: SQL;
+let factoryId: string;
 
 const createdWorkItems: string[] = [];
 const createdProposals: string[] = [];
@@ -158,8 +159,7 @@ async function createWorkItem(title: string): Promise<{
   definitionCommit: string;
   canaryRolloutId: string | null;
 }> {
-  const response = await postJson('/work-items', {
-    factory: FACTORY,
+  const response = await postJson(`/factories/${factoryId}/work-items`, {
     title,
     harness: 'fake',
   });
@@ -189,6 +189,7 @@ suite('canary API', () => {
     app = createApp(config);
     sql = getSql(config.databaseUrl);
     setForge('fake', new FakeForge());
+    factoryId = await factoryIdOf(app, FACTORY);
   }, 60_000);
 
   afterAll(async () => {
@@ -208,7 +209,7 @@ suite('canary API', () => {
 
   test('start → deterministic routing → promote → stable again', async () => {
     const { proposalId } = await composedProposal('promote');
-    const start = await postJson(`/factories/${FACTORY}/canary`, {
+    const start = await postJson(`/factories/${factoryId}/canary`, {
       proposalId,
       actor: 'ada',
       reason: 'itest: promote',
@@ -236,7 +237,7 @@ suite('canary API', () => {
         window: { remainingMs: number };
         events: { type: string }[];
       } | null;
-    }>(`/factories/${FACTORY}/canary`);
+    }>(`/factories/${factoryId}/canary`);
     expect(view.active?.rollout.status).toBe('active');
     expect(view.active?.split).toMatchObject({ canaryPercent: 50, stablePercent: 50 });
     expect(view.active?.window.remainingMs).toBeGreaterThan(0);
@@ -270,8 +271,7 @@ suite('canary API', () => {
     expect(candidates).toBeGreaterThan(0);
     expect(candidates).toBeLessThan(items.length);
 
-    const promote = await postJson('/canary/promote', {
-      factory: FACTORY,
+    const promote = await postJson(`/factories/${factoryId}/canary/promote`, {
       rolloutId: started.rollout.id,
       actor: 'ada',
       reason: 'itest: no regression',
@@ -289,7 +289,7 @@ suite('canary API', () => {
     const after = await getJson<{
       active: unknown;
       history: { rollout: { id: string; status: string }; events: { type: string }[] }[];
-    }>(`/factories/${FACTORY}/canary`);
+    }>(`/factories/${factoryId}/canary`);
     expect(after.active).toBeNull();
     const promotedView = after.history.find((entry) => entry.rollout.id === started.rollout.id);
     expect(promotedView?.rollout.status).toBe('promoted');
@@ -303,8 +303,7 @@ suite('canary API', () => {
     expect(stableItem.definitionVersion).toBe('stable');
     expect(stableItem.canaryRolloutId).toBeNull();
 
-    const refused = await postJson('/canary/rollback', {
-      factory: FACTORY,
+    const refused = await postJson(`/factories/${factoryId}/canary/rollback`, {
       actor: 'ada',
       reason: 'nothing to roll back',
     });
@@ -314,7 +313,7 @@ suite('canary API', () => {
 
   test('manual rollback returns routing to stable immediately', async () => {
     const { proposalId } = await composedProposal('rollback');
-    const start = await postJson(`/factories/${FACTORY}/canary`, {
+    const start = await postJson(`/factories/${factoryId}/canary`, {
       proposalId,
       actor: 'ada',
       reason: 'itest: rollback',
@@ -324,8 +323,7 @@ suite('canary API', () => {
     const started = (await start.json()) as { rollout: { id: string } };
     await publishFor(started.rollout.id);
 
-    const rolled = await postJson('/canary/rollback', {
-      factory: FACTORY,
+    const rolled = await postJson(`/factories/${factoryId}/canary/rollback`, {
       rolloutId: started.rollout.id,
       actor: 'grace',
       reason: 'incident 42',
@@ -344,7 +342,7 @@ suite('canary API', () => {
     const view = await getJson<{
       active: unknown;
       history: { rollout: { id: string; status: string; reason: string }; events: { type: string }[] }[];
-    }>(`/factories/${FACTORY}/canary`);
+    }>(`/factories/${factoryId}/canary`);
     expect(view.active).toBeNull();
     const entry = view.history.find((row) => row.rollout.id === started.rollout.id);
     expect(entry?.rollout.status).toBe('rolled_back');
@@ -402,8 +400,7 @@ suite('canary API', () => {
     expect(body.proposal.status).toBe('canary');
     createdRollouts.push(body.rollout?.id as string);
 
-    const cancelled = await postJson('/canary/rollback', {
-      factory: FACTORY,
+    const cancelled = await postJson(`/factories/${factoryId}/canary/rollback`, {
       proposalId,
       actor: 'ada',
       reason: 'itest: cancel before publishing',

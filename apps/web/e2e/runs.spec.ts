@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { cleanupRuns, createFakeRun } from './helpers';
+import { cleanupRuns, createFakeRun, factoryApi, factoryId, factoryPage } from './helpers';
 
 test.afterEach(async ({ request }) => {
   await cleanupRuns(request);
@@ -19,10 +19,9 @@ async function resolvePermissionIfBlocked(page: Page): Promise<void> {
 /** Runs list → detail (pinned commit) → replay after a mid-stream reload. */
 test.describe('Runs', () => {
   test('list renders newest-first with filters and status', async ({ page }) => {
-    await page.goto('/runs');
+    await page.goto(await factoryPage(page.request, 'example', 'runs'));
 
     await expect(page.getByTestId('runs-filters')).toBeVisible();
-    await expect(page.getByTestId('runs-filter-factory')).toBeVisible();
     await expect(page.getByTestId('runs-filter-status')).toBeVisible();
 
     const table = page.getByTestId('runs-table');
@@ -58,7 +57,7 @@ test.describe('Runs', () => {
   test('detail shows the pinned commit, harness and model', async ({ page, request }) => {
     const run = await createFakeRun(request, { prompt: 'e2e: run detail' });
 
-    await page.goto(`/runs/${run.id}`);
+    await page.goto(await factoryPage(page.request, run.factory, `runs/${run.id}`));
 
     const pinned = page.getByTestId('pinned-commit');
     await expect(pinned).toBeVisible();
@@ -85,7 +84,7 @@ test.describe('Runs', () => {
 
   test('metadata cells do not overlap at 1280px or narrower', async ({ page, request }) => {
     const run = await createFakeRun(request, { prompt: 'e2e: meta layout' });
-    await page.goto(`/runs/${run.id}`);
+    await page.goto(await factoryPage(page.request, run.factory, `runs/${run.id}`));
     await expect(page.getByTestId('run-meta')).toBeVisible();
 
     /** Groups cells by row and asserts each one ends before the next begins. */
@@ -145,13 +144,17 @@ test.describe('Runs', () => {
     // `error` run in this environment is the one an operator would open. A clean database
     // has none, in which case the cancelled case below still covers the panel.
     const api = process.env.API_BASE_URL ?? 'http://localhost:8080';
-    const response = await page.request.get(`${api}/api/v1/runs?status=error&limit=5`);
+    const response = await page.request.get(
+      `${api}/api/v1/factories/${encodeURIComponent(await factoryId(page.request, 'example'))}/runs?status=error&limit=5`,
+    );
     expect(response.ok()).toBeTruthy();
     const body = (await response.json()) as { runs: Array<{ id: string }> };
     const failed = body.runs[0];
     test.skip(!failed, 'no failed run in this environment');
 
-    await page.goto(`/runs/${failed!.id}`);
+    await page.goto(
+      await factoryPage(page.request, 'example', `runs/${failed!.id}`),
+    );
 
     const panel = page.getByTestId('run-failure-panel');
     await expect(panel).toBeVisible();
@@ -176,9 +179,10 @@ test.describe('Runs', () => {
       prompt: 'e2e: cancelled panel',
       fakeDelayMs: 3000,
     });
-    const cancelled = await request.post(`/api/runs/${run.id}/cancel`, {
-      data: { reason: 'e2e cancelled panel' },
-    });
+    const cancelled = await request.post(
+      await factoryApi(request, run.factory, `runs/${run.id}/cancel`),
+      { data: { reason: 'e2e cancelled panel' } },
+    );
     expect(cancelled.ok()).toBeTruthy();
 
     // Cancellation is cooperative: the workflow ends `cancelled` after the pump notices.
@@ -187,7 +191,9 @@ test.describe('Runs', () => {
     await expect
       .poll(
         async () => {
-          const response = await page.request.get(`${api}/api/v1/runs/${run.id}`);
+          const response = await page.request.get(
+            `${api}/api/v1/factories/${encodeURIComponent(await factoryId(page.request, run.factory))}/runs/${run.id}`,
+          );
           const body = (await response.json()) as { run: { status: string } };
           return body.run.status;
         },
@@ -195,7 +201,7 @@ test.describe('Runs', () => {
       )
       .toBe('cancelled');
 
-    await page.goto(`/runs/${run.id}`);
+    await page.goto(await factoryPage(page.request, run.factory, `runs/${run.id}`));
 
     const panel = page.getByTestId('run-failure-panel');
     await expect(panel).toBeVisible({ timeout: 60_000 });
@@ -216,7 +222,7 @@ test.describe('Runs', () => {
   test('reload mid-stream replays without duplicates', async ({ page, request }) => {
     const run = await createFakeRun(request, { prompt: 'e2e: replay', fakeDelayMs: 400 });
 
-    await page.goto(`/runs/${run.id}`);
+    await page.goto(await factoryPage(page.request, run.factory, `runs/${run.id}`));
     const stream = page.getByTestId('event-stream');
     await expect(stream).toBeVisible();
 

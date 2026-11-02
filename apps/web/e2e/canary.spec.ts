@@ -1,5 +1,14 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
-import { cleanupRuns, cleanupWorkItems, createFakeRun, trackRun, trackWorkItem } from './helpers';
+import {
+  cleanupRuns,
+  cleanupWorkItems,
+  createFakeRun,
+  factoryApi,
+  factoryId,
+  factoryPage,
+  trackRun,
+  trackWorkItem,
+} from './helpers';
 
 const FACTORY = 'example-lights-off';
 
@@ -19,7 +28,7 @@ async function calibrateScope(page: Page, request: APIRequestContext): Promise<v
     factory: FACTORY,
     prompt: 'e2e: canary calibration fixture',
   });
-  await page.goto(`/runs/${encodeURIComponent(run.id)}`);
+  await page.goto(await factoryPage(page.request, FACTORY, `runs/${encodeURIComponent(run.id)}`));
   const allow = page.getByTestId('permission-allow');
   const terminal = page.getByTestId('run-terminal');
   await expect(allow.or(terminal).first()).toBeVisible({ timeout: 60_000 });
@@ -43,23 +52,29 @@ async function calibrateScope(page: Page, request: APIRequestContext): Promise<v
 
 /** A cancelled + scored run gives the observer a failure signal to propose from. */
 async function seedFailureCorpus(page: Page, request: APIRequestContext): Promise<void> {
-  const created = await request.post('/api/chat', {
-    data: {
-      factory: FACTORY,
-      harness: 'fake',
-      fakeDelayMs: 8000,
-      prompt: 'e2e: canary corpus failure',
+  const factoryIdValue = await factoryId(request, FACTORY);
+  const created = await request.post(
+    await factoryApi(request, FACTORY, 'chat'),
+    {
+      data: {
+        harness: 'fake',
+        fakeDelayMs: 8000,
+        prompt: 'e2e: canary corpus failure',
+      },
     },
-  });
-  expect(created.ok(), `POST /api/chat failed: ${created.status()}`).toBeTruthy();
+  );
+  expect(created.ok(), `POST chat failed: ${created.status()}`).toBeTruthy();
   const runId = ((await created.json()) as { run: { id: string } }).run.id;
-  trackRun(runId);
+  trackRun(factoryIdValue, runId);
 
-  await request.post(`/api/runs/${encodeURIComponent(runId)}/cancel`, {
-    data: { reason: 'e2e: canary corpus failure' },
-  });
+  await request.post(
+    await factoryApi(request, FACTORY, `runs/${encodeURIComponent(runId)}/cancel`),
+    { data: { reason: 'e2e: canary corpus failure' } },
+  );
 
-  await page.goto(`/runs/${encodeURIComponent(runId)}`);
+  await page.goto(
+    `/factories/${encodeURIComponent(factoryIdValue)}/runs/${encodeURIComponent(runId)}`,
+  );
   await expect(page.getByTestId('run-terminal')).toContainText('cancelled', { timeout: 90_000 });
 
   const scored = await request.post('/api/scoring', {
@@ -100,8 +115,9 @@ interface CanaryView {
 }
 
 async function canaryView(request: APIRequestContext): Promise<CanaryView> {
-  const response = await request.get(`/api/factories/${FACTORY}/canary`);
-  expect(response.ok(), `GET /api/factories/${FACTORY}/canary failed: ${response.status()}`).toBeTruthy();
+  const url = await factoryApi(request, FACTORY, 'canary');
+  const response = await request.get(url);
+  expect(response.ok(), `GET ${url} failed: ${response.status()}`).toBeTruthy();
   return (await response.json()) as CanaryView;
 }
 
@@ -109,9 +125,8 @@ async function rollbackActiveCanary(request: APIRequestContext): Promise<void> {
   const view = await canaryView(request).catch(() => null);
   if (!view?.active) return;
   await request
-    .post('/api/canary/rollback', {
+    .post(await factoryApi(request, FACTORY, 'canary/rollback'), {
       data: {
-        factory: FACTORY,
         rolloutId: view.active.rollout.id,
         actor: 'e2e-cleanup',
         reason: 'e2e cleanup',
@@ -133,7 +148,9 @@ test.describe('Canary rollout', () => {
     await calibrateScope(page, request);
     await seedFailureCorpus(page, request);
 
-    const started = await request.post(`/api/factories/${FACTORY}/improvement/run`, {
+    const started = await request.post(
+      await factoryApi(request, FACTORY, 'improvement/run'),
+      {
       data: { trigger: 'on_demand', canaryPercent: 100 },
     });
     expect(started.ok(), `POST improvement/run failed: ${started.status()} ${await started.text()}`).toBeTruthy();
@@ -159,7 +176,8 @@ test.describe('Canary rollout', () => {
     expect(view.active!.events.map((event) => event.type)).toContain('canary.started');
 
     // The panel projects candidate vs stable, the split, the window and the comparison.
-    await page.goto(`/factories/${FACTORY}/self-improvement`);
+    const factoryIdValue = await factoryId(page.request, FACTORY);
+    await page.goto(`/factories/${encodeURIComponent(factoryIdValue)}/self-improvement`);
     await expect(page.getByTestId('canary-panel')).toBeVisible();
     // The rollout activates while the improvement workflow is still finishing its decision;
     // poll the server-rendered projection until the run lands `canary_started`.
@@ -185,10 +203,11 @@ test.describe('Canary rollout', () => {
     await expect(page.locator('[data-testid="canary-event"][data-type="canary.started"]')).toHaveCount(1);
 
     // One work item at 100% must route to the candidate and record the rollout + commit.
-    const itemResponse = await request.post('/api/work-items', {
-      data: { factory: FACTORY, title: 'e2e: canary routing', harness: 'fake' },
-    });
-    expect(itemResponse.ok(), `POST /api/work-items failed: ${itemResponse.status()}`).toBeTruthy();
+    const itemResponse = await request.post(
+      await factoryApi(request, FACTORY, 'work-items'),
+      { data: { title: 'e2e: canary routing', harness: 'fake' } },
+    );
+    expect(itemResponse.ok(), `POST work-items failed: ${itemResponse.status()}`).toBeTruthy();
     const item = ((await itemResponse.json()) as {
       workItem: {
         id: string;
@@ -197,7 +216,7 @@ test.describe('Canary rollout', () => {
         definitionCommit: string;
       };
     }).workItem;
-    trackWorkItem(item.id);
+    trackWorkItem(factoryIdValue, item.id);
     expect(item.definitionVersion).toBe('candidate');
     expect(item.canaryRolloutId).toBe(rollout.id);
     expect(item.definitionCommit).toBe(rollout.candidateCommit);
@@ -235,24 +254,25 @@ test.describe('Canary rollout', () => {
     expect(rollbackEvent?.payload.evidence).toMatchObject({ threshold: 0.1 });
 
     // Gates page reflects the canary state.
-    await page.goto(`/factories/${FACTORY}/gates`);
+    await page.goto(`/factories/${encodeURIComponent(factoryIdValue)}/gates`);
     await expect(page.getByTestId('gates-canary-card')).toBeVisible();
     await expect(page.getByTestId('gates-canary-status')).toHaveAttribute('data-status', 'none');
     await expect(page.getByTestId('gates-canary-badge')).toContainText('rolled back');
     await expect(page.getByTestId('gates-canary-link')).toHaveAttribute(
       'href',
-      `/factories/${FACTORY}/self-improvement`,
+      `/factories/${encodeURIComponent(factoryIdValue)}/self-improvement`,
     );
 
     // New work returns to the stable version.
-    const stableResponse = await request.post('/api/work-items', {
-      data: { factory: FACTORY, title: 'e2e: canary post-rollback', harness: 'fake' },
-    });
+    const stableResponse = await request.post(
+      await factoryApi(request, FACTORY, 'work-items'),
+      { data: { title: 'e2e: canary post-rollback', harness: 'fake' } },
+    );
     expect(stableResponse.ok()).toBeTruthy();
     const stableItem = ((await stableResponse.json()) as {
       workItem: { id: string; definitionVersion: string; canaryRolloutId: string | null };
     }).workItem;
-    trackWorkItem(stableItem.id);
+    trackWorkItem(factoryIdValue, stableItem.id);
     expect(stableItem.definitionVersion).toBe('stable');
     expect(stableItem.canaryRolloutId).toBeNull();
   });
@@ -260,7 +280,7 @@ test.describe('Canary rollout', () => {
 
 
 test('self-improvement reports canary authority separately from an active rollout', async ({ page }) => {
-  await page.goto(`/factories/${FACTORY}/self-improvement`);
+  await page.goto(await factoryPage(page.request, FACTORY, 'self-improvement'));
   const note = page.getByTestId('improvement-canary-note');
   await expect(note).toBeVisible();
   await expect(note).toContainText('Canary authority is enabled');

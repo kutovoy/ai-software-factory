@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { factoryApi, factoryId, factoryPage } from './helpers';
 
 /**
  * Secrets + MCPs (change `add-secrets-and-mcp`).
@@ -76,7 +77,7 @@ test.describe('secrets and MCPs', () => {
   }) => {
     test.setTimeout(180_000);
 
-    await page.goto(`/mcps?factory=${FACTORY}`);
+    await page.goto(`/mcps?factory=${encodeURIComponent(await factoryId(page.request, FACTORY))}`);
     await expect(page.getByTestId('mcp-registry')).toBeVisible();
     // `factories/example` declares one server: the count must read `1 server`.
     await expect(page.getByTestId('mcp-server-count')).toHaveText('1 server');
@@ -105,7 +106,7 @@ test.describe('secrets and MCPs', () => {
     await expect(github.getByTestId('mcp-server-status')).toHaveText('unhealthy');
 
     // The agent binding is visible on the factory Agents page.
-    await page.goto(`/factories/${FACTORY}/agents`);
+    await page.goto(await factoryPage(page.request, FACTORY, 'agents'));
     const implement = page.locator('[data-testid="agent-card"][data-agent="implement"]');
     await expect(implement).toBeVisible();
     await expect(implement.getByTestId('agent-mcp-servers')).toContainText('github');
@@ -116,7 +117,7 @@ test.describe('secrets and MCPs', () => {
     await expect(review.getByTestId('agent-mcp-deny')).toContainText('github*');
 
     // The API projection agrees with the UI.
-    const projection = await request.get(`/api/factories/${FACTORY}/mcp`);
+    const projection = await request.get(await factoryApi(request, FACTORY, 'mcp'));
     expect(projection.ok()).toBeTruthy();
     const body = (await projection.json()) as {
       servers: { name: string; status: string; env: Record<string, string> }[];

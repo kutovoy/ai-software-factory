@@ -178,11 +178,10 @@ describe('secret references', () => {
 
   test('the integration body schema rejects unknown fields and a token value', () => {
     expect(
-      githubIntegrationBodySchema.safeParse({ factory: 'example', secretRef: 'GITHUB_TOKEN' }).success,
+      githubIntegrationBodySchema.safeParse({ secretRef: 'GITHUB_TOKEN' }).success,
     ).toBe(true);
     expect(
       githubIntegrationBodySchema.safeParse({
-        factory: 'example',
         secretRef: 'GITHUB_TOKEN',
         token: 'ghp_x',
       }).success,
@@ -191,9 +190,9 @@ describe('secret references', () => {
 
   test('a revert body requires actor and reason', () => {
     expect(
-      revertSchema.safeParse({ factory: 'example', batchId: 'mb_1', actor: 'ada', reason: 'r' }).success,
+      revertSchema.safeParse({ batchId: 'mb_1', actor: 'ada', reason: 'r' }).success,
     ).toBe(true);
-    expect(revertSchema.safeParse({ factory: 'example', batchId: 'mb_1' }).success).toBe(false);
+    expect(revertSchema.safeParse({ batchId: 'mb_1' }).success).toBe(false);
   });
 });
 

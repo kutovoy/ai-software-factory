@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { req } from './helpers';
+import { factoryIdOf, req } from './helpers';
 import { SQL } from 'bun';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -38,6 +38,7 @@ const FACTORY = 'example-lights-off';
 let config: ApiConfig;
 let app: Hono;
 let sql: SQL;
+let factoryId: string;
 
 async function migrate(databaseUrl: string): Promise<void> {
   const client = new SQL(databaseUrl, { max: 1 });
@@ -95,6 +96,7 @@ suite('benchmark API', () => {
       benchmarkConcurrency: 2,
     };
     app = createApp(config);
+    factoryId = await factoryIdOf(app, FACTORY);
   }, 60_000);
 
   afterAll(async () => {
@@ -109,8 +111,8 @@ suite('benchmark API', () => {
     await sql?.close();
   }, 30_000);
 
-  test('GET /factories/:name/benchmarks projects suites, hash and gate', async () => {
-    const response = await req(app, `/factories/${FACTORY}/benchmarks`);
+  test('GET /factories/:factoryId/benchmarks projects suites, hash and gate', async () => {
+    const response = await req(app, `/factories/${factoryId}/benchmarks`);
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       factory: string;
@@ -142,7 +144,7 @@ suite('benchmark API', () => {
 
   test('a dry run returns the estimate without starting anything', async () => {
     const before = await listBenchmarkRuns(sql, { factory: FACTORY });
-    const response = await postJson(`/factories/${FACTORY}/benchmarks/review/run`, {
+    const response = await postJson(`/factories/${factoryId}/benchmarks/review/run`, {
       dryRun: true,
       configurations: ['Baseline'],
       tasks: ['flaky-test'],
@@ -166,7 +168,7 @@ suite('benchmark API', () => {
   });
 
   test('above the threshold the run requires confirmation, then starts', async () => {
-    const refused = await postJson(`/factories/${FACTORY}/benchmarks/review/run`, {
+    const refused = await postJson(`/factories/${factoryId}/benchmarks/review/run`, {
       configurations: ['Baseline'],
       tasks: ['flaky-test'],
       maxCostUsd: 5,
@@ -176,7 +178,7 @@ suite('benchmark API', () => {
     expect(refusedBody.code).toBe('cost_confirmation_required');
     expect(refusedBody.details?.estimate).toBeDefined();
 
-    const accepted = await postJson(`/factories/${FACTORY}/benchmarks/review/run`, {
+    const accepted = await postJson(`/factories/${factoryId}/benchmarks/review/run`, {
       configurations: ['Baseline'],
       tasks: ['flaky-test'],
       confirm: true,
@@ -196,7 +198,7 @@ suite('benchmark API', () => {
   });
 
   test('a zero hard cap is refused instead of silently skipping every trial', async () => {
-    const response = await postJson(`/factories/${FACTORY}/benchmarks/review/run`, {
+    const response = await postJson(`/factories/${factoryId}/benchmarks/review/run`, {
       configurations: ['Baseline'],
       tasks: ['flaky-test'],
       confirm: true,
@@ -212,7 +214,7 @@ suite('benchmark API', () => {
     await sql`delete from benchmark_attestations where factory = ${FACTORY}`;
     await sql`delete from autonomy_state where factory = ${FACTORY}`;
 
-    const gateResponse = await req(app, `/factories/${FACTORY}/benchmark-gate`);
+    const gateResponse = await req(app, `/factories/${factoryId}/benchmark-gate`);
     expect(gateResponse.status).toBe(200);
     const gate = (await gateResponse.json()) as GateBody;
     expect(gate.required).toBe(true);
@@ -232,11 +234,10 @@ suite('benchmark API', () => {
       passed: true,
     });
 
-    const stillStale = (await (await req(app, `/factories/${FACTORY}/benchmark-gate`)).json()) as GateBody;
+    const stillStale = (await (await req(app, `/factories/${factoryId}/benchmark-gate`)).json()) as GateBody;
     expect(stillStale.satisfied).toBe(false);
 
-    const refused = await postJson('/autonomy', {
-      factory: FACTORY,
+    const refused = await postJson(`/factories/${factoryId}/autonomy`, {
       enabled: true,
       actor: 'ada',
       reason: 'run lights-off',
@@ -257,12 +258,11 @@ suite('benchmark API', () => {
       passed: true,
     });
 
-    const satisfied = (await (await req(app, `/factories/${FACTORY}/benchmark-gate`)).json()) as GateBody;
+    const satisfied = (await (await req(app, `/factories/${factoryId}/benchmark-gate`)).json()) as GateBody;
     expect(satisfied.satisfied).toBe(true);
     expect(satisfied.code).toBeNull();
 
-    const enabled = await postJson('/autonomy', {
-      factory: FACTORY,
+    const enabled = await postJson(`/factories/${factoryId}/autonomy`, {
       enabled: true,
       actor: 'ada',
       reason: 'attestation matches this version',
@@ -275,7 +275,7 @@ suite('benchmark API', () => {
     expect(enabledBody.autonomy.benchmarkGateSatisfied).toBe(true);
     expect(enabledBody.autonomy.benchmarkAttestationSatisfied).toBe(true);
 
-    const attestations = (await (await req(app, `/factories/${FACTORY}/attestations`)).json()) as {
+    const attestations = (await (await req(app, `/factories/${factoryId}/attestations`)).json()) as {
       definitionCommit: string;
       attestations: { configHash: string; passed: boolean; calibrationOk: boolean }[];
       benchmarkGate: GateBody;
@@ -285,8 +285,7 @@ suite('benchmark API', () => {
     expect(attestations.benchmarkGate.satisfied).toBe(true);
 
     // Restore the kill switch for other suites/tests.
-    await postJson('/autonomy', {
-      factory: FACTORY,
+    await postJson(`/factories/${factoryId}/autonomy`, {
       enabled: false,
       actor: 'ada',
       reason: 'integration cleanup',

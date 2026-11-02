@@ -11,7 +11,10 @@ import { apiUrl } from '@/lib/api';
  * talking to the console only (ADR-012).
  *
  * Status, content type and body are passed through unchanged; the body is streamed so SSE
- * endpoints (`GET /api/v1/runs/:id/events`) stay incremental. Hop-by-hop headers are dropped
+ * endpoints (`GET /api/v1/factories/:factoryId/runs/:id/events`) stay incremental. Client
+ * components use this proxy for every factory-scoped action (cancel, retry, gates, MCP,
+ * canary, improvement, automations, merge queue) — the old per-resource `/api/*` shims are
+ * gone with the name-based routes (change `add-factory-identity`). Hop-by-hop headers are dropped
  * in both directions, and the upstream is asked for an identity encoding because the runtime
  * decodes compressed bodies itself.
  */

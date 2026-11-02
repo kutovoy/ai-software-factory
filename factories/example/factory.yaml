@@ -13,6 +13,7 @@ gates:
   pr_review: human
   review: agent
   spec: human
+id: fac_01M6D9K2B2J79P0M2KE28RY709
 improvement:
   authority: propose_only
   maxProbes: 3

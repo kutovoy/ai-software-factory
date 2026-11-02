@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { req } from './helpers';
+import { factoryIdOf, req } from './helpers';
 import { SQL } from 'bun';
 import { cp, mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -50,6 +50,7 @@ const REPO = { owner: 'acme', name: 'api-service' };
 
 let config: ApiConfig;
 let app: Hono;
+let factoryId: string;
 let worker: Awaited<ReturnType<typeof createWorker>>;
 let running: Promise<void>;
 const createdWorkItems: string[] = [];
@@ -112,7 +113,9 @@ async function driveGates(workItemId: string): Promise<WorkItemDetail> {
     const detail = await waitFor(
       `a gate or a terminal state on ${workItemId}`,
       async () => {
-        const current = await getJson<WorkItemDetail>(`/work-items/${workItemId}`);
+        const current = await getJson<WorkItemDetail>(
+          `/factories/${factoryId}/work-items/${workItemId}`,
+        );
         if (TERMINAL.has(current.workItem.status)) return current;
         if (current.pendingGate) return current;
         return null;
@@ -123,7 +126,7 @@ async function driveGates(workItemId: string): Promise<WorkItemDetail> {
     if (TERMINAL.has(detail.workItem.status)) return detail;
 
     const stage = detail.pendingGate!.stage;
-    const response = await req(app, `/work-items/${workItemId}/gates/${stage}`, {
+    const response = await req(app, `/factories/${factoryId}/work-items/${workItemId}/gates/${stage}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ decision: 'approve', actor: 'itest', reason: `approve ${stage}` }),
@@ -166,6 +169,7 @@ suite('webhook → loop → merge queue', () => {
 
     config = loadApiConfig();
     app = createApp(config);
+    factoryId = await factoryIdOf(app, FACTORY);
 
     // The compose stack may have a long-lived queue workflow for this factory (same
     // Temporal namespace). Terminate it so this run's enqueue is handled by *this* worker
@@ -193,6 +197,7 @@ suite('webhook → loop → merge queue', () => {
     await sql`delete from integrations where factory = ${FACTORY}`.catch(() => undefined);
     await sql`delete from merge_batches where factory = ${FACTORY}`.catch(() => undefined);
     await sql`delete from merge_batch_items where factory = ${FACTORY}`.catch(() => undefined);
+    await sql`delete from factories where key = ${FACTORY}`.catch(() => undefined);
     await rm(join(FIXTURE_ROOT, FACTORY), { recursive: true, force: true }).catch(() => undefined);
     await worker?.shutdown();
     await closeClient();
@@ -201,11 +206,10 @@ suite('webhook → loop → merge queue', () => {
 
   test('a signed issue is triaged, implemented, opened as a PR and merged by the queue', async () => {
 
-    const configured = await req(app, '/integrations/github', {
+    const configured = await req(app, `/factories/${factoryId}/integrations/github`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        factory: FACTORY,
         secretRef: 'GITHUB_TOKEN',
         webhookSecretRef: 'GITHUB_WEBHOOK_SECRET',
         repos: [REPO],
@@ -269,7 +273,7 @@ suite('webhook → loop → merge queue', () => {
           items: { prNumber: number; status: string; workItemId: string | null }[];
           events: { type: string }[];
         }[];
-      }>(`/factories/${FACTORY}/merge-queue`);
+      }>(`/factories/${factoryId}/merge-queue`);
       const batch = queue.batches.find((entry) =>
         entry.items.some((candidate) => candidate.prNumber === prNumber),
       );
@@ -296,7 +300,7 @@ suite('webhook → loop → merge queue', () => {
       batchSize: number;
       inFlight: unknown;
       queued: unknown[];
-    }>(`/factories/${FACTORY}/merge-queue`);
+    }>(`/factories/${factoryId}/merge-queue`);
     expect(queue.batchSize).toBe(config.mergeBatchSize);
     expect(queue.inFlight).toBeNull();
     expect(Array.isArray(queue.queued)).toBe(true);
@@ -305,7 +309,7 @@ suite('webhook → loop → merge queue', () => {
   test('the item is terminal and no gate is left pending', async () => {
     const workItemId = createdWorkItems[0];
     if (!workItemId) return;
-    const detail = await getJson<WorkItemDetail>(`/work-items/${workItemId}`);
+    const detail = await getJson<WorkItemDetail>(`/factories/${factoryId}/work-items/${workItemId}`);
     const status = detail.workItem.status as WorkItemStatus;
     expect(['done', 'cancelled']).toContain(status);
     expect(detail.pendingGate).toBeNull();

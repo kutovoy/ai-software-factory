@@ -127,7 +127,7 @@ function loadFactory(
   factory: string,
 ): { dir: string; definition: FactoryDefinition; commit: string; dirty: boolean } {
   const dir = resolveFactoryDir(config, factory);
-  const { definition, errors } = loadDefinition(dir);
+  const { definition, errors } = loadDefinition(dir, { requireFactoryId: true });
   if (!definition) throw definitionInvalid(factory, errors);
   const { commit, dirty } = pinVersion(dir, factory);
   return { dir, definition, commit, dirty };

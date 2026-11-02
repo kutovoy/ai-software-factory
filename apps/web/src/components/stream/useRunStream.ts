@@ -17,14 +17,15 @@ export interface RunStreamState {
 const MAX_RETRIES = 6;
 
 /**
- * Subscribes to `GET /api/runs/:id/events` (a same-origin proxy of the API SSE stream).
+ * Subscribes to `GET /api/v1/factories/:factoryId/runs/:id/events` (a same-origin proxy of
+ * the API SSE stream).
  *
  * Contract (spec `web-console`):
  *   - replay by `seq`: reconnect sends `lastEventId=<last seen seq>`, so no duplicates/gaps
  *   - gap detection: a jump in `seq` forces a backfill reconnect from the last seen seq
  *   - terminal close: `run.completed` closes the EventSource and stops reconnecting
  */
-export function useRunStream(runId: string | null): RunStreamState {
+export function useRunStream(factoryId: string | null, runId: string | null): RunStreamState {
   const [events, setEvents] = useState<FactoryEvent[]>([]);
   const [status, setStatus] = useState<StreamStatus>('idle');
   const [gapDetected, setGapDetected] = useState(false);
@@ -34,7 +35,7 @@ export function useRunStream(runId: string | null): RunStreamState {
   const lastSeqRef = useRef(0);
 
   useEffect(() => {
-    if (!runId) return;
+    if (!runId || !factoryId) return;
 
     let disposed = false;
     let terminal = false;
@@ -51,7 +52,9 @@ export function useRunStream(runId: string | null): RunStreamState {
       if (disposed || terminal) return;
       setStatus(lastSeqRef.current === 0 ? 'connecting' : 'streaming');
 
-      const url = `/api/runs/${encodeURIComponent(runId)}/events?lastEventId=${lastSeqRef.current}`;
+      const url = `/api/v1/factories/${encodeURIComponent(factoryId)}/runs/${encodeURIComponent(
+        runId,
+      )}/events?lastEventId=${lastSeqRef.current}`;
       const es = new EventSource(url);
       source = es;
 
@@ -115,7 +118,7 @@ export function useRunStream(runId: string | null): RunStreamState {
       closeSource();
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [runId]);
+  }, [factoryId, runId]);
 
   return { events, status, gapDetected, lastSeq };
 }

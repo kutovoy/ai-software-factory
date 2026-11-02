@@ -19,7 +19,7 @@ import {
   type BenchmarkSuite,
 } from '../schema/benchmark';
 import { SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS } from '../schema/common';
-import { factorySchema, type FactoryManifest } from '../schema/factory';
+import { FACTORY_ID_RE, factorySchema, type FactoryManifest } from '../schema/factory';
 import { packsLockSchema } from '../schema/packs';
 import { routingSchema } from '../schema/routing';
 import { runnerSchema } from '../schema/runner';
@@ -68,6 +68,12 @@ export interface LoadOptions {
    * `process.env`; tests pass an explicit map so they never depend on the host.
    */
   env?: NodeJS.ProcessEnv;
+  /**
+   * Refuse a definition without `id` (change `add-factory-identity`): the API, the worker
+   * and anything that starts work require `fac_<ulid>`. Off by default so fixtures,
+   * CLI validation of pre-identity definitions and schema tests keep working.
+   */
+  requireFactoryId?: boolean;
 }
 
 const SCHEMAS: Record<Exclude<ResourceKind, 'factory'>, z.ZodTypeAny> = {
@@ -148,6 +154,16 @@ export function loadDefinition(root: string, options: LoadOptions = {}): LoadRes
       const parsed = factorySchema.safeParse(doc);
       if (parsed.success) {
         manifest = parsed.data;
+        // The identity is required at runtime (spec `factory-identity` › Stable factory ID).
+        if (options.requireFactoryId && !manifest.id) {
+          push(
+            'factory_id_missing',
+            'factory.yaml',
+            '/id',
+            'factory.yaml must declare a stable `id: fac_<ulid>`; run `bun scripts/migrate-factory-identity.ts` to mint one',
+          );
+          manifest = null;
+        }
       } else {
         errors.push(...mapZodIssues(parsed.error.issues, 'factory.yaml'));
       }
@@ -290,6 +306,23 @@ export function loadDefinition(root: string, options: LoadOptions = {}): LoadRes
 
   if (errors.length > 0) return { definition: null, errors, warnings };
   return { definition: { root, manifest: manifest as FactoryManifest, resources }, errors, warnings };
+}
+
+/**
+ * The declared `id` from `factory.yaml`, even when the rest of the definition does not
+ * validate (change `add-factory-identity`). The registry needs an identity for a broken
+ * factory too, so the console can show it as invalid instead of losing it.
+ */
+export function readFactoryId(root: string): string | null {
+  const path = join(root, 'factory.yaml');
+  if (!existsSync(path)) return null;
+  try {
+    const doc = parseYaml(readFileSync(path, 'utf8'));
+    const id = isRecord(doc) ? doc.id : null;
+    return typeof id === 'string' && FACTORY_ID_RE.test(id) ? id : null;
+  } catch {
+    return null;
+  }
 }
 
 export function loadOrThrow(root: string, options: LoadOptions = {}): FactoryDefinition {

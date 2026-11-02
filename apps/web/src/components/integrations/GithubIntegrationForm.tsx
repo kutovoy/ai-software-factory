@@ -10,10 +10,10 @@ import type { GithubIntegrationWire } from '@/lib/types';
  * Dry-run and "queue owns merges" are explicit toggles (ADR-022/ADR-023).
  */
 export function GithubIntegrationForm({
-  factory,
+  factoryId,
   integration,
 }: {
-  factory: string;
+  factoryId: string;
   integration: GithubIntegrationWire;
 }) {
   const router = useRouter();
@@ -52,11 +52,12 @@ export function GithubIntegrationForm({
 
     setBusy(true);
     try {
-      const response = await fetch('/api/integrations/github', {
+      const response = await fetch(
+        `/api/v1/factories/${encodeURIComponent(factoryId)}/integrations/github`,
+        {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          factory,
           secretRef: secretRef.trim(),
           webhookSecretRef: webhookSecretRef.trim(),
           repos: repoList,

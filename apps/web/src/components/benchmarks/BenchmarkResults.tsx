@@ -15,7 +15,13 @@ function usd(value: number): string {
 }
 
 /** Results matrix + Pareto scatter + recommendation + per-trial drill-down. */
-export function BenchmarkResults({ detail }: { detail: BenchmarkRunDetailResponse }) {
+export function BenchmarkResults({
+  factoryId,
+  detail,
+}: {
+  factoryId: string;
+  detail: BenchmarkRunDetailResponse;
+}) {
   const { benchmark, results, trials, frontier, labels, recommendation, recommendationReason } = detail;
   const labelsFor = (configuration: string): string[] =>
     (Object.entries(labels) as [string, string | null][])
@@ -261,7 +267,7 @@ export function BenchmarkResults({ detail }: { detail: BenchmarkRunDetailRespons
                     row.runId ? (
                       <Link
                         data-testid="benchmark-trial-run"
-                        href={`/runs/${encodeURIComponent(row.runId)}`}
+                        href={`/factories/${encodeURIComponent(factoryId)}/runs/${encodeURIComponent(row.runId)}`}
                         className="text-xs text-slate-900 underline decoration-slate-300 underline-offset-2"
                       >
                         {row.runId}

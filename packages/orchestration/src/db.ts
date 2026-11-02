@@ -51,6 +51,8 @@ export function parseJsonb<T>(value: unknown, fallback: T): T {
 export interface RunRow {
   id: string;
   factory: string;
+  /** Stable `fac_<ulid>` identity; null for rows written before it existed. */
+  factory_id?: string | null;
   definition_commit: string;
   definition_dirty: boolean;
   harness: string;
@@ -78,6 +80,8 @@ export interface RunRow {
 export interface CreateRunRow {
   runId: string;
   factory: string;
+  /** Stable `fac_<ulid>` identity of the factory (change `add-factory-identity`). */
+  factoryId?: string | null;
   definitionCommit: string;
   definitionDirty: boolean;
   harness: string;
@@ -96,10 +100,10 @@ export async function insertRun(row: CreateRunRow): Promise<void> {
   const sql = getSql();
   await sql`
     insert into runs (
-      id, factory, definition_commit, definition_dirty, harness, model, runner, kind,
+      id, factory, factory_id, definition_commit, definition_dirty, harness, model, runner, kind,
       title, input, status, workflow_id, temporal_run_id, started_at, created_by
     ) values (
-      ${row.runId}, ${row.factory}, ${row.definitionCommit}, ${row.definitionDirty},
+      ${row.runId}, ${row.factory}, ${row.factoryId ?? null}, ${row.definitionCommit}, ${row.definitionDirty},
       ${row.harness}, ${row.model ?? null}, ${row.runner}, ${row.kind}, ${row.title ?? null},
       ${row.input}::jsonb, 'pending', ${row.workflowId},
       ${row.temporalRunId ?? null}, now(), ${row.createdBy ?? null}
@@ -115,10 +119,10 @@ export async function markRunRunning(input: RunInput, workflowId: string): Promi
   const sql = getSql();
   await sql`
     insert into runs (
-      id, factory, definition_commit, definition_dirty, harness, model, runner, kind,
+      id, factory, factory_id, definition_commit, definition_dirty, harness, model, runner, kind,
       title, input, status, workflow_id, started_at
     ) values (
-      ${input.runId}, ${input.factory}, ${input.definitionCommit}, ${input.definitionDirty},
+      ${input.runId}, ${input.factory}, ${input.factoryId ?? null}, ${input.definitionCommit}, ${input.definitionDirty},
       ${input.harness}, ${input.model ?? null}, ${input.runner}, ${input.kind},
       ${input.title ?? null}, ${input}::jsonb, 'running', ${workflowId}, now()
     )

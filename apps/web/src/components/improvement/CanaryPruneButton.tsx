@@ -8,7 +8,7 @@ import type { CanaryPruneResponseWire } from '@/lib/types';
  * Candidate-tree prune control (harden-runtime, task 5.4). Terminal rollouts keep the last
  * N trees; an in-flight rollout's tree is never removed (the API reports `protected`).
  */
-export function CanaryPruneButton({ factory }: { factory: string }) {
+export function CanaryPruneButton({ factoryId }: { factoryId: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [actor, setActor] = useState('local-user');
@@ -26,7 +26,9 @@ export function CanaryPruneButton({ factory }: { factory: string }) {
     }
     setBusy(true);
     try {
-      const response = await fetch(`/api/factories/${encodeURIComponent(factory)}/canary/prune`, {
+      const response = await fetch(
+        `/api/v1/factories/${encodeURIComponent(factoryId)}/canary/prune`,
+        {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({

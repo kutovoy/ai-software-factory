@@ -49,6 +49,18 @@ export const WORK_ITEM_ID_RE = /^wi_[0-9A-HJKMNP-TV-Z]{26}$/;
 
 export const FACTORY_NAME_RE = /^[a-z0-9][a-z0-9._-]*$/;
 
+/**
+ * The internal factory key (change `add-factory-identity`): a legacy top-level directory
+ * (`example`) or an owner-scoped path (`alice/example`). URLs use the opaque `fac_<ulid>`
+ * id instead; the key is what the DB columns and the definition directory use.
+ */
+export const FACTORY_KEY_RE = /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)?$/;
+
+/** True for a key that is owner-scoped (`owner/name`) rather than a legacy top-level name. */
+export function isOwnerScopedFactoryKey(key: string): boolean {
+  return key.includes('/');
+}
+
 export const workItemSchema = z
   .object({
     id: codedString(WORK_ITEM_ID_RE, 'invalid_value', 'work item id must be wi_<ulid>'),
@@ -60,7 +72,10 @@ export const workItemSchema = z
     stage: z.enum(LOOP_STAGES),
     status: z.enum(WORK_ITEM_STATUSES).default('active'),
     parentId: z.string().regex(WORK_ITEM_ID_RE).nullable().default(null),
-    factory: codedString(FACTORY_NAME_RE, 'invalid_value', 'invalid factory name'),
+    /** Internal key: `<name>` (legacy) or `<owner>/<name>`. */
+    factory: codedString(FACTORY_KEY_RE, 'invalid_value', 'invalid factory key'),
+    /** Stable `fac_<ulid>` identity of the factory; null for rows written before it existed. */
+    factoryId: z.string().nullable().default(null),
     definitionCommit: z.string().min(7),
     /**
      * Canary routing (ADR-021): assigned once at creation and honoured by every stage of
@@ -109,7 +124,7 @@ export type WorkItem = z.infer<typeof workItemSchema>;
 
 export const createWorkItemSchema = z
   .object({
-    factory: codedString(FACTORY_NAME_RE, 'invalid_value', 'invalid factory name'),
+    factory: codedString(FACTORY_KEY_RE, 'invalid_value', 'invalid factory key'),
     title: z.string().min(1).max(200),
     type: z.enum(WORK_ITEM_TYPES).default('task'),
     source: z.enum(WORK_ITEM_SOURCES).default('manual'),
@@ -140,7 +155,7 @@ export const autonomyOverrideSchema = z
 
 export const autonomyRequestSchema = z
   .object({
-    factory: codedString(FACTORY_NAME_RE, 'invalid_value', 'invalid factory name'),
+    factory: codedString(FACTORY_KEY_RE, 'invalid_value', 'invalid factory key'),
     enabled: z.boolean(),
     actor: z.string().min(1).max(120),
     reason: z.string().min(1).max(2000),

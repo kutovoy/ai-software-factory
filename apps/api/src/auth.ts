@@ -455,3 +455,19 @@ export function canAccess(viewer: Viewer | null, ownerId: string | null): boolea
   if (viewer.role === 'admin') return true;
   return ownerId !== null && ownerId === viewer.id;
 }
+
+/**
+ * Factory ownership (change `add-factory-identity`, spec `factory-identity` › Owner scope).
+ *
+ * Auth off → no scoping (the implicit local user sees everything, design decision 3).
+ * Admin → every factory. Member → only factories whose registry `owner_id` is their id.
+ * A factory with no owner (legacy directory in a pre-auth database) is admin-only.
+ */
+export function canAccessFactory(
+  viewer: Viewer | null,
+  factory: { ownerId: string | null },
+): boolean {
+  if (!viewer) return true;
+  if (viewer.role === 'admin') return true;
+  return factory.ownerId !== null && factory.ownerId === viewer.id;
+}

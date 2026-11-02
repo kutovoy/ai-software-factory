@@ -33,7 +33,7 @@ export function apiBaseUrl(): string {
  */
 export const API_PREFIX = '/api/v1';
 
-/** Absolute backend URL for a resource path such as `/runs`. */
+/** Absolute backend URL for a resource path such as `/factories/<id>/runs`. */
 export function apiUrl(path: string): string {
   const versioned = path.startsWith(API_PREFIX)
     ? path

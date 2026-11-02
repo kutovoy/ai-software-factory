@@ -1,5 +1,13 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
-import { cleanupRuns, cleanupWorkItems, createFakeRun, trackWorkItem } from './helpers';
+import {
+  cleanupRuns,
+  cleanupWorkItems,
+  createFakeRun,
+  factoryApi,
+  factoryId,
+  factoryPage,
+  trackWorkItem,
+} from './helpers';
 
 /**
  * Contextual run actions (spec `web-console` › Contextual run actions, `factory-loop` ›
@@ -23,7 +31,7 @@ test.describe('Run and work-item actions', () => {
   }) => {
     const run = await createFakeRun(request, { prompt: 'e2e: terminal run actions' });
 
-    await page.goto(`/runs/${run.id}`);
+    await page.goto(await factoryPage(page.request, run.factory, `runs/${run.id}`));
 
     // The fake harness may block on one interactive permission; approve it so the run
     // reaches a terminal state (the stage runs of a factory item auto-allow).
@@ -54,24 +62,30 @@ test.describe('Run and work-item actions', () => {
   }) => {
     test.setTimeout(300_000);
 
+    const exampleId = await factoryId(request, 'example');
     const workItemId = await createFakeWorkItem(request, 'e2e: retry an escalated item');
-    await expectGate(page, workItemId, 'triage', 180_000);
+    const detailPath = `/factories/${encodeURIComponent(exampleId)}/work-items/${workItemId}`;
+    await expectGate(page, detailPath, 'triage', 180_000);
 
     // The triage stage run is terminal (`ok`) and owned by the item: no cancel, no per-run
     // retry, and the page links to the work item where retry lives.
     const suffix = workItemId.replace(/^wi_/, '');
-    await page.goto(`/runs/run_${suffix}_triage_1`);
+    await page.goto(
+      `/factories/${encodeURIComponent(exampleId)}/runs/run_${suffix}_triage_1`,
+    );
     await expect(page.getByTestId('run-terminal-state')).toBeVisible({ timeout: 60_000 });
     await expect(page.getByTestId('run-cancel')).toHaveCount(0);
     await expect(page.getByTestId('run-retry-button')).toHaveCount(0);
     await expect(page.getByTestId('run-retry-work-item')).toHaveAttribute(
       'href',
-      `/work-items/${workItemId}`,
+      detailPath,
     );
 
     // Escalate deterministically: request_changes at the first stage has nowhere to loop
     // back to, so the loop escalates to a human.
-    const decision = await request.post(`/api/work-items/${workItemId}/gates/triage`, {
+    const decision = await request.post(
+      await factoryApi(request, 'example', `work-items/${workItemId}/gates/triage`),
+      {
       data: {
         decision: 'request_changes',
         actor: 'e2e-operator',
@@ -83,7 +97,9 @@ test.describe('Run and work-item actions', () => {
     await expect
       .poll(
         async () => {
-          const response = await request.get(`/api/work-items/${workItemId}`);
+          const response = await request.get(
+            await factoryApi(request, 'example', `work-items/${workItemId}`),
+          );
           const body = (await response.json()) as { workItem: { status: string } };
           return body.workItem.status;
         },
@@ -91,7 +107,7 @@ test.describe('Run and work-item actions', () => {
       )
       .toBe('escalated');
 
-    await page.goto(`/work-items/${workItemId}`);
+    await page.goto(detailPath);
     await expect(page.getByTestId('work-item-status')).toHaveText('escalated');
     await expect(page.getByTestId('work-item-retry-open')).toBeVisible();
 
@@ -111,7 +127,9 @@ test.describe('Run and work-item actions', () => {
     await expect(retried).toHaveAttribute('data-actor', 'e2e-operator');
 
     // The audit names the new attempt workflow, and a second stage run was dispatched.
-    const detailResponse = await request.get(`/api/work-items/${workItemId}`);
+    const detailResponse = await request.get(
+      await factoryApi(request, 'example', `work-items/${workItemId}`),
+    );
     const detail = (await detailResponse.json()) as {
       workItem: { status: string; attempt: number; workflowId: string | null };
       workflowId: string;
@@ -132,7 +150,9 @@ test.describe('Run and work-item actions', () => {
     await expect
       .poll(
         async () => {
-          const response = await request.get(`/api/work-items/${workItemId}`);
+          const response = await request.get(
+            await factoryApi(request, 'example', `work-items/${workItemId}`),
+          );
           const body = (await response.json()) as {
             events: { type: string; payload: Record<string, unknown> }[];
           };
@@ -150,19 +170,20 @@ async function createFakeWorkItem(
   request: APIRequestContext,
   title: string,
 ): Promise<string> {
-  const response = await request.post('/api/work-items', {
-    data: { factory: 'example', title, harness: 'fake' },
-  });
-  expect(response.ok(), `POST /api/work-items failed: ${response.status()}`).toBeTruthy();
+  const response = await request.post(
+    await factoryApi(request, 'example', 'work-items'),
+    { data: { title, harness: 'fake' } },
+  );
+  expect(response.ok(), `POST work-items failed: ${response.status()}`).toBeTruthy();
   const workItemId = ((await response.json()) as { workItem: { id: string } }).workItem.id;
-  trackWorkItem(workItemId);
+  trackWorkItem(await factoryId(request, 'example'), workItemId);
   return workItemId;
 }
 
 /** Reloads the detail page until the pending gate is `stage` (or fails the expectation). */
 async function expectGate(
   page: Page,
-  workItemId: string,
+  detailPath: string,
   stage: string,
   timeout: number,
 ): Promise<void> {
@@ -170,7 +191,7 @@ async function expectGate(
     .poll(
       async () => {
         try {
-          await page.goto(`/work-items/${workItemId}`);
+          await page.goto(detailPath);
         } catch {
           return 'navigation-error';
         }

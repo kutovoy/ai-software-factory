@@ -814,3 +814,34 @@ stored on `gate_decisions.verdict` and surfaced in the inbox/API.
 **Consequences:** a lights-off factory can make reviewer agents authoritative without a human,
 while existing factories keep working until they opt in. A textual FAIL can no longer be
 silently ignored.
+
+## ADR-037 — Factory identity: committed `fac_` id, owner-scoped path, nested URLs
+
+**Status:** accepted (2026-11-02). **Context:** factory identity was the global directory name; every URL was
+`/factories/<name>/…`, the API was name-based, and two users could not own the same factory name. A member who
+guessed a name could reach another user's factory pages unless every route was owner-checked.
+**Decision:** each definition carries a committed `id: fac_<ulid>`. A `factories` registry maps id → owner, name,
+key, path and alias. New factories live at `factories/<owner>/<name>`; legacy top-level directories stay in place
+as admin-owned for compatibility. The internal DB `factory` text is the unique key (`owner/name` or legacy name);
+work items and runs also carry `factory_id`. All factory resources are addressed by the opaque id:
+`/factories/<id>/…` and `/api/v1/factories/:factoryId/…`, with work items and runs nested under the factory. The
+old name/global routes are removed (no aliases or redirects). Members resolve only factories they own; admins
+resolve all; anything else is 404. New factories default `repositories.owner` to `u-<owner>`; legacy factories keep
+their declared owner.
+**Consequences:** factory names can repeat per user, URLs are unguessable, renames do not break links, and a
+database rebuild can recover ids from git. Costs: a breaking `/api/v1` shape (ADR-038), a registry/backfill
+migration, and the CLI/console/OpenAPI/smoke/E2E all move together.
+
+## ADR-038 — Factory purge v2; breaking nested API stays under `/api/v1`
+
+**Status:** accepted (2026-11-02). **Context:** `delete-factory` silently skipped the DB purge when
+`DATABASE_URL` was unset, paused Temporal schedules without deleting them, never terminated workflows and left
+run directories; a reused factory name then showed old data.
+**Decision:** purge is an API operation (`DELETE /api/v1/factories/:factoryId`, owner/admin). It fails closed if
+DB/Temporal are unavailable, refuses active work unless forced, deletes all factory-scoped rows in one verified
+transaction, deletes Temporal schedules, terminates running workflows and removes `runs/<id>/`. Git history and
+the forge repository/PRs are kept by default. The CLI authenticates, resolves the id and calls the endpoint. The
+nested-only API shape is a deliberate exception to the ADR-030 prefix-bump rule: it ships under `/api/v1` with
+all clients updated in the same change, rather than maintaining a second version.
+**Consequences:** deletion cannot silently leave rows behind; closed Temporal histories remain until retention;
+the API break is recorded here and must be called out in release notes.

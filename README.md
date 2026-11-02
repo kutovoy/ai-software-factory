@@ -21,8 +21,9 @@ pull request in a forge you own.
 
 This project is that factory, built to be **self-hosted, inspectable and yours**:
 
-- **Definitions as code.** Agents, gates, scorers, benchmarks and automations live in git (`factories/<name>/`),
-  versioned and diffable. The console reads them; it never writes your worktree.
+- **Definitions as code.** Agents, gates, scorers, benchmarks and automations live in git
+  (`factories/<owner>/<name>/`, with legacy top-level admin factories), versioned and diffable. Each definition
+  carries a stable `fac_<ulid>` id; the console reads them and never writes your worktree.
 - **Lights on or lights off.** Gates resolve `automation → factory → global`, each `human`, `agent` or
   `policy:<name>`. Full autonomy is possible, but enabling it requires a passing benchmark attestation — or an
   explicit, audited override.
@@ -35,8 +36,10 @@ This project is that factory, built to be **self-hosted, inspectable and yours**
 
 ### Definitions as code
 Factories are directories, not database rows: `factory.yaml` plus `agents/`, `scorers/`, `benchmarks/`,
-`runners/`, `routing.yaml`. Path is identity; the CLI exports canonical YAML, diffs semantically and pins a commit
-per run. `factory validate | export | import | diff | fmt | version`.
+`runners/`, `routing.yaml`. The committed `id` is the canonical identity; the path is owner-scoped and the CLI
+exports canonical YAML, diffs semantically and pins a commit per run.
+`factory validate | export | import | diff | fmt | version`. Factories are private to their owner unless the
+caller is an admin; URLs use the opaque id, never the directory name.
 
 ### Gates and autonomy
 Six policy stages (`spec`, `plan`, `implement`, `review`, `pr_review`, `deploy`) resolve per automation, per factory
@@ -170,16 +173,18 @@ everything (including upgrades) to Forgejo. Auth is preserved: Caddy asks `GET /
 returns the signed-in username in `X-WebAuth-User` (401 when signed out), and forwards it to the forge. This mode
 is opt-in — the default `docker compose up -d` keeps the single origin at :3000.
 
-Create your first work item from **Work items → New work item**, or via the API (sign in once and keep the
-session cookie when `AUTH_REQUIRED=1`):
+Create your first work item from the factory's **Work items → New work item** page, or via the API (sign in
+once and keep the session cookie when `AUTH_REQUIRED=1`). Factories are addressed by their committed
+`fac_<ulid>` id — discover it from `GET /api/v1/factories`:
 
 ```bash
 curl -sS -c /tmp/factory-cookies.txt -X POST localhost:8080/api/v1/auth/login \
   -H 'content-type: application/json' \
   -d '{"email":"admin@factory.local","password":"factory-admin"}'
-curl -sS -b /tmp/factory-cookies.txt -X POST localhost:8080/api/v1/work-items \
+curl -sS -b /tmp/factory-cookies.txt localhost:8080/api/v1/factories   # id + owner + key
+curl -sS -b /tmp/factory-cookies.txt -X POST localhost:8080/api/v1/factories/<factory-id>/work-items \
   -H 'content-type: application/json' \
-  -d '{"factory":"hello-nextjs","type":"task","title":"Hello world","prompt":"Create a minimal Next.js hello-world site in site/"}'
+  -d '{"type":"task","title":"Hello world","prompt":"Create a minimal Next.js hello-world site in site/"}'
 ```
 
 The bundled `hello-nextjs` factory is fully lights-off (after an audited autonomy override) and has produced a

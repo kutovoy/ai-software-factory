@@ -30,7 +30,8 @@ bun run ci                        # typecheck + unit/integration-off + factory v
 curl -s localhost:8080/health                 # liveness probe
 curl -s localhost:8080/api/v1/health          # same body, versioned
 curl -s localhost:8080/api/v1/openapi.json    # the contract (Swagger UI / Postman)
-curl -s localhost:8080/api/v1/runs            # resources are versioned only
+curl -s localhost:8080/api/v1/factories       # factory list (id + owner + key)
+curl -s localhost:8080/api/v1/factories/<factory-id>/runs   # factory-scoped resources are nested
 ```
 
 Forge transport (spec `forge-transport`): HTTP through the console proxy, git over SSH on the published port,
@@ -98,7 +99,8 @@ lets you validate wiring without touching a repo. GitHub delivers to
 `phase-3b` (GitHub + merge queue) · `phase-4a` (scoring) · `phase-4b` (benchmarks) · `phase-5` (self-improvement) ·
 `harden-runtime` · `secrets-mcp` · `api-v1-help` · `help-center` · `live-api-explorer` · `api-explorer-parity` ·
 `fix-ui-audit` · `fix-run-failures` · `run-actions` · `readiness-hello-nextjs` · `console-ops` · `forgejo` ·
-`agent-verdicts` · `console-auth` · `harden-runners` · `forge-ssh-public`.
+`agent-verdicts` · `console-auth` · `harden-runners` · `forge-ssh-public` · `factory-identity` · `factory-purge` ·
+`readiness-identity`.
 
 ## Latest state (2026-11-01)
 
@@ -120,6 +122,11 @@ lets you validate wiring without touching a repo. GitHub delivers to
   bakes `@playwright/test@1.64.1` + Chromium; work item `wi_01M6D66NASJ95RN86JVTZKTBF0` reached `done` with zero
   human decisions and merged PR #4. The opencode adapter now carries the last assistant message as the run
   summary, so `agentVerdict: required` gates can parse the structured verdict.
+- **Factory identity + purge v2 (2026-11-02)**: committed `fac_<ulid>` IDs, owner-scoped paths, nested-only
+  `/factories/<id>/…` URLs and `/api/v1/factories/:factoryId/…` API; members are scoped to their own factories
+  (404 otherwise). `DELETE /api/v1/factories/:factoryId` is a verified hard purge (DB rows, Temporal schedules,
+  running workflows, run dirs; git/forge kept). A fresh run `wi_01M6DF5HG9EMWWPKN4JB4YGCDG` merged PR #5 with
+  Playwright QA passing (`1 passed (687ms)`).
 - **Local forge**: Forgejo at `http://localhost:3000/extras/forgejo/`, enabled by default, proxied by the console
   and asserting the signed-in user (admin fallback when auth is off). Bootstrap:
   `bash scripts/forgejo-bootstrap.sh` (admin, token to `.env`, org/repo). The forge client speaks Gitea's dialect;
@@ -136,7 +143,8 @@ lets you validate wiring without touching a repo. GitHub delivers to
     forge. The console stays on `:3000`; this mode is opt-in, the default single-origin setup is unchanged.
   - Multi-user OIDC group mapping is still deferred.
 - **Console**: auto-refresh (15s, off on help), operational dashboard (state/work/runs/deliverables), persisted
-  factory selection, work-items board with status filters and timestamps.
+  factory selection by `fac_<ulid>` id, factory-scoped work-items board and runs list with status filters and
+  timestamps. URLs are `/factories/<id>/…` only; the old `/work-items` and `/runs` pages are gone.
 - **API**: everything under `/api/v1`, OpenAPI 3.1 at `/api/v1/openapi.json`, live Swagger UI at `/help/api`.
 
 ### Run it with a real model and forge
@@ -155,14 +163,12 @@ Then open http://localhost:3000, pick a factory, and create a work item. `hello-
 1. **Phase 6c**: external OIDC/IdP with group→org mappings (Keycloak/Authentik/Zitadel optional), remote runners,
    Temporal Cloud and multi-tenant credential isolation.
 2. **Live GitHub path**: implemented and contract-tested, never exercised against a real repository (needs a PAT).
-3. **Replay integration**: the replay adapter and trial plan are unit-tested; a Temporal benchmark trial that
-   replays a recording end to end is still pending.
-4. **Forge proxy mode**: SSH ships by default; the Caddy overlay is live-validated for session auth and HTTP, but
+3. **Forge proxy mode**: SSH ships by default; the Caddy overlay is live-validated for session auth and HTTP, but
    a websocket upgrade has not been exercised end to end. The default single-origin setup proxies HTTP through the
    console.
-5. **Replay scope**: a replay is a recording of *our* canonical events + patch, not an arbitrary harness
+4. **Replay scope**: a replay is a recording of *our* canonical events + patch, not an arbitrary harness
    tool-response trace.
-6. **Promotion** merges the definition repo but does not rewrite the local checkout; `runs/canary/` GC is manual.
+5. **Promotion** merges the definition repo but does not rewrite the local checkout; `runs/canary/` GC is manual.
 
 ## Specs
 

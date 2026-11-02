@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test';
-import { cleanupRuns, cleanupWorkItems, trackWorkItem } from './helpers';
+import {
+  cleanupRuns,
+  cleanupWorkItems,
+  factoryApi,
+  factoryId,
+  factoryPage,
+  trackWorkItem,
+} from './helpers';
 
 /**
  * `improve-console-ops`: the console is an operations view.
@@ -19,7 +26,7 @@ test.describe('console operations', () => {
   test('auto-refresh control: default 15s, persisted, refreshes, absent on help', async ({ page }) => {
     test.setTimeout(120_000);
 
-    await page.goto('/factories/example/dashboard');
+    await page.goto(await factoryPage(page.request, 'example'));
     const control = page.getByTestId('auto-refresh');
     await expect(control).toBeVisible();
     const select = page.getByTestId('auto-refresh-interval');
@@ -33,13 +40,13 @@ test.describe('console operations', () => {
     // The choice persists across pages and reloads.
     await select.selectOption('30');
     await expect(control).toHaveAttribute('data-interval', '30');
-    await page.goto('/runs');
+    await page.goto(await factoryPage(page.request, 'example', 'runs'));
     await expect(page.getByTestId('auto-refresh')).toBeVisible();
     await expect(page.getByTestId('auto-refresh-interval')).toHaveValue('30');
     await page.reload();
     await expect(page.getByTestId('auto-refresh-interval')).toHaveValue('30');
 
-    await page.goto('/work-items');
+    await page.goto(await factoryPage(page.request, 'example', 'work-items'));
     await expect(page.getByTestId('auto-refresh')).toBeVisible();
 
     // Documentation routes: no control, no timer.
@@ -52,7 +59,7 @@ test.describe('console operations', () => {
   test('hello-nextjs dashboard shows state, the done item, its PR and the patch', async ({ page }) => {
     test.setTimeout(90_000);
 
-    await page.goto('/factories/hello-nextjs/dashboard');
+    await page.goto(await factoryPage(page.request, 'hello-nextjs'));
 
     // State: autonomy, canary and last activity are rendered, not just metrics.
     await expect(page.getByTestId('dashboard-state')).toBeVisible();
@@ -60,15 +67,18 @@ test.describe('console operations', () => {
     await expect(page.getByTestId('dashboard-canary-state')).toBeVisible();
     await expect(page.getByTestId('dashboard-last-activity')).toBeVisible();
 
-    // The completed lights-off item is listed with its status and a link.
-    const item = page.locator(
-      '[data-testid="dashboard-work-item"][data-work-item-id="wi_01M6B5097TGHK0KKZQN9BB3C4G"]',
-    );
+    // The most recent completed lights-off item is listed with its status and a nested link.
+    const item = page
+      .locator(
+        '[data-testid="dashboard-work-item"]:has([data-testid="dashboard-work-item-status"]:text-is("done"))',
+      )
+      .first();
     await expect(item).toBeVisible();
     await expect(item.getByTestId('dashboard-work-item-status')).toHaveText('done');
+    const helloId = await factoryId(page.request, 'hello-nextjs');
     await expect(item.getByTestId('dashboard-work-item-link')).toHaveAttribute(
       'href',
-      '/work-items/wi_01M6B5097TGHK0KKZQN9BB3C4G',
+      new RegExp(`^/factories/${helloId}/work-items/wi_`),
     );
 
     // Deliverables: the PR link, a merged count and the captured patch. A recorded PR
@@ -91,61 +101,68 @@ test.describe('console operations', () => {
   });
 
   test('selected factory survives top-level navigation', async ({ page }) => {
-    await page.goto('/runs');
+    await page.goto(await factoryPage(page.request, 'example', 'runs'));
 
     const switcher = page.getByTestId('factory-switcher');
+    const helloId = await factoryId(page.request, 'hello-nextjs');
     const optionLabel =
-      (await switcher.locator('option[value="hello-nextjs"]').textContent())?.trim() ?? '';
+      (await switcher.locator(`option[value="${helloId}"]`).textContent())?.trim() ?? '';
     // The switcher shows `alias (name)`; the sidebar label is the alias, else the directory name.
     const expectedLabel = optionLabel.replace(/\s*\([^)]*\)$/, '') || 'hello-nextjs';
 
-    await switcher.selectOption('hello-nextjs');
-    await expect(page).toHaveURL(/\/factories\/hello-nextjs\/dashboard/);
+    await switcher.selectOption(helloId);
+    await expect(page).toHaveURL(new RegExp(`/factories/${helloId}/dashboard`));
     await expect(page.getByTestId('nav-factory-name')).toHaveText(expectedLabel);
 
-    // Clicking a top-level item must not reset the selection.
+    // Clicking a top-level item must not reset the selection; Runs is factory-scoped now.
     await page.getByTestId('nav-runs').click();
-    await expect(page).toHaveURL(/\/runs$/);
+    await expect(page).toHaveURL(new RegExp(`/factories/${helloId}/runs$`));
     await expect(page.getByTestId('nav-factory-name')).toHaveText(expectedLabel);
-    await expect(page.getByTestId('factory-switcher')).toHaveValue('hello-nextjs');
+    await expect(page.getByTestId('factory-switcher')).toHaveValue(helloId);
     // Factory-scoped links keep targeting the selected factory.
     await expect(page.getByTestId('nav-dashboard')).toHaveAttribute(
       'href',
-      '/factories/hello-nextjs/dashboard',
+      `/factories/${helloId}/dashboard`,
     );
 
     // The cookie makes the selection survive a reload too.
     await page.reload();
     await expect(page.getByTestId('nav-factory-name')).toHaveText(expectedLabel);
-    await expect(page.getByTestId('factory-switcher')).toHaveValue('hello-nextjs');
+    await expect(page.getByTestId('factory-switcher')).toHaveValue(helloId);
   });
 
   test('cancelled items are hidden by default and shown when toggled', async ({ page, request }) => {
     test.setTimeout(120_000);
 
-    const created = await request.post('/api/work-items', {
-      data: {
-        factory: 'example',
-        title: `e2e: cancelled filter ${Date.now()}`,
-        type: 'task',
-        source: 'manual',
-        harness: 'fake',
-        prompt: 'e2e: cancelled filter',
+    const exampleId = await factoryId(request, 'example');
+    const created = await request.post(
+      await factoryApi(request, 'example', 'work-items'),
+      {
+        data: {
+          title: `e2e: cancelled filter ${Date.now()}`,
+          type: 'task',
+          source: 'manual',
+          harness: 'fake',
+          prompt: 'e2e: cancelled filter',
+        },
       },
-    });
-    expect(created.ok(), `POST /api/work-items failed: ${created.status()}`).toBeTruthy();
+    );
+    expect(created.ok(), `POST work-items failed: ${created.status()}`).toBeTruthy();
     const workItemId = ((await created.json()) as { workItem: { id: string } }).workItem.id;
-    trackWorkItem(workItemId);
+    trackWorkItem(exampleId, workItemId);
 
-    const cancelled = await request.post(`/api/work-items/${workItemId}/cancel`, {
-      data: { actor: 'e2e', reason: 'board filter test' },
-    });
+    const cancelled = await request.post(
+      await factoryApi(request, 'example', `work-items/${workItemId}/cancel`),
+      { data: { actor: 'e2e', reason: 'board filter test' } },
+    );
     expect(cancelled.ok(), `cancel failed: ${cancelled.status()}`).toBeTruthy();
 
     await expect
       .poll(
         async () => {
-          const response = await request.get(`/api/work-items/${workItemId}`);
+          const response = await request.get(
+            await factoryApi(request, 'example', `work-items/${workItemId}`),
+          );
           if (!response.ok()) return null;
           return ((await response.json()) as { workItem: { status: string } }).workItem.status;
         },
@@ -153,7 +170,7 @@ test.describe('console operations', () => {
       )
       .toBe('cancelled');
 
-    await page.goto('/work-items?factory=example');
+    await page.goto(await factoryPage(page.request, 'example', 'work-items'));
     const card = page.locator(
       `[data-testid="work-item-card"][data-work-item-id="${workItemId}"]`,
     );

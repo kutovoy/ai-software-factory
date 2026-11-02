@@ -8,7 +8,7 @@ import { useState } from 'react';
  * input; the original run stays immutable. Disabled while the request is in flight so a
  * double click cannot start two runs (the API also dedupes within 60s).
  */
-export function RetryRunButton({ runId }: { runId: string }) {
+export function RetryRunButton({ factoryId, runId }: { factoryId: string; runId: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -18,9 +18,10 @@ export function RetryRunButton({ runId }: { runId: string }) {
     setPending(true);
     setError(null);
     try {
-      const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/retry`, {
-        method: 'POST',
-      });
+      const response = await fetch(
+        `/api/v1/factories/${encodeURIComponent(factoryId)}/runs/${encodeURIComponent(runId)}/retry`,
+        { method: 'POST' },
+      );
       const payload = (await response.json().catch(() => null)) as
         | { run?: { id?: string }; message?: string; code?: string }
         | null;
@@ -35,7 +36,7 @@ export function RetryRunButton({ runId }: { runId: string }) {
         setPending(false);
         return;
       }
-      router.push(`/runs/${encodeURIComponent(nextId)}`);
+      router.push(`/factories/${encodeURIComponent(factoryId)}/runs/${encodeURIComponent(nextId)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setPending(false);

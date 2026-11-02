@@ -10,10 +10,10 @@ export default function NotFound() {
         description="That run, factory or page does not exist."
         action={
           <Link
-            href="/runs"
+            href="/chat"
             className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-800"
           >
-            Back to Runs
+            Back to New Chat
           </Link>
         }
       />

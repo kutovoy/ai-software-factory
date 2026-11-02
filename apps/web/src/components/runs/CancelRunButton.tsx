@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
  * only for `pending`/`running`/`cancelling` runs, so it is never a dead button on a
  * terminal run.
  */
-export function CancelRunButton({ runId }: { runId: string }) {
+export function CancelRunButton({ factoryId, runId }: { factoryId: string; runId: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -17,7 +17,9 @@ export function CancelRunButton({ runId }: { runId: string }) {
     setBusy(true);
     setError(null);
     try {
-      const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/cancel`, {
+      const response = await fetch(
+        `/api/v1/factories/${encodeURIComponent(factoryId)}/runs/${encodeURIComponent(runId)}/cancel`,
+        {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ reason: 'cancelled from console' }),

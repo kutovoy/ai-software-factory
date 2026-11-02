@@ -39,6 +39,11 @@ export const ERROR_CODES = [
   'dirty_worktree',
   'secret_inline_rejected',
   'unknown_mcp_server',
+  /**
+   * The runtime loader refuses a definition without a stable `fac_<ulid>` id
+   * (change `add-factory-identity`).
+   */
+  'factory_id_missing',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

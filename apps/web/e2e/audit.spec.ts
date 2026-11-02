@@ -23,6 +23,18 @@ type Finding = {
   title: string;
 };
 
+async function firstFactoryId(key: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${API}/api/v1/factories`);
+    if (!res.ok) return null;
+    const json = (await res.json()) as { factories?: Array<{ id: string | null; name: string; key: string }> };
+    const hit = (json.factories ?? []).find((row) => row.name === key || row.key === key);
+    return hit?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function firstId(path: string, key: string): Promise<string | null> {
   try {
     const res = await fetch(`${API}/api/v1${path}`);
@@ -38,24 +50,28 @@ async function firstId(path: string, key: string): Promise<string | null> {
 test('audit every page', async ({ page }) => {
   test.setTimeout(600_000);
 
-  const runId = await firstId('/runs?limit=1', 'runs');
-  const workItemId = await firstId('/work-items?limit=1', 'workItems');
+  const exampleId = await firstFactoryId('example');
+  const lightsOffId = await firstFactoryId('example-lights-off');
+  const runId = exampleId
+    ? await firstId(`/factories/${exampleId}/runs?limit=1`, 'runs')
+    : null;
+  const workItemId = exampleId
+    ? await firstId(`/factories/${exampleId}/work-items?limit=1`, 'workItems')
+    : null;
   const scoreId = await firstId('/scores?limit=1', 'scores');
 
-  const factories = ['example', 'example-lights-off'];
+  const factories = [exampleId, lightsOffId].filter((id): id is string => Boolean(id));
   const routes: string[] = [
     '/',
     '/chat',
-    '/runs',
     '/inbox',
-    '/work-items',
     '/secrets',
     '/mcps',
     '/users',
     '/help',
     '/help/api',
-    ...(runId ? [`/runs/${runId}`] : []),
-    ...(workItemId ? [`/work-items/${workItemId}`] : []),
+    ...(runId && exampleId ? [`/factories/${exampleId}/runs/${runId}`] : []),
+    ...(workItemId && exampleId ? [`/factories/${exampleId}/work-items/${workItemId}`] : []),
     ...(scoreId ? [`/scores/${scoreId}`] : []),
   ];
 

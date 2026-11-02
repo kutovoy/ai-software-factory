@@ -1,10 +1,7 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, statSync } from 'node:fs';
-import { join } from 'node:path';
 import {
   DefinitionValidationError,
   createVersion,
-  loadDefinition,
   modelEnvName,
   resolveModelRef,
   type FactoryDefinition,
@@ -30,14 +27,12 @@ import { canAccess, type Viewer } from './auth';
 import {
   ApiError,
   definitionInvalid,
-  factoryNotFound,
   invalidRequest,
   modelUnresolved,
   runNotFound,
 } from './errors';
+import { loadFactoryDefinition, resolveFactoryDir } from './factories';
 import { log } from './logger';
-
-const FACTORY_NAME_RE = /^[a-z0-9][a-z0-9._-]*$/;
 
 export interface CreateRunBody {
   factory: string;
@@ -58,19 +53,8 @@ export interface CreatedRun {
   proxy: { baseUrl: string; models: string[]; tokenId?: string; token?: string };
 }
 
-function resolveFactoryRoot(config: ApiConfig, factory: string): string {
-  if (!FACTORY_NAME_RE.test(factory)) {
-    throw invalidRequest(`invalid factory name "${factory}"`, { factory });
-  }
-  const dir = join(config.factoryRoot, factory);
-  if (!existsSync(dir) || !statSync(dir).isDirectory()) throw factoryNotFound(factory);
-  return dir;
-}
-
 function loadOrFail(dir: string, factory: string): FactoryDefinition {
-  const { definition, errors } = loadDefinition(dir);
-  if (!definition) throw definitionInvalid(factory, errors);
-  return definition;
+  return loadFactoryDefinition(dir, factory);
 }
 
 export { loadOrFail };
@@ -156,12 +140,12 @@ export function newRunId(): string {
 export async function createRun(
   config: ApiConfig,
   body: CreateRunBody,
-  options: { kind: 'chat' | 'run'; retryOf?: string },
+  options: { kind: 'chat' | 'run'; retryOf?: string; factoryId?: string | null },
   /** Owner (`users.id`) of the run; null when auth is off (change `add-console-auth`). */
   createdBy: string | null = null,
 ): Promise<CreatedRun> {
   const factory = body.factory;
-  const dir = resolveFactoryRoot(config, factory);
+  const dir = resolveFactoryDir(config, factory);
   const definition = loadOrFail(dir, factory);
   const { commit, dirty } = pinVersion(dir, factory);
 
@@ -187,6 +171,7 @@ export async function createRun(
   const input: RunInput = {
     runId,
     factory,
+    ...(options.factoryId ? { factoryId: options.factoryId } : {}),
     factoryRoot: dir,
     definitionCommit: commit,
     definitionDirty: dirty,
@@ -210,6 +195,7 @@ export async function createRun(
   await insertRun({
     runId,
     factory,
+    ...(options.factoryId ? { factoryId: options.factoryId } : {}),
     definitionCommit: commit,
     definitionDirty: dirty,
     harness,
@@ -268,6 +254,8 @@ export async function retryRun(
   config: ApiConfig,
   runId: string,
   viewer: Viewer | null = null,
+  /** The factory the nested route resolved; the original run must belong to it. */
+  factoryId: string | null = null,
 ): Promise<{
   run: RunRow;
   workflow?: CreatedRun['workflow'];
@@ -275,7 +263,7 @@ export async function retryRun(
   retryOf: string;
   deduped: boolean;
 }> {
-  const original = await assertRunAccess(runId, viewer);
+  const original = await assertRunAccess(runId, viewer, factoryId);
 
   if (original.kind !== 'chat') {
     throw new ApiError(
@@ -319,7 +307,7 @@ export async function retryRun(
       runner: original.runner as RunInput['runner'],
       agent: input.agent,
     },
-    { kind: 'chat', retryOf: runId },
+    { kind: 'chat', retryOf: runId, ...(factoryId ? { factoryId } : {}) },
     original.created_by ?? null,
   );
 
@@ -366,10 +354,13 @@ export async function runOwnerId(row: RunRow): Promise<string | null> {
 export async function assertRunAccess(
   runId: string,
   viewer: Viewer | null,
+  /** When the route is nested, the run must belong to that factory identity. */
+  factoryId: string | null = null,
 ): Promise<RunRow> {
   const run = await getRun(runId);
   if (!run) throw runNotFound(runId);
   if (!canAccess(viewer, await runOwnerId(run))) throw runNotFound(runId);
+  if (factoryId && run.factory_id !== factoryId) throw runNotFound(runId);
   return run;
 }
 
@@ -463,6 +454,7 @@ export function summarize(row: RunRow): RunSummary {
 export async function getRunDetail(
   runId: string,
   viewer: Viewer | null = null,
+  factoryId: string | null = null,
 ): Promise<{
   run: RunRow;
   summary: RunSummary;
@@ -477,6 +469,7 @@ export async function getRunDetail(
   const run = await getRun(runId);
   if (!run) throw runNotFound(runId);
   if (!canAccess(viewer, await runOwnerId(run))) throw runNotFound(runId);
+  if (factoryId && run.factory_id !== factoryId) throw runNotFound(runId);
   const permissions = await listPermissions(runId);
   const input = run.input as RunInput;
   const children = (await getSql()`

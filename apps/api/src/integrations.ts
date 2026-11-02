@@ -26,7 +26,6 @@ const repoRefSchema = z
 
 export const githubIntegrationBodySchema = z
   .object({
-    factory: z.string().min(1),
     /** Secret *name* (e.g. `GITHUB_TOKEN`), never a value. */
     secretRef: z.string().min(1).max(120),
     webhookSecretRef: z.string().min(1).max(120).optional(),
@@ -134,9 +133,10 @@ export async function getIntegrationsForApi(
 
 export async function configureGithubForApi(
   config: ApiConfig,
+  factory: string,
   body: GithubIntegrationBody,
 ): Promise<IntegrationsResponse> {
-  resolveFactoryDir(config, body.factory);
+  resolveFactoryDir(config, factory);
 
   // A secret *reference*, not a value: reject anything that looks like a credential.
   if (looksLikeSecretValue(body.secretRef)) {
@@ -152,7 +152,7 @@ export async function configureGithubForApi(
 
   const sql = getSql();
   await upsertIntegration(sql, {
-    factory: body.factory,
+    factory,
     provider: 'github',
     secretRef: body.secretRef,
     webhookSecretRef: body.webhookSecretRef ?? config.webhookSecretRef,
@@ -171,7 +171,7 @@ export async function configureGithubForApi(
     },
   });
 
-  return await getIntegrationsForApi(config, body.factory);
+  return await getIntegrationsForApi(config, factory);
 }
 
 /** Used by the webhook router: every enabled GitHub connection, across factories. */

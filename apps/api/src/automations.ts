@@ -27,7 +27,7 @@ export interface AutomationSpecInput {
 
 /** Builds the schedule specs from the git-backed definition (the only source of truth). */
 export function automationSpecsFromDefinition(dir: string, factory: string): AutomationSpecInput[] {
-  const { definition, errors } = loadDefinition(dir);
+  const { definition, errors } = loadDefinition(dir, { requireFactoryId: true });
   if (!definition) {
     throw new ApiError('definition_invalid', 422, `factory "${factory}" does not validate`, {
       factory,

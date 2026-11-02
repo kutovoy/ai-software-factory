@@ -25,12 +25,14 @@ function blockTone(tone: 'info' | 'ok' | 'error' | 'warning'): Tone {
  * claim made visible: chat is a run, and a factory run is chat (ADR-002).
  */
 export function EventStream({
+  factoryId,
   runId,
   events,
   decisions = {},
   focus,
   onDecided,
 }: {
+  factoryId: string;
   runId: string;
   events: FactoryEvent[];
   decisions?: Decisions;
@@ -85,7 +87,7 @@ export function EventStream({
 
     try {
       const response = await fetch(
-        `/api/runs/${encodeURIComponent(runId)}/permissions/${encodeURIComponent(requestId)}`,
+        `/api/v1/factories/${encodeURIComponent(factoryId)}/runs/${encodeURIComponent(runId)}/permissions/${encodeURIComponent(requestId)}`,
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },

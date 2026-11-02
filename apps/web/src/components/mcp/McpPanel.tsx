@@ -31,11 +31,11 @@ function statusTone(status: string): 'success' | 'danger' | 'neutral' {
 }
 
 export function McpPanel({
-  factory,
+  factoryId,
   projection,
   unregistered,
 }: {
-  factory: string;
+  factoryId: string;
   projection: McpProjectionWire;
   /** Declared servers that are not in the index yet. */
   unregistered: string[];
@@ -62,7 +62,9 @@ export function McpPanel({
     }
     setBusy(true);
     try {
-      const response = await fetch(`/api/factories/${encodeURIComponent(factory)}/mcp`, {
+      const response = await fetch(
+        `/api/v1/factories/${encodeURIComponent(factoryId)}/mcp`,
+        {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ servers: [{ name: selected }] }),
@@ -89,7 +91,7 @@ export function McpPanel({
     setPending(server);
     try {
       const response = await fetch(
-        `/api/factories/${encodeURIComponent(factory)}/mcp/${encodeURIComponent(server)}/test`,
+        `/api/v1/factories/${encodeURIComponent(factoryId)}/mcp/${encodeURIComponent(server)}/test`,
         { method: 'POST' },
       );
       const body = (await response.json().catch(() => ({}))) as

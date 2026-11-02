@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { cleanupRuns, createFakeRun } from './helpers';
+import { cleanupRuns, createFakeRun, factoryId, factoryPage } from './helpers';
 
 test.afterEach(async ({ request }) => {
   await cleanupRuns(request);
@@ -32,7 +32,10 @@ test('a pending permission appears in the inbox and deep-links to the run', asyn
   expect(requestId).toBeTruthy();
 
   await item.getByTestId('inbox-item-link').click();
-  await expect(page).toHaveURL(new RegExp(`/runs/${run.id}\\?focus=permission`));
+  const id = await factoryId(page.request, run.factory);
+  await expect(page).toHaveURL(
+    new RegExp(`/factories/${id}/runs/${run.id}\\?focus=permission`),
+  );
 
   const prompt = page.getByTestId('permission-prompt');
   await expect(prompt).toBeVisible();

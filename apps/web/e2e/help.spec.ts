@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { factoryId } from './helpers';
 
 /**
  * Help centre (`web-console` spec: "Help centre", "Contextual help", "No dead controls").
@@ -50,11 +51,12 @@ test('the contextual ? resolves Chat, Gates and Self-improvement', async ({ page
   await expect(control).toHaveAccessibleName('Help for New Chat');
   await expect(control).toHaveAttribute('data-help-slug', 'chat');
 
-  await page.goto('/factories/example/gates');
+  const exampleId = await factoryId(page.request, 'example');
+  await page.goto(`/factories/${encodeURIComponent(exampleId)}/gates`);
   await expect(page.getByTestId('help-context-link')).toHaveAttribute('href', '/help/factories/gates');
   await expect(page.getByTestId('help-context-link')).toHaveAccessibleName('Help for Gates');
 
-  await page.goto('/factories/example/self-improvement');
+  await page.goto(`/factories/${encodeURIComponent(exampleId)}/self-improvement`);
   await expect(page.getByTestId('help-context-link')).toHaveAttribute(
     'href',
     '/help/factories/self-improvement',
@@ -67,7 +69,7 @@ test('the contextual ? resolves Chat, Gates and Self-improvement', async ({ page
   await expect(page.getByTestId('help-entry-title')).toHaveText('Self-improvement');
   await expect(page.getByTestId('help-page-link')).toHaveAttribute(
     'href',
-    '/factories/example/self-improvement',
+    `/factories/${encodeURIComponent(exampleId)}/self-improvement`,
   );
 
   // An unknown route falls back to the index instead of a 404 entry.
@@ -128,13 +130,15 @@ test('the API nav opens the reference generated from the served document', async
   await expect(page.locator('[data-testid="api-resource"][data-resource="work-items"]')).toBeVisible();
 
   const runsList = page.locator(
-    '[data-testid="api-endpoint"][data-path="/api/v1/runs"][data-method="GET"]',
+    '[data-testid="api-endpoint"][data-path="/api/v1/factories/{factoryId}/runs"][data-method="GET"]',
   );
   await expect(runsList).toBeVisible();
   await expect(runsList).toContainText('List runs');
   await expect(runsList).toContainText('GET');
   await expect(
-    page.locator('[data-testid="api-endpoint"][data-path="/api/v1/work-items"][data-method="POST"]'),
+    page.locator(
+      '[data-testid="api-endpoint"][data-path="/api/v1/factories/{factoryId}/work-items"][data-method="POST"]',
+    ),
   ).toBeVisible();
   await expect(runsList.getByTestId('api-endpoint-params')).toContainText('limit');
   await expect(runsList.getByTestId('api-endpoint-responses')).toContainText('200');

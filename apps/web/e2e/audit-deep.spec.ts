@@ -13,6 +13,18 @@ const API = process.env.API_BASE_URL ?? 'http://localhost:8080';
 const OUT = '/tmp/ui-audit';
 fs.mkdirSync(OUT, { recursive: true });
 
+async function firstFactoryId(key: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${API}/api/v1/factories`);
+    if (!res.ok) return null;
+    const json = (await res.json()) as { factories?: Array<{ id: string | null; name: string; key: string }> };
+    const hit = (json.factories ?? []).find((row) => row.name === key || row.key === key);
+    return hit?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function firstId(path: string, key: string): Promise<string | null> {
   try {
     const res = await fetch(`${API}/api/v1${path}`);
@@ -28,28 +40,32 @@ async function firstId(path: string, key: string): Promise<string | null> {
 test('deep audit every page', async ({ page }) => {
   test.setTimeout(900_000);
 
-  const runId = await firstId('/runs?limit=1', 'runs');
-  const workItemId = await firstId('/work-items?limit=1', 'workItems');
+  const exampleId = await firstFactoryId('example');
+  const lightsOffId = await firstFactoryId('example-lights-off');
+  const runId = exampleId
+    ? await firstId(`/factories/${exampleId}/runs?limit=1`, 'runs')
+    : null;
+  const workItemId = exampleId
+    ? await firstId(`/factories/${exampleId}/work-items?limit=1`, 'workItems')
+    : null;
   const scoreId = await firstId('/scores?limit=1', 'scores');
 
   const routes: string[] = [
     '/',
     '/chat',
-    '/runs',
     '/inbox',
-    '/work-items',
     '/secrets',
     '/mcps',
     '/users',
     '/help',
     '/help/quick-start',
     '/help/api',
-    ...(runId ? [`/runs/${runId}`] : []),
-    ...(workItemId ? [`/work-items/${workItemId}`] : []),
+    ...(runId && exampleId ? [`/factories/${exampleId}/runs/${runId}`] : []),
+    ...(workItemId && exampleId ? [`/factories/${exampleId}/work-items/${workItemId}`] : []),
     ...(scoreId ? [`/scores/${scoreId}`] : []),
   ];
-  const factoryPages = ['', '/dashboard', '/agents', '/automations', '/benchmarks', '/definition', '/gates', '/merge-queue', '/scorers', '/self-improvement', '/settings'];
-  for (const factory of ['example', 'example-lights-off']) {
+  const factoryPages = ['', '/dashboard', '/agents', '/automations', '/benchmarks', '/definition', '/gates', '/merge-queue', '/scorers', '/self-improvement', '/settings', '/work-items', '/runs'];
+  for (const factory of [exampleId, lightsOffId].filter((id): id is string => Boolean(id))) {
     for (const p of factoryPages) routes.push(`/factories/${factory}${p}`);
   }
 

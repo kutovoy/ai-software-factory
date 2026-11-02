@@ -3,30 +3,39 @@ import { notFound } from 'next/navigation';
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { ApiClientError, apiGet } from '@/lib/api';
+import { ApiClientError, apiGet, safeGet } from '@/lib/api';
 import { formatCost, formatDateTime, formatTokens, statusTone } from '@/lib/format';
-import type { ScoreDetailResponse, ScoreEvidenceWire } from '@/lib/types';
+import type { FactoryListItem, ScoreDetailResponse, ScoreEvidenceWire } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
-function evidenceHref(ref: string, runId: string): string {
+function evidenceHref(ref: string, runId: string, factoryId: string): string {
+  const base = `/factories/${encodeURIComponent(factoryId)}`;
   if (ref.startsWith('work_item:')) {
-    return `/work-items/${encodeURIComponent(ref.slice('work_item:'.length))}`;
+    return `${base}/work-items/${encodeURIComponent(ref.slice('work_item:'.length))}`;
   }
   if (ref.startsWith('event:')) {
-    return `/runs/${encodeURIComponent(runId)}?focus=${encodeURIComponent(ref.slice('event:'.length))}`;
+    return `${base}/runs/${encodeURIComponent(runId)}?focus=${encodeURIComponent(ref.slice('event:'.length))}`;
   }
-  return `/runs/${encodeURIComponent(runId)}`;
+  return `${base}/runs/${encodeURIComponent(runId)}`;
 }
 
-function EvidenceRow({ evidence, runId }: { evidence: ScoreEvidenceWire; runId: string }) {
+function EvidenceRow({
+  evidence,
+  runId,
+  factoryId,
+}: {
+  evidence: ScoreEvidenceWire;
+  runId: string;
+  factoryId: string;
+}) {
   return (
     <li data-testid="score-evidence" className="flex flex-wrap items-center gap-2 text-xs">
       <Badge tone="neutral" mono>
         {evidence.kind}
       </Badge>
       <Link
-        href={evidenceHref(evidence.ref, runId)}
+        href={evidenceHref(evidence.ref, runId, factoryId)}
         className="font-mono text-slate-800 underline decoration-slate-300 underline-offset-2"
       >
         {evidence.ref}
@@ -50,6 +59,17 @@ export default async function ScoreDetailPage({ params }: { params: Promise<{ id
   }
 
   const { score, evidence, events, calibration } = detail;
+
+  // A score belongs to a factory; resolve its id from the viewer's factory list so every
+  // link stays inside that factory's id namespace.
+  const factories = await safeGet<{ factories: FactoryListItem[] }>('/factories', {
+    factories: [],
+  });
+  const owner = factories.factories.find(
+    (entry) => entry.key === score.factory || entry.name === score.factory,
+  );
+  const factoryId = owner?.id ?? owner?.key ?? null;
+  if (!factoryId) notFound();
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 px-6 py-6">
@@ -77,7 +97,7 @@ export default async function ScoreDetailPage({ params }: { params: Promise<{ id
           <p>
             Run{' '}
             <Link
-              href={`/runs/${encodeURIComponent(score.runId)}`}
+              href={`/factories/${encodeURIComponent(factoryId)}/runs/${encodeURIComponent(score.runId)}`}
               className="font-mono text-slate-800 underline decoration-slate-300 underline-offset-2"
               data-testid="score-run-link"
             >
@@ -88,7 +108,7 @@ export default async function ScoreDetailPage({ params }: { params: Promise<{ id
             <p>
               Work item{' '}
               <Link
-                href={`/work-items/${encodeURIComponent(score.workItemId)}`}
+                href={`/factories/${encodeURIComponent(factoryId)}/work-items/${encodeURIComponent(score.workItemId)}`}
                 className="font-mono text-slate-800 underline decoration-slate-300 underline-offset-2"
               >
                 {score.workItemId}
@@ -160,7 +180,12 @@ export default async function ScoreDetailPage({ params }: { params: Promise<{ id
             <CardBody>
               <ul className="space-y-2">
                 {evidence.map((item) => (
-                  <EvidenceRow key={`${item.kind}-${item.ref}`} evidence={item} runId={score.runId} />
+                  <EvidenceRow
+                    key={`${item.kind}-${item.ref}`}
+                    evidence={item}
+                    runId={score.runId}
+                    factoryId={factoryId}
+                  />
                 ))}
               </ul>
             </CardBody>

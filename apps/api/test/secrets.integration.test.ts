@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { req } from './helpers';
+import { factoryIdOf, req } from './helpers';
 import { SQL } from 'bun';
 import { mkdtempSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
@@ -48,6 +48,7 @@ const RUN_ID = 'run_itest_secret_lease';
 
 let config: ApiConfig;
 let app: Hono;
+let factoryId: string;
 
 async function migrate(databaseUrl: string): Promise<void> {
   const sql = new SQL(databaseUrl, { max: 1 });
@@ -92,6 +93,7 @@ suite('secrets + MCP integration', () => {
     await migrate(process.env.DATABASE_URL as string);
     config = loadApiConfig();
     app = createApp(config);
+    factoryId = await factoryIdOf(app, 'example');
 
     const sql = getSql();
     await sql`delete from secrets where name in (${SECRET}, 'ITEST_MISSING_TOKEN')`;
@@ -233,7 +235,7 @@ suite('secrets + MCP integration', () => {
   });
 
   test('MCP sync registers declared servers and bindings', async () => {
-    const sync = await post('/factories/example/mcp', {});
+    const sync = await post(`/factories/${factoryId}/mcp`, {});
     expect(sync.status).toBe(200);
     const projection = sync.body as {
       servers: Array<{ name: string; transport: string; status: string; agents: string[] }>;
@@ -256,7 +258,7 @@ suite('secrets + MCP integration', () => {
     });
 
     // GET is the same projection.
-    const fetched = await req(app, '/factories/example/mcp');
+    const fetched = await req(app, `/factories/${factoryId}/mcp`);
     expect(fetched.status).toBe(200);
     expect(((await fetched.json()) as { servers: unknown[] }).servers.length).toBeGreaterThan(0);
   });

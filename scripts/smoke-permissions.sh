@@ -64,18 +64,31 @@ login_code="$(curl -sS -o "$TMP_DIR/login.json" -w '%{http_code}' -c "$COOKIE_JA
   || fail "login failed (HTTP ${login_code}): $(cat "$TMP_DIR/login.json"). Set FACTORY_ADMIN_EMAIL / FACTORY_ADMIN_PASSWORD."
 grep -q 'factory_session' "$COOKIE_JAR" || fail "login did not set the factory_session cookie"
 
+# Factory identity (change `add-factory-identity`): runs live under a factory id.
+log "discovering the example factory id"
+factories_json="$(api "$API/factories")"
+FACTORY_ID="$(printf '%s' "$factories_json" | bun -e '
+  const raw = await Bun.stdin.text();
+  const rows = JSON.parse(raw || "{}").factories ?? [];
+  const hit = rows.find((row) => row.name === "example" || row.key === "example");
+  if (!hit || !hit.id) { console.error("no factory id for example"); process.exit(1); }
+  console.log(hit.id);
+')" || fail "could not resolve the example factory id: $factories_json"
+[ -n "$FACTORY_ID" ] || fail "empty factory id"
+pass "example factory id resolved ($FACTORY_ID)"
+
 create_run() {
   local label="$1"
   local created run_id
-  created="$(api -X POST "$API/chat" \
+  created="$(api -X POST "$API/factories/$FACTORY_ID/chat" \
     -H 'content-type: application/json' \
-    -d "{\"factory\":\"example\",\"harness\":\"fake\",\"prompt\":\"smoke-permissions: $label\"}")"
+    -d "{\"harness\":\"fake\",\"prompt\":\"smoke-permissions: $label\"}")"
   run_id="$(printf '%s' "$created" | jget run.id)"
   [ -n "$run_id" ] || fail "could not create run '$label': $created"
   printf '%s' "$run_id"
 }
 
-run_detail() { api "$API/runs/$1"; }
+run_detail() { api "$API/factories/$FACTORY_ID/runs/$1"; }
 
 # Waits until the run has a pending permission and prints the request id.
 wait_pending_permission() {
@@ -101,7 +114,7 @@ wait_status() {
 
 decide() {
   local run_id="$1" request_id="$2" decision="$3" response
-  response="$(api -X POST "$API/runs/$run_id/permissions/$request_id" \
+  response="$(api -X POST "$API/factories/$FACTORY_ID/runs/$run_id/permissions/$request_id" \
     -H 'content-type: application/json' -d "{\"decision\":\"$decision\"}")"
   [ "$(printf '%s' "$response" | jget decision)" = "$decision" ] \
     || fail "decision '$decision' for $run_id/$request_id failed: $response"
@@ -140,7 +153,7 @@ done
 pass "all eight blocked runs are still waiting and unaffected"
 
 # The canonical permission event must exist exactly once for the ninth run.
-events="$(api "$API/runs/$ninth/events")"
+events="$(api "$API/factories/$FACTORY_ID/runs/$ninth/events")"
 permission_events="$(printf '%s' "$events" | grep -c '^event: permission.requested' || true)"
 terminal_events="$(printf '%s' "$events" | grep -c '^event: run.completed' || true)"
 [ "$permission_events" -eq 1 ] || fail "expected one permission.requested event, got $permission_events"
@@ -150,12 +163,12 @@ pass "ninth run has exactly one permission.requested and one terminal event"
 # ------------------------------------------- 3. cancellation while waiting on a permission
 log "cancelling one permission-blocked run"
 cancelled="${BLOCKED[0]}"
-cancel_resp="$(api -X POST "$API/runs/$cancelled/cancel" \
+cancel_resp="$(api -X POST "$API/factories/$FACTORY_ID/runs/$cancelled/cancel" \
   -H 'content-type: application/json' -d '{"reason":"smoke-permissions"}')"
 [ "$(printf '%s' "$cancel_resp" | jget cancelled)" = "true" ] \
   || fail "cancel was not accepted: $cancel_resp"
 wait_status "$cancelled" "cancelled"
-cancelled_events="$(api "$API/runs/$cancelled/events")"
+cancelled_events="$(api "$API/factories/$FACTORY_ID/runs/$cancelled/events")"
 [ "$(printf '%s' "$cancelled_events" | grep -c '^event: run.completed')" -eq 1 ] \
   || fail "cancelled run did not emit exactly one terminal event"
 pass "cancellation while waiting ended $cancelled as cancelled"

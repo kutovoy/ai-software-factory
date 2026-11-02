@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { req } from './helpers';
+import { factoryIdOf, req } from './helpers';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -24,15 +24,19 @@ async function get(path: string): Promise<{ status: number; body: any }> {
 }
 
 describe('GET /factories', () => {
-  test('lists factories from FACTORY_ROOT with version metadata', async () => {
+  test('lists factories with their stable id, key and version metadata', async () => {
     const { status, body } = await get('/factories');
     expect(status).toBe(200);
 
-    const names = body.factories.map((factory: { name: string }) => factory.name);
-    expect(names).toContain('example');
-    expect(names).toContain('example-lights-off');
+    const keys = body.factories.map((factory: { key: string }) => factory.key);
+    expect(keys).toContain('example');
+    expect(keys).toContain('example-lights-off');
 
-    const example = body.factories.find((factory: { name: string }) => factory.name === 'example');
+    const example = body.factories.find((factory: { key: string }) => factory.key === 'example');
+    // The URL identity is the committed id, never the directory name.
+    expect(example.id).toMatch(/^fac_[0-9A-HJKMNP-TV-Z]{26}$/);
+    expect(example.name).toBe('example');
+    expect(example.path).toBe('example');
     expect(example.alias).toBe('Example');
     expect(example.repoCount).toBe(1);
     expect(example.valid).toBe(true);
@@ -45,19 +49,24 @@ describe('GET /factories', () => {
 
     // The two demo factories must be distinguishable: distinct manifest name and alias.
     const lightsOff = body.factories.find(
-      (factory: { name: string }) => factory.name === 'example-lights-off',
+      (factory: { key: string }) => factory.key === 'example-lights-off',
     );
+    expect(lightsOff.id).toMatch(/^fac_[0-9A-HJKMNP-TV-Z]{26}$/);
+    expect(lightsOff.id).not.toBe(example.id);
     expect(lightsOff.alias).toBe('Example — lights off');
     expect(lightsOff.manifestName).toBe('example-lights-off');
   });
 });
 
-describe('GET /factories/:name', () => {
+describe('GET /factories/:factoryId', () => {
   test('returns the manifest, resolved gates and autonomy flags', async () => {
-    const { status, body } = await get('/factories/example');
+    const id = await factoryIdOf(app, 'example');
+    const { status, body } = await get(`/factories/${id}`);
     expect(status).toBe(200);
 
     const factory = body.factory;
+    expect(factory.id).toBe(id);
+    expect(factory.key).toBe('example');
     expect(factory.name).toBe('example');
     expect(factory.manifest.mergePolicy).toBe('human');
     expect(factory.gates.stages.spec).toEqual({ stage: 'spec', gate: 'human', source: 'factory' });
@@ -72,7 +81,8 @@ describe('GET /factories/:name', () => {
   });
 
   test('lights-off factory is fully autonomous and needs a benchmark gate', async () => {
-    const { status, body } = await get('/factories/example-lights-off');
+    const id = await factoryIdOf(app, 'example-lights-off');
+    const { status, body } = await get(`/factories/${id}`);
     expect(status).toBe(200);
 
     const factory = body.factory;
@@ -84,23 +94,30 @@ describe('GET /factories/:name', () => {
     }
   });
 
-  test('unknown factory is a 404 factory_not_found', async () => {
-    const { status, body } = await get('/factories/does-not-exist');
+  test('an unknown factory id is a 404 factory_not_found', async () => {
+    const { status, body } = await get('/factories/fac_01M6D9K2B2J79P0M2KE28RY700');
     expect(status).toBe(404);
     expect(body.code).toBe('factory_not_found');
-    expect(body.details.factory).toBe('does-not-exist');
   });
 
-  test('an invalid factory name is rejected before touching the filesystem', async () => {
+  test('a name-shaped id is a 404, never a directory lookup', async () => {
+    // URLs carry the opaque id only; the old name-based route is gone.
+    const { status, body } = await get('/factories/example');
+    expect(status).toBe(404);
+    expect(body.code).toBe('factory_not_found');
+  });
+
+  test('a traversal-shaped id is rejected with 404 before touching the filesystem', async () => {
     const { status, body } = await get('/factories/..%2Fetc');
-    expect(status).toBe(400);
-    expect(body.code).toBe('invalid_request');
+    expect(status).toBe(404);
+    expect(body.code).toBe('factory_not_found');
   });
 });
 
-describe('GET /factories/:name/resources', () => {
+describe('GET /factories/:factoryId/resources', () => {
   test('flattens the resource tree with kind, name, path and summary', async () => {
-    const { status, body } = await get('/factories/example/resources');
+    const id = await factoryIdOf(app, 'example');
+    const { status, body } = await get(`/factories/${id}/resources`);
     expect(status).toBe(200);
 
     expect(body.factory).toBe('example');
@@ -130,16 +147,17 @@ describe('GET /factories/:name/resources', () => {
     expect(implement.doc.tools.deny).toContain('git_push_force');
   });
 
-  test('unknown factory is a 404 factory_not_found', async () => {
-    const { status, body } = await get('/factories/nope/resources');
+  test('an unknown factory id is a 404 factory_not_found', async () => {
+    const { status, body } = await get('/factories/fac_01M6D9K2B2J79P0M2KE28RY701/resources');
     expect(status).toBe(404);
     expect(body.code).toBe('factory_not_found');
   });
 });
 
-describe('GET /factories/:name/versions', () => {
+describe('GET /factories/:factoryId/versions', () => {
   test('returns git history for the factory directory', async () => {
-    const { status, body } = await get('/factories/example/versions');
+    const id = await factoryIdOf(app, 'example');
+    const { status, body } = await get(`/factories/${id}/versions`);
     expect(status).toBe(200);
     expect(body.factory).toBe('example');
     expect(body.versions.length).toBeGreaterThan(0);
@@ -157,16 +175,17 @@ describe('GET /factories/:name/versions', () => {
     expect(newest.date).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
-  test('unknown factory is a 404 factory_not_found', async () => {
-    const { status, body } = await get('/factories/nope/versions');
+  test('an unknown factory id is a 404 factory_not_found', async () => {
+    const { status, body } = await get('/factories/fac_01M6D9K2B2J79P0M2KE28RY702/versions');
     expect(status).toBe(404);
     expect(body.code).toBe('factory_not_found');
   });
 });
 
-describe('GET /factories/:name/diff', () => {
+describe('GET /factories/:factoryId/diff', () => {
   test('defaults to the previous commit touching the factory and returns a semantic diff', async () => {
-    const { status, body } = await get('/factories/example/diff');
+    const id = await factoryIdOf(app, 'example');
+    const { status, body } = await get(`/factories/${id}/diff`);
     expect(status).toBe(200);
     expect(body.factory).toBe('example');
     expect(body.to.commit).toMatch(/^[0-9a-f]{40}$/);
@@ -178,20 +197,22 @@ describe('GET /factories/:name/diff', () => {
   });
 
   test('accepts explicit from/to refs', async () => {
-    const { status, body } = await get('/factories/example/diff?from=HEAD&to=HEAD');
+    const id = await factoryIdOf(app, 'example');
+    const { status, body } = await get(`/factories/${id}/diff?from=HEAD&to=HEAD`);
     expect(status).toBe(200);
     expect(body.from.commit).toBe(body.to.commit);
     expect(body.diff.isEmpty).toBe(true);
   });
 
   test('an unknown ref is a 400 invalid_request', async () => {
-    const { status, body } = await get('/factories/example/diff?from=not-a-ref');
+    const id = await factoryIdOf(app, 'example');
+    const { status, body } = await get(`/factories/${id}/diff?from=not-a-ref`);
     expect(status).toBe(400);
     expect(body.code).toBe('invalid_request');
   });
 
-  test('unknown factory is a 404 factory_not_found', async () => {
-    const { status, body } = await get('/factories/nope/diff');
+  test('an unknown factory id is a 404 factory_not_found', async () => {
+    const { status, body } = await get('/factories/fac_01M6D9K2B2J79P0M2KE28RY703/diff');
     expect(status).toBe(404);
     expect(body.code).toBe('factory_not_found');
   });

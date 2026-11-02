@@ -13,6 +13,19 @@ import { improvementSchema } from './improvement';
 import { mcpSchema } from './mcp';
 import { stageDeclarationSchema } from './stage';
 import { AGENT_VERDICT_POLICIES } from '../gates/verdict';
+import { newUlid } from '../work-items/id';
+
+/**
+ * Stable factory identity (change `add-factory-identity`): `fac_` + a 26-character Crockford
+ * base32 ULID. Committed once in `factory.yaml`; it survives a database rebuild and is the
+ * only factory identifier a URL may contain.
+ */
+export const FACTORY_ID_RE = /^fac_[0-9A-HJKMNP-TV-Z]{26}$/;
+
+/** A fresh `fac_<ulid>`; the migration script uses it for factories that predate `id`. */
+export function newFactoryId(nowMs: number = Date.now()): string {
+  return `fac_${newUlid(nowMs)}`;
+}
 
 export const agentDefaultsSchema = withInference(
   {
@@ -36,6 +49,11 @@ export const selfImprovementSchema = z
 export const factorySchema = z
   .object({
     schemaVersion: z.literal(SCHEMA_VERSION),
+    /**
+     * Optional in the schema so old fixtures keep validating; the runtime loader requires
+     * it (`factory_id_missing`, change `add-factory-identity`).
+     */
+    id: codedString(FACTORY_ID_RE, 'invalid_value', 'factory id must be fac_<26-char ulid>').optional(),
     name: codedString(
       /^[a-z0-9][a-z0-9._-]*$/,
       'invalid_value',

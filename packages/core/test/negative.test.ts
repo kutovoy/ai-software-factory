@@ -21,7 +21,11 @@ describe('negative fixtures', () => {
 
   for (const name of fixtureDirs) {
     it(`reports ${name}`, () => {
-      const { definition, errors } = loadDefinition(join(NEGATIVE_FIXTURES, name));
+      // `factory_id_missing` is a runtime-only rule (change `add-factory-identity`): the
+      // fixture is a valid definition, and only the runtime loader refuses it.
+      const { definition, errors } = loadDefinition(join(NEGATIVE_FIXTURES, name), {
+        requireFactoryId: name === 'factory_id_missing',
+      });
       expect(definition).toBeNull();
       expect(errors.map((error) => error.code)).toContain(name);
       for (const error of errors) {

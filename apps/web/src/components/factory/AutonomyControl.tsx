@@ -14,7 +14,7 @@ import type { AutonomyReadWire, AutonomyState } from '@/lib/types';
  * back to `human`.
  */
 export function AutonomyControl({
-  factory,
+  factoryId,
   benchmarkGateRequired,
   benchmarkAttestationSatisfied,
   benchmarkAttestationCode,
@@ -23,7 +23,7 @@ export function AutonomyControl({
   initialEvent,
   initialState,
 }: {
-  factory: string;
+  factoryId: string;
   benchmarkGateRequired: boolean;
   benchmarkAttestationSatisfied: boolean;
   benchmarkAttestationCode: 'benchmark_attestation_missing' | null;
@@ -54,11 +54,12 @@ export function AutonomyControl({
     }
     setBusy(enabled ? 'enable' : 'pause');
     try {
-      const response = await fetch('/api/autonomy', {
+      const response = await fetch(
+        `/api/v1/factories/${encodeURIComponent(factoryId)}/autonomy`,
+        {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          factory,
           enabled,
           actor: actor.trim(),
           reason: reason.trim(),
@@ -93,7 +94,7 @@ export function AutonomyControl({
   };
 
   return (
-    <div data-testid="autonomy-panel" data-factory={factory} className="space-y-3">
+    <div data-testid="autonomy-panel" data-factory={factoryId} className="space-y-3">
       <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
         <span className="font-semibold text-slate-800">Declaration:</span>
         <span className="font-mono">{fullyAutonomous ? 'all stages agent-gated' : 'human gates present'}</span>

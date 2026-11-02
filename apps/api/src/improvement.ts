@@ -156,7 +156,6 @@ export type PromoteLessonBody = z.infer<typeof promoteLessonBodySchema>;
 
 export const canaryRollbackBodySchema = z
   .object({
-    factory: z.string().min(1),
     proposalId: z.string().min(1).optional(),
     rolloutId: z.string().min(1).optional(),
     actor: z.string().min(1).max(120),
@@ -205,7 +204,7 @@ interface LoadedFactory {
 
 function loadFactory(config: ApiConfig, factory: string): LoadedFactory {
   const dir = resolveFactoryDir(config, factory);
-  const { definition, errors } = loadDefinition(dir);
+  const { definition, errors } = loadDefinition(dir, { requireFactoryId: true });
   if (!definition) throw definitionInvalid(factory, errors);
   const { commit, dirty } = pinVersion(dir, factory);
   return { dir, definition, commit, dirty };
@@ -764,27 +763,28 @@ export interface CanaryPromoteResponse {
 /** Manual promotion: merges the candidate PR, ends the rollout `promoted`, wakes the workflow. */
 export async function promoteCanaryForApi(
   config: ApiConfig,
+  factory: string,
   body: CanaryPromoteBody,
 ): Promise<CanaryPromoteResponse> {
   const rollout = await resolveCanaryRollout({
-    factory: body.factory,
+    factory,
     rolloutId: body.rolloutId ?? null,
     proposalId: body.proposalId ?? null,
   });
   if (!rollout || rollout.status !== 'active') {
-    throw noActiveCanary(body.factory, ['active']);
+    throw noActiveCanary(factory, ['active']);
   }
 
   const observation = await canaryMetricsFor(
     rollout,
-    rollout.stableCommit ?? loadFactory(config, body.factory).commit,
+    rollout.stableCommit ?? loadFactory(config, factory).commit,
   );
 
   let result: Awaited<ReturnType<typeof promoteCanaryRollout>>;
   try {
     result = await promoteCanaryRollout({
       rolloutId: rollout.id,
-      factory: body.factory,
+      factory,
       actor: body.actor,
       reason: body.reason,
       observation,
@@ -801,14 +801,14 @@ export async function promoteCanaryForApi(
   );
 
   log('info', 'canary_promoted', {
-    factory: body.factory,
+    factory,
     rolloutId: rollout.id,
     actor: body.actor,
     mergedCommit: result.mergedCommit ?? null,
   });
 
   return {
-    factory: body.factory,
+    factory,
     rollout: result.rollout,
     mergedCommit: result.mergedCommit ?? null,
     delivery: delivery.delivered,
@@ -863,27 +863,28 @@ export interface CanaryRollbackResponse {
  */
 export async function rollbackCanaryForApi(
   config: ApiConfig,
+  factory: string,
   body: CanaryRollbackBody,
 ): Promise<CanaryRollbackResponse> {
   const rollout = await resolveCanaryRollout({
-    factory: body.factory,
+    factory,
     rolloutId: body.rolloutId ?? null,
     proposalId: body.proposalId ?? null,
   });
   if (!rollout || (rollout.status !== 'active' && rollout.status !== 'pending')) {
-    throw noActiveCanary(body.factory, ['pending', 'active']);
+    throw noActiveCanary(factory, ['pending', 'active']);
   }
 
   const observation = await canaryMetricsFor(
     rollout,
-    rollout.stableCommit ?? loadFactory(config, body.factory).commit,
+    rollout.stableCommit ?? loadFactory(config, factory).commit,
   );
 
   let result: Awaited<ReturnType<typeof rollbackCanaryRollout>>;
   try {
     result = await rollbackCanaryRollout({
       rolloutId: rollout.id,
-      factory: body.factory,
+      factory,
       actor: body.actor,
       reason: body.reason,
       observation,
@@ -900,14 +901,14 @@ export async function rollbackCanaryForApi(
   );
 
   log('info', 'canary_rolled_back', {
-    factory: body.factory,
+    factory,
     rolloutId: rollout.id,
     actor: body.actor,
     reason: body.reason,
   });
 
   return {
-    factory: body.factory,
+    factory,
     rollout: result.rollout,
     delivery: delivery.delivered,
     metrics: observation,

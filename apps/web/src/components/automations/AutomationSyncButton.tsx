@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
  * Syncs Temporal schedules from the definition (spec `automations` › scheduled automations):
  * an enabled automation gets an active schedule, a disabled one is paused.
  */
-export function AutomationSyncButton({ factory }: { factory: string }) {
+export function AutomationSyncButton({ factoryId }: { factoryId: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -18,11 +18,10 @@ export function AutomationSyncButton({ factory }: { factory: string }) {
     setError(null);
     setNotice(null);
     try {
-      const response = await fetch('/api/automations/sync', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ factory }),
-      });
+      const response = await fetch(
+        `/api/v1/factories/${encodeURIComponent(factoryId)}/automations/sync`,
+        { method: 'POST', headers: { 'content-type': 'application/json' } },
+      );
       const payload = (await response.json().catch(() => ({}))) as {
         created?: string[];
         paused?: string[];

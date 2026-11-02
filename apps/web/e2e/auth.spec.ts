@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { factoryId } from './helpers';
 
 const ADMIN_EMAIL = process.env.FACTORY_ADMIN_EMAIL ?? 'admin@factory.local';
 const ADMIN_PASSWORD = process.env.FACTORY_ADMIN_PASSWORD ?? 'factory-admin';
@@ -102,5 +103,51 @@ test.describe('signed in as admin', () => {
     await row.getByTestId('user-delete').click();
     await expect(page.getByTestId('users-notice')).toContainText(`Deleted ${email}`);
     await expect(page.getByTestId('user-row').filter({ hasText: email })).toHaveCount(0);
+  });
+
+  /**
+   * Factory isolation (change `add-factory-identity`): a member owns no factories, so every
+   * factory id belonging to the admin is invisible to them — the API answers 404 (never
+   * 403) and the console renders its not-found page rather than leaking the factory.
+   */
+  test('a member cannot list or open the admin factory', async ({ browser, request }) => {
+    const stamp = Date.now();
+    const email = `e2e-iso-${stamp}@factory.local`;
+    const username = `e2e-iso-${stamp}`;
+    const password = 'e2e-password-123';
+
+    const created = await request.post('/api/v1/users', {
+      data: { email, username, name: 'E2E Isolation', role: 'member', password },
+    });
+    expect(created.ok(), `POST /api/v1/users failed: ${created.status()}`).toBeTruthy();
+    const userId = ((await created.json()) as { user: { id: string } }).user.id;
+
+    const memberContext = await browser.newContext();
+    try {
+      const adminFactoryId = await factoryId(request, 'example');
+      // The admin can read the factory.
+      const adminRead = await request.get(`/api/v1/factories/${adminFactoryId}`);
+      expect(adminRead.status()).toBe(200);
+
+      const login = await memberContext.request.post('/api/v1/auth/login', {
+        data: { email, password },
+      });
+      expect(login.ok(), `member login failed: ${login.status()}`).toBeTruthy();
+
+      const list = await memberContext.request.get('/api/v1/factories');
+      expect(list.ok()).toBeTruthy();
+      const listBody = (await list.json()) as { factories: unknown[] };
+      expect(listBody.factories, 'a member owns no factories').toHaveLength(0);
+
+      const foreign = await memberContext.request.get(`/api/v1/factories/${adminFactoryId}`);
+      expect(foreign.status(), 'a foreign factory id must 404, never 403').toBe(404);
+
+      const memberPage = await memberContext.newPage();
+      await memberPage.goto(`/factories/${adminFactoryId}/dashboard`);
+      await expect(memberPage.getByTestId('not-found')).toBeVisible();
+    } finally {
+      await memberContext.close();
+      await request.delete(`/api/v1/users/${userId}`).catch(() => undefined);
+    }
   });
 });

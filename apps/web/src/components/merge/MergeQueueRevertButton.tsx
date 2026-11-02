@@ -8,10 +8,10 @@ import { useRouter } from 'next/navigation';
  * checks; the action carries an actor + reason and lands in `merge.reverted`.
  */
 export function MergeQueueRevertButton({
-  factory,
+  factoryId,
   batchId,
 }: {
-  factory: string;
+  factoryId: string;
   batchId: string;
 }) {
   const router = useRouter();
@@ -30,11 +30,12 @@ export function MergeQueueRevertButton({
     }
     setBusy(true);
     try {
-      const response = await fetch('/api/merge-queue/revert', {
+      const response = await fetch(
+        `/api/v1/factories/${encodeURIComponent(factoryId)}/merge-queue/revert`,
+        {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          factory,
           batchId,
           actor: actor.trim(),
           reason: reason.trim(),

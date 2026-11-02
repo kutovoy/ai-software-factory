@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { Hono, type Handler } from 'hono';
+import { Hono, type Context, type Handler } from 'hono';
 import { z } from 'zod';
 import {
   cancelRun,
@@ -22,7 +22,6 @@ import {
 } from './automations';
 import {
   authMiddleware,
-  canAccess,
   ownerFilter,
   registerAuth,
   sessionUserId,
@@ -54,6 +53,7 @@ import {
   getFactoryResources,
   getFactoryVersions,
   listFactories,
+  resolveFactory,
 } from './factories';
 import {
   authorityChangeBodySchema,
@@ -105,6 +105,7 @@ import {
   type MergeRevertBody,
 } from './merge-queue';
 import { registerProxy } from './proxy';
+import { purgeFactoryForApi } from './purge';
 import { API_PREFIX, isPublicRoute, openApiPath, type RouteEntry } from './routes';
 import {
   getMcpForApi,
@@ -188,7 +189,6 @@ const runnerEnum = z.enum(['local-docker', 'local-process', 'fake']);
 
 const runBodySchema = z
   .object({
-    factory: z.string().min(1),
     prompt: z.string().optional(),
     files: z.array(z.string()).optional(),
     harness: harnessEnum.optional(),
@@ -201,10 +201,19 @@ const runBodySchema = z
   .strict();
 
 const chatBodySchema = runBodySchema
-  .extend({ factory: z.string().min(1).optional(), prompt: z.string().min(1) })
+  .extend({ prompt: z.string().min(1) })
   .strict();
 
 const permissionBodySchema = z.object({ decision: z.enum(['allow', 'deny', 'always']) }).strict();
+
+/** `DELETE /factories/:factoryId` accepts `force`/`dryRun` in the query string or the body. */
+const purgeBodySchema = z
+  .object({ force: z.boolean().optional(), dryRun: z.boolean().optional() })
+  .strict();
+
+function flag(value: string | undefined): boolean {
+  return value === '1' || value?.toLowerCase() === 'true';
+}
 
 async function json<T>(c: { req: { json: () => Promise<unknown> } }, schema: z.ZodType<T>): Promise<T> {
   let body: unknown;
@@ -322,7 +331,65 @@ export function createApp(config: ApiConfig): Hono {
 
   /* ------------------------------------------------------------ factories */
 
-  api.get('/factories', (c) => c.json({ factories: listFactories(config) }));
+  api.get('/factories', async (c) =>
+    c.json({ factories: await listFactories(config, viewerOf(config, c.get('user'))) }),
+  );
+
+  /**
+   * Every factory-scoped route resolves the factory **by its opaque id** before doing
+   * anything else (change `add-factory-identity`, spec `factory-identity`). A member only
+   * resolves factories they own; a missing or foreign id is `404 factory_not_found`, never
+   * `403`, so existence is not leaked. The internal key (`name` or `owner/name`) is what the
+   * existing projections and tables take.
+   */
+  const factoryOf = (c: Context<{ Variables: AuthVariables }>) =>
+    resolveFactory(config, c.req.param('factoryId') ?? '', viewerOf(config, c.get('user')));
+
+  api.get('/factories/:factoryId', async (c) =>
+    c.json({ factory: getFactory(config, (await factoryOf(c)).key) }),
+  );
+
+  /**
+   * Purge (change `fix-factory-purge`, spec `factory-purge`): remove every factory-scoped
+   * row, schedule, running workflow and `runs/<id>/` directory. `factoryOf` already applies
+   * owner/admin scope, so a foreign or unknown id is `404`. Active work requires `force`;
+   * a missing database/Temporal aborts with `503` before anything is deleted. Git history
+   * and forge repositories/PRs are kept.
+   */
+  api.delete('/factories/:factoryId', async (c) => {
+    const record = await factoryOf(c);
+    const body = await jsonOptional(c, purgeBodySchema, {});
+    return c.json(
+      await purgeFactoryForApi(config, record, {
+        force: flag(c.req.query('force')) || body.force === true,
+        dryRun: flag(c.req.query('dryRun')) || body.dryRun === true,
+      }),
+    );
+  });
+
+  api.get('/factories/:factoryId/resources', async (c) =>
+    c.json(getFactoryResources(config, (await factoryOf(c)).key)),
+  );
+
+  api.get('/factories/:factoryId/versions', async (c) => {
+    const limit = Number(c.req.query('limit') ?? '20');
+    const key = (await factoryOf(c)).key;
+    return c.json({
+      factory: key,
+      versions: getFactoryVersions(config, key, Number.isFinite(limit) ? limit : 20),
+    });
+  });
+
+  api.get('/factories/:factoryId/diff', async (c) =>
+    c.json(
+      getFactoryDiff(
+        config,
+        (await factoryOf(c)).key,
+        c.req.query('from') ?? undefined,
+        c.req.query('to') ?? undefined,
+      ),
+    ),
+  );
 
   /* -------------------------------------------------------- secrets (6.1) */
 
@@ -354,58 +421,34 @@ export function createApp(config: ApiConfig): Hono {
 
   /* ---------------------------------------------------- MCP wiring (6.3) */
 
-  api.get('/factories/:name/mcp', async (c) =>
-    c.json(await getMcpForApi(config, c.req.param('name'))),
+  api.get('/factories/:factoryId/mcp', async (c) =>
+    c.json(await getMcpForApi(config, (await factoryOf(c)).key)),
   );
 
-  api.post('/factories/:name/mcp', async (c) => {
+  api.post('/factories/:factoryId/mcp', async (c) => {
     const body = await jsonOptional<McpSyncBody>(c, mcpSyncBodySchema, {});
-    return c.json(await syncMcpForApi(config, c.req.param('name'), body));
+    return c.json(await syncMcpForApi(config, (await factoryOf(c)).key, body));
   });
 
-  api.post('/factories/:name/mcp/:server/test', async (c) =>
-    c.json(
-      await testMcpForApi(config, c.req.param('name'), c.req.param('server')),
-    ),
-  );
-
-  api.get('/factories/:name', (c) => c.json({ factory: getFactory(config, c.req.param('name')) }));
-
-  api.get('/factories/:name/resources', (c) =>
-    c.json(getFactoryResources(config, c.req.param('name'))),
-  );
-
-  api.get('/factories/:name/versions', (c) => {
-    const limit = Number(c.req.query('limit') ?? '20');
-    return c.json({
-      factory: c.req.param('name'),
-      versions: getFactoryVersions(
-        config,
-        c.req.param('name'),
-        Number.isFinite(limit) ? limit : 20,
-      ),
-    });
+  api.post('/factories/:factoryId/mcp/:server/test', async (c) => {
+    const key = (await factoryOf(c)).key;
+    return c.json(await testMcpForApi(config, key, c.req.param('server')));
   });
-
-  api.get('/factories/:name/diff', (c) =>
-    c.json(
-      getFactoryDiff(
-        config,
-        c.req.param('name'),
-        c.req.query('from') ?? undefined,
-        c.req.query('to') ?? undefined,
-      ),
-    ),
-  );
 
   /* -------------------------------------------------------------- scorers */
 
-  api.get('/factories/:name/scorers', async (c) =>
-    c.json(await getScorersForApi(config, c.req.param('name'))),
+  api.get('/factories/:factoryId/scorers', async (c) =>
+    c.json(await getScorersForApi(config, (await factoryOf(c)).key)),
   );
 
-  api.get('/factories/:name/metrics', async (c) =>
-    c.json(await getMetricsForApi(config, c.req.param('name'), c.req.query('window') ?? null)),
+  api.get('/factories/:factoryId/metrics', async (c) =>
+    c.json(
+      await getMetricsForApi(
+        config,
+        (await factoryOf(c)).key,
+        c.req.query('window') ?? null,
+      ),
+    ),
   );
 
   /* --------------------------------------------------------------- scores */
@@ -455,15 +498,15 @@ export function createApp(config: ApiConfig): Hono {
 
   /* ------------------------------------------------------------ benchmarks */
 
-  api.get('/factories/:name/benchmarks', async (c) =>
-    c.json(await getBenchmarkSuitesForApi(config, c.req.param('name'))),
+  api.get('/factories/:factoryId/benchmarks', async (c) =>
+    c.json(await getBenchmarkSuitesForApi(config, (await factoryOf(c)).key)),
   );
 
-  api.post('/factories/:name/benchmarks/:suite/run', async (c) => {
+  api.post('/factories/:factoryId/benchmarks/:suite/run', async (c) => {
     const body = await json<BenchmarkRunBody>(c, benchmarkRunBodySchema);
     const result = await startBenchmarkForApi(
       config,
-      c.req.param('name'),
+      (await factoryOf(c)).key,
       c.req.param('suite'),
       body,
     );
@@ -473,37 +516,28 @@ export function createApp(config: ApiConfig): Hono {
 
   api.get('/benchmarks/:id', async (c) => c.json(await getBenchmarkRunForApi(c.req.param('id'))));
 
-  api.get('/factories/:name/attestations', async (c) =>
-    c.json(await listAttestationsForApi(config, c.req.param('name'))),
+  api.get('/factories/:factoryId/attestations', async (c) =>
+    c.json(await listAttestationsForApi(config, (await factoryOf(c)).key)),
   );
 
-  api.get('/factories/:name/benchmark-gate', async (c) =>
-    c.json(await benchmarkGateStatus(config, c.req.param('name'))),
+  api.get('/factories/:factoryId/benchmark-gate', async (c) =>
+    c.json(await benchmarkGateStatus(config, (await factoryOf(c)).key)),
   );
 
   /* ------------------------------------------------------ self-improvement */
 
-  api.get('/factories/:name/improvement', async (c) =>
-    c.json(await getImprovementForApi(config, c.req.param('name'))),
+  api.get('/factories/:factoryId/improvement', async (c) =>
+    c.json(await getImprovementForApi(config, (await factoryOf(c)).key)),
   );
 
-  api.get('/factories/:name/canary', async (c) =>
-    c.json(await getCanaryForApi(config, c.req.param('name'))),
-  );
-
-  api.post('/factories/:name/canary', async (c) => {
-    const body = await json<CanaryStartBody>(c, canaryStartBodySchema);
-    return c.json(await startCanaryForApi(config, c.req.param('name'), body), 202);
-  });
-
-  api.post('/factories/:name/improvement/run', async (c) => {
+  api.post('/factories/:factoryId/improvement/run', async (c) => {
     const body = await json<ImprovementRunBody>(c, improvementRunBodySchema);
-    return c.json(await startImprovementForApi(config, c.req.param('name'), body), 202);
+    return c.json(await startImprovementForApi(config, (await factoryOf(c)).key, body), 202);
   });
 
-  api.post('/factories/:name/improvement/authority', async (c) => {
+  api.post('/factories/:factoryId/improvement/authority', async (c) => {
     const body = await json<AuthorityChangeBody>(c, authorityChangeBodySchema);
-    return c.json(await changeAuthorityForApi(config, c.req.param('name'), body));
+    return c.json(await changeAuthorityForApi(config, (await factoryOf(c)).key, body));
   });
 
   api.get('/improvements/:id', async (c) => c.json(await getImprovementRunForApi(c.req.param('id'))));
@@ -549,65 +583,82 @@ export function createApp(config: ApiConfig): Hono {
     return c.json({ lesson: await promoteLessonForApi(c.req.param('id'), body) });
   });
 
-  api.post('/canary/rollback', async (c) => {
-    const body = await json<CanaryRollbackBody>(c, canaryRollbackBodySchema);
-    return c.json(await rollbackCanaryForApi(config, body));
+  /* -------------------------------------------------------------- canary */
+
+  api.get('/factories/:factoryId/canary', async (c) =>
+    c.json(await getCanaryForApi(config, (await factoryOf(c)).key)),
+  );
+
+  api.post('/factories/:factoryId/canary', async (c) => {
+    const body = await json<CanaryStartBody>(c, canaryStartBodySchema);
+    return c.json(await startCanaryForApi(config, (await factoryOf(c)).key, body), 202);
   });
 
-  api.post('/canary/promote', async (c) => {
-    const body = await json<CanaryPromoteBody>(c, canaryPromoteBodySchema);
-    return c.json(await promoteCanaryForApi(config, body));
-  });
-
-  api.post('/factories/:name/canary/prune', async (c) => {
+  api.post('/factories/:factoryId/canary/prune', async (c) => {
     const body = await json<CanaryPruneBody>(c, canaryPruneBodySchema);
-    return c.json(await pruneCanaryForApi(config, c.req.param('name'), body));
+    return c.json(await pruneCanaryForApi(config, (await factoryOf(c)).key, body));
+  });
+
+  api.post('/factories/:factoryId/canary/promote', async (c) => {
+    const body = await json<CanaryPromoteBody>(c, canaryPromoteBodySchema);
+    return c.json(await promoteCanaryForApi(config, (await factoryOf(c)).key, body));
+  });
+
+  api.post('/factories/:factoryId/canary/rollback', async (c) => {
+    const body = await json<CanaryRollbackBody>(c, canaryRollbackBodySchema);
+    return c.json(await rollbackCanaryForApi(config, (await factoryOf(c)).key, body));
   });
 
   /* ------------------------------------------------------- integrations */
-  api.get('/factories/:name/integrations', async (c) =>
-    c.json(await getIntegrationsForApi(config, c.req.param('name'))),
+  api.get('/factories/:factoryId/integrations', async (c) =>
+    c.json(await getIntegrationsForApi(config, (await factoryOf(c)).key)),
   );
 
-  api.post('/integrations/github', async (c) => {
+  api.post('/factories/:factoryId/integrations/github', async (c) => {
     const body = await json<GithubIntegrationBody>(c, githubIntegrationBodySchema);
-    return c.json(await configureGithubForApi(config, body));
+    return c.json(await configureGithubForApi(config, (await factoryOf(c)).key, body));
   });
 
   /* --------------------------------------------------------- merge queue */
-  api.get('/factories/:name/merge-queue', async (c) =>
-    c.json(await getMergeQueueForApi(config, c.req.param('name'))),
+  api.get('/factories/:factoryId/merge-queue', async (c) =>
+    c.json(await getMergeQueueForApi(config, (await factoryOf(c)).key)),
   );
 
-  api.post('/merge-queue/revert', async (c) => {
+  api.post('/factories/:factoryId/merge-queue/revert', async (c) => {
     const body = await json<MergeRevertBody>(c, mergeRevertBodySchema);
-    return c.json(await revertMergeBatchForApi(config, body), 202);
+    return c.json(await revertMergeBatchForApi(config, (await factoryOf(c)).key, body), 202);
   });
 
   /* --------------------------------------------------------- automations */
-  api.get('/factories/:name/automations', async (c) =>
-    c.json(await getAutomationsForApi(config, c.req.param('name'))),
+  api.get('/factories/:factoryId/automations', async (c) =>
+    c.json(await getAutomationsForApi(config, (await factoryOf(c)).key)),
   );
 
-  api.post('/factories/:name/automations/sync', async (c) =>
-    c.json(await syncAutomationsForApi(config, c.req.param('name'))),
+  api.post('/factories/:factoryId/automations/sync', async (c) =>
+    c.json(await syncAutomationsForApi(config, (await factoryOf(c)).key)),
   );
 
-  api.post('/factories/:name/automations/:automation/pause', async (c) => {
+  api.post('/factories/:factoryId/automations/:automation/pause', async (c) => {
     const body = await json<AutomationPauseBody>(c, automationPauseBodySchema);
     return c.json(
-      await pauseAutomationForApi(config, c.req.param('name'), c.req.param('automation'), body),
+      await pauseAutomationForApi(
+        config,
+        (await factoryOf(c)).key,
+        c.req.param('automation'),
+        body,
+      ),
     );
   });
 
   /* ----------------------------------------------------------------- runs */
 
-  api.post('/runs', async (c) => {
-    const body = await json<CreateRunBody>(c, runBodySchema);
+  api.post('/factories/:factoryId/runs', async (c) => {
+    const body = await json<Omit<CreateRunBody, 'factory'>>(c, runBodySchema);
+    const record = await factoryOf(c);
     const created = await createRun(
       config,
-      body,
-      { kind: 'run' },
+      { ...body, factory: record.key },
+      { kind: 'run', factoryId: record.id },
       sessionUserId(config, c.get('user')),
     );
     return c.json(
@@ -620,32 +671,36 @@ export function createApp(config: ApiConfig): Hono {
     );
   });
 
-  api.get('/runs', async (c) => {
+  api.get('/factories/:factoryId/runs', async (c) => {
     const limit = Number(c.req.query('limit') ?? '20');
     const offset = Number(c.req.query('offset') ?? '0');
+    const record = await factoryOf(c);
     const runs = await listRuns({
       limit: Number.isFinite(limit) ? limit : 20,
       offset: Number.isFinite(offset) ? offset : 0,
       status: c.req.query('status') ?? undefined,
-      factory: c.req.query('factory') ?? undefined,
+      factory: record.key,
       createdBy: ownerFilter(viewerOf(config, c.get('user'))),
     });
     return c.json({ runs });
   });
 
-  api.get('/runs/:id', async (c) => {
+  api.get('/factories/:factoryId/runs/:id', async (c) => {
+    const record = await factoryOf(c);
     const detail = await getRunDetail(
       c.req.param('id'),
       viewerOf(config, c.get('user')),
+      record.id,
     );
     return c.json(detail);
   });
 
   /* ---------------------------------------------------------------- events */
 
-  api.get('/runs/:id/events', async (c) => {
+  api.get('/factories/:factoryId/runs/:id/events', async (c) => {
     const runId = c.req.param('id');
-    const run = await assertRunAccess(runId, viewerOf(config, c.get('user')));
+    const record = await factoryOf(c);
+    const run = await assertRunAccess(runId, viewerOf(config, c.get('user')), record.id);
     if (!run) throw runNotFound(runId);
 
     const lastEventId = parseLastEventId(
@@ -682,9 +737,10 @@ export function createApp(config: ApiConfig): Hono {
 
   /* ---------------------------------------------------------------- cancel */
 
-  api.post('/runs/:id/cancel', async (c) => {
+  api.post('/factories/:factoryId/runs/:id/cancel', async (c) => {
     const runId = c.req.param('id');
-    const run = await assertRunAccess(runId, viewerOf(config, c.get('user')));
+    const record = await factoryOf(c);
+    const run = await assertRunAccess(runId, viewerOf(config, c.get('user')), record.id);
     if (!run) throw runNotFound(runId);
 
     if (TERMINAL.has(run.status)) {
@@ -706,11 +762,13 @@ export function createApp(config: ApiConfig): Hono {
     return c.json({ runId, status: 'cancelling', cancelled: true }, 202);
   });
 
-  api.post('/runs/:id/retry', async (c) => {
+  api.post('/factories/:factoryId/runs/:id/retry', async (c) => {
+    const record = await factoryOf(c);
     const result = await retryRun(
       config,
       c.req.param('id'),
       viewerOf(config, c.get('user')),
+      record.id,
     );
     log('info', 'run_retried', {
       from: result.retryOf,
@@ -731,10 +789,11 @@ export function createApp(config: ApiConfig): Hono {
 
   /* ----------------------------------------------------------- permissions */
 
-  api.post('/runs/:id/permissions/:requestId', async (c) => {
+  api.post('/factories/:factoryId/runs/:id/permissions/:requestId', async (c) => {
     const runId = c.req.param('id');
     const requestId = c.req.param('requestId');
-    const run = await assertRunAccess(runId, viewerOf(config, c.get('user')));
+    const record = await factoryOf(c);
+    const run = await assertRunAccess(runId, viewerOf(config, c.get('user')), record.id);
     if (!run) throw runNotFound(runId);
 
     const mode = PERMISSIONS[run.harness as HarnessId] ?? 'none';
@@ -777,22 +836,26 @@ export function createApp(config: ApiConfig): Hono {
 
   /* ----------------------------------------------------------- work items */
 
-  api.post('/work-items', async (c) => {
+  api.post('/factories/:factoryId/work-items', async (c) => {
     const body = await json<CreateWorkItemBody>(c, createWorkItemBodySchema);
+    const record = await factoryOf(c);
     const created = await createWorkItemForApi(
       config,
+      record.key,
       body,
       sessionUserId(config, c.get('user')),
+      record.id,
     );
     return c.json(created, 201);
   });
 
-  api.get('/work-items', async (c) => {
+  api.get('/factories/:factoryId/work-items', async (c) => {
     const limit = Number(c.req.query('limit') ?? '50');
     const offset = Number(c.req.query('offset') ?? '0');
+    const record = await factoryOf(c);
     const workItems = await listWorkItemsForApi(
       {
-        ...(c.req.query('factory') ? { factory: c.req.query('factory') as string } : {}),
+        factory: record.key,
         ...(c.req.query('stage') ? { stage: c.req.query('stage') as string } : {}),
         ...(c.req.query('status') ? { status: c.req.query('status') as string } : {}),
         limit: Number.isFinite(limit) ? limit : 50,
@@ -803,31 +866,40 @@ export function createApp(config: ApiConfig): Hono {
     return c.json({ workItems });
   });
 
-  api.get('/work-items/:id', async (c) =>
-    c.json(
-      await getWorkItemDetail(c.req.param('id'), viewerOf(config, c.get('user'))),
-    ),
-  );
+  api.get('/factories/:factoryId/work-items/:id', async (c) => {
+    const record = await factoryOf(c);
+    return c.json(
+      await getWorkItemDetail(
+        c.req.param('id'),
+        viewerOf(config, c.get('user')),
+        record.id,
+      ),
+    );
+  });
 
-  api.post('/work-items/:id/cancel', async (c) => {
+  api.post('/factories/:factoryId/work-items/:id/cancel', async (c) => {
     const body = await json<CancelWorkItemBody>(c, cancelWorkItemBodySchema);
+    const record = await factoryOf(c);
     return c.json(
       await cancelWorkItemForApi(
         config,
         c.req.param('id'),
         body,
         viewerOf(config, c.get('user')),
+        record.id,
       ),
     );
   });
 
-  api.post('/work-items/:id/retry', async (c) => {
+  api.post('/factories/:factoryId/work-items/:id/retry', async (c) => {
     const body = await json<RetryWorkItemBody>(c, retryWorkItemBodySchema);
+    const record = await factoryOf(c);
     const result = await retryWorkItemForApi(
       config,
       c.req.param('id'),
       body,
       viewerOf(config, c.get('user')),
+      record.id,
     );
     log('info', 'work_item_retry_requested', {
       workItemId: c.req.param('id'),
@@ -838,42 +910,42 @@ export function createApp(config: ApiConfig): Hono {
     return c.json(result, result.deduped ? 200 : 201);
   });
 
-  api.post('/work-items/:id/gates/:stage', async (c) => {
+  api.post('/factories/:factoryId/work-items/:id/gates/:stage', async (c) => {
     const body = await json<GateDecisionRequest>(c, gateDecisionBodySchema);
+    const record = await factoryOf(c);
     const result = await submitGateDecisionForApi(
       config,
       c.req.param('id'),
       c.req.param('stage'),
       body,
       viewerOf(config, c.get('user')),
+      record.id,
     );
     return c.json(result);
   });
 
   /* ------------------------------------------------------------- autonomy */
 
-  api.get('/autonomy', async (c) =>
-    c.json({
-      autonomy: await getAutonomyForApi(config, c.req.query('factory') ?? config.defaultFactory),
-    }),
+  api.get('/factories/:factoryId/autonomy', async (c) =>
+    c.json({ autonomy: await getAutonomyForApi(config, (await factoryOf(c)).key) }),
   );
 
-  api.post('/autonomy', async (c) => {
+  api.post('/factories/:factoryId/autonomy', async (c) => {
     const body = await json<AutonomyBody>(c, autonomyBodySchema);
-    return c.json({ autonomy: await setAutonomyForApi(config, body) });
+    return c.json({
+      autonomy: await setAutonomyForApi(config, (await factoryOf(c)).key, body),
+    });
   });
 
   /* ------------------------------------------------------------------ chat */
 
-  api.post('/chat', async (c) => {
-    const body = await json<Omit<CreateRunBody, 'factory'> & { factory?: string }>(
-      c,
-      chatBodySchema,
-    );
+  api.post('/factories/:factoryId/chat', async (c) => {
+    const body = await json<Omit<CreateRunBody, 'factory'>>(c, chatBodySchema);
+    const record = await factoryOf(c);
     const created = await createRun(
       config,
-      { ...body, factory: body.factory ?? config.defaultFactory },
-      { kind: 'chat' },
+      { ...body, factory: record.key },
+      { kind: 'chat', factoryId: record.id },
       sessionUserId(config, c.get('user')),
     );
     return c.json(
@@ -889,9 +961,10 @@ export function createApp(config: ApiConfig): Hono {
   /* -------------------------------------------------- dev-only proxy token */
 
   if (config.exposeRunToken) {
-    api.post('/runs/:id/proxy-token', async (c) => {
+    api.post('/factories/:factoryId/runs/:id/proxy-token', async (c) => {
       const runId = c.req.param('id');
-      const run = await getRun(runId);
+      const record = await factoryOf(c);
+      const run = await assertRunAccess(runId, viewerOf(config, c.get('user')), record.id);
       if (!run) throw runNotFound(runId);
       if (TERMINAL.has(run.status)) {
         throw new ApiError('token_revoked', 409, 'the run is no longer active', { runId });

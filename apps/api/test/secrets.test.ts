@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { req } from './helpers';
+import { factoryIdOf, req } from './helpers';
 import { join, resolve } from 'node:path';
 import { createApp } from '../src/app';
 import { loadApiConfig } from '../src/config';
@@ -65,7 +65,7 @@ describe('secret registry rejection codes', () => {
 
   test('deleting a secret a definition still references is refused with secret_in_use', async () => {
     // factories/example declares `GITHUB_TOKEN` for the github MCP server.
-    const references = collectAllSecretReferences(config).filter(
+    const references = (await collectAllSecretReferences(config)).filter(
       (reference) => reference.name === 'GITHUB_TOKEN',
     );
     expect(references.length).toBeGreaterThan(0);
@@ -85,7 +85,8 @@ describe('secret registry rejection codes', () => {
 
 describe('MCP registry rejection codes', () => {
   test('registering an undeclared server is refused with unknown_mcp_server', async () => {
-    const { status, body } = await post('/factories/example/mcp', {
+    const id = await factoryIdOf(app, 'example');
+    const { status, body } = await post(`/factories/${id}/mcp`, {
       servers: [{ name: 'not-declared' }],
     });
     expect(status).toBe(422);
@@ -95,7 +96,8 @@ describe('MCP registry rejection codes', () => {
   });
 
   test('binding an unknown server names the agent and the server', async () => {
-    const { status, body } = await post('/factories/example/mcp', {
+    const id = await factoryIdOf(app, 'example');
+    const { status, body } = await post(`/factories/${id}/mcp`, {
       bindings: [{ agent: 'implement', server: 'not-declared' }],
     });
     expect(status).toBe(422);
@@ -105,7 +107,8 @@ describe('MCP registry rejection codes', () => {
   });
 
   test('binding an unknown agent is refused with unknown_agent', async () => {
-    const { status, body } = await post('/factories/example/mcp', {
+    const id = await factoryIdOf(app, 'example');
+    const { status, body } = await post(`/factories/${id}/mcp`, {
       bindings: [{ agent: 'ghost', server: 'github' }],
     });
     expect(status).toBe(422);
@@ -113,7 +116,8 @@ describe('MCP registry rejection codes', () => {
   });
 
   test('a transport that contradicts the declaration is an invalid_request', async () => {
-    const { status, body } = await post('/factories/example/mcp', {
+    const id = await factoryIdOf(app, 'example');
+    const { status, body } = await post(`/factories/${id}/mcp`, {
       servers: [{ name: 'github', transport: 'http' }],
     });
     expect(status).toBe(400);
@@ -121,13 +125,14 @@ describe('MCP registry rejection codes', () => {
   });
 
   test('testing an undeclared server is a 404 mcp_server_not_found', async () => {
-    const { status, body } = await post('/factories/example/mcp/not-declared/test', {});
+    const id = await factoryIdOf(app, 'example');
+    const { status, body } = await post(`/factories/${id}/mcp/not-declared/test`, {});
     expect(status).toBe(404);
     expect(body.code).toBe('mcp_server_not_found');
   });
 
-  test('an unknown factory is a 404 factory_not_found', async () => {
-    const { status, body } = await post('/factories/nope/mcp/whatever/test', {});
+  test('an unknown factory id is a 404 factory_not_found', async () => {
+    const { status, body } = await post('/factories/fac_01M6D9K2B2J79P0M2KE28RY704/mcp/whatever/test', {});
     expect(status).toBe(404);
     expect(body.code).toBe('factory_not_found');
   });

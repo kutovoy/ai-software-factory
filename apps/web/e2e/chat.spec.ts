@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { cleanupRuns, trackRun } from './helpers';
+import { cleanupRuns, factoryId, factoryPage, trackRun } from './helpers';
 
 test.afterEach(async ({ request }) => {
   await cleanupRuns(request);
@@ -20,7 +20,7 @@ test.describe('New Chat streams a run', () => {
 
     const runId = await page.getByTestId('run-link').getAttribute('data-run-id');
     expect(runId, 'the run header must expose the created run id').toBeTruthy();
-    trackRun(runId);
+    trackRun(await factoryId(page.request, 'example'), runId);
 
     // Tool calls render with name, arguments and result status.
     const toolCall = page.getByTestId('tool-call').first();
@@ -48,7 +48,7 @@ test.describe('New Chat streams a run', () => {
     await expect(page.getByTestId('file-diff')).toContainText('@@');
 
     // Run detail never leaks the provider credential.
-    await page.goto(`/runs/${runId}`);
+    await page.goto(await factoryPage(page.request, 'example', `runs/${runId}`));
     await expect(page.getByTestId('pinned-commit')).toBeVisible();
     await expect(page.getByTestId('run-terminal')).toBeVisible({ timeout: 60_000 });
 
@@ -64,7 +64,10 @@ test.describe('New Chat streams a run', () => {
     await page.getByTestId('chat-submit').click();
 
     await expect(page.getByTestId('run-header')).toBeVisible({ timeout: 30_000 });
-    trackRun(await page.getByTestId('run-link').getAttribute('data-run-id'));
+    trackRun(
+      await factoryId(page.request, 'example'),
+      await page.getByTestId('run-link').getAttribute('data-run-id'),
+    );
 
     await expect(page.getByTestId('permission-prompt')).toBeVisible({ timeout: 60_000 });
     await page.getByTestId('permission-deny').click();
@@ -90,7 +93,10 @@ test('streaming produces no console errors', async ({ page }) => {
   await page.getByTestId('chat-submit').click();
 
   await expect(page.getByTestId('run-header')).toBeVisible({ timeout: 30_000 });
-  trackRun(await page.getByTestId('run-link').getAttribute('data-run-id'));
+  trackRun(
+    await factoryId(page.request, 'example'),
+    await page.getByTestId('run-link').getAttribute('data-run-id'),
+  );
 
   await expect(page.getByTestId('permission-prompt')).toBeVisible({ timeout: 60_000 });
   await page.getByTestId('permission-allow').click();

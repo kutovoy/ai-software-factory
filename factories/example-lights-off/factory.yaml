@@ -13,6 +13,7 @@ gates:
   pr_review: agent
   review: agent
   spec: agent
+id: fac_01M6D9K2B7NW1017VBD5N30QYP
 improvement:
   authority: canary
   canaryPercent: 10

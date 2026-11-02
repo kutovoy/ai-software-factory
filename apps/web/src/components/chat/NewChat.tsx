@@ -21,11 +21,13 @@ function statusTone(status: string): Tone {
 }
 
 export function NewChat({
-  factory,
+  factoryId,
+  factoryName,
   defaultHarness,
   defaultModel,
 }: {
-  factory: string;
+  factoryId: string;
+  factoryName: string;
   defaultHarness: string;
   defaultModel: string;
 }) {
@@ -36,7 +38,7 @@ export function NewChat({
   const [error, setError] = useState<string | null>(null);
   const [run, setRun] = useState<RunSummary | null>(null);
 
-  const { events, status: streamStatus, gapDetected } = useRunStream(run?.id ?? null);
+  const { events, status: streamStatus, gapDetected } = useRunStream(factoryId, run?.id ?? null);
 
   const terminal = useMemo(() => terminalEvent(events), [events]);
   const lastUsage = useMemo(() => {
@@ -58,18 +60,20 @@ export function NewChat({
     setError(null);
 
     const body: Record<string, unknown> = {
-      factory,
       prompt: prompt.trim(),
       harness,
     };
     if (harness !== 'fake' && model.trim().length > 0) body.model = model.trim();
 
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+      const response = await fetch(
+        `/api/v1/factories/${encodeURIComponent(factoryId)}/chat`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        },
+      );
       const payload = (await response.json().catch(() => ({}))) as {
         run?: RunSummary;
         message?: string;
@@ -154,7 +158,7 @@ export function NewChat({
             </div>
 
             <p className="text-xs text-slate-500">
-              Factory defaults: <span className="font-mono">{factory}</span> ·{' '}
+              Factory defaults: <span className="font-mono">{factoryName}</span> ·{' '}
               <span className="font-mono">{defaultHarness}</span>
               {defaultModel ? (
                 <>
@@ -178,7 +182,7 @@ export function NewChat({
           <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-3">
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Run</span>
             <Link
-              href={`/runs/${run.id}`}
+              href={`/factories/${encodeURIComponent(factoryId)}/runs/${encodeURIComponent(run.id)}`}
               data-testid="run-link"
               data-run-id={run.id}
               className="font-mono text-xs text-slate-700 underline decoration-slate-300 underline-offset-2"
@@ -202,7 +206,7 @@ export function NewChat({
               {gapDetected ? ' · gap backfilled' : ''}
             </span>
           </div>
-          <EventStream runId={run.id} events={events} />
+          <EventStream factoryId={factoryId} runId={run.id} events={events} />
         </Card>
       ) : null}
     </div>

@@ -49,7 +49,6 @@ export async function getMergeQueueForApi(
 
 export const mergeRevertBodySchema = z
   .object({
-    factory: z.string().min(1),
     batchId: z.string().min(1).max(120),
     actor: z.string().min(1).max(120),
     reason: z.string().min(1).max(2000),
@@ -68,19 +67,20 @@ export interface MergeRevertResult {
 
 export async function revertMergeBatchForApi(
   config: ApiConfig,
+  factory: string,
   body: MergeRevertBody,
 ): Promise<MergeRevertResult> {
-  resolveFactoryDir(config, body.factory);
+  resolveFactoryDir(config, factory);
   const batch = await getMergeBatch(getSql(), body.batchId);
-  if (!batch || batch.factory !== body.factory) {
-    throw new ApiError('merge_batch_not_found', 404, `no merge batch "${body.batchId}" for "${body.factory}"`, {
-      factory: body.factory,
+  if (!batch || batch.factory !== factory) {
+    throw new ApiError('merge_batch_not_found', 404, `no merge batch "${body.batchId}" for "${factory}"`, {
+      factory,
       batchId: body.batchId,
     });
   }
   if (batch.status === 'reverted') {
     throw new ApiError('merge_batch_already_reverted', 409, 'the batch is already reverted', {
-      factory: body.factory,
+      factory,
       batchId: body.batchId,
     });
   }
@@ -92,19 +92,19 @@ export async function revertMergeBatchForApi(
   }
 
   const workflow = await startMergeRevert(
-    { factory: body.factory, batchId: body.batchId, actor: body.actor, reason: body.reason },
+    { factory, batchId: body.batchId, actor: body.actor, reason: body.reason },
     toOrchestrationConfig(config),
   );
 
   log('info', 'merge_revert_requested', {
-    factory: body.factory,
+    factory,
     batchId: body.batchId,
     actor: body.actor,
     reason: body.reason,
     workflowId: workflow.workflowId,
   });
 
-  return { factory: body.factory, batchId: body.batchId, status: 'queued', workflow };
+  return { factory, batchId: body.batchId, status: 'queued', workflow };
 }
 
 /* ------------------------------------------------------------ automations */
@@ -147,7 +147,7 @@ export async function getAutomationsForApi(
 ): Promise<AutomationsResponse> {
   const dir = resolveFactoryDir(config, factory);
   const { loadDefinition } = await import('@factory/core');
-  const { definition, errors } = loadDefinition(dir);
+  const { definition, errors } = loadDefinition(dir, { requireFactoryId: true });
   if (!definition) {
     throw new ApiError('definition_invalid', 422, `factory "${factory}" does not validate`, {
       factory,

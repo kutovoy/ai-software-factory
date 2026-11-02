@@ -9,6 +9,7 @@ import { safeGet } from '@/lib/api';
 import { shortCommit } from '@/lib/format';
 import { TimeAgo } from '@/components/ui/TimeAgo';
 import type {
+  FactoryListItem,
   GateDecisionRecord,
   PermissionRow,
   RunDetail,
@@ -23,6 +24,7 @@ export const dynamic = 'force-dynamic';
 interface InboxItem {
   kind: 'permission' | 'failure';
   runId: string;
+  factoryId: string;
   factory: string;
   title: string;
   at: string;
@@ -35,6 +37,8 @@ interface InboxItem {
 
 interface InboxGate {
   workItem: WorkItemSummary;
+  factoryId: string;
+  factoryName: string;
   gate: GateDecisionRecord;
 }
 
@@ -42,38 +46,81 @@ interface InboxGate {
  * Inbox = only what needs *this* user right now. Derived from the read models, so a
  * retried-successful run disappears without any extra state (spec: "auto-resolves"), and a
  * decided gate leaves the inbox the moment the pending row is resolved.
+ *
+ * Runs and work items live under a factory id (change `add-factory-identity`); the inbox
+ * reads the factories the viewer owns and queries each one's nested collections, so every
+ * link it renders is a nested id URL.
  */
 export default async function InboxPage() {
-  const [runs, workItems] = await Promise.all([
-    safeGet<{ runs: RunSummary[] }>('/runs?limit=100', { runs: [] }),
-    safeGet<{ workItems: WorkItemSummary[] }>('/work-items?limit=100', { workItems: [] }),
-  ]);
+  const factories = await safeGet<{ factories: FactoryListItem[] }>('/factories', {
+    factories: [],
+  });
 
-  const openRuns = runs.runs.filter((run) => run.status === 'pending' || run.status === 'running').slice(0, 25);
-  const failedRuns = runs.runs.filter((run) => run.status === 'error').slice(0, 25);
+  const perFactory = await Promise.all(
+    factories.factories.map(async (entry) => {
+      const factoryId = entry.id ?? entry.key;
+      const encoded = encodeURIComponent(factoryId);
+      const [runs, workItems] = await Promise.all([
+        safeGet<{ runs: RunSummary[] }>(`/factories/${encoded}/runs?limit=100`, { runs: [] }),
+        safeGet<{ workItems: WorkItemSummary[] }>(`/factories/${encoded}/work-items?limit=100`, {
+          workItems: [],
+        }),
+      ]);
+      return {
+        factoryId,
+        factoryName: entry.alias?.trim() || entry.name,
+        runs: runs.runs,
+        workItems: workItems.workItems,
+      };
+    }),
+  );
+
+  const runs = perFactory.flatMap((entry) =>
+    entry.runs.map((run) => ({ run, factoryId: entry.factoryId })),
+  );
+  const workItems = perFactory.flatMap((entry) =>
+    entry.workItems.map((item) => ({
+      item,
+      factoryId: item.factoryId ?? entry.factoryId,
+      factoryName: entry.factoryName,
+    })),
+  );
+
+  const openRuns = runs
+    .filter(({ run }) => run.status === 'pending' || run.status === 'running')
+    .slice(0, 25);
+  const failedRuns = runs.filter(({ run }) => run.status === 'error').slice(0, 25);
 
   const candidates = [...openRuns, ...failedRuns];
   const details = await Promise.all(
-    candidates.map((run) => safeGet<RunDetail | null>(`/runs/${encodeURIComponent(run.id)}`, null)),
+    candidates.map(({ run, factoryId }) =>
+      safeGet<RunDetail | null>(
+        `/factories/${encodeURIComponent(factoryId)}/runs/${encodeURIComponent(run.id)}`,
+        null,
+      ),
+    ),
   );
   const detailById = new Map<string, RunDetail | null>();
-  candidates.forEach((run, index) => detailById.set(run.id, details[index] ?? null));
+  candidates.forEach(({ run }, index) => detailById.set(run.id, details[index] ?? null));
 
   // Only items that can still hold a pending gate need a detail read.
-  const gateCandidates = workItems.workItems.filter(
-    (item) => item.status !== 'done' && item.status !== 'cancelled',
+  const gateCandidates = workItems.filter(
+    ({ item }) => item.status !== 'done' && item.status !== 'cancelled',
   );
   const itemDetails = await Promise.all(
-    gateCandidates.map((item) =>
-      safeGet<WorkItemDetail | null>(`/work-items/${encodeURIComponent(item.id)}`, null),
+    gateCandidates.map(({ item, factoryId }) =>
+      safeGet<WorkItemDetail | null>(
+        `/factories/${encodeURIComponent(factoryId)}/work-items/${encodeURIComponent(item.id)}`,
+        null,
+      ),
     ),
   );
 
   const gates: InboxGate[] = [];
-  gateCandidates.forEach((item, index) => {
+  gateCandidates.forEach(({ item, factoryId, factoryName }, index) => {
     const detail = itemDetails[index] ?? null;
     const gate = detail?.pendingGate ?? null;
-    if (gate) gates.push({ workItem: item, gate });
+    if (gate) gates.push({ workItem: item, factoryId, factoryName, gate });
   });
   gates.sort((left, right) => {
     const a = left.gate.requestedAt ? Date.parse(left.gate.requestedAt) : 0;
@@ -83,13 +130,14 @@ export default async function InboxPage() {
 
   const items: InboxItem[] = [];
 
-  for (const run of openRuns) {
+  for (const { run, factoryId } of openRuns) {
     const detail = detailById.get(run.id);
     if (!detail) continue;
     for (const permission of detail.pendingPermissions as PermissionRow[]) {
       items.push({
         kind: 'permission',
         runId: run.id,
+        factoryId,
         factory: run.factory,
         title: run.title ?? run.id,
         at: permission.requested_at,
@@ -100,12 +148,13 @@ export default async function InboxPage() {
     }
   }
 
-  for (const run of failedRuns) {
+  for (const { run, factoryId } of failedRuns) {
     const detail = detailById.get(run.id);
     const error = detail?.run.error ?? null;
     items.push({
       kind: 'failure',
       runId: run.id,
+      factoryId,
       factory: run.factory,
       title: run.title ?? run.id,
       at: run.endedAt ?? run.startedAt,
@@ -135,14 +184,6 @@ export default async function InboxPage() {
           testId="inbox-empty"
           title="Nothing needs your attention"
           description="No pending gates, no pending permissions and no failed runs. New items appear here as soon as an agent asks for a decision."
-          action={
-            <Link
-              href="/work-items"
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
-            >
-              Browse work items
-            </Link>
-          }
         />
       ) : (
         <>
@@ -157,8 +198,9 @@ export default async function InboxPage() {
               </p>
             ) : (
               <ul data-testid="inbox-gates-list" className="divide-y divide-slate-100">
-                {gates.map(({ workItem, gate }) => {
+                {gates.map(({ workItem, factoryId, factoryName, gate }) => {
                   const sla = slaState(gate.slaAt);
+                  const encoded = encodeURIComponent(factoryId);
                   return (
                     <li
                       key={`${workItem.id}:${gate.stage}:${gate.attempt}`}
@@ -178,7 +220,7 @@ export default async function InboxPage() {
                           {gate.gate}
                         </Badge>
                         <Link
-                          href={`/work-items/${encodeURIComponent(workItem.id)}`}
+                          href={`/factories/${encoded}/work-items/${encodeURIComponent(workItem.id)}`}
                           data-testid="inbox-gate-link"
                           className="text-sm font-medium text-slate-900 underline decoration-slate-300 underline-offset-2"
                         >
@@ -186,7 +228,7 @@ export default async function InboxPage() {
                         </Link>
                         <span className="font-mono text-[11px] text-slate-400">{workItem.id}</span>
                         <span className="font-mono text-[11px] text-slate-400">
-                          {workItem.factory}@{shortCommit(workItem.definitionCommit)}
+                          {factoryName}@{shortCommit(workItem.definitionCommit)}
                         </span>
                         <span
                           className="ml-auto text-xs text-slate-500"
@@ -201,6 +243,7 @@ export default async function InboxPage() {
                         <GateVerdictBadge verdict={gate.verdict} testId="inbox-gate-verdict" />
                       ) : null}
                       <GateDecisionActions
+                        factoryId={factoryId}
                         workItemId={workItem.id}
                         stage={gate.stage}
                         slaLabel={sla.label}
@@ -236,7 +279,7 @@ export default async function InboxPage() {
                           permission
                         </Badge>
                         <Link
-                          href={`/runs/${item.runId}?focus=permission:${encodeURIComponent(item.requestId ?? '')}`}
+                          href={`/factories/${encodeURIComponent(item.factoryId)}/runs/${encodeURIComponent(item.runId)}?focus=permission:${encodeURIComponent(item.requestId ?? '')}`}
                           data-testid="inbox-item-link"
                           className="text-sm font-medium text-slate-900 underline decoration-slate-300 underline-offset-2"
                         >
@@ -277,7 +320,7 @@ export default async function InboxPage() {
                           failure
                         </Badge>
                         <Link
-                          href={`/runs/${item.runId}`}
+                          href={`/factories/${encodeURIComponent(item.factoryId)}/runs/${encodeURIComponent(item.runId)}`}
                           data-testid="inbox-item-link"
                           className="text-sm font-medium text-slate-900 underline decoration-slate-300 underline-offset-2"
                         >

@@ -14,9 +14,11 @@ import { useRouter } from 'next/navigation';
  * a double submit within 60 seconds.
  */
 export function RetryWorkItemButton({
+  factoryId,
   workItemId,
   status,
 }: {
+  factoryId: string;
   workItemId: string;
   status: string;
 }) {
@@ -35,7 +37,9 @@ export function RetryWorkItemButton({
     }
     setBusy(true);
     try {
-      const response = await fetch(`/api/work-items/${encodeURIComponent(workItemId)}/retry`, {
+      const response = await fetch(
+        `/api/v1/factories/${encodeURIComponent(factoryId)}/work-items/${encodeURIComponent(workItemId)}/retry`,
+        {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({

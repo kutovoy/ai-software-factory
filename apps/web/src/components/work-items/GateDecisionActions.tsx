@@ -14,10 +14,12 @@ type Decision = 'approve' | 'reject' | 'request_changes';
  * that text attached, so an empty feedback would be an unactionable loop.
  */
 export function GateDecisionActions({
+  factoryId,
   workItemId,
   stage,
   slaLabel,
 }: {
+  factoryId: string;
   workItemId: string;
   stage: string;
   slaLabel?: string;
@@ -45,7 +47,7 @@ export function GateDecisionActions({
     setBusy(decision);
     try {
       const response = await fetch(
-        `/api/work-items/${encodeURIComponent(workItemId)}/gates/${encodeURIComponent(stage)}`,
+        `/api/v1/factories/${encodeURIComponent(factoryId)}/work-items/${encodeURIComponent(workItemId)}/gates/${encodeURIComponent(stage)}`,
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },

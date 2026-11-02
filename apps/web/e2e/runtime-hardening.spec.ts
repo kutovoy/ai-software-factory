@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { cleanupWorkItems, trackWorkItem } from './helpers';
+import { cleanupWorkItems, factoryApi, factoryId, factoryPage, trackWorkItem } from './helpers';
 
 /**
  * Runtime hardening (harden-runtime): cancel from the board and the autonomy read model.
@@ -18,14 +18,15 @@ test.describe('runtime hardening', () => {
   test('cancel a work item from the board (idempotent, audited)', async ({ page, request }) => {
     test.setTimeout(180_000);
 
-    const created = await request.post('/api/work-items', {
-      data: { factory: FACTORY, title: 'e2e: cancel from the board', harness: 'fake' },
-    });
-    expect(created.ok(), `POST /api/work-items failed: ${created.status()}`).toBeTruthy();
+    const created = await request.post(
+      await factoryApi(request, FACTORY, 'work-items'),
+      { data: { title: 'e2e: cancel from the board', harness: 'fake' } },
+    );
+    expect(created.ok(), `POST work-items failed: ${created.status()}`).toBeTruthy();
     const workItemId = ((await created.json()) as { workItem: { id: string } }).workItem.id;
-    trackWorkItem(workItemId);
+    trackWorkItem(await factoryId(request, FACTORY), workItemId);
 
-    await page.goto(`/work-items?factory=${FACTORY}`);
+    await page.goto(await factoryPage(page.request, FACTORY, 'work-items'));
     const card = page.locator(`[data-testid="work-item-card"][data-work-item-id="${workItemId}"]`);
     await expect(card).toBeVisible({ timeout: 30_000 });
 
@@ -38,7 +39,9 @@ test.describe('runtime hardening', () => {
     await expect
       .poll(
         async () => {
-          const response = await request.get(`/api/work-items/${workItemId}`);
+          const response = await request.get(
+            await factoryApi(request, FACTORY, `work-items/${workItemId}`),
+          );
           const body = (await response.json()) as { workItem: { status: string } };
           return body.workItem.status;
         },
@@ -46,7 +49,9 @@ test.describe('runtime hardening', () => {
       )
       .toBe('cancelled');
 
-    const detailResponse = await request.get(`/api/work-items/${workItemId}`);
+    const detailResponse = await request.get(
+      await factoryApi(request, FACTORY, `work-items/${workItemId}`),
+    );
     const detail = (await detailResponse.json()) as {
       workItem: { status: string; cancelActor: string | null; cancelReason: string | null; cancelRequestedAt: string | null };
       events: { type: string; actor: string | null; payload: Record<string, unknown> }[];
@@ -60,9 +65,10 @@ test.describe('runtime hardening', () => {
     expect(detail.events.some((event) => event.type === 'cancel.requested')).toBe(true);
 
     // Idempotent repeat: same terminal state, no second event.
-    const repeat = await request.post(`/api/work-items/${workItemId}/cancel`, {
-      data: { actor: 'e2e-operator', reason: 'e2e: repeat cancel' },
-    });
+    const repeat = await request.post(
+      await factoryApi(request, FACTORY, `work-items/${workItemId}/cancel`),
+      { data: { actor: 'e2e-operator', reason: 'e2e: repeat cancel' } },
+    );
     expect(repeat.ok(), `repeat cancel failed: ${repeat.status()}`).toBeTruthy();
     const repeatBody = (await repeat.json()) as {
       cancelled: boolean;
@@ -73,7 +79,9 @@ test.describe('runtime hardening', () => {
     expect(repeatBody.alreadyCancelled).toBe(true);
     expect(repeatBody.eventRecorded).toBe(false);
 
-    const afterRepeat = await request.get(`/api/work-items/${workItemId}`);
+    const afterRepeat = await request.get(
+      await factoryApi(request, FACTORY, `work-items/${workItemId}`),
+    );
     const afterBody = (await afterRepeat.json()) as { events: { type: string }[] };
     expect(afterBody.events.filter((event) => event.type === 'work_item.cancelled')).toHaveLength(1);
 
@@ -90,8 +98,8 @@ test.describe('runtime hardening', () => {
   });
 
   test('Gates reads the autonomy endpoint directly', async ({ page, request }) => {
-    const response = await request.get(`/api/autonomy?factory=${FACTORY}`);
-    expect(response.ok(), `GET /api/autonomy failed: ${response.status()}`).toBeTruthy();
+    const response = await request.get(await factoryApi(request, FACTORY, 'autonomy'));
+    expect(response.ok(), `GET autonomy failed: ${response.status()}`).toBeTruthy();
     const body = (await response.json()) as {
       autonomy: {
         factory: string;
@@ -117,7 +125,7 @@ test.describe('runtime hardening', () => {
     }
     if (autonomy.lastEvent) expect(autonomy.lastEvent.type.startsWith('autonomy.')).toBe(true);
 
-    await page.goto(`/factories/${FACTORY}/gates`);
+    await page.goto(await factoryPage(page.request, FACTORY, 'gates'));
     const readState = page.getByTestId('autonomy-read-state');
     await expect(readState).toBeVisible();
     await expect(readState).toHaveAttribute('data-enabled', autonomy.enabled ? 'true' : 'false');

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { req } from './helpers';
+import { factoryIdOf, req } from './helpers';
 import { SQL } from 'bun';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -34,6 +34,7 @@ const SECRET = 'whsec_webhook_itest';
 
 let config: ApiConfig;
 let app: Hono;
+let factoryId: string;
 const createdWorkItems: string[] = [];
 
 async function migrate(databaseUrl: string): Promise<void> {
@@ -109,12 +110,12 @@ suite('webhook ingestion', () => {
     await migrate(process.env.DATABASE_URL as string);
     config = loadApiConfig();
     app = createApp(config);
+    factoryId = await factoryIdOf(app, FACTORY);
 
-    const configured = await req(app, '/integrations/github', {
+    const configured = await req(app, `/factories/${factoryId}/integrations/github`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        factory: FACTORY,
         secretRef: 'GITHUB_TOKEN',
         webhookSecretRef: 'GITHUB_WEBHOOK_SECRET',
         repos: [{ owner: 'acme', name: 'api-service' }],
@@ -174,7 +175,7 @@ suite('webhook ingestion', () => {
     expect(accepted.body.workItemId).toMatch(/^wi_/);
     createdWorkItems.push(accepted.body.workItemId);
 
-    const detail = await req(app, `/work-items/${accepted.body.workItemId}`);
+    const detail = await req(app, `/factories/${factoryId}/work-items/${accepted.body.workItemId}`);
     const body = (await detail.json()) as {
       workItem: {
         source: string;
@@ -278,7 +279,7 @@ suite('webhook ingestion', () => {
   }, 30_000);
 
   test('the integration projection reports the connection by reference', async () => {
-    const response = await req(app, `/factories/${FACTORY}/integrations`);
+    const response = await req(app, `/factories/${factoryId}/integrations`);
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       github: {
@@ -307,11 +308,10 @@ suite('webhook ingestion', () => {
   }, 30_000);
 
   test('a token value is refused as a secret reference', async () => {
-    const response = await req(app, '/integrations/github', {
+    const response = await req(app, `/factories/${factoryId}/integrations/github`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        factory: FACTORY,
         secretRef: 'ghp_abcdefghijklmnopqrstuvwxyz0123',
       }),
     });
@@ -321,7 +321,7 @@ suite('webhook ingestion', () => {
   }, 30_000);
 
   test('the automations projection lists webhook and cron status', async () => {
-    const response = await req(app, `/factories/${FACTORY}/automations`);
+    const response = await req(app, `/factories/${factoryId}/automations`);
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       automations: {

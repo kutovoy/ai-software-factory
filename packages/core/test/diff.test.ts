@@ -68,6 +68,15 @@ describe('semantic diff', () => {
     expect(diff.changed[0].changes[0].pointer).toBe('/body');
   });
 
+  it('reports a changed factory id as a manifest change', () => {
+    const after = structuredClone(loadOrThrow(EXAMPLE));
+    after.manifest.id = 'fac_00000000000000000000000000';
+    const diff = diffDefinitions(loadOrThrow(EXAMPLE), after);
+    expect(diff.changed.map((entry) => `${entry.kind}:${entry.name}`)).toEqual(['factory:example']);
+    expect(diff.changed[0].changes.map((change) => change.pointer)).toEqual(['/id']);
+    expect(renderDiffText(diff)).toContain('/id');
+  });
+
   it('is empty for identical trees', () => {
     const diff = diffDefinitions(loadOrThrow(EXAMPLE), loadOrThrow(EXAMPLE));
     expect(diff.isEmpty).toBe(true);
@@ -80,6 +89,9 @@ describe('semantic diff', () => {
     const lightsOff = structuredClone(loadOrThrow(LIGHTS_OFF));
     lightsOff.manifest.name = 'example';
     lightsOff.manifest.alias = 'Example';
+    // Identity is compared too (change `add-factory-identity`); align it here so the
+    // assertion below stays about the policy fields.
+    lightsOff.manifest.id = loadOrThrow(EXAMPLE).manifest.id;
     const diff = diffDefinitions(loadOrThrow(EXAMPLE), lightsOff);
     // `example` also declares the nightly schedule automation, which `example-lights-off`
     // does not, and binds its `implement` agent to the `github` MCP server.

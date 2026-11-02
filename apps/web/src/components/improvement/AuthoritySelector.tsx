@@ -14,10 +14,10 @@ import type { AuthorityChangeWire, ImprovementResolvedWire } from '@/lib/types';
  * repo. The page never writes the worktree.
  */
 export function AuthoritySelector({
-  factory,
+  factoryId,
   resolved,
 }: {
-  factory: string;
+  factoryId: string;
   resolved: ImprovementResolvedWire;
 }) {
   const router = useRouter();
@@ -55,7 +55,9 @@ export function AuthoritySelector({
     }
     setBusy(confirm ? 'confirm' : 'preview');
     try {
-      const response = await fetch(`/api/factories/${encodeURIComponent(factory)}/improvement/authority`, {
+      const response = await fetch(
+        `/api/v1/factories/${encodeURIComponent(factoryId)}/improvement/authority`,
+        {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body(confirm)),
@@ -77,7 +79,7 @@ export function AuthoritySelector({
   };
 
   return (
-    <div data-testid="improvement-authority-panel" data-factory={factory} className="space-y-3">
+    <div data-testid="improvement-authority-panel" data-factory={factoryId} className="space-y-3">
       <div className="flex flex-wrap items-end gap-3">
         <label className="text-xs text-slate-600">
           Authority

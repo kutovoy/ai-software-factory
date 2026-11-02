@@ -177,7 +177,7 @@
         }
       }
     },
-    "/api/v1/autonomy": {
+    "/api/v1/factories/{factoryId}/autonomy": {
       "get": {
         "tags": [
           "autonomy"
@@ -185,13 +185,14 @@
         "summary": "Read the autonomy level",
         "parameters": [
           {
-            "name": "factory",
-            "in": "query",
-            "required": false,
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
             },
-            "description": "Factory name (defaults to the configured default)."
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
           }
         ],
         "responses": {
@@ -286,7 +287,19 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          }
+        ]
       }
     },
     "/api/v1/benchmarks/{id}": {
@@ -441,7 +454,7 @@
         }
       }
     },
-    "/api/v1/factories/{name}": {
+    "/api/v1/factories/{factoryId}": {
       "get": {
         "tags": [
           "factories"
@@ -449,12 +462,14 @@
         "summary": "Get a factory definition",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           }
         ],
         "responses": {
@@ -490,9 +505,130 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "factories"
+        ],
+        "summary": "Purge a factory",
+        "description": "Deletes every factory-scoped row in one transaction, removes its Temporal schedules, terminates its running workflows and deletes its `runs/<id>/` directories. Refuses active work items or pending/running runs unless `force` is set. Fails closed with `503` when the database or Temporal is unreachable. Git history and forge repositories/PRs are kept.",
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1",
+                "0",
+                "true",
+                "false"
+              ]
+            },
+            "description": "Delete even when active work items or pending/running runs exist."
+          },
+          {
+            "name": "dryRun",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1",
+                "0",
+                "true",
+                "false"
+              ]
+            },
+            "description": "Report the purge plan without deleting anything."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "force": {
+                    "type": "boolean"
+                  },
+                  "dryRun": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Purge report (or dry-run plan).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found — the resource does not exist (or is not visible to this viewer).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "factory_has_active_work — re-send with `force` after cancelling the work.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "database_unavailable / temporal_unavailable — nothing was deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "factory_purge_failed — the transaction rolled back.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
       }
     },
-    "/api/v1/factories/{name}/attestations": {
+    "/api/v1/factories/{factoryId}/attestations": {
       "get": {
         "tags": [
           "benchmarks"
@@ -500,12 +636,14 @@
         "summary": "List benchmark attestations",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           }
         ],
         "responses": {
@@ -543,7 +681,7 @@
         }
       }
     },
-    "/api/v1/factories/{name}/automations": {
+    "/api/v1/factories/{factoryId}/automations": {
       "get": {
         "tags": [
           "automations"
@@ -551,12 +689,14 @@
         "summary": "Automation schedules and webhook status",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           }
         ],
         "responses": {
@@ -594,7 +734,7 @@
         }
       }
     },
-    "/api/v1/factories/{name}/benchmark-gate": {
+    "/api/v1/factories/{factoryId}/benchmark-gate": {
       "get": {
         "tags": [
           "benchmarks"
@@ -602,12 +742,14 @@
         "summary": "Benchmark gate status",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           }
         ],
         "responses": {
@@ -645,7 +787,7 @@
         }
       }
     },
-    "/api/v1/factories/{name}/benchmarks": {
+    "/api/v1/factories/{factoryId}/benchmarks": {
       "get": {
         "tags": [
           "benchmarks"
@@ -653,12 +795,14 @@
         "summary": "List benchmark suites",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           }
         ],
         "responses": {
@@ -696,7 +840,7 @@
         }
       }
     },
-    "/api/v1/factories/{name}/canary": {
+    "/api/v1/factories/{factoryId}/canary": {
       "get": {
         "tags": [
           "improvement"
@@ -704,12 +848,14 @@
         "summary": "Canary rollout status",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           }
         ],
         "responses": {
@@ -753,12 +899,14 @@
         "summary": "Start a canary rollout",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           }
         ],
         "responses": {
@@ -817,7 +965,7 @@
         }
       }
     },
-    "/api/v1/factories/{name}/diff": {
+    "/api/v1/factories/{factoryId}/diff": {
       "get": {
         "tags": [
           "factories"
@@ -825,12 +973,14 @@
         "summary": "Diff two definition versions",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           },
           {
             "name": "from",
@@ -896,7 +1046,7 @@
         }
       }
     },
-    "/api/v1/factories/{name}/improvement": {
+    "/api/v1/factories/{factoryId}/improvement": {
       "get": {
         "tags": [
           "improvement"
@@ -904,12 +1054,14 @@
         "summary": "Self-improvement overview",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           }
         ],
         "responses": {
@@ -947,7 +1099,7 @@
         }
       }
     },
-    "/api/v1/factories/{name}/integrations": {
+    "/api/v1/factories/{factoryId}/integrations": {
       "get": {
         "tags": [
           "integrations"
@@ -955,12 +1107,14 @@
         "summary": "GitHub integration settings",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           }
         ],
         "responses": {
@@ -998,7 +1152,7 @@
         }
       }
     },
-    "/api/v1/factories/{name}/mcp": {
+    "/api/v1/factories/{factoryId}/mcp": {
       "get": {
         "tags": [
           "mcp"
@@ -1006,12 +1160,14 @@
         "summary": "MCP wiring projection",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           }
         ],
         "responses": {
@@ -1055,12 +1211,14 @@
         "summary": "Sync MCP servers into the harness config",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           }
         ],
         "responses": {
@@ -1119,7 +1277,7 @@
         }
       }
     },
-    "/api/v1/factories/{name}/merge-queue": {
+    "/api/v1/factories/{factoryId}/merge-queue": {
       "get": {
         "tags": [
           "merge-queue"
@@ -1127,12 +1285,14 @@
         "summary": "Merge queue projection",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           }
         ],
         "responses": {
@@ -1170,7 +1330,7 @@
         }
       }
     },
-    "/api/v1/factories/{name}/metrics": {
+    "/api/v1/factories/{factoryId}/metrics": {
       "get": {
         "tags": [
           "factories"
@@ -1178,12 +1338,14 @@
         "summary": "Factory metrics over a window",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           },
           {
             "name": "window",
@@ -1240,7 +1402,7 @@
         }
       }
     },
-    "/api/v1/factories/{name}/resources": {
+    "/api/v1/factories/{factoryId}/resources": {
       "get": {
         "tags": [
           "factories"
@@ -1248,12 +1410,14 @@
         "summary": "List the factory's agents, skills, scorers and automations",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           }
         ],
         "responses": {
@@ -1291,7 +1455,7 @@
         }
       }
     },
-    "/api/v1/factories/{name}/scorers": {
+    "/api/v1/factories/{factoryId}/scorers": {
       "get": {
         "tags": [
           "factories"
@@ -1299,12 +1463,14 @@
         "summary": "List scorers for a factory",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           }
         ],
         "responses": {
@@ -1342,7 +1508,7 @@
         }
       }
     },
-    "/api/v1/factories/{name}/versions": {
+    "/api/v1/factories/{factoryId}/versions": {
       "get": {
         "tags": [
           "factories"
@@ -1350,12 +1516,14 @@
         "summary": "List definition versions",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           },
           {
             "name": "limit",
@@ -1730,13 +1898,23 @@
         }
       }
     },
-    "/api/v1/runs": {
+    "/api/v1/factories/{factoryId}/runs": {
       "get": {
         "tags": [
           "runs"
         ],
         "summary": "List runs",
         "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          },
           {
             "name": "limit",
             "in": "query",
@@ -1763,15 +1941,6 @@
               "type": "string"
             },
             "description": "Filter by run status."
-          },
-          {
-            "name": "factory",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Filter by factory name."
           }
         ],
         "responses": {
@@ -1857,16 +2026,38 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          }
+        ]
       }
     },
-    "/api/v1/runs/{id}": {
+    "/api/v1/factories/{factoryId}/runs/{id}": {
       "get": {
         "tags": [
           "runs"
         ],
         "summary": "Get a run",
         "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          },
           {
             "name": "id",
             "in": "path",
@@ -1911,7 +2102,7 @@
         }
       }
     },
-    "/api/v1/runs/{id}/events": {
+    "/api/v1/factories/{factoryId}/runs/{id}/events": {
       "get": {
         "tags": [
           "events"
@@ -1919,6 +2110,16 @@
         "summary": "Stream run events (SSE)",
         "description": "Server-sent events in `seq` order. Honors `Last-Event-ID` (or `?lastEventId=`) for replay; the stream closes after a terminal event or the configured lifetime.",
         "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          },
           {
             "name": "id",
             "in": "path",
@@ -2391,7 +2592,7 @@
         }
       }
     },
-    "/api/v1/work-items": {
+    "/api/v1/factories/{factoryId}/work-items": {
       "get": {
         "tags": [
           "work-items"
@@ -2399,13 +2600,14 @@
         "summary": "List work items",
         "parameters": [
           {
-            "name": "factory",
-            "in": "query",
-            "required": false,
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
             },
-            "description": "Filter by factory."
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
           },
           {
             "name": "stage",
@@ -2527,16 +2729,38 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          }
+        ]
       }
     },
-    "/api/v1/work-items/{id}": {
+    "/api/v1/factories/{factoryId}/work-items/{id}": {
       "get": {
         "tags": [
           "work-items"
         ],
         "summary": "Get a work item",
         "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          },
           {
             "name": "id",
             "in": "path",
@@ -2708,7 +2932,7 @@
         }
       }
     },
-    "/api/v1/canary/promote": {
+    "/api/v1/factories/{factoryId}/canary/promote": {
       "post": {
         "tags": [
           "improvement"
@@ -2757,10 +2981,22 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          }
+        ]
       }
     },
-    "/api/v1/canary/rollback": {
+    "/api/v1/factories/{factoryId}/canary/rollback": {
       "post": {
         "tags": [
           "improvement"
@@ -2809,10 +3045,22 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          }
+        ]
       }
     },
-    "/api/v1/chat": {
+    "/api/v1/factories/{factoryId}/chat": {
       "post": {
         "tags": [
           "chat"
@@ -2861,10 +3109,22 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          }
+        ]
       }
     },
-    "/api/v1/factories/{name}/automations/{automation}/pause": {
+    "/api/v1/factories/{factoryId}/automations/{automation}/pause": {
       "post": {
         "tags": [
           "automations"
@@ -2872,12 +3132,14 @@
         "summary": "Pause an automation",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           },
           {
             "name": "automation",
@@ -2944,7 +3206,7 @@
         }
       }
     },
-    "/api/v1/factories/{name}/automations/sync": {
+    "/api/v1/factories/{factoryId}/automations/sync": {
       "post": {
         "tags": [
           "automations"
@@ -2952,12 +3214,14 @@
         "summary": "Sync automations with the orchestrator",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           }
         ],
         "responses": {
@@ -3016,7 +3280,7 @@
         }
       }
     },
-    "/api/v1/factories/{name}/benchmarks/{suite}/run": {
+    "/api/v1/factories/{factoryId}/benchmarks/{suite}/run": {
       "post": {
         "tags": [
           "benchmarks"
@@ -3025,12 +3289,14 @@
         "description": "Returns 202 when a workflow starts; 200 for a dry-run estimate.",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           },
           {
             "name": "suite",
@@ -3108,7 +3374,7 @@
         }
       }
     },
-    "/api/v1/factories/{name}/canary/prune": {
+    "/api/v1/factories/{factoryId}/canary/prune": {
       "post": {
         "tags": [
           "improvement"
@@ -3116,12 +3382,14 @@
         "summary": "Prune kept canary trees",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           }
         ],
         "responses": {
@@ -3180,7 +3448,7 @@
         }
       }
     },
-    "/api/v1/factories/{name}/improvement/authority": {
+    "/api/v1/factories/{factoryId}/improvement/authority": {
       "post": {
         "tags": [
           "improvement"
@@ -3188,12 +3456,14 @@
         "summary": "Change the improvement authority level",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           }
         ],
         "responses": {
@@ -3252,7 +3522,7 @@
         }
       }
     },
-    "/api/v1/factories/{name}/improvement/run": {
+    "/api/v1/factories/{factoryId}/improvement/run": {
       "post": {
         "tags": [
           "improvement"
@@ -3260,12 +3530,14 @@
         "summary": "Start an improvement run",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           }
         ],
         "responses": {
@@ -3324,7 +3596,7 @@
         }
       }
     },
-    "/api/v1/factories/{name}/mcp/{server}/test": {
+    "/api/v1/factories/{factoryId}/mcp/{server}/test": {
       "post": {
         "tags": [
           "mcp"
@@ -3332,12 +3604,14 @@
         "summary": "Test an MCP server connection",
         "parameters": [
           {
-            "name": "name",
+            "name": "factoryId",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
           },
           {
             "name": "server",
@@ -3404,7 +3678,7 @@
         }
       }
     },
-    "/api/v1/integrations/github": {
+    "/api/v1/factories/{factoryId}/integrations/github": {
       "post": {
         "tags": [
           "integrations"
@@ -3463,7 +3737,19 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          }
+        ]
       }
     },
     "/api/v1/lessons/{id}/promote": {
@@ -3538,7 +3824,7 @@
         }
       }
     },
-    "/api/v1/merge-queue/revert": {
+    "/api/v1/factories/{factoryId}/merge-queue/revert": {
       "post": {
         "tags": [
           "merge-queue"
@@ -3597,7 +3883,19 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          }
+        ]
       }
     },
     "/api/v1/proposals/{id}/apply": {
@@ -3744,7 +4042,7 @@
         }
       }
     },
-    "/api/v1/runs/{id}/cancel": {
+    "/api/v1/factories/{factoryId}/runs/{id}/cancel": {
       "post": {
         "tags": [
           "runs"
@@ -3752,6 +4050,16 @@
         "summary": "Cancel a run",
         "description": "Returns 200 with `alreadyTerminal: true` when the run has already finished.",
         "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          },
           {
             "name": "id",
             "in": "path",
@@ -3817,13 +4125,23 @@
         }
       }
     },
-    "/api/v1/runs/{id}/permissions/{requestId}": {
+    "/api/v1/factories/{factoryId}/runs/{id}/permissions/{requestId}": {
       "post": {
         "tags": [
           "permissions"
         ],
         "summary": "Decide a pending permission",
         "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          },
           {
             "name": "id",
             "in": "path",
@@ -4134,13 +4452,23 @@
         }
       }
     },
-    "/api/v1/work-items/{id}/cancel": {
+    "/api/v1/factories/{factoryId}/work-items/{id}/cancel": {
       "post": {
         "tags": [
           "work-items"
         ],
         "summary": "Cancel a work item",
         "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          },
           {
             "name": "id",
             "in": "path",
@@ -4216,7 +4544,7 @@
         }
       }
     },
-    "/api/v1/work-items/{id}/retry": {
+    "/api/v1/factories/{factoryId}/work-items/{id}/retry": {
       "post": {
         "tags": [
           "work-items"
@@ -4224,6 +4552,16 @@
         "summary": "Retry a work item",
         "description": "Re-opens an escalated, failed, blocked or cancelled item at its current stage, clears the cancellation flags (the prior cancellation stays in the event log as history), records `work_item.retried` with the previous status, actor, reason and attempt, and dispatches the current stage again under a new attempt workflow id (`factory-<id>-a<n>`). `active` and `done` items are refused with `work_item_not_retryable`. A double submit within 60 seconds returns the dispatch the first call started (`deduped: true`).",
         "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          },
           {
             "name": "id",
             "in": "path",
@@ -4320,13 +4658,23 @@
         }
       }
     },
-    "/api/v1/work-items/{id}/gates/{stage}": {
+    "/api/v1/factories/{factoryId}/work-items/{id}/gates/{stage}": {
       "post": {
         "tags": [
           "work-items"
         ],
         "summary": "Decide a stage gate",
         "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          },
           {
             "name": "id",
             "in": "path",
@@ -4460,7 +4808,7 @@
         }
       }
     },
-    "/api/v1/runs/{id}/retry": {
+    "/api/v1/factories/{factoryId}/runs/{id}/retry": {
       "post": {
         "tags": [
           "runs"
@@ -4468,6 +4816,16 @@
         "summary": "Retry a failed run as a new run",
         "description": "Creates a new run from the original input (same prompt, factory, harness, model and runner). Only chat runs in `error` or `cancelled` are eligible; factory stage runs belong to their work item. Double submits within 60 seconds return the existing retry.",
         "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          },
           {
             "name": "id",
             "in": "path",

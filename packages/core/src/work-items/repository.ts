@@ -28,6 +28,7 @@ import {
 interface WorkItemRow {
   id: string;
   factory: string;
+  factory_id?: string | null;
   type: string;
   source: string;
   source_ref: unknown;
@@ -165,6 +166,7 @@ function mapWorkItem(row: WorkItemRow): WorkItem {
     status: row.status as WorkItemStatus,
     parentId: row.parent_id,
     factory: row.factory,
+    factoryId: row.factory_id ?? null,
     definitionCommit: row.definition_commit,
     canaryRolloutId: row.canary_rollout_id ?? null,
     definitionVersion: (row.definition_version ?? 'stable') as WorkItemVersion,
@@ -234,7 +236,10 @@ function mapAutonomy(row: AutonomyStateRow): AutonomyState {
 
 export interface CreateWorkItemArgs {
   id: string;
+  /** Internal key: `<name>` (legacy) or `<owner>/<name>`. */
   factory: string;
+  /** Stable `fac_<ulid>` identity of that factory (change `add-factory-identity`). */
+  factoryId?: string | null;
   type: WorkItemType;
   source: WorkItemSource;
   sourceRef?: Record<string, unknown>;
@@ -256,11 +261,11 @@ export async function createWorkItem(sql: SQL, args: CreateWorkItemArgs): Promis
   return await sql.begin(async (tx) => {
     const rows = (await tx`
       insert into work_items (
-        id, factory, type, source, source_ref, title, stage, status, parent_id,
+        id, factory, factory_id, type, source, source_ref, title, stage, status, parent_id,
         definition_commit, definition_dirty, canary_rollout_id, definition_version,
         workflow_id, input, created_by
       ) values (
-        ${args.id}, ${args.factory}, ${args.type}, ${args.source},
+        ${args.id}, ${args.factory}, ${args.factoryId ?? null}, ${args.type}, ${args.source},
         ${(args.sourceRef ?? {})}::jsonb, ${args.title}, ${args.stage}, 'active',
         ${args.parentId ?? null}, ${args.definitionCommit}, ${args.definitionDirty ?? false},
         ${args.canaryRolloutId ?? null}, ${args.definitionVersion ?? 'stable'},
@@ -318,11 +323,11 @@ export async function createWorkItemIdempotent(
   const inserted = await sql.begin(async (tx) => {
     const rows = (await tx`
       insert into work_items (
-        id, factory, type, source, source_ref, title, stage, status, parent_id,
+        id, factory, factory_id, type, source, source_ref, title, stage, status, parent_id,
         definition_commit, definition_dirty, canary_rollout_id, definition_version,
         workflow_id, input, created_by
       ) values (
-        ${args.id}, ${args.factory}, ${args.type}, ${args.source},
+        ${args.id}, ${args.factory}, ${args.factoryId ?? null}, ${args.type}, ${args.source},
         ${(args.sourceRef ?? {})}::jsonb, ${args.title}, ${args.stage}, 'active',
         ${args.parentId ?? null}, ${args.definitionCommit}, ${args.definitionDirty ?? false},
         ${args.canaryRolloutId ?? null}, ${args.definitionVersion ?? 'stable'},

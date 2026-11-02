@@ -3,10 +3,12 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writ
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
 import {
+  FACTORY_ID_RE,
   contentHash,
   createVersion,
   diffDefinitions,
   loadDefinition,
+  readFactoryId,
   renderDiffText,
   resolveAllGates,
   resolveModelRef,
@@ -18,20 +20,32 @@ import {
   type ResourceKind,
   type ValidationError,
 } from '@factory/core';
+import { getSql } from '@factory/orchestration';
 import type { ApiConfig } from './config';
+import { canAccessFactory, type Viewer } from './auth';
 import { ApiError, definitionInvalid, factoryNotFound, invalidRequest } from './errors';
+import { log } from './logger';
 
 /**
  * Read-only projections of the git-backed factory definitions (spec `web-console`:
  * "Factory pages are read-only projections"). Nothing here writes to a definition.
  *
- * Path-is-identity: the factory key is the directory name under `FACTORY_ROOT`, so
- * `factories/example-lights-off` is addressed as `example-lights-off`; its manifest name
- * matches the directory, and its alias is the display label.
+ * Identity (change `add-factory-identity`, spec `factory-identity`):
+ *  - a factory has a committed `fac_<ulid>` id in `factory.yaml`; URLs and the API use only
+ *    that id, never a directory name;
+ *  - the **internal key** is the definition path below `FACTORY_ROOT`: the legacy top-level
+ *    directory name (`example`) or an owner-scoped path (`alice/hello-nextjs`). Existing
+ *    tables keep `factory` text = key, so historical rows keep working;
+ *  - the `factories` registry maps id → owner, name, path and key. It is derived from git
+ *    and re-synced on every list/resolve; a failed sync (no database yet) degrades to a
+ *    filesystem-only projection instead of failing the request.
  */
 
 const FACTORY_NAME_RE = /^[a-z0-9][a-z0-9._-]*$/;
 const TAG_RE = /^factory-v(\d+)$/;
+
+/** Longest allowed key: `owner/name`. */
+const MAX_KEY_SEGMENTS = 2;
 
 export interface FactoryVersionSummary {
   commit: string;
@@ -42,7 +56,16 @@ export interface FactoryVersionSummary {
 }
 
 export interface FactoryListItem {
+  /** Stable `fac_<ulid>` identity — the only value a URL may carry. */
+  id: string | null;
+  /** Internal key: `<name>` (legacy) or `<owner>/<name>`. */
+  key: string;
+  /** Local directory name (the part after the owner, if any). */
   name: string;
+  /** Definition path relative to `FACTORY_ROOT` (equal to `key`). */
+  path: string;
+  /** Console username of the owner, or null for a pre-auth/admin-less deployment. */
+  owner: string | null;
   manifestName: string | null;
   alias: string | null;
   description: string | null;
@@ -54,7 +77,11 @@ export interface FactoryListItem {
 }
 
 export interface FactoryDetail {
+  /** Stable `fac_<ulid>` identity. */
+  id: string | null;
+  /** Internal key (definition path below `FACTORY_ROOT`). */
   name: string;
+  key: string;
   manifest: FactoryManifest;
   manifestName: string;
   alias: string | null;
@@ -107,18 +134,207 @@ export interface FactoryDiff {
   text: string;
 }
 
-function assertFactoryName(factory: string): void {
-  if (!FACTORY_NAME_RE.test(factory)) {
-    throw invalidRequest(`invalid factory name "${factory}"`, { factory });
+/** A factory as found on disk plus its registry identity. */
+export interface FactoryRecord {
+  id: string | null;
+  key: string;
+  path: string;
+  /** Local directory name (last path segment). */
+  name: string;
+  dir: string;
+  legacy: boolean;
+  ownerUsername: string | null;
+  ownerId: string | null;
+  manifestName: string | null;
+  alias: string | null;
+  description: string | null;
+  repoCount: number;
+  resourceCount: number;
+  valid: boolean;
+  errorCount: number;
+  version: FactoryVersionSummary | null;
+}
+
+/** A definition directory found under `FACTORY_ROOT`. */
+export interface FactoryPathEntry {
+  key: string;
+  path: string;
+  name: string;
+  dir: string;
+  legacy: boolean;
+  ownerUsername: string | null;
+}
+
+interface RegistryUser {
+  id: string;
+  username: string;
+  role: string;
+}
+
+/** Rejects a key that is not `name` or `owner/name` before touching the filesystem. */
+export function assertFactoryKey(factory: string): void {
+  const segments = factory.split('/');
+  if (
+    segments.length === 0 ||
+    segments.length > MAX_KEY_SEGMENTS ||
+    segments.some((segment) => !FACTORY_NAME_RE.test(segment))
+  ) {
+    throw invalidRequest(`invalid factory key "${factory}"`, { factory });
   }
 }
 
-/** Absolute directory of a factory, or `factory_not_found`. */
+/** Absolute directory of a factory key, or `factory_not_found`. */
 export function resolveFactoryDir(config: ApiConfig, factory: string): string {
-  assertFactoryName(factory);
-  const dir = join(config.factoryRoot, factory);
+  assertFactoryKey(factory);
+  const dir = join(config.factoryRoot, ...factory.split('/'));
   if (!existsSync(dir) || !statSync(dir).isDirectory()) throw factoryNotFound(factory);
   return dir;
+}
+
+/**
+ * Every definition directory below `FACTORY_ROOT`:
+ *  - legacy top-level `factories/<name>` (admin-owned, key `<name>`);
+ *  - owner-scoped `factories/<owner>/<name>` (key `<owner>/<name>`).
+ *
+ * A directory only counts when it holds `factory.yaml`, so `agents/`, `benchmarks/` and the
+ * other resource folders of a legacy factory are never mistaken for owners.
+ */
+export function scanFactoryPaths(config: ApiConfig): FactoryPathEntry[] {
+  if (!existsSync(config.factoryRoot)) return [];
+
+  const entries = readdirSync(config.factoryRoot, { withFileTypes: true }).filter(
+    (entry) => entry.isDirectory() && !entry.name.startsWith('.') && FACTORY_NAME_RE.test(entry.name),
+  );
+
+  const found: FactoryPathEntry[] = [];
+  for (const entry of entries) {
+    const dir = join(config.factoryRoot, entry.name);
+    if (existsSync(join(dir, 'factory.yaml'))) {
+      found.push({
+        key: entry.name,
+        path: entry.name,
+        name: entry.name,
+        dir,
+        legacy: true,
+        ownerUsername: null,
+      });
+      continue;
+    }
+
+    const children = readdirSync(dir, { withFileTypes: true }).filter(
+      (child) => child.isDirectory() && FACTORY_NAME_RE.test(child.name),
+    );
+    for (const child of children) {
+      const childDir = join(dir, child.name);
+      if (!existsSync(join(childDir, 'factory.yaml'))) continue;
+      found.push({
+        key: `${entry.name}/${child.name}`,
+        path: `${entry.name}/${child.name}`,
+        name: child.name,
+        dir: childDir,
+        legacy: false,
+        ownerUsername: entry.name,
+      });
+    }
+  }
+
+  return found.sort((left, right) => left.key.localeCompare(right.key));
+}
+
+async function registryUsers(): Promise<RegistryUser[] | null> {
+  try {
+    return (await getSql()`
+      select id::text as id, username, role from users order by created_at asc
+    `) as RegistryUser[];
+  } catch (error) {
+    // The registry is a derived index; a missing database (unit tests, a fresh checkout)
+    // must not make the filesystem projection unusable.
+    log('warn', 'factory_registry_unavailable', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+/** Builds a record for every definition on disk, with owner identity where known. */
+async function collectFactoryRecords(config: ApiConfig): Promise<FactoryRecord[]> {
+  const entries = scanFactoryPaths(config);
+  const users = await registryUsers();
+  const admin = users?.find((user) => user.role === 'admin') ?? null;
+  const byUsername = new Map((users ?? []).map((user) => [user.username, user]));
+
+  return entries.map((entry) => {
+    const { definition, errors } = loadDefinition(entry.dir, { requireFactoryId: true });
+    const manifest = definition?.manifest ?? null;
+    const owner = entry.legacy
+      ? admin
+      : entry.ownerUsername
+        ? (byUsername.get(entry.ownerUsername) ?? null)
+        : null;
+
+    return {
+      id: manifest?.id ?? readFactoryId(entry.dir),
+      key: entry.key,
+      path: entry.path,
+      name: entry.name,
+      dir: entry.dir,
+      legacy: entry.legacy,
+      ownerUsername: entry.ownerUsername,
+      ownerId: owner?.id ?? null,
+      manifestName: manifest?.name ?? null,
+      alias: manifest?.alias ?? null,
+      description: manifest?.description ?? null,
+      repoCount: manifest?.repositories.length ?? 0,
+      resourceCount: definition?.resources.length ?? 0,
+      valid: definition !== null,
+      errorCount: errors.length,
+      version: factoryVersion(entry.dir),
+    };
+  });
+}
+
+/** Upserts the registry rows for the definitions on disk. Best effort. */
+async function upsertRegistry(records: FactoryRecord[]): Promise<void> {
+  const sql = getSql();
+  try {
+    for (const record of records) {
+      if (!record.id) continue;
+      // A re-minted id (or a moved directory) must not leave a stale row behind that would
+      // win the unique `key`/`path` constraint on insert.
+      await sql`
+        delete from factories
+        where (key = ${record.key} or path = ${record.path}) and id <> ${record.id}
+      `;
+      await sql`
+        insert into factories (id, owner_id, name, key, path, alias)
+        values (
+          ${record.id}, ${record.ownerId}::uuid, ${record.name}, ${record.key},
+          ${record.path}, ${record.alias}
+        )
+        on conflict (id) do update set
+          owner_id = excluded.owner_id,
+          name = excluded.name,
+          key = excluded.key,
+          path = excluded.path,
+          alias = excluded.alias,
+          updated_at = now()
+      `;
+    }
+  } catch (error) {
+    log('warn', 'factory_registry_sync_failed', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
+ * Syncs the registry from git and returns every factory on disk. Callers apply the owner
+ * scope themselves (`listFactories`, `resolveFactory`).
+ */
+export async function syncFactoryRegistry(config: ApiConfig): Promise<FactoryRecord[]> {
+  const records = await collectFactoryRecords(config);
+  await upsertRegistry(records);
+  return records;
 }
 
 /** POSIX path of the factory relative to the git root that contains `FACTORY_ROOT`. */
@@ -179,52 +395,85 @@ export function factoryVersion(dir: string): FactoryVersionSummary | null {
   }
 }
 
-function loadOrThrow(dir: string, factory: string): FactoryDefinition {
-  const { definition, errors } = loadDefinition(dir);
+/** The runtime loader: a definition without a `fac_<ulid>` id is `factory_id_missing`. */
+export function loadFactoryDefinition(
+  dir: string,
+  factory: string,
+): FactoryDefinition {
+  const { definition, errors } = loadDefinition(dir, { requireFactoryId: true });
   if (!definition) throw definitionInvalid(factory, errors);
   return definition;
 }
 
 /* ------------------------------------------------------------------- list */
 
-export function listFactories(config: ApiConfig): FactoryListItem[] {
-  if (!existsSync(config.factoryRoot)) return [];
+export async function listFactories(
+  config: ApiConfig,
+  viewer: Viewer | null = null,
+): Promise<FactoryListItem[]> {
+  const records = await syncFactoryRegistry(config);
+  return records
+    .filter((record) => canAccessFactory(viewer, record))
+    .map((record) => ({
+      id: record.id,
+      key: record.key,
+      name: record.name,
+      path: record.path,
+      owner: record.ownerUsername,
+      manifestName: record.manifestName,
+      alias: record.alias,
+      description: record.description,
+      repoCount: record.repoCount,
+      resourceCount: record.resourceCount,
+      valid: record.valid,
+      errorCount: record.errorCount,
+      version: record.version,
+    }));
+}
 
-  const names = readdirSync(config.factoryRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
-    .map((entry) => entry.name)
-    .filter((name) => FACTORY_NAME_RE.test(name))
-    .sort();
+/** Registry lookup by internal key; best effort (null when the database has no row). */
+export async function factoryIdForKey(key: string): Promise<string | null> {
+  try {
+    const rows = (await getSql()`
+      select id from factories where key = ${key} limit 1
+    `) as { id: string }[];
+    return rows[0]?.id ?? null;
+  } catch {
+    return null;
+  }
+}
 
-  return names.map((name) => {
-    const dir = join(config.factoryRoot, name);
-    const { definition, errors } = loadDefinition(dir);
-    const manifest = definition?.manifest ?? null;
-    return {
-      name,
-      manifestName: manifest?.name ?? null,
-      alias: manifest?.alias ?? null,
-      description: manifest?.description ?? null,
-      repoCount: manifest?.repositories.length ?? 0,
-      resourceCount: definition?.resources.length ?? 0,
-      valid: definition !== null,
-      errorCount: errors.length,
-      version: factoryVersion(dir),
-    };
-  });
+/**
+ * Resolves a factory by its opaque id for this viewer. A member only resolves factories
+ * they own; anyone else gets `404 factory_not_found` — existence is never leaked (spec
+ * `factory-identity` › Owner scope).
+ */
+export async function resolveFactory(
+  config: ApiConfig,
+  factoryId: string,
+  viewer: Viewer | null = null,
+): Promise<FactoryRecord> {
+  if (!FACTORY_ID_RE.test(factoryId)) throw factoryNotFound(factoryId);
+
+  const records = await syncFactoryRegistry(config);
+  const record = records.find((candidate) => candidate.id === factoryId);
+  if (!record || !canAccessFactory(viewer, record)) throw factoryNotFound(factoryId);
+  return record;
 }
 
 /* ----------------------------------------------------------------- detail */
 
 export function getFactory(config: ApiConfig, factory: string): FactoryDetail {
   const dir = resolveFactoryDir(config, factory);
-  const definition = loadOrThrow(dir, factory);
+  const definition = loadFactoryDefinition(dir, factory);
   const gates = resolveAllGates(definition.manifest);
   const declaredDefault =
     definition.manifest.agentDefaults.harness?.model ?? definition.manifest.agentDefaults.model;
 
   return {
+    id: definition.manifest.id ?? null,
     name: factory,
+    key: factory,
     manifest: definition.manifest,
     manifestName: definition.manifest.name,
     alias: definition.manifest.alias ?? null,
@@ -270,7 +519,7 @@ function summarizeResource(resource: Resource): string {
 
 export function getFactoryResources(config: ApiConfig, factory: string): FactoryResources {
   const dir = resolveFactoryDir(config, factory);
-  const definition = loadOrThrow(dir, factory);
+  const definition = loadFactoryDefinition(dir, factory);
 
   const counts: Record<string, number> = {};
   const resources: ResourceSummary[] = definition.resources.map((resource) => {

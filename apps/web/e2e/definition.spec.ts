@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { factoryPage } from './helpers';
 
 /**
  * The Definition page is the deliberate improvement over the reference product: a
@@ -9,7 +10,7 @@ import { expect, test } from '@playwright/test';
 test('definition page states it is read-only and renders version, gates, tree and diff', async ({
   page,
 }) => {
-  await page.goto('/factories/example/definition');
+  await page.goto(await factoryPage(page.request, 'example', 'definition'));
 
   const banner = page.getByTestId('definition-readonly-banner');
   await expect(banner).toBeVisible();
@@ -56,7 +57,7 @@ test('definition page states it is read-only and renders version, gates, tree an
 });
 
 test('definition diff can be driven by the from/to selector', async ({ page }) => {
-  await page.goto('/factories/example/definition');
+  await page.goto(await factoryPage(page.request, 'example', 'definition'));
   await expect(page.getByTestId('definition-diff')).toBeVisible();
 
   const fromSelect = page.getByTestId('definition-diff-from');
@@ -80,7 +81,7 @@ test('definition diff can be driven by the from/to selector', async ({ page }) =
 test('gates page flags a fully autonomous factory with the benchmark gate requirement', async ({
   page,
 }) => {
-  await page.goto('/factories/example-lights-off/gates');
+  await page.goto(await factoryPage(page.request, 'example-lights-off', 'gates'));
 
   await expect(page.getByTestId('gates-readonly-banner')).toBeVisible();
   await expect(page.getByTestId('gates-table')).toBeVisible();
@@ -102,7 +103,7 @@ test('gates page flags a fully autonomous factory with the benchmark gate requir
 });
 
 test('gates page keeps a lights-on factory explicit about human touchpoints', async ({ page }) => {
-  await page.goto('/factories/example/gates');
+  await page.goto(await factoryPage(page.request, 'example', 'gates'));
 
   await expect(page.getByTestId('gates-table')).toBeVisible();
   await expect(page.getByTestId('gates-autonomy-warning')).toHaveCount(0);

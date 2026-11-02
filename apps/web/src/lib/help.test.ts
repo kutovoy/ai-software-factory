@@ -8,7 +8,7 @@ import {
   menuEntryForFactorySegment,
   menuEntryForHref,
 } from './help';
-import { FACTORY_NAV, FOOTER_NAV, TOP_NAV } from './nav';
+import { FACTORY_NAV, FOOTER_NAV, TOP_NAV, helpHrefFor } from './nav';
 
 /**
  * The help registry is a contract with the navigation (`web-console` spec: "Menu
@@ -18,8 +18,9 @@ import { FACTORY_NAV, FOOTER_NAV, TOP_NAV } from './nav';
 describe('help registry', () => {
   test('every top-level nav item has a menu entry pointing at its page', () => {
     for (const item of TOP_NAV) {
-      const entry = menuEntryForHref(item.href);
-      expect(entry, `no help entry for ${item.label} (${item.href})`).toBeDefined();
+      const href = helpHrefFor(item);
+      const entry = menuEntryForHref(href);
+      expect(entry, `no help entry for ${item.label} (${href})`).toBeDefined();
       expect(entry?.title).toBe(item.label);
       expect(entry?.section).toBe('menu');
     }
@@ -106,8 +107,13 @@ describe('contextual help routing', () => {
   test('known pages map to their entry', () => {
     expect(helpSlugForPath('/chat')).toBe('chat');
     expect(helpSlugForPath('/inbox')).toBe('inbox');
-    expect(helpSlugForPath('/work-items/wi_123')).toBe('work-items');
-    expect(helpSlugForPath('/runs/run_123')).toBe('runs');
+    expect(helpSlugForPath('/factories/fac_01ARZ3NDEKTSV4RRFFQ69G5FAV/work-items/wi_123')).toBe(
+      'work-items',
+    );
+    expect(helpSlugForPath('/factories/fac_01ARZ3NDEKTSV4RRFFQ69G5FAV/runs/run_123')).toBe('runs');
+    expect(helpSlugForPath('/factories/fac_01ARZ3NDEKTSV4RRFFQ69G5FAV/work-items')).toBe(
+      'work-items',
+    );
     expect(helpSlugForPath('/scores/score_123')).toBe('runs');
     expect(helpSlugForPath('/mcps')).toBe('mcps');
     expect(helpSlugForPath('/secrets')).toBe('secrets');
@@ -115,11 +121,13 @@ describe('contextual help routing', () => {
   });
 
   test('factory pages map by segment, defaulting to dashboard', () => {
-    expect(helpSlugForPath('/factories/example/gates')).toBe('factories/gates');
-    expect(helpSlugForPath('/factories/example-lights-off/self-improvement')).toBe(
+    expect(helpSlugForPath('/factories/fac_01ARZ3NDEKTSV4RRFFQ69G5FAV/gates')).toBe(
+      'factories/gates',
+    );
+    expect(helpSlugForPath('/factories/fac_01ARZ3NDEKTSV4RRFFQ69G5FAW/self-improvement')).toBe(
       'factories/self-improvement',
     );
-    expect(helpSlugForPath('/factories/example')).toBe('factories/dashboard');
+    expect(helpSlugForPath('/factories/fac_01ARZ3NDEKTSV4RRFFQ69G5FAV')).toBe('factories/dashboard');
   });
 
   test('the index and unknown routes fall back to /help', () => {
@@ -127,9 +135,9 @@ describe('contextual help routing', () => {
     expect(helpSlugForPath('/help')).toBeNull();
     expect(helpSlugForPath('/help/quick-start')).toBeNull();
     expect(helpSlugForPath('/does-not-exist')).toBeNull();
-    expect(helpSlugForPath('/factories/example/unknown-page')).toBeNull();
+    expect(helpSlugForPath('/factories/fac_01ARZ3NDEKTSV4RRFFQ69G5FAV/unknown-page')).toBeNull();
 
-    const known = helpContextForPath('/factories/example/gates');
+    const known = helpContextForPath('/factories/fac_01ARZ3NDEKTSV4RRFFQ69G5FAV/gates');
     expect(known.href).toBe('/help/factories/gates');
     expect(known.pageName).toBe('Gates');
 
@@ -144,7 +152,16 @@ describe('contextual help routing', () => {
   });
 
   test('every mapped slug resolves to a real entry', () => {
-    for (const path of ['/chat', '/inbox', '/work-items', '/runs', '/scores', '/mcps', '/secrets', '/users']) {
+    for (const path of [
+      '/chat',
+      '/inbox',
+      '/scores',
+      '/mcps',
+      '/secrets',
+      '/users',
+      '/factories/fac_01ARZ3NDEKTSV4RRFFQ69G5FAV/work-items',
+      '/factories/fac_01ARZ3NDEKTSV4RRFFQ69G5FAV/runs',
+    ]) {
       const slug = helpSlugForPath(path);
       expect(slug, path).not.toBeNull();
       expect(getHelpEntry(slug as string), path).toBeDefined();
