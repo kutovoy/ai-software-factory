@@ -330,6 +330,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
           'Signed-out page requests redirect to `/login?next=<path>`; `/login`, `/help/api`, Next assets, the favicon, `/api/*` and the forge proxy stay reachable.',
           'A protected API route without a session answers `401 auth_required` when `AUTH_REQUIRED=1`.',
           'Sign out revokes the session server-side and clears the cookie; the console returns to `/login`.',
+          'The account block links to the project’s GitHub repository with the GitHub mark, next to Sign out.',
           'With `AUTH_REQUIRED=0` (local development/unit tests) there is no redirect: the console and API behave as the implicit local user.',
         ],
       },

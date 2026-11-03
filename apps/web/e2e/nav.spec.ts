@@ -53,6 +53,12 @@ test('every nav item renders and stubs name their phase', async ({ page }) => {
   await expect(page.getByTestId('factory-switcher')).toBeVisible();
   await expect(page.getByTestId('nav-usage')).toBeVisible();
   await expect(page.getByTestId('nav-account')).toBeVisible();
+  await expect(page.getByTestId('nav-github')).toBeVisible();
+  await expect(page.getByTestId('nav-github')).toHaveAttribute(
+    'href',
+    'https://github.com/kutovoy/ai-software-factory/',
+  );
+  await expect(page.getByTestId('nav-github')).toHaveAttribute('target', '_blank');
 
   for (const testId of [...TOP_LEVEL, ...FACTORY_LEVEL]) {
     const item = page.getByTestId(testId);
