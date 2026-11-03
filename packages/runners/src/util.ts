@@ -40,11 +40,33 @@ export async function* streamCommand(
       cwd: options.cwd,
       env: { ...process.env, ...options.env } as NodeJS.ProcessEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
+      // A shell may fork its command (`sh -c 'sleep 5'` on dash). Killing only the
+      // shell leaves the child holding the pipes open, so the timeout would wait for
+      // the whole command instead of returning 124. Detach into its own process group
+      // and kill the group; Windows has no negative-pid group kill.
+      detached: process.platform !== 'win32',
     });
   } catch (error) {
     yield { type: 'error', code: 'exec_failed', message: errorMessage(error) };
     return;
   }
+
+  const killTree = (signal: NodeJS.Signals): void => {
+    if (!child.pid) return;
+    if (process.platform !== 'win32') {
+      try {
+        process.kill(-child.pid, signal);
+        return;
+      } catch {
+        // Fall through to the direct child (already gone or not a group leader).
+      }
+    }
+    try {
+      child.kill(signal);
+    } catch {
+      // Already exited.
+    }
+  };
 
   const queue: ExecEvent[] = [];
   let closed = false;
@@ -79,13 +101,13 @@ export async function* streamCommand(
     options.timeoutMs && options.timeoutMs > 0
       ? setTimeout(() => {
           timedOut = true;
-          child.kill('SIGKILL');
+          killTree('SIGKILL');
         }, options.timeoutMs)
       : undefined;
 
   const onAbort = (): void => {
     aborted = true;
-    child.kill('SIGKILL');
+    killTree('SIGKILL');
   };
   options.signal?.addEventListener('abort', onAbort, { once: true });
 
