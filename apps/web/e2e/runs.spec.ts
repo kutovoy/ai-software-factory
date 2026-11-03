@@ -216,6 +216,13 @@ test.describe('Runs', () => {
     await expect(page.getByTestId('run-cancel')).toHaveCount(0);
     await expect(page.getByTestId('run-terminal-state')).toContainText('cancelled');
     await expect(page.getByTestId('run-retry-button')).toBeVisible();
+
+    // Retry-as-new: the button starts a fresh run and navigates to its page, where the
+    // lineage points back to the cancelled original.
+    await page.getByTestId('run-retry-button').click();
+    await expect(page).not.toHaveURL(new RegExp(`${run.id}$`));
+    await expect(page.getByTestId('run-retry-lineage')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('run-retried-from')).toHaveText(run.id);
   });
 
 

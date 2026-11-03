@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-11-01
+Last updated: 2026-11-03
 
 ## Phase
 
@@ -52,7 +52,8 @@ Latest tags: `harden-runtime`, `secrets-mcp`, `api-v1-help`, `help-center`, `liv
 `api-explorer-parity`, `fix-ui-audit`, `fix-run-failures`, `run-actions`, `readiness-hello-nextjs`, `console-ops`,
 `forgejo`, `agent-verdicts`, `console-auth`, `harden-runners`, `forge-ssh-public`, `readiness-qa`,
 `factory-identity`, `factory-purge`, `readiness-identity`, `unify-factory-api`, `fix-forge-pr-files`,
-`readiness-forge-files`. `bun run ci` 746 pass; smoke passes; Playwright 56; UI audit clean.
+`readiness-forge-files`, `graphite-command`, `add-run-retry`. `bun run ci` 746 pass; smoke passes; Playwright 57;
+UI audit clean.
 
 ### Graphite Command shell (2026-11-03)
 
@@ -345,6 +346,12 @@ stage runs (`kind === 'run'`) offer no per-run retry — `POST /runs/:id/retry` 
 them with `run_not_retryable` — and instead link to the owning work item
 (`GET /runs/:id` now projects `workItemId`, derived from the documented
 `run_<ulid>_<stage>_<n>` scheme). Chat runs keep "Retry as new run".
+
+**Retry-as-new reconciled (2026-11-03).** The `add-run-retry` change is now verified against the
+nested API: `POST /api/v1/factories/:factoryId/runs/:id/retry` starts a fresh chat run with
+`retryOf`, the original reports `retriedBy`, and a 60s dedupe returns the existing child. API
+integration tests cover eligible, refused (`running`/`ok`/stage), dedupe and original immutability;
+Playwright covers cancelled-run retry and lineage.
 
 **Retry mechanics.** `POST /api/v1/work-items/:id/retry` (`{actor, reason?}`) re-opens an
 `escalated|failed|blocked|cancelled` item at its current stage: one locked transaction

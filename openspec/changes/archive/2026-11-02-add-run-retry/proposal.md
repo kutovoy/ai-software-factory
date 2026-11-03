@@ -8,7 +8,7 @@ and Temporal replay re-executes completed activities, repeating side effects.
 
 ## What Changes
 
-- **`POST /api/v1/runs/:id/retry`** creates a *new* run from the stored input (prompt, factory, harness, model,
+- **`POST /api/v1/factories/:factoryId/runs/:id/retry`** creates a *new* run from the stored input (prompt, factory, harness, model,
   runner, repo), with a fresh run id, proxy token and runner lease. It records `retryOf` on the new run and
   returns it; double submits are deduped for a short window.
 - **Eligibility:** `chat` runs in `error` or `cancelled`; `running`/`ok` and factory stage runs are refused

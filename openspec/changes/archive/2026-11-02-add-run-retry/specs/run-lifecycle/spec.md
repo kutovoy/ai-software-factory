@@ -7,7 +7,7 @@
 A failed or cancelled chat run SHALL be retryable by creating a new run, never by reusing its id.
 
 #### Scenario: Eligible
-- **WHEN** `POST /api/v1/runs/:id/retry` is called on an `error` or `cancelled` chat run
+- **WHEN** `POST /api/v1/factories/:factoryId/runs/:id/retry` is called on an `error` or `cancelled` chat run
 - **THEN** a new run starts with the same input (prompt, factory, harness, model, runner, repo)
 - **AND** the new run has a new id, proxy token and runner lease
 - **AND** the response returns the new run
