@@ -68,7 +68,7 @@ The left menu and header now follow the selected **Graphite Command** direction:
   right. There is no top-right avatar; the account block stays in the sidebar footer.
 - Account footer keeps the role badge, sign-out, and the GitHub repository icon.
 - A local `NavIcon` component supplies the navigation icons without adding an icon package.
-- The 12-option visual review page is at `docs/design/sidebar-menu-options.html`; Option 02 is implemented.
+- Option 02 was selected; the temporary visual review page was removed after the choice.
 
 ### Unified factory paths (2026-11-02)
 

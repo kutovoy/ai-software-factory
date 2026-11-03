@@ -139,7 +139,7 @@ lets you validate wiring without touching a repo. GitHub delivers to
   icon + label rows; it starts expanded and collapses to an 80px icon strip. The nav has no visible scrollbar,
   API/Help live in the main menu, and the unclear “Usage available” placeholder is gone. The sticky header is
   dark with a breadcrumb, auto-refresh, and Help at the top right. The account block (role, sign-out, GitHub
-  link) stays in the sidebar footer. Design options live in `docs/design/sidebar-menu-options.html`.
+  link) stays in the sidebar footer.
 - **Local forge**: Forgejo at `http://localhost:3000/extras/forgejo/`, enabled by default, proxied by the console
   and asserting the signed-in user (admin fallback when auth is off). Bootstrap:
   `bash scripts/forgejo-bootstrap.sh` (admin, token to `.env`, org/repo). The forge client speaks Gitea's dialect;
