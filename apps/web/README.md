@@ -86,7 +86,7 @@ Stable `data-testid` hooks — never select by CSS class:
 
 | area | ids |
 |---|---|
-| shell | `nav-sidebar`, `factory-switcher`, `nav-chat`, `nav-inbox`, `nav-runs`, `nav-mcps`, `nav-secrets`, `nav-users`, `nav-dashboard`, `nav-agents`, `nav-automations`, `nav-scorers`, `nav-self-improvement`, `nav-benchmarks`, `nav-definition`, `nav-gates`, `nav-settings`, `nav-usage`, `nav-account`, `nav-factory-name` |
+| shell | `nav-sidebar`, `nav-collapse`, `factory-switcher`, `nav-chat`, `nav-inbox`, `nav-runs`, `nav-mcps`, `nav-secrets`, `nav-users`, `nav-dashboard`, `nav-agents`, `nav-automations`, `nav-scorers`, `nav-self-improvement`, `nav-benchmarks`, `nav-definition`, `nav-gates`, `nav-settings`, `nav-account`, `nav-factory-name` |
 | chat | `chat-composer`, `chat-prompt`, `chat-harness`, `chat-model`, `chat-submit`, `chat-error`, `run-header`, `run-link`, `run-status`, `run-harness`, `run-model`, `run-cost` |
 | stream | `event-stream`, `event-message`, `tool-call` (+ `data-tool-name`, `data-ok`), `tool-call-args`, `tool-call-result`, `permission-prompt` (+ `data-request-id`, `data-status`, `data-focused`), `permission-allow`, `permission-deny`, `permission-status`, `permission-outcome`, `file-edited`, `file-diff`, `usage-chip`, `artifact-event`, `run-terminal` (+ `data-status`), `run-last-seq` |
 | runs | `runs-filters`, `runs-filter-factory`, `runs-filter-status`, `runs-table`, `run-row`, `run-row-link`, `run-row-status`, `run-row-commit`, `runs-empty`, `pinned-commit`, `run-steps`, `run-artifacts`, `run-cancel` |

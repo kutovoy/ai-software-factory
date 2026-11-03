@@ -51,7 +51,6 @@ test('every nav item renders and stubs name their phase', async ({ page }) => {
   await page.goto('/chat');
   await expect(page.getByTestId('nav-sidebar')).toBeVisible();
   await expect(page.getByTestId('factory-switcher')).toBeVisible();
-  await expect(page.getByTestId('nav-usage')).toBeVisible();
   await expect(page.getByTestId('nav-account')).toBeVisible();
   await expect(page.getByTestId('nav-github')).toBeVisible();
   await expect(page.getByTestId('nav-github')).toHaveAttribute(
@@ -110,6 +109,26 @@ test('every nav item renders and stubs name their phase', async ({ page }) => {
 
   const relevant = consoleErrors.filter((line) => !line.includes('favicon'));
   expect(relevant, `console errors: ${relevant.join('\n')}`).toHaveLength(0);
+});
+
+/** The sidebar starts expanded and collapses to an icon rail without a visible scrollbar. */
+test('sidebar collapses to icons and expands again', async ({ page }) => {
+  await page.goto('/chat');
+  const sidebar = page.getByTestId('nav-sidebar');
+  await expect(sidebar).toHaveAttribute('data-collapsed', 'false');
+  const expanded = await sidebar.boundingBox();
+  expect(expanded).not.toBeNull();
+
+  await page.getByTestId('nav-collapse').click();
+  await expect(sidebar).toHaveAttribute('data-collapsed', 'true');
+  await expect(page.getByTestId('nav-collapse')).toHaveAttribute('aria-expanded', 'false');
+  await expect
+    .poll(async () => (await sidebar.boundingBox())?.width ?? 0)
+    .toBeLessThan(expanded!.width);
+
+  await page.getByTestId('nav-collapse').click();
+  await expect(sidebar).toHaveAttribute('data-collapsed', 'false');
+  await expect(page.getByTestId('nav-collapse')).toHaveAttribute('aria-expanded', 'true');
 });
 
 /** Keyboard-only: Tab reaches the nav and Enter activates it. */

@@ -103,7 +103,7 @@ test('the Factories + is an honest link to the add-factory how-to', async ({ pag
   await expect(page.getByTestId('help-entry')).toContainText('never writes the worktree');
   await expect(page.getByTestId('help-checklist')).toContainText('factory validate');
 
-  // The Help entry sits at the bottom of the sidebar, above the account footer.
+  // Help is part of the main menu, above the account footer.
   const helpBox = await page.getByTestId('nav-help').boundingBox();
   const accountBox = await page.getByTestId('nav-account').boundingBox();
   expect(helpBox).not.toBeNull();
@@ -334,10 +334,9 @@ test('the sidebar footer stays visible on a long help page', async ({ page }) =>
   expect(sidebar).not.toBeNull();
   expect(sidebar!.height).toBeLessThanOrEqual(viewport + 1);
 
-  // Footer links and the usage/account block are visible without scrolling.
+  // API, Help and the account block are visible without scrolling.
   await expect(page.getByTestId('nav-api')).toBeInViewport();
   await expect(page.getByTestId('nav-help')).toBeInViewport();
-  await expect(page.getByTestId('nav-usage')).toBeInViewport();
   await expect(page.getByTestId('nav-account')).toBeInViewport();
 
   // Order is API above Help above the account footer.

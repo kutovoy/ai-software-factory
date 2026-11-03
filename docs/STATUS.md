@@ -60,6 +60,10 @@ The left menu and header now follow the selected **Graphite Command** direction:
 
 - Dark graphite sidebar (`slate-950`), teal active state, icon + label rows, grouped Workspace / Factories
   sections, and a dark factory switcher.
+- The rail starts expanded and collapses to an 80px icon strip via the header toggle; collapsed labels stay
+  available as tooltips and screen-reader text.
+- The nav area scrolls on short viewports but has no visible scrollbar; API and Help are part of the main
+  menu, not a separate footer block. The unclear “Usage available” placeholder was removed.
 - Dark sticky header with a breadcrumb (`Software Factory / <page>`), auto-refresh, and **Help** at the top
   right. There is no top-right avatar; the account block stays in the sidebar footer.
 - Account footer keeps the role badge, sign-out, and the GitHub repository icon.
@@ -588,9 +592,11 @@ are now `/api/v1/...` (the health examples stay unversioned).
 
 Sidebar footer fix (`web-console` spec: "Pinned sidebar footer"): the sidebar is
 `sticky top-0 h-screen` with `shrink-0` header/footer blocks, and the nav list is the only
-scroll area (`min-h-0 flex-1 overflow-y-auto`). On long pages such as `/help/quick-start` the
-API/Help links and the usage/account footer stay visible without scrolling, and the sidebar
-never grows with the page.
+scroll area (`min-h-0 flex-1 overflow-y-auto`) with its scrollbar hidden (`.sidebar-scroll`).
+API and Help are part of the main menu rather than a separate footer block; the account block
+stays pinned at the bottom. On long pages such as `/help/quick-start` the account footer stays
+visible without scrolling, and the sidebar never grows with the page. The rail starts expanded
+and collapses to a 80px icon strip via the header toggle.
 
 Verification (2026-10-31):
 

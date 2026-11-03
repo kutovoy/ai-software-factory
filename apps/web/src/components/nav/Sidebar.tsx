@@ -49,6 +49,8 @@ export function Sidebar({
   const pathname = usePathname() ?? '/';
   const router = useRouter();
   const [signingOut, setSigningOut] = useState(false);
+  /** Expanded by default; the toggle collapses the rail to an icon strip. */
+  const [collapsed, setCollapsed] = useState(false);
 
   const signOut = async (): Promise<void> => {
     setSigningOut(true);
@@ -78,6 +80,14 @@ export function Sidebar({
   const activeFactoryName = activeFactoryEntry
     ? activeFactoryEntry.alias?.trim() || activeFactoryEntry.name
     : 'no factory';
+  const factoryInitial = activeFactoryName.charAt(0).toUpperCase() || '–';
+  const userInitials = (user?.name ?? user?.username ?? '?')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0))
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
 
   // Opening a factory route makes that factory the persisted selection.
   useEffect(() => {
@@ -93,62 +103,107 @@ export function Sidebar({
   const isHelpActive =
     pathname === '/help' || (pathname.startsWith('/help/') && pathname !== '/help/api');
 
+  const navItemClass = (active: boolean): string =>
+    `flex items-center rounded-md text-[13px] transition-colors focus:outline-none focus:ring-2 focus:ring-teal-400/40 ${
+      collapsed ? 'justify-center px-0 py-1.5' : 'gap-2 px-3 py-1'
+    } ${
+      active
+        ? 'bg-slate-800 font-medium text-slate-100 shadow-[inset_2px_0_0_0_#2dd4bf]'
+        : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
+    }`;
+
+  const labelClass = collapsed ? 'sr-only' : 'min-w-0 flex-1 truncate';
+
   /**
    * Bounded, pinned column (`web-console` spec: "Pinned sidebar footer"): the sidebar is
-   * `h-screen` and sticks to the top, so it never grows with the page. Only the nav list
-   * scrolls (`min-h-0 overflow-y-auto`); the header, footer links and usage/account block
-   * stay visible on long pages such as the quick start.
+   * `h-screen` and sticks to the top, so it never grows with the page. The nav list is the
+   * only scrollable region, with its scrollbar hidden (`.sidebar-scroll`); the header and
+   * account block stay visible on long pages such as the quick start.
    */
   return (
     <nav
       data-testid="nav-sidebar"
+      data-collapsed={collapsed ? 'true' : 'false'}
       aria-label="Main navigation"
-      className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-slate-800 bg-slate-950 text-slate-300"
+      className={`sticky top-0 flex h-screen shrink-0 flex-col border-r border-slate-800 bg-slate-950 text-slate-300 transition-[width] duration-200 ${
+        collapsed ? 'w-20' : 'w-60'
+      }`}
     >
-      <div className="shrink-0 border-b border-slate-800 px-4 py-4">
-        <div className="flex items-center gap-2.5">
-          <span className="grid h-8 w-8 place-items-center rounded-md bg-teal-400 text-[10px] font-black tracking-tight text-slate-950">
-            SF
-          </span>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold tracking-tight text-slate-100">
-              Software Factory
-            </p>
-            <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500">control plane</p>
+      <div className={`shrink-0 border-b border-slate-800 ${collapsed ? 'px-2 py-3' : 'px-4 py-4'}`}>
+        <div className={`flex items-center gap-2 ${collapsed ? 'justify-center' : 'justify-between'}`}>
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-teal-400 text-[10px] font-black tracking-tight text-slate-950">
+              SF
+            </span>
+            {!collapsed ? (
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold tracking-tight text-slate-100">
+                  Software Factory
+                </p>
+                <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500">control plane</p>
+              </div>
+            ) : null}
           </div>
+          <button
+            type="button"
+            data-testid="nav-collapse"
+            onClick={() => setCollapsed((value) => !value)}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-expanded={!collapsed}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-800 hover:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-400/40"
+          >
+            <NavIcon name={collapsed ? 'chevron-right' : 'chevron-left'} className="h-4 w-4" />
+          </button>
         </div>
 
-        <label
-          htmlFor="factory-switcher"
-          className="mt-4 block text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"
-        >
-          Factory
-        </label>
-        <select
-          id="factory-switcher"
-          data-testid="factory-switcher"
-          value={activeFactoryId ?? ''}
-          onChange={(event) => {
-            const next = event.target.value;
-            setSelected(next);
-            persistFactory(next);
-            router.push(factoryHref(next, 'dashboard'));
-          }}
-          className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-slate-200 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/20"
-        >
-          {factories.length === 0 ? <option value="">No factories</option> : null}
-          {factories.map((factory) => (
-            <option key={factoryValue(factory)} value={factoryValue(factory)}>
-              {factoryOptionLabel(factory)}
-            </option>
-          ))}
-        </select>
+        {!collapsed ? (
+          <>
+            <label
+              htmlFor="factory-switcher"
+              className="mt-4 block text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"
+            >
+              Factory
+            </label>
+            <select
+              id="factory-switcher"
+              data-testid="factory-switcher"
+              value={activeFactoryId ?? ''}
+              onChange={(event) => {
+                const next = event.target.value;
+                setSelected(next);
+                persistFactory(next);
+                router.push(factoryHref(next, 'dashboard'));
+              }}
+              className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-slate-200 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/20"
+            >
+              {factories.length === 0 ? <option value="">No factories</option> : null}
+              {factories.map((factory) => (
+                <option key={factoryValue(factory)} value={factoryValue(factory)}>
+                  {factoryOptionLabel(factory)}
+                </option>
+              ))}
+            </select>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setCollapsed(false)}
+            title={`Factory: ${activeFactoryName} — expand to switch`}
+            aria-label={`Factory: ${activeFactoryName}. Expand sidebar to switch.`}
+            className="mt-3 flex h-9 w-full items-center justify-center rounded-md border border-slate-700 bg-slate-900 text-xs font-semibold text-slate-200 hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-400/40"
+          >
+            {factoryInitial}
+          </button>
+        )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
-        <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-          Workspace
-        </p>
+      <div className="sidebar-scroll min-h-0 flex-1 overflow-y-auto px-2 py-3">
+        {!collapsed ? (
+          <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Workspace
+          </p>
+        ) : null}
         <ul className="space-y-0.5">
           {TOP_NAV.map((item) => {
             const href = navHref(item, activeFactoryId);
@@ -159,11 +214,13 @@ export function Sidebar({
                   <span
                     data-testid={item.testId}
                     data-active="false"
-                    title="Add a factory to use this page"
-                    className="flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm text-slate-600"
+                    title={collapsed ? item.label : 'Add a factory to use this page'}
+                    className={`flex items-center rounded-md text-[13px] text-slate-600 ${
+                      collapsed ? 'justify-center px-0 py-1.5' : 'gap-2 px-3 py-1'
+                    }`}
                   >
                     <NavIcon name={item.icon} className="h-4 w-4 shrink-0 opacity-50" />
-                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                    <span className={labelClass}>{item.label}</span>
                   </span>
                 ) : (
                   <Link
@@ -171,39 +228,68 @@ export function Sidebar({
                     data-testid={item.testId}
                     data-active={active ? 'true' : 'false'}
                     aria-current={active ? 'page' : undefined}
-                    className={`flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-teal-400/40 ${
-                      active
-                        ? 'bg-slate-800 font-medium text-slate-100 shadow-[inset_2px_0_0_0_#2dd4bf]'
-                        : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
-                    }`}
+                    title={collapsed ? item.label : undefined}
+                    className={navItemClass(active)}
                   >
                     <NavIcon name={item.icon} className="h-4 w-4 shrink-0 opacity-80" />
-                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                    <span className={labelClass}>{item.label}</span>
                   </Link>
                 )}
               </li>
             );
           })}
+          {FOOTER_NAV.map((item) => (
+            <li key={item.href}>
+              <Link
+                href={item.href}
+                data-testid={item.testId}
+                data-active={pathname === item.href ? 'true' : 'false'}
+                aria-current={pathname === item.href ? 'page' : undefined}
+                title={collapsed ? item.label : undefined}
+                className={navItemClass(pathname === item.href)}
+              >
+                <NavIcon name={item.icon} className="h-4 w-4 shrink-0 opacity-80" />
+                <span className={labelClass}>{item.label}</span>
+              </Link>
+            </li>
+          ))}
+          <li>
+            <Link
+              href="/help"
+              data-testid="nav-help"
+              data-active={isHelpActive ? 'true' : 'false'}
+              aria-current={isHelpActive ? 'page' : undefined}
+              title={collapsed ? 'Help' : undefined}
+              className={navItemClass(isHelpActive)}
+            >
+              <NavIcon name="help" className="h-4 w-4 shrink-0 opacity-80" />
+              <span className={labelClass}>Help</span>
+            </Link>
+          </li>
         </ul>
 
-        <div className="mt-5 flex items-center justify-between px-3">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-            Factories
-          </span>
-          <Link
-            href="/help/factories/add"
-            data-testid="nav-add-factory"
-            aria-label="Add a factory (git-backed)"
-            title="Add a factory (git-backed)"
-            className="flex h-5 w-5 items-center justify-center rounded-full text-sm leading-none text-slate-500 hover:bg-slate-800 hover:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-400/40"
-          >
-            <span aria-hidden="true">+</span>
-          </Link>
-        </div>
-        <p data-testid="nav-factory-name" className="px-3 text-sm font-medium text-slate-200">
-          {activeFactoryName}
-        </p>
-        <ul className="mt-1 space-y-0.5">
+        {!collapsed ? (
+          <>
+            <div className="mt-4 flex items-center justify-between px-3">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                Factories
+              </span>
+              <Link
+                href="/help/factories/add"
+                data-testid="nav-add-factory"
+                aria-label="Add a factory (git-backed)"
+                title="Add a factory (git-backed)"
+                className="flex h-5 w-5 items-center justify-center rounded-full text-sm leading-none text-slate-500 hover:bg-slate-800 hover:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-400/40"
+              >
+                <span aria-hidden="true">+</span>
+              </Link>
+            </div>
+            <p data-testid="nav-factory-name" className="px-3 text-sm font-medium text-slate-200">
+              {activeFactoryName}
+            </p>
+          </>
+        ) : null}
+        <ul className={collapsed ? 'mt-1 space-y-0.5' : 'mt-1 space-y-0.5'}>
           {FACTORY_NAV.map((item) => {
             if (!activeFactoryId) return null;
             const href = factoryHref(activeFactoryId, item.segment);
@@ -215,14 +301,11 @@ export function Sidebar({
                   data-testid={item.testId}
                   data-active={active ? 'true' : 'false'}
                   aria-current={active ? 'page' : undefined}
-                  className={`flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-teal-400/40 ${
-                    active
-                      ? 'bg-slate-800 font-medium text-slate-100 shadow-[inset_2px_0_0_0_#2dd4bf]'
-                      : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
-                  }`}
+                  title={collapsed ? item.label : undefined}
+                  className={navItemClass(active)}
                 >
                   <NavIcon name={item.icon} className="h-4 w-4 shrink-0 opacity-80" />
-                  <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                  <span className={labelClass}>{item.label}</span>
                 </Link>
               </li>
             );
@@ -234,97 +317,77 @@ export function Sidebar({
                 target="_blank"
                 rel="noreferrer"
                 data-testid="nav-forgejo"
-                className="flex items-center justify-between rounded-md px-3 py-1.5 text-sm text-slate-400 transition-colors hover:bg-slate-900 hover:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-400/40"
+                title={collapsed ? 'Forgejo' : undefined}
+                className={navItemClass(false)}
               >
-                Forgejo <span className="text-slate-600">↗</span>
+                <span className={labelClass}>Forgejo</span>
+                <span className="text-slate-600" aria-hidden="true">
+                  ↗
+                </span>
               </a>
             </li>
           ) : null}
         </ul>
       </div>
 
-      <div className="shrink-0 border-t border-slate-800 px-2 py-2">
-        {FOOTER_NAV.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            data-testid={item.testId}
-            data-active={pathname === item.href ? 'true' : 'false'}
-            aria-current={pathname === item.href ? 'page' : undefined}
-            className={`mb-0.5 flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-teal-400/40 ${
-              pathname === item.href
-                ? 'bg-slate-800 font-medium text-slate-100 shadow-[inset_2px_0_0_0_#2dd4bf]'
-                : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
-            }`}
-          >
-            <NavIcon name={item.icon} className="h-4 w-4 shrink-0 opacity-80" />
-            <span className="min-w-0 flex-1 truncate">{item.label}</span>
-          </Link>
-        ))}
-        <Link
-          href="/help"
-          data-testid="nav-help"
-          data-active={isHelpActive ? 'true' : 'false'}
-          aria-current={isHelpActive ? 'page' : undefined}
-          className={`flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-teal-400/40 ${
-            isHelpActive
-              ? 'bg-slate-800 font-medium text-slate-100 shadow-[inset_2px_0_0_0_#2dd4bf]'
-              : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
-          }`}
+      <div className={`shrink-0 border-t border-slate-800 ${collapsed ? 'px-2 py-3' : 'px-3 py-3'}`}>
+        <div
+          data-testid="nav-account"
+          className={`text-sm text-slate-300 ${collapsed ? 'flex flex-col items-center gap-2' : ''}`}
         >
-          <NavIcon name="help" className="h-4 w-4 shrink-0 opacity-80" />
-          <span className="min-w-0 flex-1 truncate">Help</span>
-        </Link>
-      </div>
-
-      <div className="shrink-0 border-t border-slate-800 px-3 py-3">
-        <div data-testid="nav-usage" className="flex items-center gap-2 text-[11px] text-slate-500">
-          <span aria-hidden="true" className="h-2 w-2 rounded-full bg-teal-400" />
-          Usage available
-        </div>
-        <div data-testid="nav-account" className="mt-2 text-sm text-slate-300">
           {authRequired ? (
             user ? (
-              <div className="space-y-1">
-                <p data-testid="nav-user-name" className="truncate font-medium text-slate-100">
-                  {user.name ?? user.username}
-                </p>
-                <p data-testid="nav-user-email" className="truncate text-xs text-slate-500">
-                  {user.email}
-                </p>
+              collapsed ? (
                 <span
-                  data-testid="nav-user-role"
-                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
-                    user.role === 'admin'
-                      ? 'bg-teal-400/10 text-teal-300 ring-teal-400/30'
-                      : 'bg-slate-800 text-slate-300 ring-slate-700'
-                  }`}
+                  title={user.name ?? user.username}
+                  className="grid h-8 w-8 place-items-center rounded-full bg-teal-400/10 text-xs font-semibold text-teal-300 ring-1 ring-teal-400/30"
                 >
-                  {user.role}
+                  {userInitials}
                 </span>
-              </div>
+              ) : (
+                <div className="space-y-1">
+                  <p data-testid="nav-user-name" className="truncate font-medium text-slate-100">
+                    {user.name ?? user.username}
+                  </p>
+                  <p data-testid="nav-user-email" className="truncate text-xs text-slate-500">
+                    {user.email}
+                  </p>
+                  <span
+                    data-testid="nav-user-role"
+                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
+                      user.role === 'admin'
+                        ? 'bg-teal-400/10 text-teal-300 ring-teal-400/30'
+                        : 'bg-slate-800 text-slate-300 ring-slate-700'
+                    }`}
+                  >
+                    {user.role}
+                  </span>
+                </div>
+              )
             ) : (
-              <div className="space-y-1">
+              <div className={`space-y-1 ${collapsed ? 'text-center' : ''}`}>
                 <p data-testid="nav-user-name" className="font-medium text-slate-200">
-                  Not signed in
+                  {collapsed ? '?' : 'Not signed in'}
                 </p>
-                <Link
-                  href={`/login?next=${encodeURIComponent(pathname)}`}
-                  data-testid="nav-signin"
-                  className="text-xs font-medium text-teal-300 underline hover:text-teal-200"
-                >
-                  Sign in
-                </Link>
+                {!collapsed ? (
+                  <Link
+                    href={`/login?next=${encodeURIComponent(pathname)}`}
+                    data-testid="nav-signin"
+                    className="text-xs font-medium text-teal-300 underline hover:text-teal-200"
+                  >
+                    Sign in
+                  </Link>
+                ) : null}
               </div>
             )
           ) : (
-            <span data-testid="nav-local-user" className="text-slate-400">
+            <span data-testid="nav-local-user" className={`text-slate-400 ${collapsed ? 'sr-only' : ''}`}>
               Local user <span className="text-slate-600">/</span> auth off
             </span>
           )}
         </div>
-        <div className="mt-2 flex items-center gap-2">
-          {authRequired && user ? (
+        <div className={`mt-2 flex items-center gap-2 ${collapsed ? 'flex-col' : ''}`}>
+          {authRequired && user && !collapsed ? (
             <button
               type="button"
               data-testid="nav-signout"
@@ -342,7 +405,9 @@ export function Sidebar({
             data-testid="nav-github"
             aria-label="Software Factory on GitHub"
             title="Software Factory on GitHub"
-            className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-400/40"
+            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-400/40 ${
+              collapsed ? 'mx-auto' : 'ml-auto'
+            }`}
           >
             <svg
               aria-hidden="true"
