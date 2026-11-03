@@ -54,6 +54,18 @@ Latest tags: `harden-runtime`, `secrets-mcp`, `api-v1-help`, `help-center`, `liv
 `factory-identity`, `factory-purge`, `readiness-identity`, `unify-factory-api`, `fix-forge-pr-files`,
 `readiness-forge-files`. `bun run ci` 746 pass; smoke passes; Playwright 56; UI audit clean.
 
+### Graphite Command shell (2026-11-03)
+
+The left menu and header now follow the selected **Graphite Command** direction:
+
+- Dark graphite sidebar (`slate-950`), teal active state, icon + label rows, grouped Workspace / Factories
+  sections, and a dark factory switcher.
+- Dark sticky header with a breadcrumb (`Software Factory / <page>`), auto-refresh, and **Help** at the top
+  right. There is no top-right avatar; the account block stays in the sidebar footer.
+- Account footer keeps the role badge, sign-out, and the GitHub repository icon.
+- A local `NavIcon` component supplies the navigation icons without adding an icon package.
+- The 12-option visual review page is at `docs/design/sidebar-menu-options.html`; Option 02 is implemented.
+
 ### Unified factory paths (2026-11-02)
 
 Every factory-scoped API and browser resource is now addressed through the factory id. The remaining global

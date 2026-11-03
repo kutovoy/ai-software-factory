@@ -96,11 +96,11 @@ export function AutoRefresh() {
     <div
       data-testid="auto-refresh"
       data-interval={String(intervalSeconds)}
-      className="ml-2 flex items-center gap-2 border-l border-slate-200 pl-2"
+      className="flex items-center gap-2 border-l border-slate-800 pl-2"
     >
       <label
         htmlFor="auto-refresh-interval"
-        className="text-xs font-medium text-slate-600"
+        className="text-xs font-medium text-slate-400"
       >
         Auto-refresh
       </label>
@@ -119,7 +119,7 @@ export function AutoRefresh() {
             // private mode / storage disabled: the choice simply does not persist
           }
         }}
-        className="rounded-md border border-slate-300 bg-white px-1.5 py-1 text-xs text-slate-800 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+        className="rounded-md border border-slate-700 bg-slate-900 px-1.5 py-1 text-xs text-slate-200 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/20"
       >
         {OPTIONS.map((option) => (
           <option key={option.seconds} value={String(option.seconds)}>
@@ -129,7 +129,7 @@ export function AutoRefresh() {
       </select>
       <span
         data-testid="auto-refresh-updated"
-        className="min-w-[7rem] text-xs text-slate-400"
+        className="min-w-[7rem] text-xs text-slate-500"
       >
         {updated === null ? '' : `updated ${updated}`}
       </span>

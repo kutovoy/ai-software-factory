@@ -17,25 +17,32 @@ export function ContextHelp() {
   return (
     <header
       data-testid="help-bar"
-      className="sticky top-0 z-10 flex items-center justify-end border-b border-slate-200 bg-white/95 px-6 py-1.5 backdrop-blur"
+      className="sticky top-0 z-10 flex h-12 items-center gap-3 border-b border-slate-800 bg-slate-950 px-5 text-slate-200"
     >
-      <Link
-        href={context.href}
-        data-testid="help-context-link"
-        data-help-slug={context.slug ?? 'index'}
-        aria-label={`Help for ${context.pageName}`}
-        title={`Help for ${context.pageName}`}
-        className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
-      >
-        <span
-          aria-hidden="true"
-          className="flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] leading-none"
+      <div className="flex min-w-0 items-center gap-2 text-xs">
+        <span className="font-semibold tracking-tight text-slate-100">Software Factory</span>
+        <span className="text-slate-600">/</span>
+        <span className="truncate text-slate-400">{context.pageName}</span>
+      </div>
+      <div className="ml-auto flex items-center gap-2">
+        <AutoRefresh />
+        <Link
+          href={context.href}
+          data-testid="help-context-link"
+          data-help-slug={context.slug ?? 'index'}
+          aria-label={`Help for ${context.pageName}`}
+          title={`Help for ${context.pageName}`}
+          className="inline-flex items-center gap-1.5 rounded-md border border-slate-700 px-2 py-1 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-400/40"
         >
-          ?
-        </span>
-        Help
-      </Link>
-      <AutoRefresh />
+          <span
+            aria-hidden="true"
+            className="flex h-4 w-4 items-center justify-center rounded-full border border-slate-600 text-[10px] leading-none text-slate-400"
+          >
+            ?
+          </span>
+          Help
+        </Link>
+      </div>
     </header>
   );
 }

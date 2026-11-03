@@ -2,6 +2,8 @@ export interface NavItem {
   href: string;
   label: string;
   testId: string;
+  /** Optional icon name rendered by the Graphite Command sidebar. */
+  icon?: string;
   /**
    * True for pages that live under a factory (`/factories/:id/...`). The href above is the
    * un-prefixed segment; the sidebar resolves it against the selected factory id.
@@ -11,39 +13,43 @@ export interface NavItem {
 
 /** Top-level nav parity with the reference product (`ANALYSIS.md` §4.1). */
 export const TOP_NAV: NavItem[] = [
-  { href: '/chat', label: 'New Chat', testId: 'nav-chat' },
-  { href: '/inbox', label: 'Inbox', testId: 'nav-inbox' },
-  { href: '/work-items', label: 'Work items', testId: 'nav-work-items', factoryScoped: true },
-  { href: '/runs', label: 'Runs', testId: 'nav-runs', factoryScoped: true },
-  { href: '/secrets', label: 'Secrets', testId: 'nav-secrets' },
-  { href: '/users', label: 'Users', testId: 'nav-users' },
+  { href: '/chat', label: 'New Chat', testId: 'nav-chat', icon: 'chat' },
+  { href: '/inbox', label: 'Inbox', testId: 'nav-inbox', icon: 'inbox' },
+  { href: '/work-items', label: 'Work items', testId: 'nav-work-items', factoryScoped: true, icon: 'list' },
+  { href: '/runs', label: 'Runs', testId: 'nav-runs', factoryScoped: true, icon: 'play' },
+  { href: '/secrets', label: 'Secrets', testId: 'nav-secrets', icon: 'key' },
+  { href: '/users', label: 'Users', testId: 'nav-users', icon: 'users' },
 ];
 
 /**
  * Footer links pinned above the account footer. `API` sits above `Help`: both open a help
  * entry, but the API reference is the one people reach for by name (ADR-030).
  */
-export const FOOTER_NAV: NavItem[] = [{ href: '/help/api', label: 'API', testId: 'nav-api' }];
+export const FOOTER_NAV: NavItem[] = [
+  { href: '/help/api', label: 'API', testId: 'nav-api', icon: 'code' },
+];
 
 export interface FactoryNavItem {
   segment: string;
   label: string;
   testId: string;
+  /** Optional icon name rendered by the Graphite Command sidebar. */
+  icon?: string;
 }
 
 /** Per-factory group; `Definition` and `Gates` are promoted to first-class pages. */
 export const FACTORY_NAV: FactoryNavItem[] = [
-  { segment: 'dashboard', label: 'Dashboard', testId: 'nav-dashboard' },
-  { segment: 'agents', label: 'Agents', testId: 'nav-agents' },
-  { segment: 'automations', label: 'Automations', testId: 'nav-automations' },
-  { segment: 'scorers', label: 'Scorers', testId: 'nav-scorers' },
-  { segment: 'mcps', label: 'MCPs and apps', testId: 'nav-mcps' },
-  { segment: 'self-improvement', label: 'Self-improvement', testId: 'nav-self-improvement' },
-  { segment: 'benchmarks', label: 'Benchmarks', testId: 'nav-benchmarks' },
-  { segment: 'definition', label: 'Definition', testId: 'nav-definition' },
-  { segment: 'gates', label: 'Gates', testId: 'nav-gates' },
-  { segment: 'merge-queue', label: 'Merge queue', testId: 'nav-merge-queue' },
-  { segment: 'settings', label: 'Settings', testId: 'nav-settings' },
+  { segment: 'dashboard', label: 'Dashboard', testId: 'nav-dashboard', icon: 'dashboard' },
+  { segment: 'agents', label: 'Agents', testId: 'nav-agents', icon: 'users' },
+  { segment: 'automations', label: 'Automations', testId: 'nav-automations', icon: 'zap' },
+  { segment: 'scorers', label: 'Scorers', testId: 'nav-scorers', icon: 'star' },
+  { segment: 'mcps', label: 'MCPs and apps', testId: 'nav-mcps', icon: 'plug' },
+  { segment: 'self-improvement', label: 'Self-improvement', testId: 'nav-self-improvement', icon: 'trend' },
+  { segment: 'benchmarks', label: 'Benchmarks', testId: 'nav-benchmarks', icon: 'bars' },
+  { segment: 'definition', label: 'Definition', testId: 'nav-definition', icon: 'file' },
+  { segment: 'gates', label: 'Gates', testId: 'nav-gates', icon: 'shield' },
+  { segment: 'merge-queue', label: 'Merge queue', testId: 'nav-merge-queue', icon: 'merge' },
+  { segment: 'settings', label: 'Settings', testId: 'nav-settings', icon: 'gear' },
 ];
 
 /**

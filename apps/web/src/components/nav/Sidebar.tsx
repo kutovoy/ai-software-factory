@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Badge } from '@/components/ui/Badge';
+import { NavIcon } from '@/components/nav/NavIcon';
 import { FACTORY_NAV, FOOTER_NAV, TOP_NAV, factoryHref, navHref } from '@/lib/nav';
 import type { FactoryListItem, UserWire } from '@/lib/types';
 
@@ -103,11 +103,25 @@ export function Sidebar({
     <nav
       data-testid="nav-sidebar"
       aria-label="Main navigation"
-      className="sticky top-0 flex h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white"
+      className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-slate-800 bg-slate-950 text-slate-300"
     >
-      <div className="shrink-0 border-b border-slate-200 px-4 py-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Software Factory</p>
-        <label htmlFor="factory-switcher" className="mt-3 block text-xs font-medium text-slate-500">
+      <div className="shrink-0 border-b border-slate-800 px-4 py-4">
+        <div className="flex items-center gap-2.5">
+          <span className="grid h-8 w-8 place-items-center rounded-md bg-teal-400 text-[10px] font-black tracking-tight text-slate-950">
+            SF
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold tracking-tight text-slate-100">
+              Software Factory
+            </p>
+            <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500">control plane</p>
+          </div>
+        </div>
+
+        <label
+          htmlFor="factory-switcher"
+          className="mt-4 block text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"
+        >
           Factory
         </label>
         <select
@@ -120,7 +134,7 @@ export function Sidebar({
             persistFactory(next);
             router.push(factoryHref(next, 'dashboard'));
           }}
-          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+          className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-slate-200 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/20"
         >
           {factories.length === 0 ? <option value="">No factories</option> : null}
           {factories.map((factory) => (
@@ -132,6 +146,9 @@ export function Sidebar({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
+        <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+          Workspace
+        </p>
         <ul className="space-y-0.5">
           {TOP_NAV.map((item) => {
             const href = navHref(item, activeFactoryId);
@@ -143,9 +160,10 @@ export function Sidebar({
                     data-testid={item.testId}
                     data-active="false"
                     title="Add a factory to use this page"
-                    className="block rounded-md px-3 py-1.5 text-sm text-slate-400"
+                    className="flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm text-slate-600"
                   >
-                    {item.label}
+                    <NavIcon name={item.icon} className="h-4 w-4 shrink-0 opacity-50" />
+                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
                   </span>
                 ) : (
                   <Link
@@ -153,13 +171,14 @@ export function Sidebar({
                     data-testid={item.testId}
                     data-active={active ? 'true' : 'false'}
                     aria-current={active ? 'page' : undefined}
-                    className={`block rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300 ${
+                    className={`flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-teal-400/40 ${
                       active
-                        ? 'bg-slate-900 text-white'
-                        : 'text-slate-700 hover:bg-slate-100'
+                        ? 'bg-slate-800 font-medium text-slate-100 shadow-[inset_2px_0_0_0_#2dd4bf]'
+                        : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
                     }`}
                   >
-                    {item.label}
+                    <NavIcon name={item.icon} className="h-4 w-4 shrink-0 opacity-80" />
+                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
                   </Link>
                 )}
               </li>
@@ -168,7 +187,7 @@ export function Sidebar({
         </ul>
 
         <div className="mt-5 flex items-center justify-between px-3">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
             Factories
           </span>
           <Link
@@ -176,30 +195,34 @@ export function Sidebar({
             data-testid="nav-add-factory"
             aria-label="Add a factory (git-backed)"
             title="Add a factory (git-backed)"
-            className="flex h-5 w-5 items-center justify-center rounded-full text-sm leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
+            className="flex h-5 w-5 items-center justify-center rounded-full text-sm leading-none text-slate-500 hover:bg-slate-800 hover:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-400/40"
           >
             <span aria-hidden="true">+</span>
           </Link>
         </div>
-        <p data-testid="nav-factory-name" className="px-3 text-sm font-medium text-slate-800">
+        <p data-testid="nav-factory-name" className="px-3 text-sm font-medium text-slate-200">
           {activeFactoryName}
         </p>
         <ul className="mt-1 space-y-0.5">
           {FACTORY_NAV.map((item) => {
             if (!activeFactoryId) return null;
             const href = factoryHref(activeFactoryId, item.segment);
+            const active = pathname === href;
             return (
               <li key={item.segment}>
                 <Link
                   href={href}
                   data-testid={item.testId}
-                  data-active={pathname === href ? 'true' : 'false'}
-                  aria-current={pathname === href ? 'page' : undefined}
-                  className={`block rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300 ${
-                    pathname === href ? 'bg-slate-100 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'
+                  data-active={active ? 'true' : 'false'}
+                  aria-current={active ? 'page' : undefined}
+                  className={`flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-teal-400/40 ${
+                    active
+                      ? 'bg-slate-800 font-medium text-slate-100 shadow-[inset_2px_0_0_0_#2dd4bf]'
+                      : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
                   }`}
                 >
-                  {item.label}
+                  <NavIcon name={item.icon} className="h-4 w-4 shrink-0 opacity-80" />
+                  <span className="min-w-0 flex-1 truncate">{item.label}</span>
                 </Link>
               </li>
             );
@@ -211,16 +234,16 @@ export function Sidebar({
                 target="_blank"
                 rel="noreferrer"
                 data-testid="nav-forgejo"
-                className="block rounded-md px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                className="flex items-center justify-between rounded-md px-3 py-1.5 text-sm text-slate-400 transition-colors hover:bg-slate-900 hover:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-400/40"
               >
-                Forgejo <span className="text-slate-400">↗</span>
+                Forgejo <span className="text-slate-600">↗</span>
               </a>
             </li>
           ) : null}
         </ul>
       </div>
 
-      <div className="shrink-0 border-t border-slate-200 px-2 py-2">
+      <div className="shrink-0 border-t border-slate-800 px-2 py-2">
         {FOOTER_NAV.map((item) => (
           <Link
             key={item.href}
@@ -228,13 +251,14 @@ export function Sidebar({
             data-testid={item.testId}
             data-active={pathname === item.href ? 'true' : 'false'}
             aria-current={pathname === item.href ? 'page' : undefined}
-            className={`mb-0.5 block rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300 ${
+            className={`mb-0.5 flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-teal-400/40 ${
               pathname === item.href
-                ? 'bg-slate-900 text-white'
-                : 'text-slate-700 hover:bg-slate-100'
+                ? 'bg-slate-800 font-medium text-slate-100 shadow-[inset_2px_0_0_0_#2dd4bf]'
+                : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
             }`}
           >
-            {item.label}
+            <NavIcon name={item.icon} className="h-4 w-4 shrink-0 opacity-80" />
+            <span className="min-w-0 flex-1 truncate">{item.label}</span>
           </Link>
         ))}
         <Link
@@ -242,50 +266,60 @@ export function Sidebar({
           data-testid="nav-help"
           data-active={isHelpActive ? 'true' : 'false'}
           aria-current={isHelpActive ? 'page' : undefined}
-          className={`block rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300 ${
-            isHelpActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
+          className={`flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-teal-400/40 ${
+            isHelpActive
+              ? 'bg-slate-800 font-medium text-slate-100 shadow-[inset_2px_0_0_0_#2dd4bf]'
+              : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
           }`}
         >
-          Help
+          <NavIcon name="help" className="h-4 w-4 shrink-0 opacity-80" />
+          <span className="min-w-0 flex-1 truncate">Help</span>
         </Link>
       </div>
 
-      <div className="shrink-0 border-t border-slate-200 px-4 py-3">
-        <div data-testid="nav-usage" className="flex items-center gap-2 text-xs text-slate-500">
-          <span aria-hidden="true" className="h-2 w-2 rounded-full bg-emerald-500" />
+      <div className="shrink-0 border-t border-slate-800 px-3 py-3">
+        <div data-testid="nav-usage" className="flex items-center gap-2 text-[11px] text-slate-500">
+          <span aria-hidden="true" className="h-2 w-2 rounded-full bg-teal-400" />
           Usage available
         </div>
-        <div data-testid="nav-account" className="mt-2 text-sm text-slate-700">
+        <div data-testid="nav-account" className="mt-2 text-sm text-slate-300">
           {authRequired ? (
             user ? (
               <div className="space-y-1">
-                <p data-testid="nav-user-name" className="truncate font-medium text-slate-800">
+                <p data-testid="nav-user-name" className="truncate font-medium text-slate-100">
                   {user.name ?? user.username}
                 </p>
                 <p data-testid="nav-user-email" className="truncate text-xs text-slate-500">
                   {user.email}
                 </p>
-                <Badge tone={user.role === 'admin' ? 'info' : 'neutral'} testId="nav-user-role">
+                <span
+                  data-testid="nav-user-role"
+                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
+                    user.role === 'admin'
+                      ? 'bg-teal-400/10 text-teal-300 ring-teal-400/30'
+                      : 'bg-slate-800 text-slate-300 ring-slate-700'
+                  }`}
+                >
                   {user.role}
-                </Badge>
+                </span>
               </div>
             ) : (
               <div className="space-y-1">
-                <p data-testid="nav-user-name" className="font-medium text-slate-800">
+                <p data-testid="nav-user-name" className="font-medium text-slate-200">
                   Not signed in
                 </p>
                 <Link
                   href={`/login?next=${encodeURIComponent(pathname)}`}
                   data-testid="nav-signin"
-                  className="text-xs font-medium text-slate-600 underline hover:text-slate-900"
+                  className="text-xs font-medium text-teal-300 underline hover:text-teal-200"
                 >
                   Sign in
                 </Link>
               </div>
             )
           ) : (
-            <span data-testid="nav-local-user">
-              Local user <span className="text-slate-400">/</span> auth off
+            <span data-testid="nav-local-user" className="text-slate-400">
+              Local user <span className="text-slate-600">/</span> auth off
             </span>
           )}
         </div>
@@ -296,7 +330,7 @@ export function Sidebar({
               data-testid="nav-signout"
               onClick={() => void signOut()}
               disabled={signingOut}
-              className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:opacity-60"
+              className="min-w-0 flex-1 rounded-md border border-slate-700 px-2 py-1 text-xs font-medium text-slate-300 hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-400/40 disabled:opacity-60"
             >
               {signingOut ? 'Signing out…' : 'Sign out'}
             </button>
@@ -308,7 +342,7 @@ export function Sidebar({
             data-testid="nav-github"
             aria-label="Software Factory on GitHub"
             title="Software Factory on GitHub"
-            className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
+            className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-400/40"
           >
             <svg
               aria-hidden="true"
