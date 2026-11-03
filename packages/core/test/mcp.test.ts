@@ -12,6 +12,14 @@ import {
 } from '../src/index';
 import { EXAMPLE, tempDir } from './helpers';
 
+// Pin model env refs so validation findings do not depend on the host environment
+// (CI has no .env; locally Bun loads one). model.test.ts covers the unset case.
+const MODEL_ENV = {
+  FACTORY_MODEL: 'test-model',
+  FACTORY_SMALL_MODEL: 'test-model',
+  FACTORY_REVIEW_MODEL: 'test-model',
+};
+
 /**
  * MCP declaration + per-agent binding (change `add-secrets-and-mcp`, spec
  * `mcp-integration`). These tests pin the observable validation codes and the resolved
@@ -193,6 +201,7 @@ describe('secret references and warnings', () => {
   it('warns secret_unregistered without failing validation', () => {
     const { definition, errors, warnings } = loadDefinition(EXAMPLE, {
       registeredSecrets: ['OPENCODE_API_KEY'],
+      env: MODEL_ENV,
     });
     expect(errors).toEqual([]);
     expect(definition).not.toBeNull();
@@ -203,6 +212,7 @@ describe('secret references and warnings', () => {
   it('does not warn when the registry covers every reference', () => {
     const { warnings } = loadDefinition(EXAMPLE, {
       registeredSecrets: ['OPENCODE_API_KEY', 'GITHUB_TOKEN'],
+      env: MODEL_ENV,
     });
     expect(warnings).toEqual([]);
   });
