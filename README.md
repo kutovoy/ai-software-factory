@@ -101,7 +101,9 @@ One event renderer for chat and factory runs, runs and work items with live SSE,
 permissions, factory dashboards (state, work, deliverables), scorers, MCPs and benchmarks, a live Swagger UI at
 `/help/api`, and an in-product help centre. Every factory page is nested under `/factories/<factory-id>/…`
 (dashboard, readiness, agents, automations, scorers, MCPs, self-improvement, benchmarks, gates, merge queue,
-settings, work items, runs and score detail); only chat, inbox, secrets, users and help are global.
+settings, work items, runs and score detail); only chat, inbox, secrets, users and help are global. The inbox
+is one batch projection (`GET /api/v1/inbox`) and the work-items board uses a single `view=board` read, so a
+page render does not fan out into per-item detail calls.
 
 ## Architecture
 

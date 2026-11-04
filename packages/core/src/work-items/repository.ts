@@ -25,7 +25,7 @@ import {
 
 /* ------------------------------------------------------------------ rows */
 
-interface WorkItemRow {
+export interface WorkItemRow {
   id: string;
   factory: string;
   factory_id?: string | null;
@@ -155,7 +155,7 @@ function iso(value: unknown): string | null {
   return String(value);
 }
 
-function mapWorkItem(row: WorkItemRow): WorkItem {
+export function mapWorkItem(row: WorkItemRow): WorkItem {
   return {
     id: row.id,
     type: row.type as WorkItemType,
@@ -199,7 +199,7 @@ function mapEvent(row: WorkItemEventRow): WorkItemEvent {
   };
 }
 
-function mapGate(row: GateDecisionRow): GateDecisionRecord {
+export function mapGate(row: GateDecisionRow): GateDecisionRecord {
   return {
     workItemId: row.work_item_id,
     stage: row.stage as LoopStage,

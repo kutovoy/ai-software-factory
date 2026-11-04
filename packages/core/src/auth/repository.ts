@@ -278,7 +278,14 @@ export async function findSessionUser(sql: SQL, token: string): Promise<User | n
   if (!expiresAt || Date.parse(expiresAt) <= Date.now()) return null;
 
   try {
-    await sql`update sessions set last_seen_at = now() where id = ${row.session_id}`;
+    // Throttle the read-path touch: a console page makes dozens of API calls, and writing
+    // `last_seen_at` on every one turns authentication into a write-amplification path.
+    // Five minutes is precise enough for session activity and keeps the row stable.
+    await sql`
+      update sessions set last_seen_at = now()
+      where id = ${row.session_id}
+        and last_seen_at < now() - interval '5 minutes'
+    `;
   } catch {
     // A read-path touch is an optimisation, not a correctness requirement.
   }

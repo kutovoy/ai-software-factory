@@ -6,6 +6,7 @@ import {
   FACTORY_ID_RE,
   contentHash,
   createVersion,
+  createVersionAsync,
   diffDefinitions,
   loadDefinition,
   readFactoryId,
@@ -22,7 +23,7 @@ import {
 } from '@factory/core';
 import { getSql } from '@factory/orchestration';
 import type { ApiConfig } from './config';
-import { canAccessFactory, type Viewer } from './auth';
+import { canAccessFactory, ownerFilter, type Viewer } from './auth';
 import { ApiError, definitionInvalid, factoryNotFound, invalidRequest } from './errors';
 import { log } from './logger';
 
@@ -171,6 +172,80 @@ interface RegistryUser {
   role: string;
 }
 
+/**
+ * A row of the derived `factories` registry. It mirrors what `syncFactoryRegistry`
+ * observed on disk, so a read path can answer from one indexed SQL query instead of
+ * re-scanning every definition directory.
+ */
+interface FactoryRegistryRow {
+  id: string;
+  owner_id: string | null;
+  name: string;
+  key: string;
+  path: string;
+  alias: string | null;
+  manifest_name: string | null;
+  description: string | null;
+  definition_commit: string | null;
+  content_hash: string | null;
+  dirty: boolean | null;
+  tag: string | null;
+  resource_count: number | string | null;
+  repo_count: number | string | null;
+  valid: boolean | null;
+  error_count: number | string | null;
+  synced_at: unknown;
+  owner_username: string | null;
+}
+
+function recordFromRegistry(row: FactoryRegistryRow): FactoryRecord {
+  const commit = row.definition_commit;
+  return {
+    id: row.id,
+    key: row.key,
+    path: row.path,
+    name: row.name,
+    dir: '', // only needed by filesystem projections; registry reads never touch it
+    legacy: !row.key.includes('/'),
+    ownerUsername: row.owner_username,
+    ownerId: row.owner_id,
+    manifestName: row.manifest_name,
+    alias: row.alias,
+    description: row.description,
+    repoCount: Number(row.repo_count ?? 0),
+    resourceCount: Number(row.resource_count ?? 0),
+    valid: row.valid === true,
+    errorCount: Number(row.error_count ?? 0),
+    version: commit
+      ? {
+          commit,
+          shortCommit: shortCommit(commit),
+          tag: row.tag,
+          contentHash: row.content_hash,
+          dirty: row.dirty,
+        }
+      : null,
+  };
+}
+
+function listItemFromRecord(record: FactoryRecord): FactoryListItem {
+  return {
+    id: record.id,
+    key: record.key,
+    name: record.name,
+    path: record.path,
+    owner: record.ownerUsername,
+    manifestName: record.manifestName,
+    alias: record.alias,
+    description: record.description,
+    repoCount: record.repoCount,
+    resourceCount: record.resourceCount,
+    valid: record.valid,
+    errorCount: record.errorCount,
+    version: record.version,
+  };
+}
+
 /** Rejects a key that is not `name` or `owner/name` before touching the filesystem. */
 export function assertFactoryKey(factory: string): void {
   const segments = factory.split('/');
@@ -263,34 +338,36 @@ async function collectFactoryRecords(config: ApiConfig): Promise<FactoryRecord[]
   const admin = users?.find((user) => user.role === 'admin') ?? null;
   const byUsername = new Map((users ?? []).map((user) => [user.username, user]));
 
-  return entries.map((entry) => {
-    const { definition, errors } = loadDefinition(entry.dir, { requireFactoryId: true });
-    const manifest = definition?.manifest ?? null;
-    const owner = entry.legacy
-      ? admin
-      : entry.ownerUsername
-        ? (byUsername.get(entry.ownerUsername) ?? null)
-        : null;
+  return await Promise.all(
+    entries.map(async (entry) => {
+      const { definition, errors } = loadDefinition(entry.dir, { requireFactoryId: true });
+      const manifest = definition?.manifest ?? null;
+      const owner = entry.legacy
+        ? admin
+        : entry.ownerUsername
+          ? (byUsername.get(entry.ownerUsername) ?? null)
+          : null;
 
-    return {
-      id: manifest?.id ?? readFactoryId(entry.dir),
-      key: entry.key,
-      path: entry.path,
-      name: entry.name,
-      dir: entry.dir,
-      legacy: entry.legacy,
-      ownerUsername: entry.ownerUsername,
-      ownerId: owner?.id ?? null,
-      manifestName: manifest?.name ?? null,
-      alias: manifest?.alias ?? null,
-      description: manifest?.description ?? null,
-      repoCount: manifest?.repositories.length ?? 0,
-      resourceCount: definition?.resources.length ?? 0,
-      valid: definition !== null,
-      errorCount: errors.length,
-      version: factoryVersion(entry.dir),
-    };
-  });
+      return {
+        id: manifest?.id ?? readFactoryId(entry.dir),
+        key: entry.key,
+        path: entry.path,
+        name: entry.name,
+        dir: entry.dir,
+        legacy: entry.legacy,
+        ownerUsername: entry.ownerUsername,
+        ownerId: owner?.id ?? null,
+        manifestName: manifest?.name ?? null,
+        alias: manifest?.alias ?? null,
+        description: manifest?.description ?? null,
+        repoCount: manifest?.repositories.length ?? 0,
+        resourceCount: definition?.resources.length ?? 0,
+        valid: definition !== null,
+        errorCount: errors.length,
+        version: await factoryVersionAsync(entry.dir, definition ?? undefined),
+      };
+    }),
+  );
 }
 
 /** Upserts the registry rows for the definitions on disk. Best effort. */
@@ -306,10 +383,18 @@ async function upsertRegistry(records: FactoryRecord[]): Promise<void> {
         where (key = ${record.key} or path = ${record.path}) and id <> ${record.id}
       `;
       await sql`
-        insert into factories (id, owner_id, name, key, path, alias)
+        insert into factories (
+          id, owner_id, name, key, path, alias, manifest_name, description,
+          definition_commit, content_hash, dirty, tag, resource_count, repo_count,
+          valid, error_count, synced_at
+        )
         values (
           ${record.id}, ${record.ownerId}::uuid, ${record.name}, ${record.key},
-          ${record.path}, ${record.alias}
+          ${record.path}, ${record.alias}, ${record.manifestName}, ${record.description},
+          ${record.version?.commit ?? null}, ${record.version?.contentHash ?? null},
+          ${record.version?.dirty ?? null}, ${record.version?.tag ?? null},
+          ${record.resourceCount}, ${record.repoCount}, ${record.valid}, ${record.errorCount},
+          now()
         )
         on conflict (id) do update set
           owner_id = excluded.owner_id,
@@ -317,6 +402,17 @@ async function upsertRegistry(records: FactoryRecord[]): Promise<void> {
           key = excluded.key,
           path = excluded.path,
           alias = excluded.alias,
+          manifest_name = excluded.manifest_name,
+          description = excluded.description,
+          definition_commit = excluded.definition_commit,
+          content_hash = excluded.content_hash,
+          dirty = excluded.dirty,
+          tag = excluded.tag,
+          resource_count = excluded.resource_count,
+          repo_count = excluded.repo_count,
+          valid = excluded.valid,
+          error_count = excluded.error_count,
+          synced_at = excluded.synced_at,
           updated_at = now()
       `;
     }
@@ -335,6 +431,51 @@ export async function syncFactoryRegistry(config: ApiConfig): Promise<FactoryRec
   const records = await collectFactoryRecords(config);
   await upsertRegistry(records);
   return records;
+}
+
+/* -------------------------------------------------------- registry read model */
+
+let registrySyncedAt = 0;
+let registryMissSyncedAt = 0;
+let registrySyncInFlight: Promise<FactoryRecord[]> | null = null;
+
+/**
+ * Single-flight sync shared by every request. A TTL keeps a filesystem/git scan out of
+ * the common read path; explicit misses still force a sync so a newly committed factory
+ * appears without a restart.
+ */
+async function syncRegistryCached(config: ApiConfig): Promise<FactoryRecord[]> {
+  if (registrySyncInFlight) return registrySyncInFlight;
+  registrySyncInFlight = syncFactoryRegistry(config)
+    .then((records) => {
+      registrySyncedAt = Date.now();
+      return records;
+    })
+    .finally(() => {
+      registrySyncInFlight = null;
+    });
+  return registrySyncInFlight;
+}
+
+async function ensureRegistryFresh(config: ApiConfig): Promise<FactoryRecord[] | null> {
+  if (Date.now() - registrySyncedAt < config.factoryRegistryTtlMs) return null;
+  return syncRegistryCached(config);
+}
+
+/** Registry rows for a viewer, optionally narrowed to one opaque factory id. */
+async function registryRows(
+  viewer: Viewer | null,
+  factoryId?: string,
+): Promise<FactoryRegistryRow[]> {
+  const owner = ownerFilter(viewer);
+  return (await getSql()`
+    select f.*, u.username as owner_username
+    from factories f
+    left join users u on u.id = f.owner_id
+    where (${factoryId ?? null}::text is null or f.id = ${factoryId ?? null})
+      and (${owner}::uuid is null or f.owner_id = ${owner}::uuid)
+    order by f.key asc
+  `) as FactoryRegistryRow[];
 }
 
 /** POSIX path of the factory relative to the git root that contains `FACTORY_ROOT`. */
@@ -395,6 +536,25 @@ export function factoryVersion(dir: string): FactoryVersionSummary | null {
   }
 }
 
+/** Async version of `factoryVersion`; used by the registry sync. */
+async function factoryVersionAsync(
+  dir: string,
+  definition?: FactoryDefinition,
+): Promise<FactoryVersionSummary | null> {
+  try {
+    const version = await createVersionAsync(dir, { allowDirty: true }, definition);
+    return {
+      commit: version.commit,
+      shortCommit: shortCommit(version.commit),
+      tag: version.tag,
+      contentHash: version.contentHash,
+      dirty: version.dirty,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** The runtime loader: a definition without a `fac_<ulid>` id is `factory_id_missing`. */
 export function loadFactoryDefinition(
   dir: string,
@@ -411,24 +571,39 @@ export async function listFactories(
   config: ApiConfig,
   viewer: Viewer | null = null,
 ): Promise<FactoryListItem[]> {
-  const records = await syncFactoryRegistry(config);
-  return records
-    .filter((record) => canAccessFactory(viewer, record))
-    .map((record) => ({
-      id: record.id,
-      key: record.key,
-      name: record.name,
-      path: record.path,
-      owner: record.ownerUsername,
-      manifestName: record.manifestName,
-      alias: record.alias,
-      description: record.description,
-      repoCount: record.repoCount,
-      resourceCount: record.resourceCount,
-      valid: record.valid,
-      errorCount: record.errorCount,
-      version: record.version,
-    }));
+  try {
+    const synced = await ensureRegistryFresh(config);
+    const rows = await registryRows(viewer);
+    if (rows.length > 0) {
+      // Rows written before the read-model migration have no `synced_at`; rebuild them
+      // once rather than serving empty metadata.
+      if (rows.some((row) => row.synced_at === null || row.synced_at === undefined)) {
+        const records = await syncRegistryCached(config);
+        return records
+          .filter((record) => canAccessFactory(viewer, record))
+          .map(listItemFromRecord);
+      }
+      return rows
+        .map(recordFromRegistry)
+        .filter((record) => canAccessFactory(viewer, record))
+        .map(listItemFromRecord);
+    }
+    if (synced) {
+      return synced
+        .filter((record) => canAccessFactory(viewer, record))
+        .map(listItemFromRecord);
+    }
+    return [];
+  } catch (error) {
+    // No database yet (unit tests, fresh checkout): keep the filesystem projection usable.
+    log('warn', 'factory_registry_read_failed', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    const records = await syncRegistryCached(config);
+    return records
+      .filter((record) => canAccessFactory(viewer, record))
+      .map(listItemFromRecord);
+  }
 }
 
 /** Registry lookup by internal key; best effort (null when the database has no row). */
@@ -455,17 +630,86 @@ export async function resolveFactory(
 ): Promise<FactoryRecord> {
   if (!FACTORY_ID_RE.test(factoryId)) throw factoryNotFound(factoryId);
 
-  const records = await syncFactoryRegistry(config);
-  const record = records.find((candidate) => candidate.id === factoryId);
-  if (!record || !canAccessFactory(viewer, record)) throw factoryNotFound(factoryId);
-  return record;
+  try {
+    const rows = await registryRows(viewer, factoryId);
+    if (rows[0]) {
+      if (rows[0].synced_at === null || rows[0].synced_at === undefined) {
+        const records = await syncRegistryCached(config);
+        const record = records.find((candidate) => candidate.id === factoryId);
+        if (record && canAccessFactory(viewer, record)) return record;
+        throw factoryNotFound(factoryId);
+      }
+      const record = recordFromRegistry(rows[0]);
+      if (canAccessFactory(viewer, record)) return record;
+      throw factoryNotFound(factoryId);
+    }
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    log('warn', 'factory_registry_read_failed', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    const records = await syncRegistryCached(config);
+    const record = records.find((candidate) => candidate.id === factoryId);
+    if (!record || !canAccessFactory(viewer, record)) throw factoryNotFound(factoryId);
+    return record;
+  }
+
+  // A registry miss may be a factory committed after the last TTL sync. Sync at most once
+  // per TTL for misses, so an unknown id cannot turn into a filesystem scan per request.
+  const fresh = await ensureRegistryFresh(config);
+  if (fresh) {
+    const record = fresh.find((candidate) => candidate.id === factoryId);
+    if (record && canAccessFactory(viewer, record)) return record;
+  }
+  if (Date.now() - registryMissSyncedAt >= config.factoryRegistryTtlMs) {
+    registryMissSyncedAt = Date.now();
+    const records = await syncRegistryCached(config);
+    const record = records.find((candidate) => candidate.id === factoryId);
+    if (record && canAccessFactory(viewer, record)) return record;
+  }
+  throw factoryNotFound(factoryId);
 }
 
 /* ----------------------------------------------------------------- detail */
 
-export function getFactory(config: ApiConfig, factory: string): FactoryDetail {
+interface CachedDefinition {
+  at: number;
+  definition: FactoryDefinition | null;
+  errors: ValidationError[];
+}
+
+const DEFINITION_CACHE_TTL_MS = 30_000;
+const definitionCache = new Map<string, CachedDefinition>();
+
+function loadFactoryDefinitionCached(
+  dir: string,
+  factory: string,
+  cacheKey: string,
+): FactoryDefinition {
+  const cached = definitionCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < DEFINITION_CACHE_TTL_MS) {
+    if (!cached.definition) throw definitionInvalid(factory, cached.errors);
+    return cached.definition;
+  }
+  const loaded = loadDefinition(dir, { requireFactoryId: true });
+  if (definitionCache.size > 500) definitionCache.clear();
+  definitionCache.set(cacheKey, { at: Date.now(), ...loaded });
+  if (!loaded.definition) throw definitionInvalid(factory, loaded.errors);
+  return loaded.definition;
+}
+
+export function getFactory(
+  config: ApiConfig,
+  factory: string,
+  versionOverride?: FactoryVersionSummary | null,
+): FactoryDetail {
   const dir = resolveFactoryDir(config, factory);
-  const definition = loadFactoryDefinition(dir, factory);
+  const version = versionOverride === undefined ? factoryVersion(dir) : versionOverride;
+  const definition = loadFactoryDefinitionCached(
+    dir,
+    factory,
+    `${dir}:${version?.commit ?? 'worktree'}`,
+  );
   const gates = resolveAllGates(definition.manifest);
   const declaredDefault =
     definition.manifest.agentDefaults.harness?.model ?? definition.manifest.agentDefaults.model;
@@ -480,7 +724,7 @@ export function getFactory(config: ApiConfig, factory: string): FactoryDetail {
     description: definition.manifest.description ?? null,
     repoCount: definition.manifest.repositories.length,
     resourceCount: definition.resources.length,
-    version: factoryVersion(dir),
+    version,
     gates,
     fullyAutonomous: gates.fullyAutonomous,
     benchmarkGateRequired: gates.benchmarkGateRequired,

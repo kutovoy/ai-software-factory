@@ -23,6 +23,8 @@ import {
   listWorkItemEvents,
   listWorkItems,
   loadDefinition,
+  mapGate,
+  mapWorkItem,
   modelSchema,
   newWorkItemId,
   recordGateDecision,
@@ -38,12 +40,14 @@ import {
   type AgentDef,
   type AgentVerdict,
   type FactoryDefinition,
+  type GateDecisionRecord,
   type GateDecisionRequest,
   type LoopStage,
   type ValidationContract,
   type ValidationProjection,
   type WorkItem,
   type WorkItemEvent,
+  type WorkItemRow,
   type WorkItemVersion,
 } from '@factory/core';
 import {
@@ -82,6 +86,7 @@ import { log } from './logger';
 import { factoryIdForKey, loadFactoryDefinition, resolveFactoryDir } from './factories';
 import { pinVersion, resolveRunDefaults } from './runs';
 import { assertValidationComplete, projectValidation } from './validation';
+import { encodeCursor, type PageCursor } from './cursor';
 
 /**
  * Work item routes logic (spec `factory-loop`).
@@ -174,7 +179,7 @@ export interface WorkItemSummary {
   updatedAt: string | null;
 }
 
-function summarize(item: WorkItem): WorkItemSummary {
+export function summarize(item: WorkItem): WorkItemSummary {
   return {
     id: item.id,
     factory: item.factory,
@@ -508,6 +513,192 @@ export async function listWorkItemsForApi(
     createdBy: ownerFilter(viewer),
   });
   return items.map(summarize);
+}
+
+/* --------------------------------------------------------------- board view */
+
+export interface WorkItemBoardEvent {
+  type: string;
+  stage: string | null;
+  payload: Record<string, unknown>;
+  createdAt: string | null;
+}
+
+export interface WorkItemBoardCard extends WorkItemSummary {
+  /** Newest undecided gate, resolved in the same query as the card. */
+  pendingGate: GateDecisionRecord | null;
+  /** Only `dispatch.requested` / `review.verdict` events; enough to reconstruct run links. */
+  events: WorkItemBoardEvent[];
+}
+
+export interface WorkItemBoardResult {
+  workItems: WorkItemBoardCard[];
+  /** Counts for every status in the factory, independent of the current filter. */
+  counts: Record<string, number>;
+  total: number;
+  nextCursor: string | null;
+}
+
+export interface WorkItemBoardFilters {
+  statuses?: string[];
+  limit?: number;
+  cursor?: PageCursor | null;
+}
+
+interface BoardRow {
+  [key: string]: unknown;
+  pending_gate: unknown;
+  board_events: unknown;
+}
+
+function boardEventsOf(value: unknown): WorkItemBoardEvent[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((entry) => {
+    const record = (entry ?? {}) as Record<string, unknown>;
+    return {
+      type: typeof record.type === 'string' ? record.type : '',
+      stage: typeof record.stage === 'string' ? record.stage : null,
+      payload:
+        record.payload && typeof record.payload === 'object'
+          ? (record.payload as Record<string, unknown>)
+          : {},
+      createdAt: typeof record.createdAt === 'string' ? record.createdAt : null,
+    };
+  });
+}
+
+function pendingGateOf(value: unknown): GateDecisionRecord | null {
+  if (!value || typeof value !== 'object') return null;
+  const row = value as Record<string, unknown>;
+  return mapGate({
+    work_item_id: typeof row.work_item_id === 'string' ? row.work_item_id : '',
+    stage: typeof row.stage === 'string' ? row.stage : '',
+    attempt: Number(row.attempt ?? 1),
+    gate: typeof row.gate === 'string' ? row.gate : '',
+    workflow_id: typeof row.workflow_id === 'string' ? row.workflow_id : null,
+    decision: null,
+    actor: typeof row.actor === 'string' ? row.actor : null,
+    reason: typeof row.reason === 'string' ? row.reason : null,
+    feedback: typeof row.feedback === 'string' ? row.feedback : null,
+    verdict: row.verdict ?? null,
+    automatic: row.automatic === true,
+    requested_at: row.requested_at ?? null,
+    sla_at: row.sla_at ?? null,
+    decided_at: row.decided_at ?? null,
+  });
+}
+
+/**
+ * One query for the board: work-item summary + newest pending gate + the two event types
+ * that reconstruct run links. No per-card detail request (performance plan, Phase 2).
+ */
+export async function listWorkItemBoardForApi(
+  factory: string,
+  filters: WorkItemBoardFilters = {},
+  viewer: Viewer | null = null,
+): Promise<WorkItemBoardResult> {
+  const sql = getSql();
+  const createdBy = ownerFilter(viewer);
+  const limit = Math.min(Math.max(filters.limit ?? 40, 1), 100);
+  const statuses =
+    filters.statuses && filters.statuses.length > 0 ? filters.statuses : null;
+  const cursor = filters.cursor ?? null;
+
+  const rows = (await sql`
+    select
+      w.*,
+      r.retry_count,
+      r.retried_at,
+      pg.gate as pending_gate,
+      ev.events as board_events
+    from work_items w
+    left join lateral (
+      select count(*)::int as retry_count, max(e.created_at) as retried_at
+      from work_item_events e
+      where e.work_item_id = w.id and e.type = 'work_item.retried'
+    ) r on true
+    left join lateral (
+      select jsonb_build_object(
+        'work_item_id', g.work_item_id,
+        'stage', g.stage,
+        'attempt', g.attempt,
+        'gate', g.gate,
+        'workflow_id', g.workflow_id,
+        'decision', g.decision,
+        'actor', g.actor,
+        'reason', g.reason,
+        'feedback', g.feedback,
+        'verdict', g.verdict,
+        'automatic', g.automatic,
+        'requested_at', g.requested_at,
+        'sla_at', g.sla_at,
+        'decided_at', g.decided_at
+      ) as gate
+      from gate_decisions g
+      where g.work_item_id = w.id and g.decision is null
+      order by g.attempt desc
+      limit 1
+    ) pg on true
+    left join lateral (
+      select jsonb_agg(
+        jsonb_build_object(
+          'type', e.type,
+          'stage', e.stage,
+          'payload', e.payload,
+          'createdAt', e.created_at
+        )
+        order by e.id
+      ) as events
+      from work_item_events e
+      where e.work_item_id = w.id
+        and e.type in ('dispatch.requested', 'review.verdict')
+    ) ev on true
+    where w.factory = ${factory}
+      and (${createdBy}::uuid is null or w.created_by = ${createdBy}::uuid)
+      and (${statuses}::text[] is null or w.status = any(${statuses}::text[]))
+      and (${statuses}::text[] is not null or w.status <> 'cancelled')
+      and (
+        ${cursor?.at ?? null}::timestamptz is null
+        or w.created_at < ${cursor?.at ?? null}::timestamptz
+        or (w.created_at = ${cursor?.at ?? null}::timestamptz and w.id < ${cursor?.id ?? null})
+      )
+    order by w.created_at desc, w.id desc
+    limit ${limit}
+  `) as BoardRow[];
+
+  const countRows = (await sql`
+    select status, count(*)::int as count
+    from work_items
+    where factory = ${factory}
+      and (${createdBy}::uuid is null or created_by = ${createdBy}::uuid)
+    group by status
+  `) as { status: string; count: number | string }[];
+
+  const counts: Record<string, number> = {};
+  for (const row of countRows) counts[row.status] = Number(row.count);
+
+  const workItems: WorkItemBoardCard[] = rows.map((row) => ({
+    ...summarize(mapWorkItem(row as unknown as WorkItemRow)),
+    pendingGate: pendingGateOf(row.pending_gate),
+    events: boardEventsOf(row.board_events),
+  }));
+
+  const last = rows[rows.length - 1];
+  const lastAt = last?.created_at;
+  const nextCursor =
+    rows.length === limit && last
+      ? encodeCursor(
+          lastAt instanceof Date ? lastAt.toISOString() : String(lastAt),
+          String(last.id),
+        )
+      : null;
+
+  return {
+    workItems,
+    counts,
+    total: Object.values(counts).reduce((sum, count) => sum + count, 0),
+    nextCursor,
+  };
 }
 
 export interface WorkItemDetail {

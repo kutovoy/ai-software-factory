@@ -8,166 +8,27 @@ import { SlaCountdown } from '@/components/work-items/SlaCountdown';
 import { safeGet } from '@/lib/api';
 import { shortCommit } from '@/lib/format';
 import { TimeAgo } from '@/components/ui/TimeAgo';
-import type {
-  FactoryListItem,
-  GateDecisionRecord,
-  PermissionRow,
-  RunDetail,
-  RunSummary,
-  WorkItemDetail,
-  WorkItemSummary,
-} from '@/lib/types';
+import type { InboxProjectionWire } from '@/lib/types';
 import { slaState } from '@/lib/work-items';
 
 export const dynamic = 'force-dynamic';
 
-interface InboxItem {
-  kind: 'permission' | 'failure';
-  runId: string;
-  factoryId: string;
-  factory: string;
-  title: string;
-  at: string;
-  commit: string;
-  action?: string;
-  requestId?: string;
-  errorCode?: string;
-  error?: string;
-}
-
-interface InboxGate {
-  workItem: WorkItemSummary;
-  factoryId: string;
-  factoryName: string;
-  gate: GateDecisionRecord;
-}
+const EMPTY_INBOX: InboxProjectionWire = {
+  gates: [],
+  permissions: [],
+  failures: [],
+  counts: { gates: 0, permissions: 0, failures: 0 },
+};
 
 /**
- * Inbox = only what needs *this* user right now. Derived from the read models, so a
- * retried-successful run disappears without any extra state (spec: "auto-resolves"), and a
- * decided gate leaves the inbox the moment the pending row is resolved.
- *
- * Runs and work items live under a factory id (change `add-factory-identity`); the inbox
- * reads the factories the viewer owns and queries each one's nested collections, so every
- * link it renders is a nested id URL.
+ * Inbox = only what needs *this* user right now. It is one batch projection
+ * (`GET /api/v1/inbox`): pending gates, pending permissions and failed runs, owner-scoped
+ * in SQL. The old page made one list call per factory plus a detail call per item (~112
+ * API calls); this one makes one call.
  */
 export default async function InboxPage() {
-  const factories = await safeGet<{ factories: FactoryListItem[] }>('/factories', {
-    factories: [],
-  });
-
-  const perFactory = await Promise.all(
-    factories.factories.map(async (entry) => {
-      const factoryId = entry.id ?? entry.key;
-      const encoded = encodeURIComponent(factoryId);
-      const [runs, workItems] = await Promise.all([
-        safeGet<{ runs: RunSummary[] }>(`/factories/${encoded}/runs?limit=100`, { runs: [] }),
-        safeGet<{ workItems: WorkItemSummary[] }>(`/factories/${encoded}/work-items?limit=100`, {
-          workItems: [],
-        }),
-      ]);
-      return {
-        factoryId,
-        factoryName: entry.alias?.trim() || entry.name,
-        runs: runs.runs,
-        workItems: workItems.workItems,
-      };
-    }),
-  );
-
-  const runs = perFactory.flatMap((entry) =>
-    entry.runs.map((run) => ({ run, factoryId: entry.factoryId })),
-  );
-  const workItems = perFactory.flatMap((entry) =>
-    entry.workItems.map((item) => ({
-      item,
-      factoryId: item.factoryId ?? entry.factoryId,
-      factoryName: entry.factoryName,
-    })),
-  );
-
-  const openRuns = runs
-    .filter(({ run }) => run.status === 'pending' || run.status === 'running')
-    .slice(0, 25);
-  const failedRuns = runs.filter(({ run }) => run.status === 'error').slice(0, 25);
-
-  const candidates = [...openRuns, ...failedRuns];
-  const details = await Promise.all(
-    candidates.map(({ run, factoryId }) =>
-      safeGet<RunDetail | null>(
-        `/factories/${encodeURIComponent(factoryId)}/runs/${encodeURIComponent(run.id)}`,
-        null,
-      ),
-    ),
-  );
-  const detailById = new Map<string, RunDetail | null>();
-  candidates.forEach(({ run }, index) => detailById.set(run.id, details[index] ?? null));
-
-  // Only items that can still hold a pending gate need a detail read.
-  const gateCandidates = workItems.filter(
-    ({ item }) => item.status !== 'done' && item.status !== 'cancelled',
-  );
-  const itemDetails = await Promise.all(
-    gateCandidates.map(({ item, factoryId }) =>
-      safeGet<WorkItemDetail | null>(
-        `/factories/${encodeURIComponent(factoryId)}/work-items/${encodeURIComponent(item.id)}`,
-        null,
-      ),
-    ),
-  );
-
-  const gates: InboxGate[] = [];
-  gateCandidates.forEach(({ item, factoryId, factoryName }, index) => {
-    const detail = itemDetails[index] ?? null;
-    const gate = detail?.pendingGate ?? null;
-    if (gate) gates.push({ workItem: item, factoryId, factoryName, gate });
-  });
-  gates.sort((left, right) => {
-    const a = left.gate.requestedAt ? Date.parse(left.gate.requestedAt) : 0;
-    const b = right.gate.requestedAt ? Date.parse(right.gate.requestedAt) : 0;
-    return b - a;
-  });
-
-  const items: InboxItem[] = [];
-
-  for (const { run, factoryId } of openRuns) {
-    const detail = detailById.get(run.id);
-    if (!detail) continue;
-    for (const permission of detail.pendingPermissions as PermissionRow[]) {
-      items.push({
-        kind: 'permission',
-        runId: run.id,
-        factoryId,
-        factory: run.factory,
-        title: run.title ?? run.id,
-        at: permission.requested_at,
-        commit: run.definitionCommit,
-        action: permission.action,
-        requestId: permission.request_id,
-      });
-    }
-  }
-
-  for (const { run, factoryId } of failedRuns) {
-    const detail = detailById.get(run.id);
-    const error = detail?.run.error ?? null;
-    items.push({
-      kind: 'failure',
-      runId: run.id,
-      factoryId,
-      factory: run.factory,
-      title: run.title ?? run.id,
-      at: run.endedAt ?? run.startedAt,
-      commit: run.definitionCommit,
-      errorCode: error ? (error.split(':')[0]?.trim() || 'run_failed') : 'run_failed',
-      error: error ?? 'the run ended with status error',
-    });
-  }
-
-  items.sort((left, right) => Date.parse(right.at) - Date.parse(left.at));
-
-  const pendingPermissions = items.filter((item) => item.kind === 'permission');
-  const failures = items.filter((item) => item.kind === 'failure');
+  const inbox = await safeGet<InboxProjectionWire>('/inbox', EMPTY_INBOX);
+  const { gates, permissions: pendingPermissions, failures } = inbox;
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 px-6 py-6">
@@ -179,7 +40,7 @@ export default async function InboxPage() {
         </p>
       </header>
 
-      {gates.length === 0 && items.length === 0 ? (
+      {gates.length === 0 && pendingPermissions.length === 0 && failures.length === 0 ? (
         <EmptyState
           testId="inbox-empty"
           title="Nothing needs your attention"
@@ -255,7 +116,7 @@ export default async function InboxPage() {
             )}
           </Card>
 
-          {items.length > 0 ? (
+          {pendingPermissions.length > 0 || failures.length > 0 ? (
             <>
               <Card testId="inbox-permissions">
                 <CardHeader
@@ -279,7 +140,7 @@ export default async function InboxPage() {
                           permission
                         </Badge>
                         <Link
-                          href={`/factories/${encodeURIComponent(item.factoryId)}/runs/${encodeURIComponent(item.runId)}?focus=permission:${encodeURIComponent(item.requestId ?? '')}`}
+                          href={`/factories/${encodeURIComponent(item.factoryId)}/runs/${encodeURIComponent(item.runId)}?focus=permission:${encodeURIComponent(item.requestId)}`}
                           data-testid="inbox-item-link"
                           className="text-sm font-medium text-slate-900 underline decoration-slate-300 underline-offset-2"
                         >
@@ -287,10 +148,10 @@ export default async function InboxPage() {
                         </Link>
                         <span className="font-mono text-xs text-slate-500">{item.action}</span>
                         <span className="font-mono text-[11px] text-slate-400">
-                          {item.factory}@{shortCommit(item.commit)}
+                          {item.factoryName}@{shortCommit(item.commit)}
                         </span>
                         <span className="ml-auto text-xs text-slate-500" data-testid="inbox-item-age">
-                          <TimeAgo value={item.at} />
+                          <TimeAgo value={item.requestedAt} />
                         </span>
                       </li>
                     ))}

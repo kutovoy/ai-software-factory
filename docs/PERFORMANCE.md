@@ -1,7 +1,8 @@
 # Performance Plan — Read-Path Latency
 
-Status: **investigation complete; plan proposed, no fixes applied**
-Measured: 2026-11-03 against the local compose stack (`api`, `worker`, `web`, Postgres, Temporal).
+Status: **implemented (Phases 1–6) and verified**
+Measured: 2026-11-03 (baseline) and 2026-11-04 (after) against the local compose stack
+(`api`, `worker`, `web`, Postgres, Temporal).
 
 ## Why this exists
 
@@ -44,6 +45,31 @@ Direct measurements inside the API container:
 
 Data volume at the time of measurement: 2,937 runs, 674 work items, 88 pending gates, 1,882 pending
 permissions. The SQL is not the bottleneck.
+
+## Measured after implementation
+
+Same compose stack, same data, warm requests (curl, admin session):
+
+| Route | Before | After |
+|---|---:|---:|
+| `/chat` | 0.49–0.89s | **0.008s** |
+| `/inbox` | 6.97–7.20s | **0.019–0.023s** |
+| `/factories/<id>/work-items` | 3.49–4.05s | **0.016s** |
+| `/factories/<id>/dashboard` | 1.33–1.37s | **0.105–0.152s** |
+
+API timings:
+
+| API route | Before | After |
+|---|---:|---:|
+| `GET /factories` | 0.24–0.83s | **0.002s** warm (0.13s on the once-per-TTL sync) |
+| `GET /factories/:id` | 0.22–0.28s | **0.002s** |
+| `GET /factories/:id/work-items?view=board&limit=40` | n/a (43 calls) | **0.004–0.017s** |
+| `GET /factories/:id/runs?limit=100` | 0.90–4.60s | **0.002–0.005s** |
+| `GET /factories/:id/work-items?limit=100` | 0.40–1.37s | **0.002–0.003s** |
+| `GET /inbox?limit=50` | n/a (~112 calls) | **0.006–0.019s** |
+
+`resolveFactory` is now ~1ms (was ~194ms); the full registry sync is ~138ms and runs at most
+once per `FACTORY_REGISTRY_TTL_MS` (default 60s), not per request.
 
 ## Root causes
 
@@ -264,6 +290,34 @@ Acceptance:
 - The page shows a real loading state, not an empty shell that looks like “no work”.
 - The full data still arrives within the p95 target.
 
+## Implementation status
+
+The fix phases (1–6) are implemented; Phase 0's repeatable benchmark is in place, with
+k6/OpenTelemetry left as an optional load/trace layer:
+
+- **Phase 1 — registry read model.** Migration `018_factory_registry_read_model.sql` adds
+  version/resource columns to `factories`. `listFactories` and `resolveFactory` read one
+  indexed row; `syncFactoryRegistry` is single-flight, TTL-bounded and only runs on a stale
+  registry or a miss. `createVersionAsync` uses async `git` and `git diff-index`, and the
+  registry upsert writes the read-model columns.
+- **Phase 2 — batch projections.** `GET /api/v1/inbox` returns pending gates, permissions
+  and failed runs in one owner-scoped projection. `GET /api/v1/factories/:id/work-items?view=board`
+  returns summaries, pending gates, run-link events, status counts and a keyset cursor in
+  one query. The inbox and board pages use these endpoints; no per-card detail calls remain.
+- **Phase 3 — request memoization.** `getFactoryList` and `getFactoryDetail` are wrapped in
+  React `cache()`; the layout, chat and factory pages share one upstream read per render.
+  Definition loading has a short commit-keyed cache. The API stays authoritative and
+  viewer-scoped; no shared cache is used for member-private data.
+- **Phase 4 — session throttle.** `findSessionUser` only writes `last_seen_at` when it is
+  older than five minutes, so a 112-call inbox render no longer performs 112 session writes.
+- **Phase 5 — indexes.** Migration `019_read_path_indexes.sql` adds the composite/partial
+  indexes for factory-scoped run/work-item lists and the pending gate/permission queues.
+- **Phase 6 — streaming.** `loading.tsx` files for `/inbox` and the work-items board render
+  honest skeletons while the batch projection streams.
+- **Repeatable benchmark.** `scripts/perf-read-path.sh` (also `bun run perf:read-path`) signs
+  in, warms the registry and measures the API and console routes against the SLOs above. It is
+  dependency-free; k6/OpenTelemetry can be layered on later for load and trace profiles.
+
 ## Target SLOs
 
 After Phases 1–3:
@@ -293,7 +347,7 @@ event-loop delay and error rate.
 
 ## Verification plan
 
-1. Capture baseline with k6 and OpenTelemetry.
+1. Capture baseline with `scripts/perf-read-path.sh` (and k6/OpenTelemetry for a load profile).
 2. Implement Phase 1 behind a feature flag (`FACTORY_REGISTRY_CACHE`); compare p95 and query counts.
 3. Add Phase 2 endpoints and switch the inbox/board pages; keep the old path as a fallback until
    parity tests pass.

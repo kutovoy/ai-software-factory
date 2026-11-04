@@ -332,6 +332,44 @@ export interface GateDecisionRecord {
   decidedAt: string | null;
 }
 
+/* ------------------------------------------------------------- inbox */
+
+export interface InboxGateWire {
+  workItem: WorkItemSummary;
+  factoryId: string;
+  factoryName: string;
+  gate: GateDecisionRecord;
+}
+
+export interface InboxPermissionWire {
+  runId: string;
+  factoryId: string;
+  factoryName: string;
+  title: string;
+  action: string;
+  requestId: string;
+  requestedAt: string;
+  commit: string;
+}
+
+export interface InboxFailureWire {
+  runId: string;
+  factoryId: string;
+  factoryName: string;
+  title: string;
+  at: string;
+  commit: string;
+  errorCode: string;
+  error: string;
+}
+
+export interface InboxProjectionWire {
+  gates: InboxGateWire[];
+  permissions: InboxPermissionWire[];
+  failures: InboxFailureWire[];
+  counts: { gates: number; permissions: number; failures: number };
+}
+
 /* ------------------------------------------------------- validation contract */
 
 export interface ValidationCheckWire {
@@ -386,6 +424,25 @@ export interface WorkItemDetail {
   workflowId: string;
   /** Validation contract projection; `null` when the item carries no contract. */
   validation: ValidationProjectionWire | null;
+}
+
+export interface WorkItemBoardEventWire {
+  type: string;
+  stage: string | null;
+  payload: Record<string, unknown>;
+  createdAt: string | null;
+}
+
+export interface WorkItemBoardCardWire extends WorkItemSummary {
+  pendingGate: GateDecisionRecord | null;
+  events: WorkItemBoardEventWire[];
+}
+
+export interface WorkItemBoardResponseWire {
+  workItems: WorkItemBoardCardWire[];
+  counts: Record<string, number>;
+  total: number;
+  nextCursor: string | null;
 }
 
 export interface CreatedWorkItem {

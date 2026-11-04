@@ -12,6 +12,12 @@ export interface ApiConfig {
   databaseUrl: string;
   temporalAddress: string;
   factoryRoot: string;
+  /**
+   * How long the derived `factories` registry is trusted before a background-style
+   * re-sync. Reads never re-scan the filesystem inside this window; a miss forces one
+   * sync so a newly committed factory appears without a restart.
+   */
+  factoryRegistryTtlMs: number;
   runsDir: string;
   /** Git root that contains `factoryRoot`; runners clone this at `definitionCommit`. */
   repoRoot: string;
@@ -143,6 +149,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     databaseUrl: env.DATABASE_URL ?? 'postgres://factory:factory@localhost:5432/factory',
     temporalAddress: env.TEMPORAL_ADDRESS ?? 'localhost:7233',
     factoryRoot,
+    factoryRegistryTtlMs: intFromEnv(env.FACTORY_REGISTRY_TTL_MS, 60_000),
     repoRoot: resolve(env.REPO_ROOT ?? join(factoryRoot, '..')),
     runsDir: resolve(env.RUNS_DIR ?? 'runs'),
     proxyPublicUrl: env.PROXY_PUBLIC_URL ?? 'http://host.docker.internal:8080/v1',

@@ -2,8 +2,7 @@ import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { NewChat } from '@/components/chat/NewChat';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { safeGet } from '@/lib/api';
-import type { FactoryDetail, FactoryListItem } from '@/lib/types';
+import { getFactoryDetail, getFactoryList } from '@/lib/factories';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,10 +13,7 @@ export const dynamic = 'force-dynamic';
  * parameter (change `add-factory-identity`).
  */
 export default async function ChatPage() {
-  const [list, cookieStore] = await Promise.all([
-    safeGet<{ factories: FactoryListItem[] }>('/factories', { factories: [] }),
-    cookies(),
-  ]);
+  const [list, cookieStore] = await Promise.all([getFactoryList(), cookies()]);
 
   const known = new Set(list.factories.map((entry) => entry.id ?? entry.key));
   let persisted: string | null = null;
@@ -54,10 +50,7 @@ export default async function ChatPage() {
     );
   }
 
-  const detail = await safeGet<{ factory: FactoryDetail } | null>(
-    `/factories/${encodeURIComponent(selected)}`,
-    null,
-  );
+  const detail = await getFactoryDetail(selected);
 
   const manifest = detail?.factory.manifest;
   const factoryName = detail?.factory.name ?? selected;

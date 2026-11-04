@@ -55,6 +55,8 @@ import {
   listFactories,
   resolveFactory,
 } from './factories';
+import { getInboxForApi } from './inbox';
+import { decodeCursor } from './cursor';
 import {
   authorityChangeBodySchema,
   canaryPruneBodySchema,
@@ -162,6 +164,7 @@ import {
   getAutonomyForApi,
   gateDecisionBodySchema,
   getWorkItemDetail,
+  listWorkItemBoardForApi,
   listWorkItemsForApi,
   retryWorkItemBodySchema,
   retryWorkItemForApi,
@@ -338,6 +341,20 @@ export function createApp(config: ApiConfig): Hono {
   );
 
   /**
+   * Batch inbox projection (performance plan, Phase 2): pending gates, pending permissions
+   * and failed runs in one response, owner-scoped in SQL. Replaces the per-factory list +
+   * per-item detail fan-out the console used to perform.
+   */
+  api.get('/inbox', async (c) => {
+    const limit = Number(c.req.query('limit') ?? '50');
+    return c.json(
+      await getInboxForApi(viewerOf(config, c.get('user')), {
+        limit: Number.isFinite(limit) ? limit : 50,
+      }),
+    );
+  });
+
+  /**
    * Every factory-scoped route resolves the factory **by its opaque id** before doing
    * anything else (change `add-factory-identity`, spec `factory-identity`). A member only
    * resolves factories they own; a missing or foreign id is `404 factory_not_found`, never
@@ -347,9 +364,10 @@ export function createApp(config: ApiConfig): Hono {
   const factoryOf = (c: Context<{ Variables: AuthVariables }>) =>
     resolveFactory(config, c.req.param('factoryId') ?? '', viewerOf(config, c.get('user')));
 
-  api.get('/factories/:factoryId', async (c) =>
-    c.json({ factory: getFactory(config, (await factoryOf(c)).key) }),
-  );
+  api.get('/factories/:factoryId', async (c) => {
+    const record = await factoryOf(c);
+    return c.json({ factory: getFactory(config, record.key, record.version) });
+  });
 
   /**
    * Purge (change `fix-factory-purge`, spec `factory-purge`): remove every factory-scoped
@@ -882,6 +900,28 @@ export function createApp(config: ApiConfig): Hono {
     const limit = Number(c.req.query('limit') ?? '50');
     const offset = Number(c.req.query('offset') ?? '0');
     const record = await factoryOf(c);
+    const viewer = viewerOf(config, c.get('user'));
+
+    // `view=board` is the batch projection: summary + pending gate + run-link events in one
+    // query, with server-side status filtering and cursor pagination.
+    if (c.req.query('view') === 'board') {
+      const statuses = (c.req.query('status') ?? '')
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
+      return c.json(
+        await listWorkItemBoardForApi(
+          record.key,
+          {
+            ...(statuses.length > 0 ? { statuses } : {}),
+            limit: Number.isFinite(limit) ? limit : 40,
+            cursor: decodeCursor(c.req.query('cursor')),
+          },
+          viewer,
+        ),
+      );
+    }
+
     const workItems = await listWorkItemsForApi(
       {
         factory: record.key,
@@ -890,7 +930,7 @@ export function createApp(config: ApiConfig): Hono {
         limit: Number.isFinite(limit) ? limit : 50,
         offset: Number.isFinite(offset) ? offset : 0,
       },
-      viewerOf(config, c.get('user')),
+      viewer,
     );
     return c.json({ workItems });
   });

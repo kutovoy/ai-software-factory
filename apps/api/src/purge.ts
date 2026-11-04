@@ -10,7 +10,7 @@ import {
   workItemWorkflowId,
 } from '@factory/orchestration';
 import { automationSpecsFromDefinition } from './automations';
-import type { FactoryRecord } from './factories';
+import { resolveFactoryDir, type FactoryRecord } from './factories';
 import type { ApiConfig } from './config';
 import { toOrchestrationConfig } from './config';
 import { ApiError } from './errors';
@@ -319,7 +319,7 @@ export async function purgeFactoryForApi(
   // The git-backed definition is authoritative for automation names; the DB rows above are
   // its projection. An invalid definition must not block the purge.
   try {
-    for (const spec of automationSpecsFromDefinition(record.dir, key)) {
+    for (const spec of automationSpecsFromDefinition(resolveFactoryDir(config, key), key)) {
       scheduleIds.add(temporalScheduleIdFor(key, spec.name));
     }
   } catch {

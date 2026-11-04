@@ -100,15 +100,27 @@ Next candidates: trace-driven self-improvement, classifier-based model routing +
 Sentry/PostHog/Slack/Linear, progressive context/MCP discovery, governance/autonomy levels, surface-agnostic
 agent, and long-running missions. Phase 6c infrastructure work remains blocked on external IdP/infra decisions.
 
-### Read-path performance investigation (2026-11-03)
+### Read-path performance (implemented 2026-11-04)
 
-`/chat` and `/inbox` were reported at 4s+. Measured on the compose stack: `/inbox` ~7s,
-`/work-items` ~3.5–4s, `/chat` 0.5–0.9s. SQL plans are 0.1–1ms; the cost is repeated full
-factory-registry syncs (~253ms per sync, ~194ms per `resolveFactory`) and N+1 detail reads
-(~112 API calls for `/inbox`, 43 for `/work-items`), amplified by `execFileSync` git calls
-blocking the API event loop. No fixes have been applied. The grounded, phased plan (registry
-read model, batch inbox/board projections, React/Next caching, session touch throttling,
-indexes, streaming, k6/OTel verification) is in `docs/PERFORMANCE.md`.
+`/chat` and `/inbox` were reported at 4s+. The baseline showed `/inbox` ~7s, `/work-items`
+~3.5–4s and `/chat` 0.5–0.9s, with SQL plans at 0.1–1ms. The cost was repeated full registry
+syncs (~253ms, ~194ms per `resolveFactory`), N+1 detail reads (~112 API calls for `/inbox`,
+43 for `/work-items`) and synchronous git blocking the API event loop.
+
+Implemented the grounded plan in `docs/PERFORMANCE.md`:
+
+- `factories` registry read model (migration 018) + TTL/single-flight sync; `/factories` and
+  `resolveFactory` are one indexed query (~2ms and ~1ms warm).
+- Async git versioning (`createVersionAsync`, `git diff-index`) and commit-keyed definition cache.
+- Batch `GET /api/v1/inbox` and `view=board` work-item projection; inbox/board pages make one
+  API call each, with cursor pagination.
+- React `cache()` for layout/page factory reads; session `last_seen_at` throttled to five minutes.
+- Read-path indexes (migration 019) and honest `loading.tsx` skeletons.
+
+Measured after (same data): `/inbox` 0.019–0.023s, `/work-items` 0.016s, `/chat` 0.008s,
+`/dashboard` 0.105–0.152s; `/factories` 0.002s warm. `bun run ci` 620 pass / 172 integration
+skipped; Playwright 61/61; inbox and auth-scope integration suites pass. `bun run perf:read-path`
+re-measures the SLOs over warm rounds.
 
 ### Graphite Command shell (2026-11-03)
 

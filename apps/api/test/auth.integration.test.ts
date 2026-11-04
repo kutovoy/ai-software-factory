@@ -481,6 +481,52 @@ suite('console auth API', () => {
     expect(adminItems.map((item) => item.id)).toContain(mineId);
     expect(adminItems.map((item) => item.id)).toContain(theirsId);
 
+    // Batch projections apply the same owner scope in SQL: the member's inbox and board
+    // contain only their pending gate/card; the admin sees both.
+    await sql`
+      insert into gate_decisions (work_item_id, stage, attempt, gate, requested_at)
+      values (${mineId}, 'spec', 1, 'human', now()), (${theirsId}, 'spec', 1, 'human', now())
+      on conflict (work_item_id, stage, attempt) do nothing
+    `;
+    const memberInbox = await req(app, '/inbox?limit=100', { headers: memberHeaders });
+    expect(memberInbox.status).toBe(200);
+    const memberGates = ((await memberInbox.json()) as {
+      gates: Array<{ workItem: { id: string } }>;
+    }).gates;
+    expect(memberGates.map((entry) => entry.workItem.id)).toContain(mineId);
+    expect(memberGates.map((entry) => entry.workItem.id)).not.toContain(theirsId);
+
+    const adminInbox = await req(app, '/inbox?limit=100', { headers: adminHeaders });
+    expect(adminInbox.status).toBe(200);
+    const adminGates = ((await adminInbox.json()) as {
+      gates: Array<{ workItem: { id: string } }>;
+    }).gates;
+    expect(adminGates.map((entry) => entry.workItem.id)).toContain(mineId);
+    expect(adminGates.map((entry) => entry.workItem.id)).toContain(theirsId);
+
+    const memberBoard = await req(
+      app,
+      `/factories/${memberFactoryId}/work-items?view=board&limit=100`,
+      { headers: memberHeaders },
+    );
+    expect(memberBoard.status).toBe(200);
+    const memberCards = ((await memberBoard.json()) as {
+      workItems: Array<{ id: string; pendingGate: unknown }>;
+    }).workItems;
+    expect(memberCards.map((card) => card.id)).toContain(mineId);
+    expect(memberCards.map((card) => card.id)).not.toContain(theirsId);
+    expect(memberCards.find((card) => card.id === mineId)?.pendingGate).not.toBeNull();
+
+    const adminBoard = await req(
+      app,
+      `/factories/${memberFactoryId}/work-items?view=board&limit=100`,
+      { headers: adminHeaders },
+    );
+    expect(adminBoard.status).toBe(200);
+    const adminCards = ((await adminBoard.json()) as { workItems: Array<{ id: string }> }).workItems;
+    expect(adminCards.map((card) => card.id)).toContain(mineId);
+    expect(adminCards.map((card) => card.id)).toContain(theirsId);
+
     // Factory scope: the member list contains only the factory they own, and the
     // admin-owned legacy factory is a 404 (existence is not leaked, never 403).
     const memberFactories = await req(app, '/factories', { headers: memberHeaders });

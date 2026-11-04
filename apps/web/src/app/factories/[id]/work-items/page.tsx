@@ -5,20 +5,18 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { CancelWorkItemButton } from '@/components/work-items/CancelWorkItemButton';
 import { CreateWorkItemForm } from '@/components/work-items/CreateWorkItemForm';
 import { SlaCountdown } from '@/components/work-items/SlaCountdown';
-import { getOrError, safeGet } from '@/lib/api';
+import { getOrError } from '@/lib/api';
 import { factoryNameOf, loadFactory } from '@/lib/factory-page';
 import { shortCommit, statusTone } from '@/lib/format';
 import { TimeAgo } from '@/components/ui/TimeAgo';
-import type { WorkItemDetail, WorkItemSummary } from '@/lib/types';
+import type { WorkItemBoardResponseWire } from '@/lib/types';
 import { WORK_ITEM_STAGES } from '@/lib/types';
 import { runsForWorkItem } from '@/lib/work-items';
 
 export const dynamic = 'force-dynamic';
 
-/** The board shows the newest 40 visible items; details (runs, pending gate) are per card. */
+/** The board shows the newest 40 visible items; the API resolves pending gates and run events. */
 const BOARD_LIMIT = 40;
-/** The list is fetched wider than the board so the status filter can drop cancelled items. */
-const FETCH_LIMIT = 100;
 
 /** Status chips (`web-console` spec: "Work-item board filters"). */
 const STATUS_FILTERS = ['active', 'escalated', 'done', 'failed', 'cancelled'] as const;
@@ -69,44 +67,28 @@ export default async function WorkItemsPage({
   const encoded = encodeURIComponent(factoryId);
   const basePath = `/factories/${encoded}/work-items`;
 
-  const [factory, list] = await Promise.all([
+  const statusQuery = status ? `&status=${encodeURIComponent(status)}` : '';
+  const [factory, board] = await Promise.all([
     loadFactory(factoryId),
-    getOrError<{ workItems: WorkItemSummary[] }>(
-      `/factories/${encoded}/work-items?limit=${FETCH_LIMIT}`,
+    getOrError<WorkItemBoardResponseWire>(
+      `/factories/${encoded}/work-items?view=board&limit=${BOARD_LIMIT}${statusQuery}`,
     ),
   ]);
   const factoryName = factoryNameOf(factory, factoryId);
 
-  const fetched = list.data?.workItems ?? [];
+  const visible = board.data?.workItems ?? [];
+  const countsByStatus = board.data?.counts ?? {};
+  const total = board.data?.total ?? visible.length;
 
   // `status` is the explicit chip selection; absent means "everything except cancelled".
   const selected = parseStatuses(status);
-  const isVisible = (item: WorkItemSummary): boolean =>
-    selected ? selected.has(item.status) : item.status !== 'cancelled';
-  const visible = fetched.filter(isVisible).slice(0, BOARD_LIMIT);
 
-  const details = await Promise.all(
-    visible.map((item) =>
-      safeGet<WorkItemDetail | null>(
-        `/factories/${encoded}/work-items/${encodeURIComponent(item.id)}`,
-        null,
-      ),
-    ),
-  );
-
-  const cards = visible.map((item, index) => {
-    const detail = details[index] ?? null;
-    const events = detail?.events ?? [];
-    return {
-      item,
-      pendingGate: detail?.pendingGate ?? null,
-      runs: runsForWorkItem(item.id, events),
-      prUrl: item.prUrl,
-    };
-  });
-
-  const countsByStatus: Record<string, number> = {};
-  for (const item of fetched) countsByStatus[item.status] = (countsByStatus[item.status] ?? 0) + 1;
+  const cards = visible.map((item) => ({
+    item,
+    pendingGate: item.pendingGate ?? null,
+    runs: runsForWorkItem(item.id, item.events),
+    prUrl: item.prUrl,
+  }));
 
   const byStage = new Map<string, typeof cards>();
   for (const card of cards) {
@@ -129,7 +111,7 @@ export default async function WorkItemsPage({
           </p>
         </div>
         <Badge tone="neutral" testId="work-items-count">
-          {visible.length} of {fetched.length} item{fetched.length === 1 ? '' : 's'}
+          {visible.length} of {total} item{total === 1 ? '' : 's'}
         </Badge>
       </header>
 
@@ -189,13 +171,13 @@ export default async function WorkItemsPage({
         })}
       </nav>
 
-      {list.error ? (
+      {board.error ? (
         <EmptyState
           testId="work-items-unavailable"
           title="Work items are unavailable"
-          description={`The API could not be read (${list.error.code}). The board is a projection — it never invents items.`}
+          description={`The API could not be read (${board.error.code}). The board is a projection — it never invents items.`}
         />
-      ) : fetched.length === 0 ? (
+      ) : total === 0 ? (
         <EmptyState
           testId="work-items-empty"
           title="No work items yet"
@@ -205,7 +187,7 @@ export default async function WorkItemsPage({
         <EmptyState
           testId="work-items-filter-empty"
           title="No items match these filters"
-          description={`${fetched.length} item(s) exist, but none has a selected status for ${factoryName}. Widen the status chips.`}
+          description={`${total} item(s) exist, but none has a selected status for ${factoryName}. Widen the status chips.`}
           action={
             <Link
               href={statusesHref(basePath, STATUS_FILTERS)}

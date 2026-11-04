@@ -1,7 +1,9 @@
+import { cache } from 'react';
 import { notFound } from 'next/navigation';
 import { cookies } from 'next/headers';
-import { getOrError, safeGet } from './api';
-import type { FactoryDetail, FactoryListItem } from './types';
+import { getOrError } from './api';
+import { getFactoryList } from './factories';
+import type { FactoryDetail } from './types';
 
 /**
  * Resolve the factory behind a `/factories/:id/*` page (change `add-factory-identity`,
@@ -12,11 +14,11 @@ import type { FactoryDetail, FactoryListItem } from './types';
  * instead of an empty shell. Any other failure (API down, degraded mode) returns `null`
  * and the page keeps its "unavailable" copy.
  */
-export async function loadFactory(id: string): Promise<FactoryDetail | null> {
+export const loadFactory = cache(async (id: string): Promise<FactoryDetail | null> => {
   const result = await getOrError<{ factory: FactoryDetail }>(`/factories/${encodeURIComponent(id)}`);
   if (result.error?.status === 404) notFound();
   return result.data?.factory ?? null;
-}
+});
 
 /** The human label for a factory page: the definition key, or the id while it loads. */
 export function factoryNameOf(detail: FactoryDetail | null, id: string): string {
@@ -29,10 +31,7 @@ export function factoryNameOf(detail: FactoryDetail | null, id: string): string 
  * rewrite that prefix to a real `fac_<ulid>` id so a "open the page" link is never dead.
  */
 export async function helpFactoryId(): Promise<string | null> {
-  const [list, cookieStore] = await Promise.all([
-    safeGet<{ factories: FactoryListItem[] }>('/factories', { factories: [] }),
-    cookies(),
-  ]);
+  const [list, cookieStore] = await Promise.all([getFactoryList(), cookies()]);
   const known = new Set(list.factories.map((entry) => entry.id ?? entry.key));
   let persisted: string | null = null;
   try {

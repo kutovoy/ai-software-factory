@@ -434,6 +434,51 @@
         }
       }
     },
+    "/api/v1/inbox": {
+      "get": {
+        "tags": [
+          "inbox"
+        ],
+        "summary": "Batch inbox projection",
+        "description": "Pending stage gates, pending permission requests and failed runs for the viewer, resolved in one batch instead of one list call per factory plus a detail call per item. Owner-scoped: members see only rows they own; admins see all.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "description": "Maximum rows per category (default 50)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error — unexpected server failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/factories": {
       "get": {
         "tags": [
@@ -2826,7 +2871,26 @@
             "schema": {
               "type": "integer"
             },
-            "description": "Page offset (default 0)."
+            "description": "Page offset (default 0). Ignored when `view=board`; use `cursor`."
+          },
+          {
+            "name": "view",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["board"]
+            },
+            "description": "`board` returns the batch projection: summary, newest pending gate, run-link events, status counts and a keyset cursor."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque keyset cursor from the previous `view=board` response."
           }
         ],
         "responses": {
@@ -2862,7 +2926,7 @@
             }
           }
         },
-        "description": "Members only see work items they created (`created_by`); admins see all. Rows written before auth have no owner and are admin-only. Auth off keeps the old behaviour (everything is returned)."
+        "description": "Members only see work items they created (`created_by`); admins see all. Rows written before auth have no owner and are admin-only. Auth off keeps the old behaviour (everything is returned). With `view=board`, `status` accepts a comma-separated list and the default excludes cancelled items."
       },
       "post": {
         "tags": [

@@ -105,7 +105,10 @@ export interface WorkItemRunRef {
 }
 
 /** Reconstructs the run ids the loop used for this item (deterministic `stageRunId`). */
-export function runsForWorkItem(workItemId: string, events: WorkItemEvent[]): WorkItemRunRef[] {
+export function runsForWorkItem(
+  workItemId: string,
+  events: Pick<WorkItemEvent, 'type' | 'stage' | 'payload' | 'createdAt'>[],
+): WorkItemRunRef[] {
   const suffix = workItemId.replace(/^wi_/, '');
   const seen = new Set<string>();
   const runs: WorkItemRunRef[] = [];

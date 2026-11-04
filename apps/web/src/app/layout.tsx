@@ -9,8 +9,9 @@ import 'swagger-ui-react/swagger-ui.css';
 import { ContextHelp } from '@/components/help/ContextHelp';
 import { Sidebar } from '@/components/nav/Sidebar';
 import { safeGet } from '@/lib/api';
+import { getFactoryList } from '@/lib/factories';
 import { authRequired, isPublicPage } from '@/lib/auth';
-import type { FactoryListItem, UserWire } from '@/lib/types';
+import type { UserWire } from '@/lib/types';
 
 export const metadata: Metadata = {
   title: 'Software Factory',
@@ -47,10 +48,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     );
   }
 
-  const [factories, cookieStore] = await Promise.all([
-    safeGet<{ factories: FactoryListItem[] }>('/factories', { factories: [] }),
-    cookies(),
-  ]);
+  const [factories, cookieStore] = await Promise.all([getFactoryList(), cookies()]);
 
   /**
    * Selected-factory persistence (`web-console` spec: "Stable factory selection"). The
