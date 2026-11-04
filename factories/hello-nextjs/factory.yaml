@@ -13,7 +13,7 @@ gates:
   pr_review: agent
   review: agent
   spec: agent
-id: fac_01M6D9K2B9F5AZZ3BMRQKJ1E5C
+id: fac_01M6JY2CYMH2DNSPGXWF2SFAFH
 mergePolicy: auto_on_green
 name: hello-nextjs
 repositories:
