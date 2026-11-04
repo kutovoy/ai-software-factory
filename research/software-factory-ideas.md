@@ -2,8 +2,9 @@
 
 Captured 2026-11-03. Companion to `research/talks.md` and `research/ecosystem.md`.
 
-This is a **proposed** roadmap. Nothing below is implemented yet. The goal is to move the product from
-"agents can build features" to **"the factory is measurable, verifiable and self-tuning."**
+This is the roadmap recorded from the research review. **Items 1–5 are implemented on
+`feat/factory-engineering-foundation` (2026-11-03)**; items 6–12 remain proposed. The goal is to move the
+product from "agents can build features" to **"the factory is measurable, verifiable and self-tuning."**
 
 ## Thesis
 
@@ -55,35 +56,35 @@ review. They are research artifacts, not committed product assets.
 
 ## Roadmap
 
-### Now — 0 to 4 weeks (highest leverage)
+### Now — implemented (2026-11-03)
 
-**Goal:** make autonomy trustworthy before widening it.
+**Goal:** make autonomy trustworthy before widening it. **Status: implemented on
+`feat/factory-engineering-foundation`.**
 
-1. **Validation Contract + QA pyramid**
-   - Spec stage emits `validation-contract.yaml` (acceptance checks, test tiers, commands, evidence, risks).
-   - Work-item detail shows the contract; QA must attach evidence per check; review verifies it.
-   - QA requires unit/component/integration/E2E where applicable; Playwright remains the browser tier.
-   - Acceptance: a verify gate cannot approve without evidence for every contract check; a review gate cannot
-     approve if the contract is missing or unverified.
+1. **Validation Contract + QA pyramid — DONE**
+   - The contract is persisted in the work item (not a separate YAML file): acceptance checks, tiers, commands,
+     evidence and enforcement.
+   - The work-item page shows the contract; QA reports fenced-JSON evidence; forge checks are a second source.
+   - QA covers unit/component/integration/e2e/manual; Playwright remains the browser tier.
+   - An enforced verify gate refuses approval with `validation_incomplete` while required evidence is missing.
 
-2. **Agent Readiness**
-   - Add a readiness projection/scorer: style, build, testing, docs, dev env, observability, security, task discovery.
-   - Surface on factory/dashboard; warn at factory creation and before autonomy enablement.
-   - Acceptance: readiness score is visible, deterministic, and can block/annotate autonomy.
+2. **Agent Readiness — DONE**
+   - Deterministic 0–100 score for the checkout and the definition: style, build, tests, typecheck, docs, dev
+     env, observability, security, task discovery, QA agent, reviewers, gates, scorers, secrets and MCP.
+   - Readiness page + dashboard card; advisory by default, `readiness.enforceAutonomy` can block autonomy.
 
-3. **Outcome metrics**
-   - Add human interactions per PR, autonomy ratio, signal→production cycle time, code shelf life, incident MTT,
-     cost per PR and cost per accepted change.
-   - Acceptance: dashboard cards have definitions, sample size and time window; data comes from runs/events/scores.
+3. **Outcome metrics — DONE**
+   - Added human interactions per PR, autonomy ratio, cost per accepted change, signal-to-production cycle time,
+     incident MTT and merged-code age (age proxy), in addition to the existing keys.
+   - Every card carries its definition, sample size and window; missing data is null + reason.
 
-4. **Deterministic guard hooks**
-   - Add a hook framework around runner/adapter: secret scan, protected push, delete-outside-workspace,
-     worktree cleanup, skill evals, README/docs sync.
-   - Acceptance: hooks are testable, fail closed, and record evidence in the event log.
+4. **Deterministic guard hooks — DONE**
+   - Pure, fail-closed checks before the PR commit: protected branch, path containment, narrow secret patterns,
+     changed-file/patch-byte/binary limits.
+   - `guard.checked` / `guard.failed` events and `GET /guard-hooks`; no arbitrary shell hooks.
 
-5. **Factory Stack page** *(quick win)*
-   - Add a Help/console page explaining the 00–06 stack and where our components sit.
-   - Acceptance: every stack layer links to the relevant help entry.
+5. **Factory Stack page — DONE**
+   - `concepts/factory-stack` explains the 00–06 layers and links dashboard, readiness and definitions help.
 
 ### Next — 1 to 3 months
 

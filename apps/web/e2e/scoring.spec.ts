@@ -211,7 +211,7 @@ test.describe('Scoring and measurement', () => {
     await expect(page.getByTestId('metrics-benchmark-gate')).toContainText(/satisfied|blocked|not required/);
 
     const cards = page.getByTestId('metric-card');
-    await expect(cards).toHaveCount(7);
+    await expect(cards).toHaveCount(13);
     for (const card of await cards.all()) {
       await expect(card.getByTestId('metric-definition')).not.toBeEmpty();
       const value = card.getByTestId('metric-value');

@@ -146,6 +146,113 @@ describe('factory metrics', () => {
     expect(metric(result, 'defectRate').sampleSize).toBe(2);
   });
 
+  test('computes human interactions, autonomy, accepted-change cost, cycle time and code age', () => {
+    const result = buildFactoryMetrics(
+      input({
+        workItems: [
+          {
+            id: 'wi_A',
+            type: 'task',
+            status: 'done',
+            createdAt: '2026-10-02T00:00:00Z',
+            doneAt: '2026-10-04T00:00:00Z',
+            prUrl: 'https://forge/acme/api/pull/1',
+            prNumber: 1,
+            source: 'forge',
+          },
+          {
+            id: 'wi_B',
+            type: 'task',
+            status: 'done',
+            createdAt: '2026-10-06T00:00:00Z',
+            doneAt: '2026-10-07T00:00:00Z',
+            prUrl: 'https://forge/acme/api/pull/2',
+            prNumber: 2,
+            source: 'manual',
+          },
+          {
+            id: 'wi_I',
+            type: 'incident',
+            status: 'done',
+            createdAt: '2026-10-05T00:00:00Z',
+            doneAt: '2026-10-05T10:00:00Z',
+            prUrl: null,
+            prNumber: null,
+            source: 'slack',
+          },
+        ],
+        gates: [
+          {
+            workItemId: 'wi_A',
+            gate: 'review',
+            automatic: false,
+            requestedAt: '2026-10-02T12:00:00Z',
+            decidedAt: '2026-10-03T00:00:00Z',
+          },
+        ],
+        permissions: [
+          { runId: 'run_x_implement_1', workItemId: 'wi_A', decidedAt: '2026-10-03T01:00:00Z' },
+        ],
+        runs: [
+          {
+            id: 'run_x_implement_1',
+            startedAt: '2026-10-02T01:00:00Z',
+            costUsd: 0.5,
+            stage: 'implement',
+            workItemId: 'wi_A',
+          },
+          {
+            id: 'run_x_review_1',
+            startedAt: '2026-10-06T01:00:00Z',
+            costUsd: 0.25,
+            stage: 'review',
+            workItemId: 'wi_B',
+          },
+        ],
+      }),
+    );
+
+    // 1 human gate + 1 permission over 2 PRs.
+    expect(metric(result, 'humanInteractionsPerPr').value).toBe(1);
+    expect(metric(result, 'humanInteractionsPerPr').sampleSize).toBe(2);
+    // wi_A was touched by a human; wi_B was not.
+    expect(metric(result, 'autonomyRatio').value).toBe(50);
+    expect(metric(result, 'autonomyRatio').sampleSize).toBe(2);
+    expect(metric(result, 'costPerAcceptedChange').value).toBe(0.375);
+    expect(metric(result, 'costPerAcceptedChange').sampleSize).toBe(2);
+    // Only the forge-sourced done PR counts; manual wi_B is excluded.
+    expect(metric(result, 'signalToProductionCycleTime').value).toBe(48);
+    expect(metric(result, 'signalToProductionCycleTime').sampleSize).toBe(1);
+    expect(metric(result, 'incidentMttHours').value).toBe(10);
+    expect(metric(result, 'incidentMttHours').sampleSize).toBe(1);
+    // wi_A: 25 days to window end, wi_B: 22 days.
+    expect(metric(result, 'mergedCodeAgeDays').value).toBe(23.5);
+    expect(metric(result, 'mergedCodeAgeDays').sampleSize).toBe(2);
+  });
+
+  test('signal-to-production stays null when only manual PRs completed', () => {
+    const result = buildFactoryMetrics(
+      input({
+        workItems: [
+          {
+            id: 'wi_M',
+            type: 'task',
+            status: 'done',
+            createdAt: '2026-10-02T00:00:00Z',
+            doneAt: '2026-10-04T00:00:00Z',
+            prUrl: 'https://forge/acme/api/pull/9',
+            prNumber: 9,
+            source: 'manual',
+          },
+        ],
+      }),
+    );
+    const card = metric(result, 'signalToProductionCycleTime');
+    expect(card.value).toBeNull();
+    expect(card.sampleSize).toBe(0);
+    expect(card.reason).toContain('non-manual');
+  });
+
   test('missing data is null with a reason, never a fabricated zero', () => {
     const result = buildFactoryMetrics(input());
     for (const key of [
@@ -156,6 +263,12 @@ describe('factory metrics', () => {
       'touchpointsPerPr',
       'automationPercent',
       'defectRate',
+      'humanInteractionsPerPr',
+      'autonomyRatio',
+      'costPerAcceptedChange',
+      'signalToProductionCycleTime',
+      'incidentMttHours',
+      'mergedCodeAgeDays',
     ]) {
       const card = metric(result, key);
       expect(card.value).toBeNull();

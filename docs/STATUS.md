@@ -22,9 +22,11 @@ unauthorized IDs return 404. The delete path is a verified hard purge: DB rows, 
 running workflows and run directories, with git history and forge repos kept.
 
 Next: **Phase 6c** — external OIDC/IdP (group→org mappings), remote runners, Temporal Cloud and
-multi-tenant isolation. Also pending: the live GitHub path. The proposed **factory-engineering roadmap**
-(validation contract, agent readiness, outcome metrics, guard hooks, then self-improvement/routing/intake)
-is recorded in `research/software-factory-ideas.md`; it is not approved for execution yet.
+multi-tenant isolation. Also pending: the live GitHub path. The first factory-engineering sprint is
+implemented on `feat/factory-engineering-foundation`: validation contract + QA pyramid, agent readiness,
+outcome metrics, guard hooks and the Factory Stack help page. The remaining roadmap (trace-driven
+self-improvement, routing, intake, context, governance, surfaces, missions) is in
+`research/software-factory-ideas.md`.
 
 ### Readiness and public-release prep (2026-11-01)
 
@@ -54,8 +56,9 @@ Latest tags: `harden-runtime`, `secrets-mcp`, `api-v1-help`, `help-center`, `liv
 `api-explorer-parity`, `fix-ui-audit`, `fix-run-failures`, `run-actions`, `readiness-hello-nextjs`, `console-ops`,
 `forgejo`, `agent-verdicts`, `console-auth`, `harden-runners`, `forge-ssh-public`, `readiness-qa`,
 `factory-identity`, `factory-purge`, `readiness-identity`, `unify-factory-api`, `fix-forge-pr-files`,
-`readiness-forge-files`, `graphite-command`, `add-run-retry`, `train-game-factory`, `train-game-run`. `bun run ci`
-746 pass; smoke passes; Playwright 57; UI audit clean.
+`readiness-forge-files`, `graphite-command`, `add-run-retry`, `train-game-factory`, `train-game-run`,
+`factory-engineering-foundation`. `bun run ci` 618 pass (168 integration tests skipped without compose);
+smoke passes; Playwright 61; UI audit clean.
 
 ### Train game lights-off factory (2026-11-03)
 
@@ -73,25 +76,25 @@ React + Three.js browser game:
 - The first triage attempt failed because Docker could not resolve `ai-utility`; the work item was retried after
   pointing API/worker at the reachable Tailscale IP, then completed on attempt 2.
 
-### Factory engineering roadmap (proposed 2026-11-03)
+### Factory engineering foundation (implemented 2026-11-03)
 
 Research review of five AI-conference talks (Boundary, Eric Tech, Zach Lloyd, Tereza Tížková, Eno Reyes)
-produced a proposed roadmap in `research/software-factory-ideas.md`. It is recorded but **not approved for
-execution** yet.
+produced the roadmap in `research/software-factory-ideas.md`. The first sprint is implemented on
+`feat/factory-engineering-foundation`:
 
-The thesis: the next gain is not more agents; it is making the factory measurable, verifiable and
-self-tuning. First-sprint candidates:
-
-1. **Validation contract + QA pyramid** — spec emits a machine-checkable contract; QA attaches evidence;
-   review verifies it; unit/component/integration/E2E tiers, not Playwright only.
-2. **Agent readiness** — deterministic score for tests, linters, typecheck, docs, dev env, observability,
-   security and task discovery; warn/block before autonomy.
-3. **Outcome metrics** — human interactions per PR, autonomy ratio, signal→production cycle time, code shelf
-   life, incident MTT, cost per PR / accepted change.
-4. **Deterministic guard hooks** — secret scan, protected push, delete-outside-workspace, worktree cleanup,
-   skill evals, README/docs sync.
-5. **Factory Stack page** — explain the 00–06 stack (factories-as-code → data/context → compute → inference
-   → improvement → orchestration → access) in Help.
+1. **Validation contract + QA pyramid** — a persisted contract with unit/component/integration/e2e/manual
+   checks; QA evidence and forge checks project to pass/fail/missing; enforced verify gates refuse approval
+   with `validation_incomplete`. The train-game factory opts in with explicit build/e2e/acceptance checks.
+2. **Agent readiness** — deterministic repository + factory score (0–100, ready/warn/not_ready), evidence
+   and remediation per check; advisory by default, `readiness.enforceAutonomy` can block autonomy with an
+   explicit override path.
+3. **Outcome metrics** — human interactions per PR, autonomy ratio, cost per accepted change,
+   signal-to-production cycle time, incident MTT and merged-code age, all additive to the existing keys.
+4. **Deterministic guard hooks** — pure, fail-closed checks before a PR commit: protected branch, path
+   containment, narrow secret patterns, changed-file/patch-byte/binary limits; `guard.checked` /
+   `guard.failed` events and `GET /guard-hooks`.
+5. **Factory Stack help page** — `concepts/factory-stack` explains the 00–06 layers and links the
+   dashboard, readiness and definitions help.
 
 Next candidates: trace-driven self-improvement, classifier-based model routing + spend caps, work intake from
 Sentry/PostHog/Slack/Linear, progressive context/MCP discovery, governance/autonomy levels, surface-agnostic
@@ -1578,13 +1581,11 @@ both accepted; `benchmarkGateRequired` is true exactly when `fullyAutonomous`; k
 
 ## Next
 
-See `research/software-factory-ideas.md` for the full proposed roadmap. The first sprint, once approved:
-
-1. Validation contract + QA pyramid.
-2. Agent readiness score/gate.
-3. Outcome metrics dashboard.
-4. Deterministic guard hooks.
-5. Factory Stack help page.
+The first factory-engineering sprint (validation contract, readiness, outcome metrics, guard hooks and
+Factory Stack help) is implemented on `feat/factory-engineering-foundation`; see the section above and
+`research/software-factory-ideas.md`. Next roadmap candidates: trace-driven self-improvement, classifier
+model routing + spend caps, work intake, progressive context, governance, surface-agnostic agents and
+missions.
 
 Phase 6c (OIDC/IdP, remote runners, Temporal Cloud, multi-tenant isolation) remains blocked on external
 infrastructure/IdP decisions. The live GitHub forge path still needs a PAT, repo and webhook secret.

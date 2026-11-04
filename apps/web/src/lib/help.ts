@@ -57,7 +57,7 @@ export const HELP_SECTIONS: HelpSectionMeta[] = [
 
 export type HelpCalloutTone = 'info' | 'warning' | 'success';
 
-export type HelpDiagramName = 'pipeline' | 'anatomy' | 'gates';
+export type HelpDiagramName = 'pipeline' | 'anatomy' | 'gates' | 'stack';
 
 export interface HelpStep {
   title: string;
@@ -638,6 +638,53 @@ export const HELP_ENTRIES: HelpEntry[] = [
     ],
   },
 
+  {
+    slug: 'concepts/factory-stack',
+    title: 'Factory stack',
+    section: 'concepts',
+    status: 'Shipped — factory engineering',
+    summary:
+      'The seven layers a software factory is made of, from factories-as-code at 00 to access at 06 — and which of them this console actually shows.',
+    blocks: [
+      {
+        kind: 'prose',
+        text:
+          'A software factory is a stack, not a single agent. Layer 00 is the definition: factories, agents, gates, scorers and benchmarks as files in git. Layer 01 is data and context — what an agent may read, how much of it, and which sources are trusted. Layer 02 is compute: the runner, sandbox and workspace a stage executes in. Layer 03 is inference: the model and harness the agent calls. Layer 04 is improvement: scoring, calibration, benchmarks, proposals and the canary loop. Layer 05 is orchestration: the durable SDLC workflow, gates, retries and the merge queue. Layer 06 is access: identity, roles, secrets and MCP servers.',
+      },
+      {
+        kind: 'diagram',
+        name: 'stack',
+        caption:
+          '00 factories-as-code → 01 data/context → 02 compute → 03 inference → 04 improvement → 05 orchestration → 06 access.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '00 factories-as-code: `factory.yaml`, `agents/`, `automations/`, `scorers/`, `benchmarks/`, `skills/`, `runners/` and `routing.yaml` — git is the source of truth.',
+          '01 data/context: the repositories, artifacts, event logs and lessons a stage may use; secrets are allowlisted by name.',
+          '02 compute: the runner protocol (`lease → exec → heartbeat → artifacts → kill`) and the sandbox the harness runs in.',
+          '03 inference: the harness + model an agent binds to; model references resolve through `env:` so no vendor is hardcoded.',
+          '04 improvement: deterministic checks and LLM judges, calibration, benchmarks, proposals and canary rollouts.',
+          '05 orchestration: the durable work-item workflow (triage → ship), gate resolution, retries and the merge train.',
+          '06 access: console identity, roles and scope, the secrets registry and MCP server bindings.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The console is a projection',
+        text:
+          'Every page here renders a layer of the stack from the API — it never edits a definition or executes a tool. Dashboard shows the orchestration state and outcome metrics, Readiness scores layers 00 and 02 against the checkout, and Definitions as code explains where layer 00 lives. A number you see is a projection of recorded events; missing data is shown as missing, never invented.',
+      },
+    ],
+    related: [
+      { label: 'Dashboard', href: '/help/factories/dashboard' },
+      { label: 'Readiness', href: '/help/factories/readiness' },
+      { label: 'Definitions as code', href: '/help/concepts/definitions-as-code' },
+      { label: 'Gates and autonomy', href: '/help/concepts/gates-and-autonomy' },
+    ],
+  },
+
   // --------------------------------------------------------------- menu reference
   {
     slug: 'chat',
@@ -1000,12 +1047,14 @@ export const HELP_ENTRIES: HelpEntry[] = [
         kind: 'list',
         items: [
           'State: autonomy (enabled/paused/override), canary (active or last), last activity.',
+          'Readiness: the deterministic score, its status, the top failing check labels and a link to the Readiness page.',
+          'Factory stack: a link to the 00–06 stack concept, so the dashboard sits in the larger picture rather than floating alone.',
           'Work items: status counts plus the newest items, each linking to its detail page.',
           'Runs: newest runs with status, harness/model, cost and start time, linking to the run detail.',
           'Deliverables: PR links from items, the `done` (merged) count and the latest patch/artifact from the newest run that captured one.',
           'Where results live: the PR carries the diff and checks; the run detail carries the patch, the event stream and the captured files. PR links open on the factory\'s own forge — Forgejo, served by this console at `/extras/forgejo/` — so they resolve from your machine instead of pointing at a placeholder host.',
           'Window switch: changes the aggregation window for the metric cards.',
-          'Metric cards: throughput, cost per PR (total + per stage + unattributed), cycle time, time to first human review, touchpoints per PR, automation %, defect rate.',
+          'Metric cards: throughput, cost per PR (total + per stage + unattributed), cycle time, time to first human review, touchpoints per PR, automation %, defect rate — plus the outcome metrics: human interactions per PR, autonomy ratio, cost per accepted change, signal-to-production cycle time, incident MTT and merged-code age.',
           'Runs / status split / spend: newest 100 runs for the factory.',
         ],
       },
@@ -1028,6 +1077,45 @@ export const HELP_ENTRIES: HelpEntry[] = [
       { label: 'Open the local forge', href: '/extras/forgejo/' },
       { label: 'Scoring and calibration', href: '/help/concepts/scoring-and-calibration' },
       { label: 'Runs', href: '/help/runs' },
+    ],
+  },
+  {
+    slug: 'factories/readiness',
+    title: 'Readiness',
+    section: 'menu',
+    status: 'Shipped — factory engineering',
+    summary:
+      'A deterministic agent-readiness score for the checkout and the factory definition: sections, weighted checks, evidence, remediation and the guard-hook configuration.',
+    pageHref: factoryPageHref('readiness'),
+    pageHrefLabel: 'Open Readiness (example factory)',
+    blocks: [
+      {
+        kind: 'prose',
+        text:
+          'Readiness answers "is this repository ready for an agent to work autonomously?" It reads the local checkout (`REPO_ROOT`) and the loaded definition — no model call, no shell — and returns a score 0–100 with a status: `ready` at or above the ready threshold (default 80), `warn` at or above the warn threshold (default 60), otherwise `not_ready`. The report names the root it scanned and when it was generated, so a scan of the wrong checkout is visible rather than hidden.',
+      },
+      {
+        kind: 'list',
+        items: [
+          'Score and status: a 0–100 score, the thresholds in force and the summary the scanner wrote.',
+          'Repository section: style, build, tests, typecheck, docs, dev environment, observability, security and task discovery.',
+          'Factory section: QA agent, two reviewers, gates, merge policy, required verdicts, scorers/benchmarks and secrets/MCP.',
+          'Every check carries its weight, concrete evidence (or an explicit "not found") and a remediation hint; a failing check is `fail`, never blank.',
+          'Guard hooks: the declared `guard` config, the defaults applied to every unset field and the newest `guard.checked` / `guard.failed` events, each linking to its work item.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Advisory unless the factory opts in',
+        text:
+          'Readiness is advisory by default. A factory that sets `readiness.enforceAutonomy: true` is refused autonomy with `readiness_not_ready` unless the score reaches the ready threshold — and only an explicit `{actor, reason}` override bypasses that check. The scan targets the local checkout; a target-repo checkout is a later runner/forge concern.',
+      },
+    ],
+    related: [
+      { label: 'Dashboard', href: '/help/factories/dashboard' },
+      { label: 'Factory stack', href: '/help/concepts/factory-stack' },
+      { label: 'Gates and autonomy', href: '/help/concepts/gates-and-autonomy' },
     ],
   },
   {

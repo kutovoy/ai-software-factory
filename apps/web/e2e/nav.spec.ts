@@ -5,6 +5,7 @@ const TOP_LEVEL = ['nav-chat', 'nav-inbox', 'nav-runs', 'nav-secrets', 'nav-user
 
 const FACTORY_LEVEL = [
   'nav-dashboard',
+  'nav-readiness',
   'nav-agents',
   'nav-automations',
   'nav-scorers',
@@ -22,6 +23,7 @@ const STUBS = new Set<string>();
 /** Factory pages ship in Phase 2b; each must render real data, not a stub. */
 const FACTORY_PAGE_MARKERS: Record<string, string[]> = {
   'nav-dashboard': ['dashboard-counts', 'dashboard-empty'],
+  'nav-readiness': ['readiness-page'],
   'nav-agents': ['agent-card'],
   'nav-automations': ['automations-table'],
   'nav-scorers': ['scorers-registry'],
@@ -48,6 +50,11 @@ test('every nav item renders and stubs name their phase', async ({ page }) => {
   });
   page.on('pageerror', (error) => consoleErrors.push(String(error)));
 
+  // Pin the selection to `example` before rendering: the factory cookie persists across
+  // tests, and a factory without automations would legitimately render an empty state
+  // instead of the automations table this test looks for.
+  const exampleId = await factoryId(page.request, 'example');
+  await page.context().addCookies([{ name: 'factory', value: exampleId, url: 'http://localhost:3000' }]);
   await page.goto('/chat');
   await expect(page.getByTestId('nav-sidebar')).toBeVisible();
   await expect(page.getByTestId('factory-switcher')).toBeVisible();
@@ -91,7 +98,6 @@ test('every nav item renders and stubs name their phase', async ({ page }) => {
   // The factory switcher changes the per-factory group without a full reload. Its option
   // values are factory ids (change `add-factory-identity`), never directory names.
   const switcher = page.getByTestId('factory-switcher');
-  const exampleId = await factoryId(page.request, 'example');
   const options = await switcher.locator('option').evaluateAll((nodes) =>
     nodes.map((node) => (node as HTMLOptionElement).value),
   );
@@ -133,10 +139,12 @@ test('sidebar collapses to icons and expands again', async ({ page }) => {
 
 /** Keyboard-only: Tab reaches the nav and Enter activates it. */
 test('nav is operable with the keyboard only', async ({ page }) => {
+  // Pin the selection to `example` first: the factory cookie is persisted across tests, so
+  // starting at /chat could otherwise land on whichever factory the previous test selected.
+  const exampleId = await factoryId(page.request, 'example');
+  await page.context().addCookies([{ name: 'factory', value: exampleId, url: 'http://localhost:3000' }]);
   await page.goto('/chat');
   await expect(page.getByTestId('nav-sidebar')).toBeVisible();
-
-  const exampleId = await factoryId(page.request, 'example');
   await page.getByTestId('nav-runs').focus();
   await expect(page.getByTestId('nav-runs')).toBeFocused();
   await page.keyboard.press('Enter');
@@ -155,6 +163,7 @@ test('factory pages share the heading prefix and fit 1280px', async ({ page }) =
 
   const pages = [
     '/dashboard',
+    '/readiness',
     '/agents',
     '/automations',
     '/benchmarks',

@@ -58,8 +58,26 @@ Workspace modes support containerised workers.
 
 ### Measurement
 Deterministic scorers and LLM judges, sampling and budgets, rubric hashes, full provenance, and calibration against
-a golden set. Metrics are derived queries (throughput, cost per PR and per stage, cycle time, autonomy), with
-`null` + reason rather than fabricated numbers.
+a golden set. Metrics are derived queries (throughput, cost per PR and per stage, cycle time, autonomy, human
+interactions per PR, cost per accepted change, signal-to-production cycle time, incident MTT and merged-code age),
+with `null` + reason rather than fabricated numbers.
+
+### Factory engineering
+The factory is measurable, verifiable and explainable, not just autonomous:
+
+- **Validation contract + QA pyramid.** Every work item carries a persisted contract with
+  `unit`/`component`/`integration`/`e2e`/`manual` checks, inferred from repository scripts or declared in
+  `factory.yaml`. The verify stage reports fenced-JSON evidence; an enforced contract refuses a verify approval
+  with `validation_incomplete` while required evidence is missing.
+- **Agent readiness.** A deterministic 0–100 score for the checkout and the definition (tests, linters,
+  typecheck, docs, dev environment, observability, security, task discovery, QA agent, reviewers, gates,
+  scorers, secrets and MCP). Advisory by default; `readiness.enforceAutonomy` can block autonomy with an audited
+  override.
+- **Guard hooks.** Pure, fail-closed checks run before a PR is committed: protected branch, path containment,
+  narrow secret patterns, changed-file/patch-byte limits and binary-file limits. Results are recorded as
+  `guard.checked` / `guard.failed`.
+- **Factory stack.** The help centre explains the 00–06 layers from factories-as-code to access, so the console's
+  projections have a place in the architecture.
 
 ### Benchmarks
 Suites pin tasks at commit SHAs and a definition version; `configHash = sha256(matrix + definitionCommit)`. Trials
@@ -82,8 +100,8 @@ in the `forgejo-data` volume), and an optional Caddy mode serves the forge on `:
 One event renderer for chat and factory runs, runs and work items with live SSE, an inbox for gates and
 permissions, factory dashboards (state, work, deliverables), scorers, MCPs and benchmarks, a live Swagger UI at
 `/help/api`, and an in-product help centre. Every factory page is nested under `/factories/<factory-id>/…`
-(dashboard, agents, automations, scorers, MCPs, self-improvement, benchmarks, gates, merge queue, settings,
-work items, runs and score detail); only chat, inbox, secrets, users and help are global.
+(dashboard, readiness, agents, automations, scorers, MCPs, self-improvement, benchmarks, gates, merge queue,
+settings, work items, runs and score detail); only chat, inbox, secrets, users and help are global.
 
 ## Architecture
 
@@ -95,6 +113,9 @@ work item ──► FactoryWorkflow (Temporal, one per item)
                  │      gate = human | agent | policy (durable wait)
                  ├─► review committee (≥2 independent reviewers + judge, advisory)
                  └─► ship: PR ─► merge queue ─► forge
+validation contract ──► QA evidence ──► verify gate
+readiness ──► autonomy policy
+guard hooks ──► PR commit ──► forge
 scores ──► calibration ──► benchmarks ──► attestation ──► autonomy
 scored corpus ──► improvement: propose → probe → compose ──► PR | merge | canary
 ```

@@ -4,6 +4,7 @@
  */
 
 import type { AgentVerdict, AgentVerdictPolicy } from '@factory/core/gates/verdict';
+import type { ValidationContract } from '@factory/core/validation/types';
 
 export type RunStatus = 'pending' | 'running' | 'ok' | 'error' | 'cancelled';
 export type TerminalStatus = 'ok' | 'error' | 'cancelled';
@@ -327,6 +328,11 @@ export interface FactoryWorkflowInput {
    */
   attempt?: number;
   resume?: FactoryWorkflowResume;
+  /**
+   * Validation contract (roadmap item 1) persisted with the item. Carried into every stage
+   * so the verify stage can request and evaluate evidence. Workflow-safe: plain data.
+   */
+  validationContract?: ValidationContract;
 }
 
 export type FactoryOutcomeStatus = 'done' | 'escalated' | 'cancelled' | 'blocked';
@@ -409,6 +415,8 @@ export interface StageWorkflowInput {
   /** Evidence attached to a gate-only child (review verdict / findings). */
   verdict?: ReviewVerdict;
   findings?: ReviewFinding[];
+  /** Validation contract for the verify stage (roadmap item 1). */
+  validationContract?: ValidationContract;
 }
 
 export interface StageGateOutcome {

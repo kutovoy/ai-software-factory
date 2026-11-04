@@ -873,3 +873,50 @@ because the forge file API is text-only. The `.patch` artifact is never committe
 the factory id and posts the integration to `/api/v1/factories/:factoryId/integrations/github`.
 **Consequences:** PRs and the default branch contain the real web code, and a PR cannot silently degrade into a
 patch-only artifact. QA remains workspace-based, but a dedicated integration test asserts the PR branch files.
+
+## ADR-041 — Validation contracts are persisted work-item artifacts
+
+**Status:** accepted (2026-11-03). **Context:** a work item had free-text scope and a Playwright QA run, but no
+machine-checkable definition of what “verified” meant. A QA agent could report success without covering the
+acceptance criterion, and a human could approve a verify gate with no evidence.
+**Decision:** a work item receives a deterministic validation contract at creation, persisted in
+`work_items.input.validationContract`. The contract carries `id`, `title`, `tier`, `required`, `evidence` and an
+optional command per check; tiers are `unit`, `component`, `integration`, `e2e` and `manual`. Checks come from the
+factory's optional `validation` block or are inferred from repository scripts; a manual acceptance check is always
+added. The verify stage receives a fenced-JSON evidence instruction; agent evidence and forge check results are
+projected into `pass | fail | missing`. When `validation.enforce` is true, a verify gate cannot approve while a
+required check is missing: a human approval is refused with `validation_incomplete`, an agent gate becomes
+`request_changes`. Enforcement defaults to off so existing factories keep their current loop.
+**Consequences:** “verified” becomes an explicit contract rather than a prose claim; QA can cover the QA pyramid
+without a new agent; factories opt into stricter gates. The contract is additive to the work-item read model and
+does not require a DB migration.
+
+## ADR-042 — Readiness is deterministic, advisory by default, opt-in as an autonomy gate
+
+**Status:** accepted (2026-11-03). **Context:** autonomy could be enabled without evidence that the repository or
+the factory definition was ready for unattended work. A model-based readiness judgement would be another
+non-deterministic gate on top of the benchmark attestation.
+**Decision:** `scanReadiness` computes a 0–100 score from observable files and definition fields only: repository
+style, build, tests, typecheck, docs, dev environment, observability, security and task discovery; factory QA
+agent, two reviewers, gates, merge policy, required verdicts, scorers/benchmarks, secrets and MCP. Status is
+`ready` ≥ threshold (default 80), `warn` ≥ threshold (default 60), otherwise `not_ready`. Every check carries
+evidence and a remediation hint. Readiness is advisory by default; `readiness.enforceAutonomy: true` refuses
+autonomy below `ready` with `readiness_not_ready` unless an explicit `{actor, reason}` override is recorded.
+**Consequences:** readiness is inspectable and reproducible, not a model opinion. The scan targets the local
+checkout (`REPO_ROOT`); a target-repo checkout is a later runner/forge concern, and the report names the root it
+scanned so the mismatch is visible.
+
+## ADR-043 — Guard hooks are pure, fail-closed pre-PR checks
+
+**Status:** accepted (2026-11-03). **Context:** agents could prepare a PR containing a protected-branch write, a
+path escape, a secret or an oversized change; the forge rejected some of these, but only after a commit/branch
+existed, and the failure was not recorded as a factory decision.
+**Decision:** `runGuardHooks` runs in `forgeOpenPullRequest` after the patch is applied and before the commit. It
+is a pure function over the branch, applied files and the factory's optional `guard` block: protected branch,
+path containment (absolute paths, `..`, `.git/`), narrow secret patterns, changed-file and patch-byte limits, and
+a binary-file limit. A failure is non-retryable (`guard_failed`) and records `guard.failed`; a pass records
+`guard.checked`. No shell command, network call or filesystem write is performed by a hook. The resolved config
+and recent results are exposed at `GET /api/v1/factories/{factoryId}/guard-hooks`.
+**Consequences:** obvious unsafe PRs fail before a branch is written and leave an audit event; the hooks cannot
+execute arbitrary policy code. Secret patterns are deliberately narrow to avoid false positives; a factory can
+disable the scan explicitly.

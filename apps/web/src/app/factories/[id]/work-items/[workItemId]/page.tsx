@@ -12,7 +12,12 @@ import { ApiClientError, apiGet } from '@/lib/api';
 import { factoryNameOf, loadFactory } from '@/lib/factory-page';
 import { formatDateTime, shortCommit, statusTone } from '@/lib/format';
 import { TimeAgo } from '@/components/ui/TimeAgo';
-import type { GateDecisionRecord, WorkItemDetail } from '@/lib/types';
+import type {
+  GateDecisionRecord,
+  ValidationCheckResultWire,
+  ValidationProjectionWire,
+  WorkItemDetail,
+} from '@/lib/types';
 import {
   canRetryWorkItem,
   checksRecorded,
@@ -29,6 +34,145 @@ import {
 } from '@/lib/work-items';
 
 export const dynamic = 'force-dynamic';
+
+function validationStatusTone(
+  status: ValidationCheckResultWire['status'],
+): 'success' | 'danger' | 'warning' {
+  if (status === 'pass') return 'success';
+  if (status === 'fail') return 'danger';
+  return 'warning';
+}
+
+function ValidationCard({ validation }: { validation: ValidationProjectionWire | null }) {
+  if (!validation) {
+    return (
+      <Card testId="work-item-validation-card">
+        <CardHeader
+          title="Validation contract"
+          hint="Acceptance checks, QA tiers and evidence recorded for this item."
+        />
+        <CardBody>
+          <EmptyState
+            testId="validation-empty"
+            title="No validation contract on this item"
+            description="The item carries no persisted contract (older definition, or validation disabled for this factory). Nothing is inferred here."
+          />
+        </CardBody>
+      </Card>
+    );
+  }
+
+  const { contract, checks, complete, missing } = validation;
+
+  return (
+    <Card testId="work-item-validation-card">
+      <CardHeader
+        title="Validation contract"
+        hint="A machine-checkable contract: every check is pass, fail or missing against recorded evidence."
+        action={
+          <Badge tone={complete ? 'success' : 'warning'} testId="validation-complete">
+            {complete ? 'complete' : 'incomplete'}
+          </Badge>
+        }
+      />
+      <CardBody className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+          <Badge tone={contract.enforce ? 'warning' : 'neutral'} testId="validation-enforce">
+            enforce {contract.enforce ? 'on' : 'off'}
+          </Badge>
+          <span>
+            source <span className="font-mono" data-testid="validation-source">{contract.source}</span>
+          </span>
+          <span>
+            contract <span className="font-mono">{contract.version}</span>
+          </span>
+          <span>
+            commit{' '}
+            <span className="font-mono" data-testid="validation-commit">
+              {shortCommit(contract.definitionCommit)}
+            </span>
+          </span>
+          <TimeAgo value={contract.createdAt} prefix="created " testId="validation-created" />
+        </div>
+
+        {checks.length === 0 ? (
+          <EmptyState
+            testId="validation-checks-empty"
+            title="The contract declares no checks"
+            description="A contract with no checks cannot prove anything; nothing is reported as passing."
+          />
+        ) : (
+          <Table
+            testId="validation-checks"
+            rowTestId="validation-check"
+            rows={checks}
+            rowKey={(row: ValidationCheckResultWire) => row.check.id}
+            columns={[
+              {
+                header: 'Check',
+                cell: (row: ValidationCheckResultWire) => (
+                  <span className="text-xs font-medium text-slate-800" data-check-id={row.check.id}>
+                    {row.check.title}
+                  </span>
+                ),
+              },
+              {
+                header: 'Tier',
+                cell: (row: ValidationCheckResultWire) => (
+                  <Badge tone="neutral" mono>
+                    {row.check.tier}
+                  </Badge>
+                ),
+              },
+              {
+                header: 'Required',
+                cell: (row: ValidationCheckResultWire) => (
+                  <span className="text-xs text-slate-600">{row.check.required ? 'yes' : 'no'}</span>
+                ),
+              },
+              {
+                header: 'Status',
+                cell: (row: ValidationCheckResultWire) => (
+                  <span data-status={row.status}>
+                    <Badge tone={validationStatusTone(row.status)} testId="validation-check-status" mono>
+                      {row.status}
+                    </Badge>
+                  </span>
+                ),
+              },
+              {
+                header: 'Source',
+                cell: (row: ValidationCheckResultWire) => (
+                  <span className="font-mono text-[11px] text-slate-600" data-testid="validation-check-source">
+                    {row.source ?? '—'}
+                  </span>
+                ),
+              },
+              {
+                header: 'Evidence',
+                cell: (row: ValidationCheckResultWire) => (
+                  <span className="font-mono text-[11px] text-slate-600" data-testid="validation-check-evidence">
+                    {row.evidence?.detail ?? row.check.command ?? row.check.expected ?? '—'}
+                  </span>
+                ),
+              },
+            ]}
+          />
+        )}
+
+        {!complete ? (
+          <div
+            data-testid="validation-missing"
+            className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+          >
+            <span className="font-semibold">Missing required evidence:</span>{' '}
+            <span className="font-mono">{missing.length > 0 ? missing.join(', ') : 'none listed'}</span>
+          </div>
+        ) : null}
+      </CardBody>
+    </Card>
+  );
+}
 
 export default async function WorkItemDetailPage({
   params,
@@ -213,6 +357,8 @@ export default async function WorkItemDetailPage({
           </div>
         </CardBody>
       </Card>
+
+      <ValidationCard validation={detail.validation} />
 
       <Card testId="work-item-autonomy-card">
         <CardHeader

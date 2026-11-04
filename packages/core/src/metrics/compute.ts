@@ -17,6 +17,8 @@ export interface WorkItemMetricRow {
   doneAt: string | null;
   prUrl: string | null;
   prNumber: number | null;
+  /** Work-item source (`forge`, `slack`, `cron`, `manual`); optional for old rows. */
+  source?: string;
 }
 
 export interface GateMetricRow {
@@ -30,6 +32,8 @@ export interface GateMetricRow {
 export interface PermissionMetricRow {
   runId: string;
   decidedAt: string | null;
+  /** Work item derived from the stage run id; `null` when unattributable. */
+  workItemId?: string | null;
 }
 
 export interface RunMetricRow {
@@ -238,6 +242,121 @@ export function buildFactoryMetrics(input: MetricsInput): FactoryMetricsResult {
         : {}),
   };
 
+  const humanInteractionsPerPr: MetricCard = {
+    key: 'humanInteractionsPerPr',
+    label: 'Human interactions per PR',
+    value:
+      prCount === 0
+        ? null
+        : round((humanGateTouchpoints + permissionTouchpoints) / prCount),
+    unit: 'interactions/PR',
+    sampleSize: prCount,
+    definition:
+      'Human gate decisions plus human permission decisions, divided by PRs opened in the window. Human PR comments are added when the forge backend persists them.',
+    ...(prCount === 0 ? { reason: 'no pull requests opened for work items in this window' } : {}),
+  };
+
+  const humanTouchedItems = new Set<string>();
+  for (const gate of input.gates) {
+    if (!gate.automatic && gate.decidedAt !== null) humanTouchedItems.add(gate.workItemId);
+  }
+  for (const permission of input.permissions) {
+    if (permission.decidedAt !== null && permission.workItemId) {
+      humanTouchedItems.add(permission.workItemId);
+    }
+  }
+  const autonomousPrCount = prItems.filter((item) => !humanTouchedItems.has(item.id)).length;
+  const autonomyRatio: MetricCard = {
+    key: 'autonomyRatio',
+    label: 'Autonomy ratio',
+    value: prCount === 0 ? null : round((autonomousPrCount / prCount) * 100),
+    unit: '%',
+    sampleSize: prCount,
+    definition:
+      'Share of PR work items with zero human gate decisions and zero human permission decisions attributed to them.',
+    ...(prCount === 0 ? { reason: 'no pull requests opened for work items in this window' } : {}),
+  };
+
+  const donePrCount = donePrItems.length;
+  const donePrIds = new Set(donePrItems.map((item) => item.id));
+  const attributedDoneRuns = input.runs.filter(
+    (run) => run.workItemId !== null && donePrIds.has(run.workItemId),
+  );
+  const doneCost = attributedDoneRuns.reduce((total, run) => total + (run.costUsd ?? 0), 0);
+  const costPerAcceptedChange: MetricCard = {
+    key: 'costPerAcceptedChange',
+    label: 'Cost per accepted change',
+    value:
+      donePrCount === 0 || attributedDoneRuns.length === 0
+        ? null
+        : round(doneCost / donePrCount),
+    unit: 'USD/accepted change',
+    sampleSize: donePrCount,
+    definition:
+      'Sum of attributed stage-run cost for completed PR work items, divided by the number of completed PR work items in the window.',
+    ...(donePrCount === 0
+      ? { reason: 'no completed PR work items in this window' }
+      : attributedDoneRuns.length === 0
+        ? { reason: 'no stage runs attributed to completed PR work items in this window' }
+        : {}),
+  };
+
+  const signalItems = donePrItems.filter((item) => item.source !== 'manual');
+  const signalDurations = signalItems
+    .map((item) => hoursBetween(item.createdAt, item.doneAt))
+    .filter((value): value is number => value !== null);
+  const signalToProductionCycleTime: MetricCard = {
+    key: 'signalToProductionCycleTime',
+    label: 'Signal-to-production cycle time',
+    value: signalDurations.length === 0 ? null : round(average(signalDurations) as number),
+    unit: 'hours',
+    sampleSize: signalDurations.length,
+    definition:
+      'Average time from creation to the terminal done event for completed PR work items whose source is not manual (forge, Slack or cron signals).',
+    ...(signalDurations.length === 0
+      ? {
+          reason:
+            'no completed PR work items from a non-manual source with a recorded done event in this window',
+        }
+      : {}),
+  };
+
+  const incidentDurations = input.workItems
+    .filter((item) => item.type === 'incident')
+    .map((item) => hoursBetween(item.createdAt, item.doneAt))
+    .filter((value): value is number => value !== null);
+  const incidentMttHours: MetricCard = {
+    key: 'incidentMttHours',
+    label: 'Incident MTT',
+    value: incidentDurations.length === 0 ? null : round(average(incidentDurations) as number),
+    unit: 'hours',
+    sampleSize: incidentDurations.length,
+    definition:
+      'Average time from creation to the terminal done event for work items of type incident (mean time to resolution).',
+    ...(incidentDurations.length === 0
+      ? { reason: 'no completed incident work items with a recorded done event in this window' }
+      : {}),
+  };
+
+  const mergedAges = donePrItems
+    .map((item) => {
+      const hours = hoursBetween(item.doneAt, input.window.to);
+      return hours === null ? null : hours / 24;
+    })
+    .filter((value): value is number => value !== null);
+  const mergedCodeAgeDays: MetricCard = {
+    key: 'mergedCodeAgeDays',
+    label: 'Merged code age',
+    value: mergedAges.length === 0 ? null : round(average(mergedAges) as number),
+    unit: 'days',
+    sampleSize: mergedAges.length,
+    definition:
+      'Average days from the terminal done event to the end of the window for completed PR work items. This is an age proxy: a work item is treated as merged when it reaches done.',
+    ...(mergedAges.length === 0
+      ? { reason: 'no completed PR work items with a recorded done event in this window' }
+      : {}),
+  };
+
   const stageTotals = new Map<string, StageCost>();
   let unattributedCost = 0;
   let unattributedRuns = 0;
@@ -262,6 +381,12 @@ export function buildFactoryMetrics(input: MetricsInput): FactoryMetricsResult {
       touchpoints,
       automation,
       defectRate,
+      humanInteractionsPerPr,
+      autonomyRatio,
+      costPerAcceptedChange,
+      signalToProductionCycleTime,
+      incidentMttHours,
+      mergedCodeAgeDays,
     ],
     costByStage: [...stageTotals.values()]
       .map((stage) => ({ ...stage, costUsd: round(stage.costUsd) }))

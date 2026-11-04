@@ -65,6 +65,36 @@ describe('help registry', () => {
     expect(text).toContain('merge queue');
   });
 
+  test('the factory stack concept exists, carries the stack diagram and names every layer', () => {
+    const entry = getHelpEntry('concepts/factory-stack');
+    expect(entry?.section).toBe('concepts');
+    expect(entry?.title).toBe('Factory stack');
+    expect(entry?.status.toLowerCase()).toContain('shipped');
+    const diagrams = (entry?.blocks ?? []).flatMap((block) =>
+      block.kind === 'diagram' ? [block.name] : [],
+    );
+    expect(diagrams).toContain('stack');
+    const text = (entry?.blocks ?? [])
+      .flatMap((block) => {
+        if (block.kind === 'prose' || block.kind === 'callout') return [block.text];
+        if (block.kind === 'list' || block.kind === 'checklist') return block.items;
+        return [];
+      })
+      .join(' ');
+    for (const layer of [
+      'factories-as-code',
+      'data/context',
+      'compute',
+      'inference',
+      'improvement',
+      'orchestration',
+      'access',
+    ]) {
+      expect(text, layer).toContain(layer);
+    }
+    expect(text).toContain('projection');
+  });
+
   test('slugs are unique and every section has content', () => {
     const slugs = HELP_ENTRIES.map((entry) => entry.slug);
     expect(new Set(slugs).size).toBe(slugs.length);

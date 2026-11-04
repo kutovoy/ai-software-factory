@@ -197,6 +197,32 @@ export const noActiveCanary = (factory: string, statuses: string[]): ApiError =>
 export const lessonNotFound = (lessonId: string): ApiError =>
   new ApiError('lesson_not_found', 404, `lesson "${lessonId}" does not exist`, { lessonId });
 
+/** A verify gate cannot approve while enforced validation evidence is missing (item 1). */
+export const validationIncomplete = (workItemId: string, missing: string[]): ApiError =>
+  new ApiError(
+    'validation_incomplete',
+    409,
+    `validation contract is incomplete for work item "${workItemId}"`,
+    { workItemId, missing },
+  );
+
+/** Enabling autonomy is refused while the factory/repository readiness is below `ready`. */
+export const readinessNotReady = (
+  factory: string,
+  report: { status: string; score: number; checks: { id: string; passed: boolean }[] },
+): ApiError =>
+  new ApiError(
+    'readiness_not_ready',
+    409,
+    `factory "${factory}" readiness is ${report.status} (${report.score}/100)`,
+    {
+      factory,
+      status: report.status,
+      score: report.score,
+      failing: report.checks.filter((check) => !check.passed).map((check) => check.id),
+    },
+  );
+
 
 /** Above the confirmation threshold, a run must be explicitly confirmed. */
 export const costConfirmationRequired = (estimate: unknown): ApiError =>

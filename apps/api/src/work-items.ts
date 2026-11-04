@@ -4,6 +4,7 @@ import {
   StageGraphError,
   appendWorkItemEvent,
   assignCanaryVersion,
+  buildValidationContract,
   compileStageGraph,
   createWorkItem as createWorkItemRow,
   evaluateAutonomyRequest,
@@ -29,14 +30,18 @@ import {
   resolveAllGates,
   retryWorkItem as retryWorkItemRow,
   resolveStageConfigs,
+  scanReadiness,
   setAutonomyState,
   setWorkItemStatus,
   stageDeclarationsFromDefinition,
+  validationContractSchema,
   type AgentDef,
   type AgentVerdict,
   type FactoryDefinition,
   type GateDecisionRequest,
   type LoopStage,
+  type ValidationContract,
+  type ValidationProjection,
   type WorkItem,
   type WorkItemEvent,
   type WorkItemVersion,
@@ -67,6 +72,7 @@ import {
   invalidStageGraph,
   invalidRequest,
   invalidState,
+  readinessNotReady,
   spawnNotAllowed,
   workItemNotFound,
   workItemNotRetryable,
@@ -75,6 +81,7 @@ import { benchmarkGateStatus } from './benchmarks';
 import { log } from './logger';
 import { factoryIdForKey, loadFactoryDefinition, resolveFactoryDir } from './factories';
 import { pinVersion, resolveRunDefaults } from './runs';
+import { assertValidationComplete, projectValidation } from './validation';
 
 /**
  * Work item routes logic (spec `factory-loop`).
@@ -325,6 +332,22 @@ export async function createWorkItemForApi(
   const manifest = compiled.definition.manifest;
   const orchestration = toOrchestrationConfig(config);
 
+  // Validation contract (roadmap item 1): built deterministically from the factory's
+  // optional block and the target repository, then persisted with the item so a retry
+  // keeps the same acceptance criteria. `enforce` stays off unless the factory opts in.
+  const validationContract: ValidationContract | null =
+    manifest.validation?.enabled !== false
+      ? buildValidationContract({
+          workItemId,
+          factory,
+          definitionCommit: commit,
+          createdAt: new Date().toISOString(),
+          title: body.title,
+          repoRoot: config.repoRoot,
+          ...(manifest.validation ? { config: manifest.validation } : {}),
+        })
+      : null;
+
   const defaults = resolveRunDefaults(manifest, {
     ...(body.harness ? { harness: body.harness } : {}),
     ...(body.model ? { model: body.model } : {}),
@@ -385,6 +408,7 @@ export async function createWorkItemForApi(
     autoAllowPermissions: true,
     permissionTimeoutMs: config.permissionTimeoutMs,
     ...(mergeQueue ? { mergeQueue: true } : {}),
+    ...(validationContract ? { validationContract } : {}),
   };
 
   const item = await createWorkItemRow(sql, {
@@ -416,6 +440,8 @@ export async function createWorkItemForApi(
       harness: defaults.harness,
       ...(defaults.model ? { model: defaults.model } : {}),
       runner: defaults.runner,
+      // Persisted contract: the verify gate and the work-item page read it from here.
+      ...(validationContract ? { validationContract } : {}),
     },
   });
 
@@ -490,6 +516,8 @@ export interface WorkItemDetail {
   gates: Awaited<ReturnType<typeof listGateDecisions>>;
   pendingGate: Awaited<ReturnType<typeof getPendingGate>>;
   workflowId: string;
+  /** Validation contract projected against recorded evidence; null when absent. */
+  validation: ValidationProjection | null;
 }
 
 export async function getWorkItemDetail(
@@ -518,6 +546,7 @@ export async function getWorkItemDetail(
     pendingGate,
     // The live workflow is the current attempt's id after a retry.
     workflowId: item.workflowId ?? workItemWorkflowId(workItemId, item.attempt),
+    validation: projectValidation(item, events),
   };
 }
 
@@ -560,6 +589,12 @@ export async function submitGateDecisionForApi(
 
   const pending = await getPendingGate(sql, { workItemId, stage });
   if (!pending) throw gateNotFound(workItemId, stage);
+
+  // Verify gate enforcement (roadmap item 1): an approval is refused while the enforced
+  // contract still lacks required evidence. `request_changes`/`reject` stay available.
+  if (request.decision === 'approve' && stage === 'verify') {
+    assertValidationComplete(item, await listWorkItemEvents(sql, workItemId));
+  }
 
   const recorded = await recordGateDecision(sql, {
     workItemId,
@@ -647,6 +682,19 @@ export async function setAutonomyForApi(
   const dir = resolveFactoryDir(config, factory);
   const { definition, errors } = loadDefinition(dir, { requireFactoryId: true });
   if (!definition) throw definitionInvalid(factory, errors);
+
+  // Readiness gate (roadmap item 2): a factory that opts into `readiness.enforceAutonomy`
+  // cannot widen autonomy while its report is below `ready`, unless an explicit override
+  // {actor, reason} is recorded. Pausing always succeeds.
+  if (body.enabled && definition.manifest.readiness?.enforceAutonomy === true && !body.override) {
+    const report = scanReadiness({
+      repoRoot: config.repoRoot,
+      definition,
+      thresholds: definition.manifest.readiness.thresholds,
+    });
+    if (report.status !== 'ready') throw readinessNotReady(factory, report);
+  }
+
   const resolution = resolveAllGates(definition.manifest);
   const sql = getSql();
   const current = await getAutonomyState(sql, factory);
@@ -1044,6 +1092,11 @@ async function buildRetryInput(
   const factory = item.factory;
   const snapshot = item.input ?? {};
 
+  // Keep the persisted validation contract across retries (design item 1: "a retry keeps
+  // it"). A snapshot written before the contract existed simply has none.
+  const parsedContract = validationContractSchema.safeParse(snapshot.validationContract);
+  const validationContract = parsedContract.success ? parsedContract.data : null;
+
   let dir = resolveFactoryDir(config, factory);
   if (item.canaryRolloutId) {
     const rollout = await getCanaryRollout(sql, item.canaryRolloutId);
@@ -1148,6 +1201,7 @@ async function buildRetryInput(
     autoAllowPermissions: true,
     permissionTimeoutMs: config.permissionTimeoutMs,
     ...(mergeQueue ? { mergeQueue: true } : {}),
+    ...(validationContract ? { validationContract } : {}),
     attempt,
     resume,
   };

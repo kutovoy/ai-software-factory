@@ -193,5 +193,13 @@ export const WORK_ITEM_EVENT_TYPES = [
   'runner.sandbox_unavailable',
   'work_item.status',
   'work_item.spawned',
+  /** Validation contract evidence reported by the verify/QA agent. */
+  'validation.evidence',
+  /** A verify gate refused approval because required validation evidence is missing. */
+  'validation.failed',
+  /** Deterministic guard hooks passed before a PR commit. */
+  'guard.checked',
+  /** Deterministic guard hooks failed; the PR is not committed. */
+  'guard.failed',
 ] as const;
 export type WorkItemEventType = (typeof WORK_ITEM_EVENT_TYPES)[number];

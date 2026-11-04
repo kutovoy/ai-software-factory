@@ -13,6 +13,8 @@ import { improvementSchema } from './improvement';
 import { mcpSchema } from './mcp';
 import { stageDeclarationSchema } from './stage';
 import { AGENT_VERDICT_POLICIES } from '../gates/verdict';
+import { guardConfigSchema } from '../guard/types';
+import { validationConfigSchema } from '../validation/schema';
 import { newUlid } from '../work-items/id';
 
 /**
@@ -99,6 +101,32 @@ export const factorySchema = z
      * authority defaults to `propose_only` (see `resolveImprovement`).
      */
     improvement: improvementSchema.optional(),
+    /** Validation contract defaults (roadmap item 1); `enforce` is off unless opted in. */
+    validation: validationConfigSchema.optional(),
+    /** Agent readiness (roadmap item 2); advisory unless `enforceAutonomy` is true. */
+    readiness: z
+      .object({
+        enforceAutonomy: z.boolean().default(false),
+        thresholds: z
+          .object({
+            ready: z.number().int().min(0).max(100).default(80),
+            warn: z.number().int().min(0).max(100).default(60),
+          })
+          .strict()
+          .superRefine((value, ctx) => {
+            if (value.warn > value.ready) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'readiness.thresholds.warn must be <= thresholds.ready',
+                params: { errorCode: 'invalid_value' },
+              });
+            }
+          }),
+      })
+      .strict()
+      .optional(),
+    /** Deterministic pre-PR guard hooks (roadmap item 4). */
+    guard: guardConfigSchema.optional(),
   })
   .strict();
 

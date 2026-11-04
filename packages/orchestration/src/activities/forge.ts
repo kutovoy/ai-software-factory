@@ -12,7 +12,13 @@ import {
   type MergeResult,
   type RepoRef,
 } from '@factory/forge';
-import { getIntegration, loadDefinition } from '@factory/core';
+import {
+  appendWorkItemEvent,
+  getIntegration,
+  loadDefinition,
+  runGuardHooks,
+  type GuardReport,
+} from '@factory/core';
 import { loadConfig } from '../config';
 import { getSql } from '../db';
 import { applyPatch, PatchError } from './patch';
@@ -179,6 +185,28 @@ export interface OpenPullRequestResult {
 }
 
 /**
+ * Records a guard verdict in the read model. Best effort: the verdict itself (fail-closed)
+ * governs the PR, so a database-less environment (CI, the fake-forge suite) still exercises
+ * the forge path without silently changing the outcome.
+ */
+async function recordGuardEvent(
+  workItemId: string,
+  type: 'guard.checked' | 'guard.failed',
+  report: GuardReport,
+): Promise<void> {
+  try {
+    await appendWorkItemEvent(getSql(), {
+      workItemId,
+      type,
+      actor: 'guard',
+      payload: { ...report },
+    });
+  } catch {
+    // The audit row is advisory here; the guard verdict already governs the PR.
+  }
+}
+
+/**
  * Creates the branch, applies the run's patch to the branch snapshot and commits the
  * resulting files, then opens a pull request referencing the work item (spec: forge
  * abstraction / branch and PR). Never touches the default branch.
@@ -199,6 +227,30 @@ export async function forgeOpenPullRequest(
     const base = await forge.checkout({ repo, ref: branch });
     const patch = await readPatch(args.runId);
     const files = await applyPatch(base.files, patch).catch(asPatchFailure);
+
+    // Deterministic guard hooks (roadmap item 4): pure checks on the branch + applied files,
+    // before anything is committed. A failure is fail-closed and non-retryable. Deleted
+    // files are kept as empty entries so path containment and the file count still see them.
+    const { definition } = loadDefinition(args.factoryRoot);
+    const guardedFiles: Record<string, string> = Object.fromEntries(
+      files.map((change) => [change.path, change.content ?? '']),
+    );
+    const report = runGuardHooks({
+      branch,
+      files: guardedFiles,
+      ...(definition?.manifest.guard ? { config: definition.manifest.guard } : {}),
+    });
+    if (!report.passed) {
+      await recordGuardEvent(args.workItemId, 'guard.failed', report);
+      throw ApplicationFailure.create({
+        type: 'guard_failed',
+        nonRetryable: true,
+        message: 'guard hooks rejected the pull request',
+        details: [report],
+      });
+    }
+    await recordGuardEvent(args.workItemId, 'guard.checked', report);
+
     const commit = await forge.commit({
       repo,
       branch,

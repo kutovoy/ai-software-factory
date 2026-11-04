@@ -163,8 +163,80 @@ function GatesDiagram() {
   );
 }
 
+const STACK_LAYERS = [
+  {
+    id: '00',
+    title: 'Factories as code',
+    detail: 'factory.yaml, agents, gates, scorers and benchmarks — git is the source of truth',
+    tone: 'bg-slate-50 border-slate-300',
+  },
+  {
+    id: '01',
+    title: 'Data and context',
+    detail: 'repositories, artifacts, event logs and lessons an agent may read; secrets by name',
+    tone: 'bg-sky-50 border-sky-200',
+  },
+  {
+    id: '02',
+    title: 'Compute',
+    detail: 'the runner protocol and the sandbox a stage executes in',
+    tone: 'bg-sky-50 border-sky-200',
+  },
+  {
+    id: '03',
+    title: 'Inference',
+    detail: 'the harness and model an agent binds to; models resolve through env: references',
+    tone: 'bg-indigo-50 border-indigo-200',
+  },
+  {
+    id: '04',
+    title: 'Improvement',
+    detail: 'scoring, calibration, benchmarks, proposals and the canary loop',
+    tone: 'bg-emerald-50 border-emerald-200',
+  },
+  {
+    id: '05',
+    title: 'Orchestration',
+    detail: 'the durable work-item workflow, gates, retries and the merge train',
+    tone: 'bg-emerald-50 border-emerald-200',
+  },
+  {
+    id: '06',
+    title: 'Access',
+    detail: 'console identity, roles and scope, the secrets registry and MCP bindings',
+    tone: 'bg-amber-50 border-amber-200',
+  },
+];
+
+function StackDiagram() {
+  return (
+    <div data-testid="diagram-stack" className="space-y-2">
+      {STACK_LAYERS.map((layer) => (
+        <div key={layer.id} className="flex items-center gap-2">
+          <span
+            aria-hidden="true"
+            className="flex h-7 w-9 shrink-0 items-center justify-center rounded-md bg-slate-900 font-mono text-[11px] font-semibold text-white"
+          >
+            {layer.id}
+          </span>
+          <div className={`min-w-0 flex-1 rounded-lg border px-3 py-1.5 ${layer.tone}`}>
+            <p className="text-xs font-semibold text-slate-800">{layer.title}</p>
+            <p className="text-[11px] text-slate-600">{layer.detail}</p>
+          </div>
+        </div>
+      ))}
+      <p className="text-xs text-slate-500">
+        The console renders each layer as a projection of the API: definitions at 00, readiness over 00
+        and 02, orchestration state and metrics at 05, and access at 06. Nothing here writes a file or
+        runs a tool.
+      </p>
+    </div>
+  );
+}
+
 export function HelpDiagram({ name }: { name: HelpDiagramName }) {
   if (name === 'pipeline') return <PipelineDiagram />;
   if (name === 'anatomy') return <AnatomyDiagram />;
+  if (name === 'stack') return <StackDiagram />;
   return <GatesDiagram />;
 }

@@ -13,9 +13,22 @@ gates:
   pr_review: agent
   review: agent
   spec: agent
+guard:
+  enabled: true
+  maxChangedFiles: 200
+  maxPatchBytes: 1000000
+  protectedBranches:
+    - main
+    - master
+  secretScan: true
 id: fac_01M6J3A931Y4JFBRAPVY9FYSNM
 mergePolicy: auto_on_green
 name: train-game
+readiness:
+  enforceAutonomy: false
+  thresholds:
+    ready: 80
+    warn: 60
 repositories:
   - name: train-game
     owner: acme
@@ -34,3 +47,31 @@ stages:
   - agent: qa
     name: verify
   - name: ship
+validation:
+  checks:
+    - command: bun run typecheck
+      evidence: command
+      id: typecheck
+      required: true
+      tier: unit
+      title: Typecheck
+    - command: bun run build
+      evidence: command
+      id: build
+      required: true
+      tier: integration
+      title: Production build
+    - command: bun run e2e
+      evidence: artifact
+      id: e2e
+      required: true
+      tier: e2e
+      title: Playwright game flow
+    - evidence: manual
+      expected: QA records a Playwright trace showing a delivery
+      id: manual-acceptance
+      required: true
+      tier: manual
+      title: "Acceptance: drive the train and deliver cargo between stations"
+  enabled: true
+  enforce: true

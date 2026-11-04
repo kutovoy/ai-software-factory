@@ -40,6 +40,7 @@ export interface FactoryNavItem {
 /** Per-factory group; `Definition` and `Gates` are promoted to first-class pages. */
 export const FACTORY_NAV: FactoryNavItem[] = [
   { segment: 'dashboard', label: 'Dashboard', testId: 'nav-dashboard', icon: 'dashboard' },
+  { segment: 'readiness', label: 'Readiness', testId: 'nav-readiness', icon: 'gauge' },
   { segment: 'agents', label: 'Agents', testId: 'nav-agents', icon: 'users' },
   { segment: 'automations', label: 'Automations', testId: 'nav-automations', icon: 'zap' },
   { segment: 'scorers', label: 'Scorers', testId: 'nav-scorers', icon: 'star' },

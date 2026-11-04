@@ -12,6 +12,7 @@ import type {
   FactoryDetail,
   FactoryMetricsResponse,
   MetricCardWire,
+  ReadinessReportWire,
   RunArtifact,
   RunDetail,
   RunSummary,
@@ -34,8 +35,11 @@ const ARTIFACT_SCAN = 3;
 function formatMetricValue(metric: MetricCardWire): string {
   if (metric.value === null) return '—';
   if (metric.unit === 'USD/PR') return formatCost(metric.value);
+  if (metric.unit === 'USD/accepted change') return formatCost(metric.value);
+  if (metric.unit === 'interactions/PR') return `${metric.value}`;
   if (metric.unit === '%') return `${metric.value}%`;
   if (metric.unit === 'hours') return `${metric.value} h`;
+  if (metric.unit === 'days') return `${metric.value} d`;
   return `${metric.value}`;
 }
 
@@ -247,6 +251,78 @@ function StateCard({
             )}
           </div>
         </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+function readinessTone(status: ReadinessReportWire['status']): 'success' | 'warning' | 'danger' {
+  if (status === 'ready') return 'success';
+  if (status === 'warn') return 'warning';
+  return 'danger';
+}
+
+function ReadinessCard({
+  readiness,
+  encoded,
+}: {
+  readiness: ReadinessReportWire | null;
+  encoded: string;
+}) {
+  const failing = (readiness?.checks ?? []).filter((check) => !check.passed).slice(0, 3);
+  return (
+    <Card testId="dashboard-readiness">
+      <CardHeader
+        title="Readiness"
+        hint="Deterministic scan of the checkout and the definition — advisory unless `readiness.enforceAutonomy` is on."
+        action={
+          <Link
+            href={`/factories/${encoded}/readiness`}
+            data-testid="dashboard-readiness-link"
+            className="text-xs font-medium text-sky-700 underline decoration-sky-200 underline-offset-2"
+          >
+            Readiness
+          </Link>
+        }
+      />
+      <CardBody className="space-y-2">
+        {readiness ? (
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                data-testid="dashboard-readiness-score"
+                data-score={readiness.score}
+                className="text-2xl font-semibold text-slate-900"
+              >
+                {readiness.score}
+                <span className="text-sm font-normal text-slate-500">/100</span>
+              </span>
+              <Badge tone={readinessTone(readiness.status)} testId="dashboard-readiness-status" mono>
+                {readiness.status.replace('_', ' ')}
+              </Badge>
+              <span className="text-[11px] text-slate-500">
+                ready ≥ {readiness.thresholds.ready} · warn ≥ {readiness.thresholds.warn}
+              </span>
+            </div>
+            {failing.length === 0 ? (
+              <p data-testid="dashboard-readiness-passing" className="text-xs text-emerald-700">
+                Every readiness check passes.
+              </p>
+            ) : (
+              <ul data-testid="dashboard-readiness-failing" className="space-y-1">
+                {failing.map((check) => (
+                  <li key={check.id} className="text-xs text-amber-700" data-check-id={check.id}>
+                    {check.label}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        ) : (
+          <p data-testid="dashboard-readiness-unavailable" className="text-xs text-slate-500">
+            Readiness unavailable: the scan could not be read. No score is fabricated.
+          </p>
+        )}
       </CardBody>
     </Card>
   );
@@ -515,13 +591,14 @@ export default async function DashboardPage({
     ? (window as string)
     : '30d';
 
-  const [factory, runs, metrics, workItems, autonomy, canary] = await Promise.all([
+  const [factory, runs, metrics, readiness, workItems, autonomy, canary] = await Promise.all([
     loadFactory(factoryId),
     safeGet<{ runs: RunSummary[] }>(`/factories/${encoded}/runs?limit=100`, { runs: [] }),
     safeGet<FactoryMetricsResponse | null>(
       `/factories/${encoded}/metrics?window=${encodeURIComponent(windowLabel)}`,
       null,
     ),
+    safeGet<ReadinessReportWire | null>(`/factories/${encoded}/readiness`, null),
     safeGet<{ workItems: WorkItemSummary[] }>(`/factories/${encoded}/work-items?limit=100`, {
       workItems: [],
     }),
@@ -583,18 +660,29 @@ export default async function DashboardPage({
             ) : null}
           </p>
         </div>
-        {factory ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge tone={factory.fullyAutonomous ? 'warning' : 'success'} testId="dashboard-autonomy">
-              {factory.fullyAutonomous ? 'lights off' : 'lights on'}
-            </Badge>
-            <Badge tone="neutral">{factory.resourceCount} resources</Badge>
-            <Badge tone="neutral">{factory.repoCount} repos</Badge>
-          </div>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          {factory ? (
+            <>
+              <Badge tone={factory.fullyAutonomous ? 'warning' : 'success'} testId="dashboard-autonomy">
+                {factory.fullyAutonomous ? 'lights off' : 'lights on'}
+              </Badge>
+              <Badge tone="neutral">{factory.resourceCount} resources</Badge>
+              <Badge tone="neutral">{factory.repoCount} repos</Badge>
+            </>
+          ) : null}
+          <Link
+            href="/help/concepts/factory-stack"
+            data-testid="dashboard-factory-stack"
+            className="text-xs font-medium text-sky-700 underline decoration-sky-200 underline-offset-2"
+          >
+            Factory stack
+          </Link>
+        </div>
       </header>
 
       <StateCard autonomy={autonomy?.autonomy ?? null} canary={canary} activity={activity} encoded={encoded} />
+
+      <ReadinessCard readiness={readiness} encoded={encoded} />
 
       {rows.length === 0 ? (
         <EmptyState

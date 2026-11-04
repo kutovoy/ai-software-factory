@@ -8,6 +8,11 @@ import {
   workflowInfo,
 } from '@temporalio/workflow';
 import { parseAgentVerdict } from '@factory/core/gates/verdict';
+import {
+  VALIDATION_EVIDENCE_INSTRUCTION,
+  evaluateValidationContract,
+  parseValidationEvidence,
+} from '@factory/core/validation/types';
 import type * as activities from '../activities';
 import type {
   GateDecisionAck,
@@ -112,6 +117,8 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
   let runId: string | null = null;
   let runStatus: StageWorkflowResult['status'] = 'ok';
   let summary: string | undefined;
+  let validationFailed = false;
+  let validationMissing: string[] = [];
 
   if (input.phase === 'run' || input.phase === 'review') {
     runId = stageRunId(input.workItemId, input.stage, input.attempt, input.reviewerIndex);
@@ -126,6 +133,14 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
       `Work item: ${input.workItemId}`,
       `Definition commit: ${input.definitionCommit}`,
       ...(input.gate === 'agent' ? ['', AGENT_VERDICT_INSTRUCTION] : []),
+      ...(input.stage === 'verify' && input.validationContract
+        ? [
+            '',
+            VALIDATION_EVIDENCE_INSTRUCTION,
+            '',
+            `Validation contract: ${JSON.stringify(input.validationContract.checks)}`,
+          ]
+        : []),
     ].join('\n');
 
     const runInput: RunInput = {
@@ -185,6 +200,29 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
     };
   }
 
+  // Verify-stage validation evidence (roadmap item 1): parse the agent's fenced JSON
+  // report, evaluate the contract against it and append the evidence event. Enforcement
+  // turns a missing required check into `request_changes` on an agent gate; human gates
+  // are enforced by the API on approve.
+  if (input.phase === 'run' && input.stage === 'verify' && input.validationContract) {
+    const evidence = parseValidationEvidence(summary ?? '');
+    const projection = evaluateValidationContract(input.validationContract, evidence);
+    await gates.recordWorkItemEvent({
+      workItemId: input.workItemId,
+      type: 'validation.evidence',
+      stage: input.stage,
+      actor: input.agent ?? 'qa',
+      payload: {
+        contractId: input.validationContract.workItemId,
+        checks: evidence,
+        complete: projection.complete,
+        missing: projection.missing,
+      },
+    });
+    validationFailed = input.validationContract.enforce && !projection.complete;
+    validationMissing = projection.missing;
+  }
+
   if (input.gate === 'none') {
     return { stage: input.stage, runId, status: runStatus, gate: null, ...(summary ? { summary } : {}) };
   }
@@ -229,7 +267,13 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
     let reason: string;
     let feedback: string | undefined;
 
-    if (verdict.decision === 'approve') {
+    if (validationFailed) {
+      // Validation enforcement wins over the verdict chain: an agent cannot approve a
+      // verify stage whose enforced contract still lacks required evidence.
+      decision = 'request_changes';
+      reason = 'validation incomplete';
+      feedback = `validation incomplete: missing ${validationMissing.join(', ')}`;
+    } else if (verdict.decision === 'approve') {
       decision = 'approve';
       reason = 'agent verdict: approve';
     } else if (verdict.decision === 'request_changes') {

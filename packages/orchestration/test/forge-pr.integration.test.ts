@@ -128,6 +128,27 @@ describe('forgeOpenPullRequest commits the applied change', () => {
     });
   });
 
+
+  test('a patch containing a known secret is rejected before commit', async () => {
+    forge = seededForge();
+    await writeRunPatch(
+      'run_implement_5',
+      [
+        'diff --git a/src/config.ts b/src/config.ts',
+        'new file mode 100644',
+        '--- /dev/null',
+        '+++ b/src/config.ts',
+        '@@ -0,0 +1,1 @@',
+        "+export const token = 'ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';",
+        '',
+      ].join('\n'),
+    );
+    await expect(open('wi_test_5', 'run_implement_5')).rejects.toMatchObject({
+      type: 'guard_failed',
+    });
+    expect(forge.listPullRequests(REPO).some((candidate) => candidate.workItemId === 'wi_test_5')).toBe(false);
+  });
+
   test('a patch that does not apply fails with patch_apply_failed', async () => {
     forge = seededForge();
     await writeRunPatch(

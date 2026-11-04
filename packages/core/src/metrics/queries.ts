@@ -55,7 +55,7 @@ export async function computeFactoryMetrics(
   const [workItemRows, gateRows, permissionRows, runRows, checkRows] = await Promise.all([
     sql`
       select
-        w.id, w.type, w.status, w.created_at, w.pr_url, w.pr_number,
+        w.id, w.type, w.status, w.created_at, w.pr_url, w.pr_number, w.source,
         (
           select max(e.created_at)
           from work_item_events e
@@ -72,6 +72,7 @@ export async function computeFactoryMetrics(
       created_at: unknown;
       pr_url: string | null;
       pr_number: number | null;
+      source: string | null;
       done_at: unknown;
     }[]>,
     sql`
@@ -119,6 +120,7 @@ export async function computeFactoryMetrics(
     doneAt: iso(row.done_at),
     prUrl: row.pr_url,
     prNumber: row.pr_number === null ? null : Number(row.pr_number),
+    source: row.source ?? undefined,
   }));
 
   const gates: GateMetricRow[] = gateRows.map((row) => ({
@@ -131,6 +133,7 @@ export async function computeFactoryMetrics(
 
   const permissions: PermissionMetricRow[] = permissionRows.map((row) => ({
     runId: row.run_id,
+    workItemId: parseStageRunId(row.run_id)?.workItemId ?? null,
     decidedAt: iso(row.decided_at),
   }));
 

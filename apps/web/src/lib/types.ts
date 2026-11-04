@@ -176,6 +176,19 @@ export interface FactoryManifest {
     observationWindowHours?: number;
     maxProbes?: number;
   };
+  /** Validation contract declaration (spec `validation-contract`, roadmap item 1). */
+  validation?: {
+    enabled?: boolean;
+    enforce?: boolean;
+    checks?: ValidationCheckWire[];
+  };
+  /** Agent readiness policy (spec `agent-readiness`, roadmap item 2); advisory by default. */
+  readiness?: {
+    enforceAutonomy?: boolean;
+    thresholds?: { ready: number; warn: number };
+  };
+  /** Deterministic pre-PR guard hooks (spec `guard-hooks`, roadmap item 4). */
+  guard?: Record<string, unknown>;
 }
 
 export interface FactoryDetail {
@@ -319,12 +332,60 @@ export interface GateDecisionRecord {
   decidedAt: string | null;
 }
 
+/* ------------------------------------------------------- validation contract */
+
+export interface ValidationCheckWire {
+  id: string;
+  title: string;
+  tier: 'unit' | 'component' | 'integration' | 'e2e' | 'manual';
+  required: boolean;
+  evidence: 'command' | 'artifact' | 'forge-check' | 'manual';
+  command?: string;
+  expected?: string;
+}
+
+export interface ValidationEvidenceWire {
+  checkId: string;
+  status: 'pass' | 'fail';
+  source: 'agent' | 'forge' | 'human' | 'artifact';
+  detail?: string;
+  at?: string;
+}
+
+export interface ValidationCheckResultWire {
+  check: ValidationCheckWire;
+  status: 'pass' | 'fail' | 'missing';
+  source: 'agent' | 'forge' | 'human' | 'artifact' | null;
+  evidence?: ValidationEvidenceWire;
+}
+
+export interface ValidationContractWire {
+  version: string;
+  workItemId: string;
+  factory: string;
+  definitionCommit: string;
+  createdAt: string;
+  enforce: boolean;
+  checks: ValidationCheckWire[];
+  risks: string[];
+  source: 'factory' | 'inferred' | 'work-item';
+}
+
+export interface ValidationProjectionWire {
+  contract: ValidationContractWire;
+  checks: ValidationCheckResultWire[];
+  complete: boolean;
+  missing: string[];
+}
+
 export interface WorkItemDetail {
   workItem: WorkItemSummary;
   events: WorkItemEvent[];
   gates: GateDecisionRecord[];
   pendingGate: GateDecisionRecord | null;
   workflowId: string;
+  /** Validation contract projection; `null` when the item carries no contract. */
+  validation: ValidationProjectionWire | null;
 }
 
 export interface CreatedWorkItem {
@@ -377,6 +438,54 @@ export interface AutonomyState {
   benchmarkAttestationSatisfied?: boolean;
   benchmarkAttestationCode?: 'benchmark_attestation_missing' | null;
   signaled: number;
+}
+
+/* ---------------------------------------------------------- agent readiness */
+
+export interface ReadinessCheckWire {
+  id: string;
+  label: string;
+  section: 'repository' | 'factory';
+  passed: boolean;
+  weight: number;
+  evidence: string;
+  remediation: string;
+}
+
+export interface ReadinessSectionWire {
+  id: 'repository' | 'factory';
+  label: string;
+  score: number;
+  checks: ReadinessCheckWire[];
+}
+
+export interface ReadinessReportWire {
+  root: string;
+  generatedAt: string;
+  score: number;
+  status: 'ready' | 'warn' | 'not_ready';
+  thresholds: { ready: number; warn: number };
+  sections: ReadinessSectionWire[];
+  checks: ReadinessCheckWire[];
+  summary: string;
+}
+
+/* ------------------------------------------------------------- guard hooks */
+
+export interface GuardHookEventWire {
+  workItemId: string;
+  type: string;
+  stage: string | null;
+  actor: string | null;
+  payload: Record<string, unknown>;
+  createdAt: string | null;
+}
+
+export interface GuardHooksWire {
+  factory: string;
+  config: Record<string, unknown>;
+  defaults: Record<string, unknown>;
+  recent: GuardHookEventWire[];
 }
 
 /* -------------------------------------------------------------- scoring */

@@ -14,8 +14,8 @@ State as of 2026-11-03. Everything below is committed and tagged. Public-release
 | Code forges | `packages/forge` | `CodeForge` contract, fake + GitHub (token by ref, dry-run, offline contract tests) |
 | Merge queue | `packages/merge` | serialized merge train, bisect on red, single-commit revert, manual revert |
 | Evals | `packages/evals` | scorers (deterministic + judge), calibration, benchmarks, Pareto, self-improvement, lessons |
-| API | `apps/api` | path-versioned under `/api/v1` (ADR-030); OpenAPI 3.1 at `GET /api/v1/openapi.json`; every factory-scoped resource nested under `/api/v1/factories/<factoryId>/…` (runs/SSE, permissions, chat, work items, gates, autonomy, scores, calibration, scoring, benchmarks, improvement, proposals, lessons, canary, MCPs, merge queue, automations); global factories/auth/secrets/integrations/webhooks |
-| Web console | `apps/web` | full nav parity; global chat/inbox/secrets/users/help; factory pages nested under `/factories/<id>/…` including score detail and MCPs |
+| API | `apps/api` | path-versioned under `/api/v1` (ADR-030); OpenAPI 3.1 at `GET /api/v1/openapi.json`; every factory-scoped resource nested under `/api/v1/factories/<factoryId>/…` (runs/SSE, permissions, chat, work items, gates, autonomy, readiness, guard hooks, scores, calibration, scoring, benchmarks, improvement, proposals, lessons, canary, MCPs, merge queue, automations); global factories/auth/secrets/integrations/webhooks |
+| Web console | `apps/web` | full nav parity; global chat/inbox/secrets/users/help; factory pages nested under `/factories/<id>/…` including readiness, score detail and MCPs; work-item validation contract panel; Factory Stack help |
 | Examples | `factories/example`, `factories/example-lights-off` | lights-on (spec/plan/PR human) vs canary authority |
 
 ## Run it
@@ -23,7 +23,7 @@ State as of 2026-11-03. Everything below is committed and tagged. Public-release
 ```bash
 docker compose up -d --build      # postgres + temporal + api + worker + web
 bash scripts/smoke.sh             # full credential-free smoke (16 sections)
-cd apps/web && bunx playwright test   # 23 E2E flows
+cd apps/web && bunx playwright test   # 61 E2E flows
 bun run ci                        # typecheck + unit/integration-off + factory validation
 
 # the API surface: one version prefix, /health stays unversioned
@@ -92,10 +92,10 @@ lets you validate wiring without touching a repo. GitHub delivers to
 3. **Forge proxy mode**: SSH ships by default; the Caddy overlay is live-validated for session auth and HTTP,
    but a websocket upgrade has not been exercised end to end.
 4. **Promotion** merges the definition repo but does not rewrite the local checkout; `runs/canary/` GC is manual.
-5. **Factory engineering roadmap** is proposed in `research/software-factory-ideas.md`: validation contract +
-   QA pyramid, agent readiness, outcome metrics, guard hooks, then trace-driven self-improvement, model routing,
-   work intake, progressive context, governance, surface-agnostic agents and missions. Not approved for execution
-   yet.
+5. **Factory engineering foundation** is implemented on `feat/factory-engineering-foundation`: validation
+   contract + QA pyramid, agent readiness, outcome metrics, guard hooks and Factory Stack help. Remaining roadmap
+   in `research/software-factory-ideas.md`: trace-driven self-improvement, model routing, work intake,
+   progressive context, governance, surface-agnostic agents and missions.
 
 ## Version tags
 
@@ -106,7 +106,15 @@ lets you validate wiring without touching a repo. GitHub delivers to
 `agent-verdicts` · `console-auth` · `harden-runners` · `forge-ssh-public` · `factory-identity` · `factory-purge` ·
 `readiness-identity` · `unify-factory-api` · `fix-forge-pr-files` · `readiness-forge-files`.
 
-## Latest state (2026-11-01)
+## Latest state (2026-11-03)
+
+- **Factory engineering foundation**: work items get a persisted validation contract (unit/component/
+  integration/e2e/manual); the verify gate refuses approval while enforced evidence is missing; readiness
+  scores the checkout and definition; metrics add human interactions per PR, autonomy ratio, cost per accepted
+  change, signal-to-production cycle time, incident MTT and merged-code age; pure guard hooks run before a PR
+  commit; Help explains the 00–06 factory stack. Train-game opts into enforced validation and guard hooks.
+
+## Previous state (2026-11-01)
 
 - **Readiness PASS**: `hello-nextjs` (six agents, all gates `agent`, `auto_on_green`, audited autonomy override)
   took `wi_01M6B5097TGHK0KKZQN9BB3C4G` to `done` with zero human decisions and a merged PR containing the five

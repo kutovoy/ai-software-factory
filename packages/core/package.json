@@ -7,7 +7,8 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./gates/verdict": "./src/gates/verdict.ts"
+    "./gates/verdict": "./src/gates/verdict.ts",
+    "./validation/types": "./src/validation/types.ts"
   },
   "dependencies": {
     "yaml": "^2.6.1",

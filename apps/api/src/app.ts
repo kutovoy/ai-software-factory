@@ -106,6 +106,8 @@ import {
 } from './merge-queue';
 import { registerProxy } from './proxy';
 import { purgeFactoryForApi } from './purge';
+import { getReadinessForApi } from './readiness';
+import { getGuardHooksForApi } from './guard';
 import { API_PREFIX, isPublicRoute, openApiPath, type RouteEntry } from './routes';
 import {
   getMcpForApi,
@@ -389,6 +391,16 @@ export function createApp(config: ApiConfig): Hono {
         c.req.query('to') ?? undefined,
       ),
     ),
+  );
+
+  /* ------------------------------------------ agent readiness / guard hooks */
+
+  api.get('/factories/:factoryId/readiness', async (c) =>
+    c.json(await getReadinessForApi(config, (await factoryOf(c)).key)),
+  );
+
+  api.get('/factories/:factoryId/guard-hooks', async (c) =>
+    c.json(await getGuardHooksForApi(config, (await factoryOf(c)).key)),
   );
 
   /* -------------------------------------------------------- secrets (6.1) */

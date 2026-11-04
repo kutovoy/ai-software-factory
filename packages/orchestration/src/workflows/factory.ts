@@ -330,6 +330,7 @@ export async function FactoryWorkflow(
       // must be a diff against the definition commit, not against a previous attempt.
       ...(stage !== 'implement' && patchRunId ? { patchRunId } : {}),
       ...(input.permissionTimeoutMs ? { permissionTimeoutMs: input.permissionTimeoutMs } : {}),
+      ...(input.validationContract ? { validationContract: input.validationContract } : {}),
     };
 
     stageScope = new CancellationScope();

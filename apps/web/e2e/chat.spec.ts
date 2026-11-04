@@ -8,6 +8,10 @@ test.afterEach(async ({ request }) => {
 /** The core loop: prompt → tool call visible → approve permission → terminal state. */
 test.describe('New Chat streams a run', () => {
   test('prompt → tool call → permission → terminal', async ({ page }) => {
+    // /chat selects the persisted factory cookie, or the first factory the viewer owns.
+    // Pin `example` so the run and the later factory-scoped run detail agree.
+    const exampleId = await factoryId(page.request, 'example');
+    await page.context().addCookies([{ name: 'factory', value: exampleId, url: 'http://localhost:3000' }]);
     await page.goto('/chat');
 
     await expect(page.getByTestId('nav-sidebar')).toBeVisible();
