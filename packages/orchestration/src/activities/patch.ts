@@ -46,6 +46,26 @@ function looksBinary(patch: string): boolean {
   return BINARY_MARKERS.some((marker) => patch.includes(marker));
 }
 
+/**
+ * Paths the patch creates from `/dev/null`. A rerun starts from the definition commit,
+ * which may not contain files that are already on the forge branch; `git apply` refuses a
+ * "new file" patch when the path exists. Removing those paths from the snapshot first makes
+ * the patch authoritative for its own files, while the final change list still compares
+ * against the real base.
+ */
+function newFilePaths(patch: string): Set<string> {
+  const paths = new Set<string>();
+  const lines = patch.split('\n');
+  for (let index = 0; index < lines.length; index += 1) {
+    const header = /^diff --git a\/(.+) b\/(.+)$/.exec(lines[index] ?? '');
+    if (!header) continue;
+    if ((lines[index + 1] ?? '').startsWith('new file mode')) {
+      paths.add(safeRelativePath(header[2] as string));
+    }
+  }
+  return paths;
+}
+
 /** Rejects paths that would escape the workspace when materialising the snapshot. */
 function safeRelativePath(path: string): string {
   const normalized = path.replaceAll('\\', '/');
@@ -120,11 +140,27 @@ export async function applyPatch(
   const patchFile = join(root, 'patch.diff');
 
   try {
-    await writeSnapshot(repo, base);
+    // A patch's "new file" entries are authoritative. Drop those paths from the snapshot
+    // first so a rerun whose forge branch already has the file can still apply the patch.
+    const created = newFilePaths(patch);
+    const snapshot: Record<string, string> = {};
+    for (const [path, content] of Object.entries(base)) {
+      if (!created.has(path)) snapshot[path] = content;
+    }
+    await writeSnapshot(repo, snapshot);
     await writeFile(patchFile, patch, 'utf8');
 
     const applied = await runGit(['apply', '--whitespace=nowarn', patchFile], repo);
     if (applied.code !== 0) {
+      // A re-run of the same task can produce the exact patch that is already on the base
+      // branch. If reversing the patch would apply cleanly, the change is already present;
+      // return no file changes instead of failing the whole factory loop.
+      const reversed = await runGit(
+        ['apply', '--reverse', '--check', '--whitespace=nowarn', patchFile],
+        repo,
+      );
+      if (reversed.code === 0) return [];
+
       throw new PatchError('patch_apply_failed', 'git apply rejected the captured patch', {
         stderr: applied.stderr.slice(-2000),
       });

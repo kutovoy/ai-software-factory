@@ -113,6 +113,33 @@ describe('forgeOpenPullRequest commits the applied change', () => {
     expect(pull?.state).toBe('open');
   });
 
+  test('a patch already on the base branch commits an audit marker instead of failing', async () => {
+    const newFilePatch = [
+      'diff --git a/site/app/page.tsx b/site/app/page.tsx',
+      'new file mode 100644',
+      '--- /dev/null',
+      '+++ b/site/app/page.tsx',
+      '@@ -0,0 +1,3 @@',
+      '+export default function Page() {',
+      '+  return <h1>Hello, world!</h1>;',
+      '+}',
+      '',
+    ].join('\n');
+
+    forge = new FakeForge();
+    forge.seedRepo(REPO, {
+      'README.md': '# api-service\n',
+      'site/app/page.tsx':
+        'export default function Page() {\n  return <h1>Hello, world!</h1>;\n}\n',
+    });
+    setForge('fake', forge);
+    await writeRunPatch('run_implement_noop', newFilePatch);
+
+    const opened = await open('wi_test_noop', 'run_implement_noop');
+    const branch = await forge.checkout({ repo: REPO, ref: opened.branch });
+    expect(branch.files['changes/wi_test_noop.md']).toContain('already applied');
+  });
+
   test('a missing patch fails with patch_missing instead of committing a placeholder', async () => {
     forge = seededForge();
     await expect(open('wi_test_2', 'run_implement_2')).rejects.toMatchObject({

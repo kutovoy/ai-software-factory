@@ -109,7 +109,9 @@ export function mcpWiringFor(input: RunInput): McpSessionWiring | undefined {
   try {
     const { definition } = loadDefinition(input.factoryRoot);
     if (!definition) return undefined;
-    const wiring = resolveMcpWiring(definition, input.agent ?? null);
+    const wiring = resolveMcpWiring(definition, input.agent ?? null, {
+      ...(input.prompt?.text ? { prompt: input.prompt.text } : {}),
+    });
     return {
       servers: wiring.servers,
       permissions: wiring.permissions,

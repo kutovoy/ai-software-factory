@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./gates/verdict": "./src/gates/verdict.ts",
+    "./governance/policy": "./src/governance/policy.ts",
     "./validation/types": "./src/validation/types.ts"
   },
   "dependencies": {

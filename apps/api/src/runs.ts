@@ -1,14 +1,20 @@
 import { randomBytes } from 'node:crypto';
 import {
   DefinitionValidationError,
+  ModelNotAllowedError,
+  assertModelAllowed,
+  chooseRouting,
   createVersion,
   modelEnvName,
   resolveModelRef,
   type FactoryDefinition,
   type FactoryManifest,
+  type GovernanceConfig,
+  type RoutingDef,
   type RunnerDef,
 } from '@factory/core';
 import {
+  buildRunContext,
   finishRun,
   getRun,
   getSql,
@@ -21,13 +27,16 @@ import {
   type RunInput,
   type RunRow,
 } from '@factory/orchestration';
+import type { TraceMetrics } from '@factory/evals';
 import type { ApiConfig } from './config';
 import { toOrchestrationConfig } from './config';
 import { canAccess, type Viewer } from './auth';
 import {
   ApiError,
   definitionInvalid,
+  factoryBudgetExhausted,
   invalidRequest,
+  modelNotAllowed,
   modelUnresolved,
   runNotFound,
 } from './errors';
@@ -105,10 +114,28 @@ export function resolveRunDefaults(
   manifest: FactoryManifest,
   body: RunDefaultsBody,
   env: NodeJS.ProcessEnv = process.env,
+  routingOptions: {
+    routing?: RoutingDef | null;
+    prompt?: string;
+    stage?: string;
+    governance?: GovernanceConfig | null;
+  } = {},
 ): RunDefaults {
-  const harness = body.harness ?? manifest.agentDefaults.harness?.type ?? 'opencode';
+  // An explicit harness (e.g. the smoke/e2e `fake` harness) always wins over routing.
+  const routed =
+    routingOptions.routing && body.harness !== 'fake'
+      ? chooseRouting({
+          routing: routingOptions.routing,
+          prompt: routingOptions.prompt ?? '',
+          stage: routingOptions.stage ?? 'implement',
+          env,
+        })
+      : null;
+  const harness =
+    body.harness ?? routed?.harness?.type ?? manifest.agentDefaults.harness?.type ?? 'opencode';
   const declared =
     body.model ??
+    routed?.model ??
     manifest.agentDefaults.harness?.model ??
     manifest.agentDefaults.model ??
     (harness === 'fake' ? 'fake/fake-model' : undefined);
@@ -128,9 +155,37 @@ export function resolveRunDefaults(
   }
 
   const model = resolved.value ?? 'fake/fake-model';
+  try {
+    assertModelAllowed(routingOptions.governance, model);
+  } catch (error) {
+    if (error instanceof ModelNotAllowedError) throw modelNotAllowed(error.model, error.allowed);
+    throw error;
+  }
   const runner = harness === 'fake' ? 'fake' : (body.runner ?? mapRunnerName(manifest.agentDefaults.runner));
 
   return { harness, model, runner };
+}
+
+/** Recorded spend for a factory, used by the factory-wide cap. */
+export async function factorySpendUsd(factory: string): Promise<number> {
+  const rows = (await getSql()`
+    select coalesce(sum(cost_usd), 0)::float8 as spent from runs where factory = ${factory}
+  `) as { spent: number }[];
+  return Number(rows[0]?.spent ?? 0);
+}
+
+/**
+ * Refuses new work when the factory's recorded spend has reached its cap. The per-run and
+ * per-stage caps are enforced by the runner pump; this is the coarse factory guard.
+ */
+export async function assertFactoryBudget(
+  factory: string,
+  manifest: FactoryManifest,
+): Promise<void> {
+  const cap = manifest.budget?.maxCostUsdPerFactory;
+  if (cap === undefined) return;
+  const spent = await factorySpendUsd(factory);
+  if (spent >= cap) throw factoryBudgetExhausted(factory, cap, spent);
 }
 
 export function newRunId(): string {
@@ -150,7 +205,15 @@ export async function createRun(
   const { commit, dirty } = pinVersion(dir, factory);
 
   const manifest = definition.manifest;
-  const defaults = resolveRunDefaults(manifest, body);
+  await assertFactoryBudget(factory, manifest);
+  const routing = (definition.resources.find((resource) => resource.kind === 'routing')?.doc ??
+    null) as RoutingDef | null;
+  const defaults = resolveRunDefaults(manifest, body, process.env, {
+    ...(routing ? { routing } : {}),
+    ...(body.prompt ? { prompt: body.prompt } : {}),
+    stage: 'implement',
+    ...(manifest.governance ? { governance: manifest.governance } : {}),
+  });
   const harness = defaults.harness;
   const model = defaults.model;
   const runner = defaults.runner;
@@ -186,6 +249,9 @@ export async function createRun(
     // The proxy allowlist is exactly the model this run was pinned to.
     proxyModels: model ? [model] : [],
     fakeDelayMs: body.fakeDelayMs,
+    ...(manifest.budget?.maxCostUsdPerRun !== undefined
+      ? { maxCostUsd: manifest.budget.maxCostUsdPerRun }
+      : {}),
     setupCommands,
     // The workflow owns the permission SLA (ADR-013); pin it into the run input.
     permissionTimeoutMs: config.permissionTimeoutMs,
@@ -465,6 +531,8 @@ export async function getRunDetail(
   proxyAttempts: unknown[];
   retryOf: string | null;
   retriedBy: string | null;
+  /** Deterministic trace metrics derived from events + the review verdict. */
+  trace: TraceMetrics | null;
 }> {
   const run = await getRun(runId);
   if (!run) throw runNotFound(runId);
@@ -478,6 +546,14 @@ export async function getRunDetail(
     order by created_at asc
     limit 1
   `) as { id: string }[];
+
+  let trace: TraceMetrics | null = null;
+  try {
+    trace = (await buildRunContext({ runId, factory: run.factory })).trace;
+  } catch {
+    // A run may predate the trace fields or have no event log; the detail page still works.
+  }
+
   return {
     run,
     summary: summarize(run),
@@ -490,5 +566,6 @@ export async function getRunDetail(
     proxyAttempts: await listProxyAttempts(runId),
     retryOf: input.retryOf ?? null,
     retriedBy: children[0]?.id ?? null,
+    trace,
   };
 }

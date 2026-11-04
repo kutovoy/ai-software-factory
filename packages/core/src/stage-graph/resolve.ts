@@ -1,9 +1,12 @@
 import { resolveLoopGate, type ResolvedLoopGate } from '../gates/loop';
+import { assertModelAllowed, type GovernanceConfig } from '../governance/policy';
 import { resolveModelRef, type ResolvedModel } from '../model/ref';
+import { chooseRouting } from '../routing/classify';
 import type { AutomationDef } from '../schema/automation';
 import type { AgentDef } from '../schema/agent';
 import type { Gate, HarnessType } from '../schema/common';
 import type { FactoryManifest } from '../schema/factory';
+import type { RoutingDef } from '../schema/routing';
 import type { CompiledStageGraph, LoopStage } from './graph';
 
 /**
@@ -49,6 +52,12 @@ export interface StageResolutionContext {
   globalDefaultGate?: Gate;
   /** Environment used to resolve `env:` model references. Defaults to `process.env`. */
   env?: NodeJS.ProcessEnv;
+  /** Optional `routing.yaml`; enables classifier/stage routing. */
+  routing?: RoutingDef | null;
+  /** Work-item prompt used by the routing classifier. */
+  taskPrompt?: string;
+  /** Governance allowlist/policy for the factory. */
+  governance?: GovernanceConfig | null;
 }
 
 export interface ResolvedStageConfig {
@@ -76,18 +85,22 @@ function inferenceFor(
   agent: StageAgentSource | null,
   manifest: FactoryManifest,
   env: NodeJS.ProcessEnv,
+  routing: RoutingDef | null,
+  taskPrompt: string,
+  stage: LoopStage,
 ): {
   harness: { type: HarnessType; model: string } | null;
   model: string | null;
   modelRef: ResolvedModel | null;
 } {
-  const harness = agent?.doc.harness ?? manifest.agentDefaults.harness ?? null;
-  const declared = agent?.doc.model ?? manifest.agentDefaults.model ?? harness?.model ?? null;
+  const routed = chooseRouting({ routing, prompt: taskPrompt, stage, env });
+  const harness = routed.harness ?? agent?.doc.harness ?? manifest.agentDefaults.harness ?? null;
+  const declared = routed.model ?? agent?.doc.model ?? manifest.agentDefaults.model ?? harness?.model ?? null;
   const modelRef = declared === null ? null : resolveModelRef(declared, env);
   const harnessModel = harness ? resolveModelRef(harness.model, env).value ?? harness.model : null;
   return {
     harness: harness && harnessModel !== null ? { type: harness.type, model: harnessModel } : null,
-    model: modelRef?.value ?? null,
+    model: routed.model ?? modelRef?.value ?? null,
     modelRef,
   };
 }
@@ -123,7 +136,15 @@ export function resolveStageConfigs(
 
     if (agent) assertSpawnAllowed({ name: agent.name, spawnableBy: agent.doc.spawnableBy }, spawner, node.name);
 
-    const inference = inferenceFor(agent, context.manifest, env);
+    const inference = inferenceFor(
+      agent,
+      context.manifest,
+      env,
+      context.routing ?? null,
+      context.taskPrompt ?? '',
+      node.name,
+    );
+    assertModelAllowed(context.governance, inference.model);
     const gate = resolveLoopGate(node.name, context.automation ?? null, context.manifest, {
       ...(context.globalDefaultGate ? { globalDefault: context.globalDefaultGate } : {}),
       ...(context.paused ? { forceHuman: true } : {}),

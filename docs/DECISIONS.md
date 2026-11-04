@@ -937,3 +937,23 @@ the same logic with a dry-run default and `--apply`.
 **Consequences:** a cancellation or worker crash cannot silently leave a sandbox forever. The reaper is conservative
 and DB/Temporal-aware rather than a blanket `docker system prune`; a stale `running` row may briefly exist until the
 next reaper pass, and its terminal error is explicit.
+
+## ADR-045 — Roadmap items 6–11: trace scores, routing/budgets, intake, context, governance, surfaces
+
+**Status:** accepted (2026-11-04). **Context:** the factory had scoring, benchmarks, self-improvement,
+canary, merge queue, MCP wiring and auth, but no trace-level scoring, runtime routing, spend caps, external
+intake, capability discovery, per-action governance or CLI/CI surface.
+**Decision:** implement each as a separate OpenSpec change:
+(6) deterministic trace evidence + four trace checks feed the existing scorer/proposal path;
+(7) an opt-in deterministic `routing.classifier` (cheap/standard/deep) and hard per-run/stage/factory
+budgets enforced in the event pump and at creation;
+(8) one nested intake endpoint with provider adapters, HMAC verification, delivery dedupe and untrusted
+framing;
+(9) an opt-in `mcp.discovery` selector plus a persisted `mcp_tools` capability index with discover/promote;
+(10) an optional `governance` block (autonomy level, model allowlist, deny/human-required actions) with
+`policy` audit steps; SSO/OIDC stays out of scope;
+(11) CLI `run`/`intake` surfaces that call the same API/runner path as the console, with Slack/CI reusing
+intake.
+**Consequences:** the factory can be tuned, capped and audited without adding a second execution path.
+Keyword routing/context selection is intentionally explainable and replaceable; budgets are guardrails, not
+sandboxes; OIDC/IdP, remote runners, Temporal Cloud and multi-tenant isolation remain Phase 6c blockers.

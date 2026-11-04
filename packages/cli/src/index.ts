@@ -18,6 +18,7 @@ import {
   type RebuildReport,
   type ValidationError,
 } from '@factory/core';
+import { surfaceChat, surfaceIntake, surfaceWait, type SurfaceOptions } from './surfaces';
 
 type Flags = Record<string, string | boolean>;
 
@@ -94,6 +95,11 @@ Usage:
   factory fmt <dir>
   factory version <dir> [--allow-dirty]
   factory rebuild --from <runs-dir> [--dry-run] [--json]
+  factory run --factory <fac_id> --prompt <text> [--model M] [--harness H] [--wait] [--json]
+  factory intake --factory <fac_id> --provider <p> --title <t> [--prompt <text>] [--json]
+
+Surface commands use the same API/runner path as the console. Auth defaults to the local
+admin (FACTORY_ADMIN_EMAIL / FACTORY_ADMIN_PASSWORD) and API_BASE_URL.
 
 Exit codes: 0 ok, 1 validation/diff/corrupt-log failure, 2 usage error.
 `;
@@ -337,6 +343,75 @@ async function cmdRebuild(flags: Flags): Promise<void> {
   }
 }
 
+function surfaceOptions(flags: Flags): SurfaceOptions {
+  return {
+    ...(typeof flags.api === 'string' ? { apiUrl: flags.api } : {}),
+    ...(typeof flags.email === 'string' ? { email: flags.email } : {}),
+    ...(typeof flags.password === 'string' ? { password: flags.password } : {}),
+    ...(typeof flags.cookie === 'string' ? { cookie: flags.cookie } : {}),
+  };
+}
+
+async function cmdRun(flags: Flags): Promise<void> {
+  const factoryId = typeof flags.factory === 'string' ? flags.factory : '';
+  const prompt = typeof flags.prompt === 'string' ? flags.prompt : '';
+  if (!factoryId || !prompt) {
+    process.stderr.write('factory run: --factory <fac_id> and --prompt <text> are required\n');
+    process.exit(2);
+  }
+  const options = surfaceOptions(flags);
+  try {
+    const created = await surfaceChat(factoryId, prompt, {
+      ...options,
+      ...(typeof flags.model === 'string' ? { model: flags.model } : {}),
+      ...(typeof flags.harness === 'string' ? { harness: flags.harness } : {}),
+      ...(typeof flags.title === 'string' ? { title: flags.title } : {}),
+    });
+    const result = flags.wait === true ? await surfaceWait(factoryId, created.runId, options) : created;
+    if (flags.json === true) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    } else {
+      process.stdout.write(
+        `run ${result.runId} workflow=${result.workflowId} status=${result.status ?? 'started'}\n`,
+      );
+      if (result.summary) process.stdout.write(`${result.summary}\n`);
+      if (result.error) process.stdout.write(`error: ${result.error}\n`);
+    }
+    if (result.status === 'error') process.exit(1);
+  } catch (error) {
+    process.stderr.write(`factory run: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.exit(1);
+  }
+}
+
+async function cmdIntake(flags: Flags): Promise<void> {
+  const factoryId = typeof flags.factory === 'string' ? flags.factory : '';
+  const provider = typeof flags.provider === 'string' ? flags.provider : 'generic';
+  if (!factoryId) {
+    process.stderr.write('factory intake: --factory <fac_id> is required\n');
+    process.exit(2);
+  }
+  const payload =
+    typeof flags.body === 'string'
+      ? JSON.parse(flags.body)
+      : {
+          title: typeof flags.title === 'string' ? flags.title : 'CLI intake',
+          ...(typeof flags.prompt === 'string' ? { prompt: flags.prompt } : {}),
+        };
+  try {
+    const result = await surfaceIntake(factoryId, provider, payload, surfaceOptions(flags));
+    if (flags.json === true) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    else {
+      process.stdout.write(
+        `intake ${result.status}${result.workItemId ? ` work item ${result.workItemId}` : ''}\n`,
+      );
+    }
+  } catch (error) {
+    process.stderr.write(`factory intake: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.exit(1);
+  }
+}
+
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
 
@@ -368,6 +443,12 @@ async function main(): Promise<void> {
       return;
     case 'rebuild':
       await cmdRebuild(flags);
+      return;
+    case 'run':
+      await cmdRun(flags);
+      return;
+    case 'intake':
+      await cmdIntake(flags);
       return;
     default:
       process.stderr.write(`factory: unknown command "${command}"\n\n${HELP}`);

@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-11-03
+Last updated: 2026-11-04
 
 ## Phase
 
@@ -22,11 +22,11 @@ unauthorized IDs return 404. The delete path is a verified hard purge: DB rows, 
 running workflows and run directories, with git history and forge repos kept.
 
 Next: **Phase 6c** — external OIDC/IdP (group→org mappings), remote runners, Temporal Cloud and
-multi-tenant isolation. Also pending: the live GitHub path. The first factory-engineering sprint is
-implemented on `feat/factory-engineering-foundation`: validation contract + QA pyramid, agent readiness,
-outcome metrics, guard hooks and the Factory Stack help page. The remaining roadmap (trace-driven
-self-improvement, routing, intake, context, governance, surfaces, missions) is in
-`research/software-factory-ideas.md`.
+multi-tenant isolation. Also pending: the live GitHub path. Roadmap items 1–11 are implemented:
+validation contract + QA pyramid, agent readiness, outcome metrics, guard hooks, Factory Stack,
+trace-driven self-improvement, classifier routing + spend caps, work intake, progressive context,
+governance/autonomy levels and the surface-agnostic CLI. The remaining roadmap item is long-running
+missions (item 12) in `research/software-factory-ideas.md`.
 
 ### Readiness and public-release prep (2026-11-01)
 
@@ -144,6 +144,49 @@ One-time cleanup: dry-run found 29 would-remove, 0 errors; `--apply` removed all
 and marked their runs `error` with `runner_orphaned: workflow_closed|workflow_missing`. Worker/API
 rebuilt; the worker reaper starts cleanly and sees zero managed containers. `bun run typecheck`
 and `bun test` (628 pass / 172 integration skipped) pass. See ADR-044.
+
+### Roadmap items 6–11 (implemented 2026-11-04)
+
+All six remaining roadmap items were implemented as separate OpenSpec changes and verified
+with a full hello-nextjs delete → recreate → lights-off run between each item.
+
+- **Trace-driven self-improvement** (`add-trace-driven-self-improvement`): deterministic trace
+  evidence from the event log + review verdict; `redundant_tests`, `verbosity`, `scope`,
+  `review_usefulness` checks; trace metrics on run detail; a trace scorer in hello-nextjs feeds
+  the existing proposal path. Cycle PR #3.
+- **Classifier routing + spend caps** (`add-model-routing-and-spend-caps`): opt-in
+  `routing.classifier` cheap/standard/deep tiers, deterministic prompt/stage classifier,
+  runtime routing consumption, `budget` caps per run/stage/factory, `budget_exhausted` in the
+  pump, factory cap refusal and `GET /budget`. Cycle PR #4.
+- **Work intake from anywhere** (`add-work-intake`): generic/Sentry/PostHog/Slack/Linear/Jira
+  intake endpoints, provider HMAC verification, delivery dedupe, untrusted framing, new source
+  values (migration 020) and intake audit. Cycle created via generic intake; PR #5.
+- **Progressive context / MCP discovery** (`add-progressive-context`): `mcp.discovery`,
+  deterministic capability selection, explicit deny globs, `mcp_tools` index (migration 021),
+  discover/promote APIs and schema-size savings. Cycle PR #6.
+- **Governance and autonomy levels** (`add-governance-autonomy-levels`): optional `governance`
+  block, autonomy levels, model allowlists, deny/human-required actions, `policy` run steps,
+  governance/audit APIs. SSO/OIDC remains a Phase 6c decision. Cycle PR #7.
+- **Surface-agnostic agent** (`add-surface-agnostic-agent`): `factory run` and `factory intake`
+  CLI commands using the same chat/intake API paths; Slack/CI reuse the intake contract. Cycle
+  PR #8.
+
+Factory issues found and fixed during the cycles:
+
+- Re-running the same task produced a patch already on the forge branch; `applyPatch` now
+  treats already-applied new-file patches as a no-op and commits an audit marker, and
+  `FactoryWorkflow` escalates the item when a PR cannot be opened.
+- Cancellation before the lease handle was returned skipped `killRunner`; the workflow now
+  always attempts the deterministic-name kill, and a cancellation smoke confirms `kill-runner`
+  runs and no container remains.
+- Explicit `harness: fake` was overridden by routing; explicit harness now wins, preserving the
+  smoke/e2e fake path.
+- Cancellation preserved the operator's reason instead of the generic `stage run cancelled`.
+- The dashboard now prefers the newest captured patch over a newer chat event-log artifact.
+
+Verification: `bun run ci` 655 pass / 172 integration skipped / 0 fail; `bash scripts/smoke.sh`
+SMOKE PASSED; full Playwright 61/61; `openspec validate --all` 35 passed. Local migrations 020
+and 021 applied.
 
 ### Graphite Command shell (2026-11-03)
 
@@ -1626,11 +1669,10 @@ both accepted; `benchmarkGateRequired` is true exactly when `fullyAutonomous`; k
 
 ## Next
 
-The first factory-engineering sprint (validation contract, readiness, outcome metrics, guard hooks and
-Factory Stack help) is implemented on `feat/factory-engineering-foundation`; see the section above and
-`research/software-factory-ideas.md`. Next roadmap candidates: trace-driven self-improvement, classifier
-model routing + spend caps, work intake, progressive context, governance, surface-agnostic agents and
-missions.
+Roadmap items 1–11 are implemented (see the sections above and `research/software-factory-ideas.md`).
+The remaining roadmap candidate is long-running missions (item 12). Phase 6c (OIDC/IdP, remote runners,
+Temporal Cloud, multi-tenant isolation) remains blocked on external infrastructure/IdP decisions. The
+live GitHub forge path still needs a PAT, repo and webhook secret.
 
 Phase 6c (OIDC/IdP, remote runners, Temporal Cloud, multi-tenant isolation) remains blocked on external
 infrastructure/IdP decisions. The live GitHub forge path still needs a PAT, repo and webhook secret.

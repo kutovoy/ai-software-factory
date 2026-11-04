@@ -53,7 +53,9 @@ import {
   getFactoryResources,
   getFactoryVersions,
   listFactories,
+  loadFactoryDefinition,
   resolveFactory,
+  resolveFactoryDir,
 } from './factories';
 import { getInboxForApi } from './inbox';
 import { decodeCursor } from './cursor';
@@ -119,6 +121,13 @@ import {
   type McpSyncBody,
 } from './mcp';
 import {
+  discoverBodySchema,
+  discoverCapabilitiesForApi,
+  getCapabilitiesForApi,
+  promoteCapabilityForApi,
+  type DiscoverBody,
+} from './capabilities';
+import {
   assertSecretName,
   deleteSecretForApi,
   getSecretUsageForApi,
@@ -133,6 +142,7 @@ import {
 import {
   assertRunAccess,
   createRun,
+  factorySpendUsd,
   retryRun,
   getRunDetail,
   listRuns,
@@ -154,6 +164,8 @@ import {
   type ScoringBody,
 } from './scoring';
 import { registerWebhooks } from './webhooks';
+import { registerIntake } from './intake';
+import { getGovernanceForApi } from './governance';
 import { getSql } from '@factory/orchestration';
 import {
   autonomyBodySchema,
@@ -465,6 +477,51 @@ export function createApp(config: ApiConfig): Hono {
     return c.json(await testMcpForApi(config, key, c.req.param('server')));
   });
 
+  /* ------------------------------------------- progressive context (item 9) */
+
+  api.get('/factories/:factoryId/capabilities', async (c) =>
+    c.json(
+      await getCapabilitiesForApi(
+        config,
+        (await factoryOf(c)).key,
+        c.req.query('q') ?? null,
+      ),
+    ),
+  );
+
+  api.get('/factories/:factoryId/capabilities/stats', async (c) => {
+    const view = await getCapabilitiesForApi(
+      config,
+      (await factoryOf(c)).key,
+      c.req.query('q') ?? '',
+    );
+    return c.json({
+      factory: view.factory,
+      declaredServers: view.declaredServers,
+      fullSchemaBytes: view.selection?.fullSchemaBytes ?? 0,
+      selectedSchemaBytes: view.selection?.selectedSchemaBytes ?? 0,
+      savingsRatio: view.selection?.savingsRatio ?? 0,
+      selected: view.selection?.entries ?? [],
+      reason: view.selection?.reason ?? null,
+    });
+  });
+
+  api.post('/factories/:factoryId/capabilities/discover', async (c) => {
+    const body = await json<DiscoverBody>(c, discoverBodySchema);
+    return c.json(await discoverCapabilitiesForApi(config, (await factoryOf(c)).key, body), 201);
+  });
+
+  api.post('/factories/:factoryId/capabilities/:server/:tool/promote', async (c) =>
+    c.json(
+      await promoteCapabilityForApi(
+        config,
+        (await factoryOf(c)).key,
+        c.req.param('server'),
+        c.req.param('tool'),
+      ),
+    ),
+  );
+
   /* -------------------------------------------------------------- scorers */
 
   api.get('/factories/:factoryId/scorers', async (c) =>
@@ -480,6 +537,25 @@ export function createApp(config: ApiConfig): Hono {
       ),
     ),
   );
+
+  /**
+   * Spend caps + current spend (roadmap item 7). The per-run/stage caps are enforced in the
+   * runner pump; the factory cap refuses new work at creation.
+   */
+  api.get('/factories/:factoryId/budget', async (c) => {
+    const record = await factoryOf(c);
+    const definition = loadFactoryDefinition(resolveFactoryDir(config, record.key), record.key);
+    const budget = definition.manifest.budget ?? {};
+    const spentUsd = await factorySpendUsd(record.key);
+    const cap = budget.maxCostUsdPerFactory;
+    return c.json({
+      budget: {
+        ...budget,
+        spentUsd,
+        exhausted: cap !== undefined && spentUsd >= cap,
+      },
+    });
+  });
 
   /* --------------------------------------------------------------- scores */
 
@@ -1006,6 +1082,19 @@ export function createApp(config: ApiConfig): Hono {
     });
   });
 
+  api.get('/factories/:factoryId/governance', async (c) =>
+    c.json(await getGovernanceForApi(config, (await factoryOf(c)).key)),
+  );
+
+  api.get('/factories/:factoryId/governance/audit', async (c) => {
+    const view = await getGovernanceForApi(config, (await factoryOf(c)).key);
+    return c.json({
+      factory: view.factory,
+      auditExport: view.governance?.audit ?? { export: 'jsonl', otlpEndpoint: null },
+      decisions: view.recentDecisions,
+    });
+  });
+
   /* ------------------------------------------------------------------ chat */
 
   api.post('/factories/:factoryId/chat', async (c) => {
@@ -1049,6 +1138,7 @@ export function createApp(config: ApiConfig): Hono {
   }
 
   registerWebhooks(api, config, factoryOf);
+  registerIntake(api, config, factoryOf);
 
   // One prefix for every resource route (ADR-030): the sub-app's routes are copied here
   // with `API_PREFIX` prepended. Unversioned resource paths therefore 404.

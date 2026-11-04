@@ -2,6 +2,7 @@ import type { FactoryDefinition } from '../loader/load';
 import type { McpTransport } from '../schema/mcp';
 import { declaredMcpServers } from '../secrets/references';
 import type { NamedAgent } from '../secrets/references';
+import { selectCapabilities, type CapabilityEntry } from './capabilities';
 
 /**
  * Per-agent MCP wiring (spec `mcp-integration` › per-agent binding, ADR-027).
@@ -35,6 +36,13 @@ export interface McpWiring {
   bound: string[];
   /** Permission globs for every declared server: `"<server>*": allow|deny`. */
   permissions: Record<string, McpPermission>;
+  /** Progressive-context selection when `mcp.discovery` is enabled. */
+  discovery?: {
+    fullSchemaBytes: number;
+    selectedSchemaBytes: number;
+    savingsRatio: number;
+    reason: string;
+  };
 }
 
 export function mcpServerGlob(server: string): string {
@@ -49,6 +57,7 @@ export function agentMcpAllowList(agent: NamedAgent | null): string[] {
 export function resolveMcpWiring(
   definition: FactoryDefinition,
   agentName?: string | null,
+  options: { prompt?: string } = {},
 ): McpWiring {
   const agents: NamedAgent[] = definition.resources
     .filter((resource) => resource.kind === 'agent')
@@ -58,7 +67,7 @@ export function resolveMcpWiring(
   const allow = agentMcpAllowList(agent);
   const declared = declaredMcpServers(definition.manifest);
 
-  const servers: McpWiringServer[] = declared
+  let servers: McpWiringServer[] = declared
     .filter((server) => allow.includes(server.name))
     .map((server) => ({
       name: server.name,
@@ -70,9 +79,34 @@ export function resolveMcpWiring(
       headers: { ...(server.headers ?? {}) },
     }));
 
+  let discovery: McpWiring['discovery'];
+  const config = definition.manifest.mcp?.discovery;
+  if (config?.enabled && options.prompt) {
+    const entries: CapabilityEntry[] = servers.map((server) => ({
+      server: server.name,
+      tool: null,
+      description:
+        declared.find((candidate) => candidate.name === server.name)?.description ?? null,
+      schemaBytes: JSON.stringify(server).length,
+      status: 'declared',
+    }));
+    const selected = selectCapabilities(entries, options.prompt, { limit: config.maxServers });
+    const selectedNames = new Set(selected.entries.map((entry) => entry.server));
+    servers = servers.filter((server) => selectedNames.has(server.name));
+    discovery = {
+      fullSchemaBytes: selected.fullSchemaBytes,
+      selectedSchemaBytes: selected.selectedSchemaBytes,
+      savingsRatio: selected.savingsRatio,
+      reason: selected.reason,
+    };
+  }
+
   const permissions: Record<string, McpPermission> = {};
   for (const server of declared) {
-    permissions[mcpServerGlob(server.name)] = allow.includes(server.name) ? 'allow' : 'deny';
+    permissions[mcpServerGlob(server.name)] =
+      allow.includes(server.name) && servers.some((candidate) => candidate.name === server.name)
+        ? 'allow'
+        : 'deny';
   }
 
   return {
@@ -80,5 +114,6 @@ export function resolveMcpWiring(
     agent: agent?.name ?? null,
     bound: servers.map((server) => server.name),
     permissions,
+    ...(discovery ? { discovery } : {}),
   };
 }

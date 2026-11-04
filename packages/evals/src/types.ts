@@ -5,7 +5,13 @@
 
 export type ScorerClass = 'deterministic' | 'judge';
 
-export const DETERMINISTIC_CHECKS = ['tests', 'build', 'lint'] as const;
+/** Checks graded from a run's command evidence. */
+export const COMMAND_CHECKS = ['tests', 'build', 'lint'] as const;
+/** Checks graded from the run trace (events + gate verdicts). */
+export const TRACE_CHECKS = ['redundant_tests', 'verbosity', 'scope', 'review_usefulness'] as const;
+export const DETERMINISTIC_CHECKS = [...COMMAND_CHECKS, ...TRACE_CHECKS] as const;
+export type CommandCheck = (typeof COMMAND_CHECKS)[number];
+export type TraceCheck = (typeof TRACE_CHECKS)[number];
 export type DeterministicCheck = (typeof DETERMINISTIC_CHECKS)[number];
 
 export interface ScorerLabel {
@@ -64,12 +70,69 @@ export interface ToolCallEvidence {
   seq: number;
 }
 
+export interface TraceUsage {
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  cacheReadTokens: number;
+  reasoningTokens: number;
+}
+
+export interface TraceMessages {
+  assistantMessages: number;
+  assistantChars: number;
+  finalSummaryChars: number;
+}
+
+export interface TraceFileEdit {
+  path: string;
+  diffBytes: number;
+  addedLines: number;
+  removedLines: number;
+}
+
+export interface TraceReview {
+  verdict: string | null;
+  findings: number;
+  summaryChars: number;
+}
+
+/**
+ * Deterministic trace metrics for one run. These are derived from the canonical event
+ * log and the gate verdict, never from a model, so they can be used by scoring and by
+ * evidence-backed self-improvement proposals.
+ */
+export interface TraceMetrics {
+  toolCalls: number;
+  failedToolCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  cacheReadTokens: number;
+  reasoningTokens: number;
+  assistantMessages: number;
+  assistantChars: number;
+  finalSummaryChars: number;
+  fileEdits: number;
+  changedFiles: number;
+  patchBytes: number;
+  testCommands: number;
+  redundantTestCommands: number;
+  reviewFindings: number;
+  reviewSummaryChars: number;
+}
+
 /** The neutral, model-free view of a run used by deterministic scorers. */
 export interface RunEvidence {
   artifacts: RunArtifactRef[];
   /** Small artifact bodies (e.g. `artifacts/checks.json`), keyed by POSIX path. */
   artifactContents: Record<string, string>;
   toolCalls: ToolCallEvidence[];
+  usage: TraceUsage | null;
+  messages: TraceMessages | null;
+  fileEdits: TraceFileEdit[];
+  patchBytes: number;
+  review: TraceReview | null;
 }
 
 export interface ScoreEvidenceRef {

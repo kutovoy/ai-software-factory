@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { RunEvidence, ScorerLabel, ScorerRegistryEntry } from './types';
+import type { RunEvidence, ScorerLabel, ScorerRegistryEntry, TraceMetrics } from './types';
 
 /**
  * LLM-judge scoring.
@@ -26,6 +26,8 @@ export interface RunContext {
   diff: string | null;
   artifacts: { path: string; kind?: string; bytes?: number }[];
   evidence: RunEvidence;
+  /** Deterministic trace metrics (roadmap item 6); also shown on the run detail page. */
+  trace: TraceMetrics;
   terminalSeq: number | null;
   workItemTitle: string | null;
 }

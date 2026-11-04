@@ -1,10 +1,15 @@
 import { highestLabel, lowestLabel } from './registry';
+import { evaluateTraceCheck } from './trace';
 import {
+  COMMAND_CHECKS,
   DETERMINISTIC_CHECKS,
+  TRACE_CHECKS,
+  type CommandCheck,
   type DeterministicCheck,
   type RunEvidence,
   type ScorerRegistryEntry,
   type ScoreEvidenceRef,
+  type TraceCheck,
 } from './types';
 
 /**
@@ -19,7 +24,7 @@ import {
  * run itself is untouched.
  */
 
-const CHECK_PATTERNS: Record<DeterministicCheck, RegExp> = {
+const CHECK_PATTERNS: Record<CommandCheck, RegExp> = {
   tests:
     /\b(?:bun|npm|pnpm|yarn)\s+(?:run\s+)?test\b|\b(?:vitest|jest|pytest|go\s+test|cargo\s+test|bun\s+test)\b/i,
   build:
@@ -46,9 +51,9 @@ export interface DeterministicOutcome {
   missing: DeterministicCheck[];
 }
 
-export function checkForCommand(command: string | undefined): DeterministicCheck | null {
+export function checkForCommand(command: string | undefined): CommandCheck | null {
   if (!command) return null;
-  for (const check of DETERMINISTIC_CHECKS) {
+  for (const check of COMMAND_CHECKS) {
     if (CHECK_PATTERNS[check].test(command)) return check;
   }
   return null;
@@ -78,7 +83,7 @@ function readChecksArtifact(
 
 function checkFromEvents(
   evidence: RunEvidence,
-  check: DeterministicCheck,
+  check: CommandCheck,
 ): { ok: boolean; seq: number } | null {
   let latest: { ok: boolean; seq: number } | null = null;
   for (const call of evidence.toolCalls) {
@@ -98,29 +103,41 @@ export function evaluateDeterministic(
   const refs: ScoreEvidenceRef[] = [];
 
   for (const check of scorer.checks) {
-    const fromArtifact = artifact?.[check];
+    if ((TRACE_CHECKS as readonly string[]).includes(check)) {
+      const traceResult = evaluateTraceCheck(check as TraceCheck, evidence);
+      results.push({
+        check,
+        ok: traceResult.ok,
+        ref: traceResult.evidence[0]?.ref ?? 'trace',
+      });
+      refs.push(...traceResult.evidence);
+      continue;
+    }
+
+    const commandCheck = check as CommandCheck;
+    const fromArtifact = artifact?.[commandCheck];
     if (typeof fromArtifact === 'boolean') {
-      results.push({ check, ok: fromArtifact, ref: 'artifact:checks.json' });
+      results.push({ check: commandCheck, ok: fromArtifact, ref: 'artifact:checks.json' });
       refs.push({
         kind: 'artifact',
         ref: 'artifact:checks.json',
-        detail: { check, ok: fromArtifact },
+        detail: { check: commandCheck, ok: fromArtifact },
       });
       continue;
     }
 
-    const fromEvent = checkFromEvents(evidence, check);
+    const fromEvent = checkFromEvents(evidence, commandCheck);
     if (fromEvent) {
-      results.push({ check, ok: fromEvent.ok, ref: `event:${fromEvent.seq}` });
+      results.push({ check: commandCheck, ok: fromEvent.ok, ref: `event:${fromEvent.seq}` });
       refs.push({
         kind: 'event',
         ref: `event:${fromEvent.seq}`,
-        detail: { check, ok: fromEvent.ok },
+        detail: { check: commandCheck, ok: fromEvent.ok },
       });
       continue;
     }
 
-    missing.push(check);
+    missing.push(commandCheck);
   }
 
   if (missing.length > 0) {

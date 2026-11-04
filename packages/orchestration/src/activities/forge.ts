@@ -228,12 +228,25 @@ export async function forgeOpenPullRequest(
     const patch = await readPatch(args.runId);
     const files = await applyPatch(base.files, patch).catch(asPatchFailure);
 
+    // A rerun can capture a patch that is already on the base branch. The apply path then
+    // returns no changes; commit a small audit marker so the PR still has a reviewable diff
+    // and the factory loop can complete instead of failing on an empty commit.
+    const commitFiles =
+      files.length > 0
+        ? files
+        : [
+            {
+              path: `changes/${args.workItemId}.md`,
+              content: `# ${args.workItemId}\n\nNo code changes: the captured patch was already applied to the base branch.\n`,
+            },
+          ];
+
     // Deterministic guard hooks (roadmap item 4): pure checks on the branch + applied files,
     // before anything is committed. A failure is fail-closed and non-retryable. Deleted
     // files are kept as empty entries so path containment and the file count still see them.
     const { definition } = loadDefinition(args.factoryRoot);
     const guardedFiles: Record<string, string> = Object.fromEntries(
-      files.map((change) => [change.path, change.content ?? '']),
+      commitFiles.map((change) => [change.path, change.content ?? '']),
     );
     const report = runGuardHooks({
       branch,
@@ -255,7 +268,7 @@ export async function forgeOpenPullRequest(
       repo,
       branch,
       message: `factory: ${args.workItemId} — ${args.title}`,
-      files,
+      files: commitFiles,
     });
     const pull = await forge.openPullRequest({
       repo,

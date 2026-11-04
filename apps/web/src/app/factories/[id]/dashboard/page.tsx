@@ -30,7 +30,7 @@ const RECENT_ITEMS = 8;
 /** Runs shown in the "recent runs" list. */
 const RECENT_RUNS = 8;
 /** How many of the newest runs are inspected for artifacts (patch, logs). */
-const ARTIFACT_SCAN = 3;
+const ARTIFACT_SCAN = 10;
 
 function formatMetricValue(metric: MetricCardWire): string {
   if (metric.value === null) return '—';
@@ -626,13 +626,26 @@ export default async function DashboardPage({
   );
   let artifactRun: RunSummary | null = null;
   let artifacts: RunArtifact[] = [];
+  let fallbackRun: RunSummary | null = null;
+  let fallbackArtifacts: RunArtifact[] = [];
   for (let index = 0; index < candidates.length; index += 1) {
     const list = (details[index]?.artifacts ?? []) as RunArtifact[];
-    if (list.length > 0) {
+    if (list.length === 0) continue;
+    // Prefer the newest run that captured a patch; a chat run's event log is a valid
+    // artifact but the deliverables card is about the change the factory produced.
+    if (list.some((artifact) => artifact.kind === 'patch')) {
       artifactRun = candidates[index] ?? null;
       artifacts = list;
       break;
     }
+    if (!fallbackRun) {
+      fallbackRun = candidates[index] ?? null;
+      fallbackArtifacts = list;
+    }
+  }
+  if (!artifactRun && fallbackRun) {
+    artifactRun = fallbackRun;
+    artifacts = fallbackArtifacts;
   }
 
   const activity = lastActivity(rows, items);

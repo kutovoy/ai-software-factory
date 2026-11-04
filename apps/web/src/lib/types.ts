@@ -90,6 +90,28 @@ export interface RunDetail {
   retryOf: string | null;
   /** The run created by retrying this one, when it exists. */
   retriedBy: string | null;
+  /** Deterministic trace metrics; null when the run has no event log. */
+  trace: TraceMetrics | null;
+}
+
+export interface TraceMetrics {
+  toolCalls: number;
+  failedToolCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  cacheReadTokens: number;
+  reasoningTokens: number;
+  assistantMessages: number;
+  assistantChars: number;
+  finalSummaryChars: number;
+  fileEdits: number;
+  changedFiles: number;
+  patchBytes: number;
+  testCommands: number;
+  redundantTestCommands: number;
+  reviewFindings: number;
+  reviewSummaryChars: number;
 }
 
 export interface GateStage {

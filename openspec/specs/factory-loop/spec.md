@@ -208,3 +208,25 @@ An escalated, failed or blocked work item SHALL be retryable without creating a 
 - **WHEN** the item was cancelled and is retried
 - **THEN** cancellation flags are cleared
 - **AND** the audit keeps the prior cancellation as history
+
+### Requirement: Intake sources
+
+Work items SHALL accept the sources `forge`, `slack`, `cron`, `manual`, `sentry`, `posthog`,
+`linear`, `jira` and `api`.
+
+#### Scenario: Source persisted
+- **WHEN** an intake provider creates a work item
+- **THEN** its `source` is one of the allowed values
+- **AND** the existing loop starts at the factory's first stage
+
+### Requirement: Governance levels
+
+The factory loop SHALL respect the declared autonomy level when deciding unattended actions.
+
+#### Scenario: Full autonomy
+- **WHEN** `autonomyLevel` is `full` and the kill switch is enabled
+- **THEN** non-denied actions may proceed unattended
+
+#### Scenario: Assist
+- **WHEN** `autonomyLevel` is `assist`
+- **THEN** unattended actions are denied and recorded for human follow-up

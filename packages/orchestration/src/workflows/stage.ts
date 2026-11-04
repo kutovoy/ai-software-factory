@@ -162,6 +162,8 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
       proxyModels: input.model ? [input.model] : [],
       // Factory stages are unattended; tool permissions are auto-allowed.
       autoAllowPermissions: true,
+      ...(input.maxCostUsd !== undefined ? { maxCostUsd: input.maxCostUsd } : {}),
+      ...(input.governance ? { governance: input.governance } : {}),
       ...(input.permissionTimeoutMs ? { permissionTimeoutMs: input.permissionTimeoutMs } : {}),
     };
 

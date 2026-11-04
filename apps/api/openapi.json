@@ -177,6 +177,72 @@
         }
       }
     },
+    "/api/v1/factories/{factoryId}/governance": {
+      "get": {
+        "tags": [
+          "autonomy"
+        ],
+        "summary": "Governance policy, autonomy state and recent policy decisions",
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/factories/{factoryId}/governance/audit": {
+      "get": {
+        "tags": [
+          "autonomy"
+        ],
+        "summary": "Governance audit export",
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/factories/{factoryId}/autonomy": {
       "get": {
         "tags": [
@@ -1208,6 +1274,192 @@
         }
       }
     },
+    "/api/v1/factories/{factoryId}/capabilities": {
+      "get": {
+        "tags": [
+          "mcp"
+        ],
+        "summary": "Progressive-context capability index",
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Task prompt used to select relevant capabilities."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/factories/{factoryId}/capabilities/stats": {
+      "get": {
+        "tags": [
+          "mcp"
+        ],
+        "summary": "Capability schema-size savings for a prompt",
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Task prompt."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/factories/{factoryId}/capabilities/discover": {
+      "post": {
+        "tags": [
+          "mcp"
+        ],
+        "summary": "Record discovered MCP tool metadata",
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Discovered.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request — server is not declared or body is malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/factories/{factoryId}/capabilities/{server}/{tool}/promote": {
+      "post": {
+        "tags": [
+          "mcp"
+        ],
+        "summary": "Promote a discovered capability",
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
+          },
+          {
+            "name": "server",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tool",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Promoted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "capability_not_found — the capability does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/factories/{factoryId}/mcp": {
       "get": {
         "tags": [
@@ -1447,6 +1699,49 @@
           },
           "500": {
             "description": "internal_error — unexpected server failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/factories/{factoryId}/budget": {
+      "get": {
+        "tags": [
+          "factories"
+        ],
+        "summary": "Spend caps and current factory spend",
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found — the resource does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2549,6 +2844,117 @@
           },
           "500": {
             "description": "internal_error — unexpected server failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/factories/{factoryId}/intake": {
+      "get": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "List intake deliveries",
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Page size (default 50)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/factories/{factoryId}/intake/{provider}": {
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Create a work item from an external intake provider",
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
+          },
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "generic",
+                "sentry",
+                "posthog",
+                "slack",
+                "linear",
+                "jira"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted or ignored as a duplicate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_payload — malformed intake body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_signature — signature verification failed.",
             "content": {
               "application/json": {
                 "schema": {

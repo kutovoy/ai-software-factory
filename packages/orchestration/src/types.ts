@@ -4,6 +4,7 @@
  */
 
 import type { AgentVerdict, AgentVerdictPolicy } from '@factory/core/gates/verdict';
+import type { GovernanceConfig } from '@factory/core/governance/policy';
 import type { ValidationContract } from '@factory/core/validation/types';
 
 export type RunStatus = 'pending' | 'running' | 'ok' | 'error' | 'cancelled';
@@ -54,6 +55,10 @@ export interface RunInput {
   proxyModels: string[];
   /** Scripted adapter step delay; lets tests kill the worker mid-run. */
   fakeDelayMs?: number;
+  /** Hard spend cap for this run (USD); `budget_exhausted` when usage crosses it. */
+  maxCostUsd?: number;
+  /** Governance policy copied from the factory definition (roadmap item 10). */
+  governance?: GovernanceConfig;
   /** Set when this run was created by retrying another run (retry-as-new-run). */
   retryOf?: string;
   workspace?: string;
@@ -148,6 +153,8 @@ export interface PumpResult {
   appended: number;
   /** Number of adapter payloads dropped (unmappable). */
   droppedEvents: number;
+  /** Cumulative cost observed in this segment. */
+  costUsd: number;
   /** Why the segment returned; `permission` means "wait for a human decision". */
   stopReason: PumpStopReason;
   /** Set when `stopReason === 'permission'`. */
@@ -314,6 +321,13 @@ export interface FactoryWorkflowInput {
   harnessOverride?: HarnessId;
   defaultModel?: string;
   defaultRunner: RunnerKindName;
+  /** Spend caps copied from the definition (roadmap item 7). */
+  budget?: {
+    maxCostUsdPerRun?: number;
+    maxCostUsdPerStage?: number;
+    maxCostUsdPerFactory?: number;
+  };
+  governance?: GovernanceConfig;
   autoAllowPermissions: boolean;
   permissionTimeoutMs?: number;
   /**
@@ -412,6 +426,10 @@ export interface StageWorkflowInput {
   /** Upstream run whose patch is applied to this stage's workspace (review/verify). */
   patchRunId?: string;
   permissionTimeoutMs?: number;
+  /** Hard spend cap for this stage run (USD). */
+  maxCostUsd?: number;
+  /** Governance policy copied from the factory definition. */
+  governance?: GovernanceConfig;
   /** Evidence attached to a gate-only child (review verdict / findings). */
   verdict?: ReviewVerdict;
   findings?: ReviewFinding[];

@@ -140,3 +140,43 @@ A run marked `running` whose workflow is closed or missing SHALL be reconciled b
 - **THEN** the run becomes `error`
 - **AND** its error starts with `runner_orphaned:`
 - **AND** a `runner-reaper` step records the reason
+
+### Requirement: Budget enforcement
+
+The run lifecycle SHALL enforce spend caps and record an actionable terminal error.
+
+#### Scenario: Exceeded
+- **WHEN** a run crosses `maxCostUsd`
+- **THEN** the event pump stops the run with `budget_exhausted`
+- **AND** the run ends `error` with that code in the failure message
+
+#### Scenario: No cap
+- **WHEN** no budget is configured
+- **THEN** the run behaves exactly as before
+
+### Requirement: Budget observability
+
+The API SHALL expose configured caps and current spend for a factory.
+
+#### Scenario: Read
+- **WHEN** the budget endpoint is requested
+- **THEN** it returns `maxCostUsdPerRun`, `maxCostUsdPerStage`, `maxCostUsdPerFactory`,
+  `spentUsd` and `exhausted`
+
+### Requirement: Policy-governed permissions
+
+Unattended factory runs SHALL evaluate every permission request against the governance
+policy before allowing it.
+
+#### Scenario: Allow
+- **WHEN** the policy allows the action
+- **THEN** the permission is auto-allowed as before
+
+#### Scenario: Deny
+- **WHEN** the policy denies or requires a human
+- **THEN** the permission is denied
+- **AND** a `policy` step records `{action, decision, reason}`
+
+#### Scenario: Chat
+- **WHEN** a chat run requests a permission
+- **THEN** the existing human durable wait is unchanged

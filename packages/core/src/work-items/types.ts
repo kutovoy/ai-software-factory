@@ -12,7 +12,17 @@ import { LOOP_STAGES } from '../stage-graph/graph';
 export const WORK_ITEM_TYPES = ['task', 'bug', 'incident', 'pr_review'] as const;
 export type WorkItemType = (typeof WORK_ITEM_TYPES)[number];
 
-export const WORK_ITEM_SOURCES = ['forge', 'slack', 'cron', 'manual'] as const;
+export const WORK_ITEM_SOURCES = [
+  'forge',
+  'slack',
+  'cron',
+  'manual',
+  'sentry',
+  'posthog',
+  'linear',
+  'jira',
+  'api',
+] as const;
 export type WorkItemSource = (typeof WORK_ITEM_SOURCES)[number];
 
 export const WORK_ITEM_STATUSES = ['active', 'blocked', 'escalated', 'done', 'cancelled'] as const;

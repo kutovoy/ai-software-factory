@@ -331,6 +331,12 @@ export async function FactoryWorkflow(
       ...(stage !== 'implement' && patchRunId ? { patchRunId } : {}),
       ...(input.permissionTimeoutMs ? { permissionTimeoutMs: input.permissionTimeoutMs } : {}),
       ...(input.validationContract ? { validationContract: input.validationContract } : {}),
+      ...(input.governance ? { governance: input.governance } : {}),
+      ...(input.budget?.maxCostUsdPerStage !== undefined
+        ? { maxCostUsd: input.budget.maxCostUsdPerStage }
+        : input.budget?.maxCostUsdPerRun !== undefined
+          ? { maxCostUsd: input.budget.maxCostUsdPerRun }
+          : {}),
     };
 
     stageScope = new CancellationScope();
@@ -457,7 +463,14 @@ export async function FactoryWorkflow(
     }
 
     if (result.status === 'cancelled') {
-      return await finishCancelled(stage, 'foreman', 'stage run cancelled');
+      // The stage child can observe cancellation before the parent consumes the Signal.
+      // Preserve the operator's recorded actor/reason instead of replacing it with a
+      // generic "stage run cancelled" message.
+      return await finishCancelled(
+        stage,
+        cancelActor ?? 'foreman',
+        cancelReason ?? 'stage run cancelled',
+      );
     }
 
     // implement: branch + commit + PR referencing the work item (forge abstraction).
@@ -465,23 +478,41 @@ export async function FactoryWorkflow(
       // Downstream stages (review, verify) run on this patch: they checkout the definition
       // commit and apply it, so they inspect the change instead of a clean tree.
       patchRunId = result.runId;
-      const opened = await forge.forgeOpenPullRequest({
-        workItemId: input.workItemId,
-        factory: input.factory,
-        factoryRoot: input.factoryRoot,
-        title: input.title,
-        body:
-          `Work item ${input.workItemId}\n\n` +
-          `Implements the approved scope. Definition commit: ${input.definitionCommit}.`,
-        runId: result.runId,
-      });
-      prUrl = opened.prUrl;
-      prNumber = opened.prNumber;
-      await workItems.attachWorkItemPullRequest({
-        workItemId: input.workItemId,
-        prUrl: opened.prUrl,
-        prNumber: opened.prNumber,
-      });
+      try {
+        const opened = await forge.forgeOpenPullRequest({
+          workItemId: input.workItemId,
+          factory: input.factory,
+          factoryRoot: input.factoryRoot,
+          title: input.title,
+          body:
+            `Work item ${input.workItemId}\n\n` +
+            `Implements the approved scope. Definition commit: ${input.definitionCommit}.`,
+          runId: result.runId,
+        });
+        prUrl = opened.prUrl;
+        prNumber = opened.prNumber;
+        await workItems.attachWorkItemPullRequest({
+          workItemId: input.workItemId,
+          prUrl: opened.prUrl,
+          prNumber: opened.prNumber,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await workItems.recordWorkItemEvent({
+          workItemId: input.workItemId,
+          type: 'gate.escalated',
+          stage,
+          actor: 'forge',
+          payload: { reason: 'pull request could not be opened', error: message },
+        });
+        await workItems.setWorkItemStatusActivity({
+          workItemId: input.workItemId,
+          status: 'escalated',
+          actor: 'forge',
+          reason: `pull request could not be opened: ${message}`,
+        });
+        return finish('escalated', stage, `pull request could not be opened: ${message}`);
+      }
     }
 
     // verify: deterministic checks from the forge (red checks stop the loop).

@@ -190,6 +190,41 @@ export default async function RunDetailPage({
         </CardBody>
       </Card>
 
+      {detail.trace ? (
+        <Card testId="run-trace">
+          <CardHeader
+            title="Trace metrics"
+            hint="Deterministic evidence from the event log and the review gate; feeds trace scorers and self-improvement."
+          />
+          <CardBody className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
+            <div data-testid="trace-redundant-tests">
+              <p className="text-xs uppercase tracking-wide text-slate-400">Redundant tests</p>
+              <p className="font-mono text-sm text-slate-800">
+                {detail.trace.redundantTestCommands} / {detail.trace.testCommands}
+              </p>
+            </div>
+            <div data-testid="trace-verbosity">
+              <p className="text-xs uppercase tracking-wide text-slate-400">Verbosity</p>
+              <p className="font-mono text-sm text-slate-800">
+                {formatTokens(detail.trace.outputTokens)} out · {detail.trace.assistantChars} chars
+              </p>
+            </div>
+            <div data-testid="trace-scope">
+              <p className="text-xs uppercase tracking-wide text-slate-400">Scope</p>
+              <p className="font-mono text-sm text-slate-800">
+                {detail.trace.changedFiles} files · {detail.trace.patchBytes} bytes
+              </p>
+            </div>
+            <div data-testid="trace-review">
+              <p className="text-xs uppercase tracking-wide text-slate-400">Review usefulness</p>
+              <p className="font-mono text-sm text-slate-800">
+                {detail.trace.reviewFindings} findings · {detail.trace.reviewSummaryChars} chars
+              </p>
+            </div>
+          </CardBody>
+        </Card>
+      ) : null}
+
       <FailurePanel factoryId={factoryId} run={run} steps={steps} summary={run.summary} />
 
       {detail.retryOf || detail.retriedBy ? (

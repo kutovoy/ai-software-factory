@@ -133,6 +133,18 @@ export const mcpServerSchema = z
 export const mcpSchema = z
   .object({
     servers: z.array(mcpServerSchema).default([]),
+    /**
+     * Progressive context (roadmap item 9): when enabled, only the servers whose names /
+     * descriptions match the task prompt are handed to the harness, so the full MCP schema
+     * is not paid for on every run.
+     */
+    discovery: z
+      .object({
+        enabled: z.boolean().default(false),
+        maxServers: z.number().int().min(1).max(20).default(5),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .superRefine((mcp, ctx) => {

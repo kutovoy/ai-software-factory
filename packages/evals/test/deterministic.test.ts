@@ -23,7 +23,17 @@ function deterministicScorer(checks: string[] = ['tests', 'build', 'lint']): Sco
 }
 
 function evidence(overrides: Partial<RunEvidence> = {}): RunEvidence {
-  return { artifacts: [], artifactContents: {}, toolCalls: [], ...overrides };
+  return {
+    artifacts: [],
+    artifactContents: {},
+    toolCalls: [],
+    usage: null,
+    messages: null,
+    fileEdits: [],
+    patchBytes: 0,
+    review: null,
+    ...overrides,
+  };
 }
 
 describe('deterministic scoring', () => {

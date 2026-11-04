@@ -80,6 +80,18 @@ The factory is measurable, verifiable and explainable, not just autonomous:
   `guard.checked` / `guard.failed`.
 - **Factory stack.** The help centre explains the 00–06 layers from factories-as-code to access, so the console's
   projections have a place in the architecture.
+- **Trace scoring.** Deterministic trace checks (`redundant_tests`, `verbosity`, `scope`, `review_usefulness`)
+  read the event log and review verdict; run detail shows the metrics and failures feed self-improvement.
+- **Routing + spend caps.** `routing.yaml` can opt into a deterministic cheap/standard/deep classifier, and
+  `factory.yaml` can cap spend per run, stage and factory; crossing a cap stops the run with `budget_exhausted`.
+- **Intake from anywhere.** Generic, Sentry, PostHog, Slack, Linear and Jira intake endpoints verify signatures,
+  dedupe deliveries, frame untrusted payloads and create normal work items.
+- **Progressive context.** `mcp.discovery` selects the relevant MCP servers for a task prompt, records discovered
+  tools and reports schema-size savings instead of handing every server to every run.
+- **Governance.** Optional autonomy levels, model allowlists, deny/human-required action policies, `policy` audit
+  steps and a governance/audit API; SSO/OIDC remains a Phase 6c decision.
+- **CLI surface.** `factory run` starts a chat run through the same API/runner path; `factory intake` creates work
+  through the intake contract for CI and scripts.
 
 ### Benchmarks
 Suites pin tasks at commit SHAs and a definition version; `configHash = sha256(matrix + definitionCommit)`. Trials

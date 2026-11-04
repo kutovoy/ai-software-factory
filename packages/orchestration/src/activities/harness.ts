@@ -170,6 +170,7 @@ export async function pumpEvents(args: {
     signal: stream.controller.signal,
     fromSeq: args.fromSeq,
     decided: args.decided,
+    ...(args.input.maxCostUsd !== undefined ? { maxCostUsd: args.input.maxCostUsd } : {}),
     deps: {
       append: (event) => appendEvent({ runId, stepId: 'stream', event }),
       recordPermission: (request) => recordPermissionRequest(request),
@@ -225,7 +226,12 @@ export async function pumpEvents(args: {
   if (segment.failure) {
     dropStream(runId);
     const failure = segment.failure;
-    const code = failure instanceof AdapterError ? failure.code : 'harness_error';
+    const code =
+      failure instanceof AdapterError
+        ? failure.code
+        : typeof (failure as { code?: unknown })?.code === 'string'
+          ? ((failure as { code: string }).code)
+          : 'harness_error';
     const message = failure instanceof Error ? failure.message : String(failure);
     await upsertStep({
       runId,
@@ -271,6 +277,7 @@ export async function pumpEvents(args: {
     lastSeq: segment.lastSeq,
     appended: segment.appended,
     droppedEvents,
+    costUsd: segment.costUsd,
     stopReason: segment.stopReason,
     permissionRequestId: segment.permissionRequestId,
     permissionAction: segment.permissionAction,

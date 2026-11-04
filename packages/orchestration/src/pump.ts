@@ -62,6 +62,8 @@ export interface PumpSegmentArgs {
   deps: PumpDeps;
   /** Heartbeat + cancellation poll cadence while the harness is silent. */
   tickMs?: number;
+  /** Hard spend cap for this segment (USD); crossing it stops the run. */
+  maxCostUsd?: number;
 }
 
 export interface PumpSegmentResult {
@@ -72,7 +74,9 @@ export interface PumpSegmentResult {
   appended: number;
   permissionRequestId?: string;
   permissionAction?: string;
-  /** Set when the adapter threw; the caller turns this into a run failure. */
+  /** Cumulative cost observed in this segment. */
+  costUsd: number;
+  /** Set when the adapter threw or a budget cap was crossed. */
   failure?: unknown;
 }
 
@@ -86,6 +90,7 @@ export async function pumpSegment(args: PumpSegmentArgs): Promise<PumpSegmentRes
   let terminalStatus: TerminalStatus | null = null;
   let terminalSummary: string | undefined;
   let failure: unknown;
+  let costUsd = 0;
 
   let stop: PumpSegmentResult | null = null;
   let pending: Promise<IteratorResult<FactoryEvent>> | null = args.iterator.next();
@@ -103,7 +108,13 @@ export async function pumpSegment(args: PumpSegmentArgs): Promise<PumpSegmentRes
         // when nothing is streaming (e.g. a long model call).
         deps.heartbeat({ waitingForEvent: true });
         if (!args.signal.aborted && (await deps.isCancelled())) {
-          stop = { stopReason: 'cancelled', terminalStatus: 'cancelled', lastSeq, appended };
+          stop = {
+            stopReason: 'cancelled',
+            terminalStatus: 'cancelled',
+            lastSeq,
+            appended,
+            costUsd,
+          };
         }
         continue;
       }
@@ -116,6 +127,7 @@ export async function pumpSegment(args: PumpSegmentArgs): Promise<PumpSegmentRes
           terminalSummary,
           lastSeq,
           appended,
+          costUsd,
         };
         break;
       }
@@ -131,6 +143,27 @@ export async function pumpSegment(args: PumpSegmentArgs): Promise<PumpSegmentRes
         }
       } else {
         lastSeq = Math.max(lastSeq, event.seq);
+      }
+
+      if (event.type === 'usage.updated') {
+        costUsd += event.costUsd ?? 0;
+        if (args.maxCostUsd !== undefined && costUsd > args.maxCostUsd) {
+          failure = Object.assign(
+            new Error(
+              `budget_exhausted: run cost ${costUsd.toFixed(6)} exceeded cap ${args.maxCostUsd.toFixed(6)} USD`,
+            ),
+            { code: 'budget_exhausted' },
+          );
+          stop = {
+            stopReason: 'closed',
+            terminalStatus: 'error',
+            lastSeq,
+            appended,
+            costUsd,
+            failure,
+          };
+          break;
+        }
       }
 
       if (event.type === 'permission.requested') {
@@ -155,6 +188,7 @@ export async function pumpSegment(args: PumpSegmentArgs): Promise<PumpSegmentRes
           terminalSummary,
           lastSeq,
           appended,
+          costUsd,
           permissionRequestId: event.requestId,
           permissionAction: event.action,
         };
@@ -170,6 +204,7 @@ export async function pumpSegment(args: PumpSegmentArgs): Promise<PumpSegmentRes
           terminalSummary,
           lastSeq,
           appended,
+          costUsd,
         };
         break;
       }
@@ -177,10 +212,16 @@ export async function pumpSegment(args: PumpSegmentArgs): Promise<PumpSegmentRes
   } catch (error) {
     if (args.signal.aborted) {
       // Cancellation surfaces as an adapter abort; that is expected, not a failure.
-      stop = { stopReason: 'cancelled', terminalStatus: 'cancelled', lastSeq, appended };
+      stop = {
+        stopReason: 'cancelled',
+        terminalStatus: 'cancelled',
+        lastSeq,
+        appended,
+        costUsd,
+      };
     } else {
       failure = error;
-      stop = { stopReason: 'closed', terminalStatus, lastSeq, appended, failure };
+      stop = { stopReason: 'closed', terminalStatus, lastSeq, appended, costUsd, failure };
     }
   }
 

@@ -5,6 +5,9 @@ agentDefaults:
   runner: local-docker
 agentVerdict: required
 alias: Hello Next.js
+budget:
+  maxCostUsdPerFactory: 100
+  maxCostUsdPerRun: 5
 description: "Builds a minimal hello-world Next.js site in a repository: package.json, App Router layout and page, and a short README."
 gates:
   deploy: agent
@@ -13,7 +16,17 @@ gates:
   pr_review: agent
   review: agent
   spec: agent
-id: fac_01M6JY2CYMH2DNSPGXWF2SFAFH
+governance:
+  audit:
+    export: jsonl
+  autonomyLevel: full
+  requireHumanActions:
+    - git.push
+id: fac_01M6KGMX9VJKVX5T99SYNAMB36
+mcp:
+  discovery:
+    enabled: true
+    maxServers: 3
 mergePolicy: auto_on_green
 name: hello-nextjs
 repositories:

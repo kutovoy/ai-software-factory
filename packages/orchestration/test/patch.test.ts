@@ -72,6 +72,18 @@ describe('applyPatch', () => {
     expect(changes.map((change) => change.path)).toEqual(['site/app/page.tsx']);
   });
 
+  test('treats a patch that is already applied as a no-op', async () => {
+    const changes = await applyPatch(
+      {
+        'README.md': '# Factory\n',
+        'site/app/page.tsx':
+          'export default function Page() {\n  return <h1>Hello, world!</h1>;\n}\n',
+      },
+      ADD_FILE,
+    );
+    expect(changes).toEqual([]);
+  });
+
   test('rejects an empty patch', async () => {
     await expect(applyPatch({}, '')).rejects.toMatchObject({ code: 'patch_empty' });
     await expect(applyPatch({}, '  \n\n')).rejects.toBeInstanceOf(PatchError);

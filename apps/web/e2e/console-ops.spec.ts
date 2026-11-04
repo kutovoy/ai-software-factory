@@ -90,7 +90,11 @@ test.describe('console operations', () => {
       /(forge\.local|localhost:3000\/extras\/forgejo)\/acme\/hello-nextjs\/(pull|pulls)\/\d+/,
     );
     await expect(page.getByTestId('dashboard-merged-count')).not.toHaveText('0');
-    await expect(page.getByTestId('dashboard-artifact')).toContainText('patch.diff');
+    // The dashboard shows artifacts from the newest runs; a chat run may be newer than the
+    // factory run, so assert that at least one captured patch is visible.
+    await expect(
+      page.getByTestId('dashboard-artifact').filter({ hasText: 'patch.diff' }).first(),
+    ).toBeVisible();
 
     // Recent runs carry status, harness/model and cost.
     const run = page.getByTestId('dashboard-run').first();

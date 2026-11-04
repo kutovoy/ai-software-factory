@@ -43,12 +43,15 @@ import {
   type GateDecisionRecord,
   type GateDecisionRequest,
   type LoopStage,
+  ModelNotAllowedError,
+  type RoutingDef,
   type ValidationContract,
   type ValidationProjection,
   type WorkItem,
   type WorkItemEvent,
   type WorkItemRow,
   type WorkItemVersion,
+  WORK_ITEM_SOURCES,
 } from '@factory/core';
 import {
   cancelWorkItem,
@@ -76,6 +79,7 @@ import {
   invalidStageGraph,
   invalidRequest,
   invalidState,
+  modelNotAllowed,
   readinessNotReady,
   spawnNotAllowed,
   workItemNotFound,
@@ -84,7 +88,7 @@ import {
 import { benchmarkGateStatus } from './benchmarks';
 import { log } from './logger';
 import { factoryIdForKey, loadFactoryDefinition, resolveFactoryDir } from './factories';
-import { pinVersion, resolveRunDefaults } from './runs';
+import { assertFactoryBudget, pinVersion, resolveRunDefaults } from './runs';
 import { assertValidationComplete, projectValidation } from './validation';
 import { encodeCursor, type PageCursor } from './cursor';
 
@@ -105,7 +109,7 @@ export const createWorkItemBodySchema = z
   .object({
     title: z.string().min(1).max(200),
     type: z.enum(['task', 'bug', 'incident', 'pr_review']).optional(),
-    source: z.enum(['forge', 'slack', 'cron', 'manual']).optional(),
+    source: z.enum(WORK_ITEM_SOURCES).optional(),
     sourceRef: z.record(z.string(), z.unknown()).optional(),
     parentId: z.string().regex(WORK_ITEM_ID_RE).optional(),
     /** Seed prompt for stage runs; defaults to the title. */
@@ -217,7 +221,7 @@ interface CompiledLoop {
 }
 
 /** Compiles the definition's stage graph and resolves per-stage configs (spawnableBy). */
-function compileLoopAt(dir: string, factory: string): CompiledLoop {
+function compileLoopAt(dir: string, factory: string, taskPrompt = ''): CompiledLoop {
   const { definition, errors } = loadDefinition(dir, { requireFactoryId: true });
   if (!definition) {
     // A bad stage graph is reported with its own code (spec: `invalid_stage_graph`).
@@ -238,16 +242,26 @@ function compileLoopAt(dir: string, factory: string): CompiledLoop {
     throw error;
   }
 
+  const routing = (definition.resources.find((resource) => resource.kind === 'routing')?.doc ??
+    null) as RoutingDef | null;
   let configs: ReturnType<typeof resolveStageConfigs>;
   try {
     configs = resolveStageConfigs(graph, {
       manifest: definition.manifest,
       agents,
       spawner: foremanAgentName(agents),
+      ...(routing ? { routing } : {}),
+      ...(taskPrompt ? { taskPrompt } : {}),
+      ...(definition.manifest.governance
+        ? { governance: definition.manifest.governance }
+        : {}),
     });
   } catch (error) {
     if (error instanceof SpawnNotAllowedError) {
       throw spawnNotAllowed(error.stage, error.agent, error.spawner);
+    }
+    if (error instanceof ModelNotAllowedError) {
+      throw modelNotAllowed(error.model, error.allowed);
     }
     throw error;
   }
@@ -329,7 +343,7 @@ export async function createWorkItemForApi(
   }
 
   const dir = canary?.root ?? resolveFactoryDir(config, factory);
-  const compiled = compileLoopAt(dir, factory);
+  const compiled = compileLoopAt(dir, factory, body.prompt?.trim() || body.title);
   const { commit, dirty } = canary
     ? { commit: canary.commit, dirty: false }
     : pinVersion(dir, factory);
@@ -353,11 +367,25 @@ export async function createWorkItemForApi(
         })
       : null;
 
-  const defaults = resolveRunDefaults(manifest, {
-    ...(body.harness ? { harness: body.harness } : {}),
-    ...(body.model ? { model: body.model } : {}),
-    ...(body.runner ? { runner: body.runner } : {}),
-  });
+  await assertFactoryBudget(factory, manifest);
+  const routing = (compiled.definition.resources.find(
+    (resource) => resource.kind === 'routing',
+  )?.doc ?? null) as RoutingDef | null;
+  const defaults = resolveRunDefaults(
+    manifest,
+    {
+      ...(body.harness ? { harness: body.harness } : {}),
+      ...(body.model ? { model: body.model } : {}),
+      ...(body.runner ? { runner: body.runner } : {}),
+    },
+    process.env,
+    {
+      ...(routing ? { routing } : {}),
+      prompt: body.prompt?.trim() || body.title,
+      stage: (compiled.graph.order[0] as string) ?? 'triage',
+      ...(manifest.governance ? { governance: manifest.governance } : {}),
+    },
+  );
 
   const state = await getAutonomyState(sql, factory);
   const integration = await getIntegration(sql, factory, 'github');
@@ -414,6 +442,8 @@ export async function createWorkItemForApi(
     permissionTimeoutMs: config.permissionTimeoutMs,
     ...(mergeQueue ? { mergeQueue: true } : {}),
     ...(validationContract ? { validationContract } : {}),
+    ...(manifest.budget ? { budget: manifest.budget } : {}),
+    ...(manifest.governance ? { governance: manifest.governance } : {}),
   };
 
   const item = await createWorkItemRow(sql, {
@@ -1303,7 +1333,11 @@ async function buildRetryInput(
     }
   }
 
-  const compiled = compileLoopAt(dir, factory);
+  const compiled = compileLoopAt(
+    dir,
+    factory,
+    typeof snapshot.prompt === 'string' ? snapshot.prompt : item.title,
+  );
   const order = compiled.graph.order;
   const stageIndex = order.indexOf(item.stage);
   if (stageIndex < 0) {
@@ -1314,7 +1348,11 @@ async function buildRetryInput(
   }
 
   const manifest = compiled.definition.manifest;
+  await assertFactoryBudget(factory, manifest);
   const orchestration = toOrchestrationConfig(config);
+  const routing = (compiled.definition.resources.find(
+    (resource) => resource.kind === 'routing',
+  )?.doc ?? null) as RoutingDef | null;
   const defaults = resolveRunDefaults(
     manifest,
     {
@@ -1322,6 +1360,16 @@ async function buildRetryInput(
       ...(typeof snapshot.model === 'string' ? { model: snapshot.model } : {}),
       ...(typeof snapshot.runner === 'string' ? { runner: snapshot.runner } : {}),
     } as Parameters<typeof resolveRunDefaults>[1],
+    process.env,
+    {
+      ...(routing ? { routing } : {}),
+      prompt:
+        typeof snapshot.prompt === 'string' && snapshot.prompt.trim() !== ''
+          ? snapshot.prompt
+          : item.title,
+      stage: item.stage,
+      ...(manifest.governance ? { governance: manifest.governance } : {}),
+    },
   );
 
   const state = await getAutonomyState(sql, factory);
@@ -1393,6 +1441,8 @@ async function buildRetryInput(
     permissionTimeoutMs: config.permissionTimeoutMs,
     ...(mergeQueue ? { mergeQueue: true } : {}),
     ...(validationContract ? { validationContract } : {}),
+    ...(manifest.budget ? { budget: manifest.budget } : {}),
+    ...(manifest.governance ? { governance: manifest.governance } : {}),
     attempt,
     resume,
   };

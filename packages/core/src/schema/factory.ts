@@ -127,6 +127,42 @@ export const factorySchema = z
       .optional(),
     /** Deterministic pre-PR guard hooks (roadmap item 4). */
     guard: guardConfigSchema.optional(),
+    /**
+     * Spend caps (roadmap item 7). `maxCostUsdPerRun` applies to every stage run,
+     * `maxCostUsdPerStage` narrows it for a specific stage, and `maxCostUsdPerFactory`
+     * refuses new work once the factory's recorded spend reaches the cap.
+     */
+    budget: z
+      .object({
+        maxCostUsdPerRun: z.number().min(0).max(10_000).optional(),
+        maxCostUsdPerStage: z.number().min(0).max(10_000).optional(),
+        maxCostUsdPerFactory: z.number().min(0).max(1_000_000).optional(),
+      })
+      .strict()
+      .optional(),
+    /**
+     * Governance (roadmap item 10): autonomy level, model allowlist and per-action policy.
+     * The autonomy kill switch remains separate; this block describes what the factory may
+     * do when it is running unattended.
+     */
+    governance: z
+      .object({
+        autonomyLevel: z.enum(['observe', 'assist', 'auto', 'full']).default('auto'),
+        allowedModels: z.array(z.string().min(1)).max(50).optional(),
+        /** Action globs that are always denied (e.g. `bash`, `git.push`). */
+        denyActions: z.array(z.string().min(1)).max(50).optional(),
+        /** Action globs that require a human; unattended runs deny them and record it. */
+        requireHumanActions: z.array(z.string().min(1)).max(50).optional(),
+        audit: z
+          .object({
+            export: z.enum(['jsonl', 'otel']).default('jsonl'),
+            otlpEndpoint: z.string().min(1).optional(),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

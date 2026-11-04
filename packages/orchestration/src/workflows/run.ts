@@ -8,6 +8,7 @@ import {
   setHandler,
   workflowInfo,
 } from '@temporalio/workflow';
+import { evaluateActionPolicy } from '@factory/core/governance/policy';
 import type * as activities from '../activities';
 import { describeFailure } from '../failures';
 import type {
@@ -231,11 +232,27 @@ export async function RunWorkflow(input: RunInput): Promise<RunOutcome> {
           if (!requestId) break; // defensive: never wait without an id
           const action = pump.permissionAction ?? 'permission';
 
-          // Factory stage runs are unattended agents: tool permissions are auto-allowed.
+          // Factory stage runs are unattended agents: tool permissions are auto-allowed
+          // unless the factory's governance policy denies the action or requires a human.
           // Chat runs keep the ADR-013 durable wait.
           if (input.autoAllowPermissions) {
-            decided[requestId] = 'allow';
-            await harness.respondPermission({ input, requestId, decision: 'allow' });
+            const policy = evaluateActionPolicy(input.governance, action);
+            const decision = policy.decision === 'allow' ? 'allow' : 'deny';
+            decided[requestId] = decision;
+            await harness.respondPermission({ input, requestId, decision });
+            if (policy.decision !== 'allow') {
+              await persistence.persistStep({
+                runId,
+                stepId: `governance-${requestId}`,
+                kind: 'policy',
+                status: 'ok',
+                detail: {
+                  action,
+                  decision: policy.decision,
+                  reason: policy.reason,
+                },
+              });
+            }
             continue;
           }
 
@@ -444,20 +461,24 @@ export async function RunWorkflow(input: RunInput): Promise<RunOutcome> {
         .catch(() => undefined);
     }
 
-    if (lease) {
-      try {
-        await runner.killRunner({ input, lease });
-      } catch (error) {
-        await persistence
-          .persistStep({
-            runId,
-            stepId: 'kill-runner-error',
-            kind: 'runner',
-            status: 'error',
-            error: describeFailure(error),
-          })
-          .catch(() => undefined);
-      }
+    // Always attempt the kill, even when cancellation arrived before the lease activity
+    // returned a handle. `killRunner` derives the deterministic container name for the
+    // no-lease path and skips ephemeral (fake/replay) runs.
+    try {
+      await runner.killRunner({
+        input,
+        ...(lease ? { lease } : {}),
+      });
+    } catch (error) {
+      await persistence
+        .persistStep({
+          runId,
+          stepId: 'kill-runner-error',
+          kind: 'runner',
+          status: 'error',
+          error: describeFailure(error),
+        })
+        .catch(() => undefined);
     }
   });
 

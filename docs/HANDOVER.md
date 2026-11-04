@@ -1,7 +1,13 @@
 # Handover
 
-State as of 2026-11-03. Everything below is committed and tagged. Public-release prep: `README.md`, `LICENSE`
+State as of 2026-11-04. Everything below is committed and tagged. Public-release prep: `README.md`, `LICENSE`
 (MIT, © Nick Kutovyy), `NOTICE` (attribution request), `SECURITY.md`, `CONTRIBUTING.md`.
+
+**Latest (2026-11-04):** roadmap items 6–11 implemented as separate OpenSpec changes and verified with a
+hello-nextjs delete → recreate → lights-off run between each: trace-driven self-improvement, classifier
+routing + spend caps, work intake from anywhere, progressive MCP context, governance/autonomy levels and the
+CLI/CI surface. `bun run ci` 655 pass; smoke passed; Playwright 61/61. Runner cleanup now always calls
+`killRunner` even when cancellation precedes the lease handle.
 
 ## What exists
 
@@ -14,7 +20,7 @@ State as of 2026-11-03. Everything below is committed and tagged. Public-release
 | Code forges | `packages/forge` | `CodeForge` contract, fake + GitHub (token by ref, dry-run, offline contract tests) |
 | Merge queue | `packages/merge` | serialized merge train, bisect on red, single-commit revert, manual revert |
 | Evals | `packages/evals` | scorers (deterministic + judge), calibration, benchmarks, Pareto, self-improvement, lessons |
-| API | `apps/api` | path-versioned under `/api/v1` (ADR-030); OpenAPI 3.1 at `GET /api/v1/openapi.json`; every factory-scoped resource nested under `/api/v1/factories/<factoryId>/…` (runs/SSE, permissions, chat, work items, gates, autonomy, readiness, guard hooks, scores, calibration, scoring, benchmarks, improvement, proposals, lessons, canary, MCPs, merge queue, automations); global factories/auth/secrets/integrations/webhooks |
+| API | `apps/api` | path-versioned under `/api/v1` (ADR-030); OpenAPI 3.1 at `GET /api/v1/openapi.json`; every factory-scoped resource nested under `/api/v1/factories/<factoryId>/…` (runs/SSE, permissions, chat, work items, gates, autonomy, governance, budget, readiness, guard hooks, scores, calibration, scoring, benchmarks, improvement, proposals, lessons, canary, MCPs, capabilities, intake, merge queue, automations); global factories/auth/secrets/integrations/webhooks |
 | Web console | `apps/web` | full nav parity; global chat/inbox/secrets/users/help; factory pages nested under `/factories/<id>/…` including readiness, score detail and MCPs; work-item validation contract panel; Factory Stack help |
 | Examples | `factories/example`, `factories/example-lights-off` | lights-on (spec/plan/PR human) vs canary authority |
 
@@ -92,10 +98,11 @@ lets you validate wiring without touching a repo. GitHub delivers to
 3. **Forge proxy mode**: SSH ships by default; the Caddy overlay is live-validated for session auth and HTTP,
    but a websocket upgrade has not been exercised end to end.
 4. **Promotion** merges the definition repo but does not rewrite the local checkout; `runs/canary/` GC is manual.
-5. **Factory engineering foundation** is implemented on `feat/factory-engineering-foundation`: validation
-   contract + QA pyramid, agent readiness, outcome metrics, guard hooks and Factory Stack help. Remaining roadmap
-   in `research/software-factory-ideas.md`: trace-driven self-improvement, model routing, work intake,
-   progressive context, governance, surface-agnostic agents and missions.
+5. **Factory engineering foundation + roadmap 6–11** are implemented: validation contract + QA pyramid, agent
+   readiness, outcome metrics, guard hooks, Factory Stack help, trace-driven self-improvement, classifier
+   routing + spend caps, work intake, progressive context, governance/autonomy levels and CLI/CI surfaces.
+   Remaining roadmap in `research/software-factory-ideas.md`: long-running missions (item 12). SSO/OIDC stays
+   in Phase 6c.
 6. **Read-path performance**: implemented. `/inbox` went from ~7s to ~0.02s, `/work-items` from
    ~3.5–4s to ~0.016s and `/chat` from ~0.5–0.9s to ~0.008s on the compose stack. Registry read model,
    async git, batch inbox/board projections, React request memoization, session touch throttling,

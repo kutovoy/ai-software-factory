@@ -80,6 +80,18 @@ export const modelUnresolved = (ref: string, envName: string): ApiError =>
     { ref, env: envName },
   );
 
+export const factoryBudgetExhausted = (
+  factory: string,
+  capUsd: number,
+  spentUsd: number,
+): ApiError =>
+  new ApiError(
+    'factory_budget_exhausted',
+    409,
+    `factory "${factory}" has spent $${spentUsd.toFixed(2)} of its $${capUsd.toFixed(2)} cap; new work is refused`,
+    { factory, capUsd, spentUsd },
+  );
+
 export const modelNotAllowed = (model: string, allowed: string[]): ApiError =>
   new ApiError('model_not_allowed', 403, `model "${model}" is not allowed for this run`, {
     model,

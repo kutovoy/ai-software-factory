@@ -60,6 +60,28 @@ async function openStream(adapter: FakeAdapter, runId: string) {
 }
 
 describe('pump segment', () => {
+  test('stops a run when usage crosses its spend cap', async () => {
+    const adapter = new FakeAdapter();
+    const { handle, controller, iterator } = await openStream(adapter, 'run_pump_budget');
+    const rec = recorder(adapter, handle);
+
+    const segment = await pumpSegment({
+      runId: 'run_pump_budget',
+      adapter,
+      handle,
+      iterator,
+      signal: controller.signal,
+      decided: { per_1: 'allow' },
+      deps: rec.deps,
+      tickMs: 5,
+      maxCostUsd: 0.001,
+    });
+
+    expect(segment.stopReason).toBe('closed');
+    expect(segment.failure).toMatchObject({ code: 'budget_exhausted' });
+    expect(segment.costUsd).toBeGreaterThan(0.001);
+  });
+
   test('returns at permission.requested and persists the canonical event exactly once', async () => {
     const adapter = new FakeAdapter();
     const { handle, controller, iterator } = await openStream(adapter, 'run_pump_1');

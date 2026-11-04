@@ -15,3 +15,17 @@ stages:
     harness:
       model: env:FACTORY_MODEL
       type: opencode
+classifier:
+  enabled: true
+  cheap:
+    harness:
+      model: env:FACTORY_SMALL_MODEL
+      type: opencode
+  standard:
+    harness:
+      model: env:FACTORY_MODEL
+      type: opencode
+  deep:
+    harness:
+      model: env:FACTORY_REVIEW_MODEL
+      type: opencode
