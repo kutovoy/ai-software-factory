@@ -100,6 +100,16 @@ Next candidates: trace-driven self-improvement, classifier-based model routing +
 Sentry/PostHog/Slack/Linear, progressive context/MCP discovery, governance/autonomy levels, surface-agnostic
 agent, and long-running missions. Phase 6c infrastructure work remains blocked on external IdP/infra decisions.
 
+### Read-path performance investigation (2026-11-03)
+
+`/chat` and `/inbox` were reported at 4s+. Measured on the compose stack: `/inbox` ~7s,
+`/work-items` ~3.5–4s, `/chat` 0.5–0.9s. SQL plans are 0.1–1ms; the cost is repeated full
+factory-registry syncs (~253ms per sync, ~194ms per `resolveFactory`) and N+1 detail reads
+(~112 API calls for `/inbox`, 43 for `/work-items`), amplified by `execFileSync` git calls
+blocking the API event loop. No fixes have been applied. The grounded, phased plan (registry
+read model, batch inbox/board projections, React/Next caching, session touch throttling,
+indexes, streaming, k6/OTel verification) is in `docs/PERFORMANCE.md`.
+
 ### Graphite Command shell (2026-11-03)
 
 The left menu and header now follow the selected **Graphite Command** direction:

@@ -96,6 +96,9 @@ lets you validate wiring without touching a repo. GitHub delivers to
    contract + QA pyramid, agent readiness, outcome metrics, guard hooks and Factory Stack help. Remaining roadmap
    in `research/software-factory-ideas.md`: trace-driven self-improvement, model routing, work intake,
    progressive context, governance, surface-agnostic agents and missions.
+6. **Read-path performance**: `/inbox` ~7s and `/work-items` ~3.5–4s on the compose stack; SQL is fast, but
+   registry sync and N+1 detail reads dominate. The grounded phased fix plan is in `docs/PERFORMANCE.md`
+   (not implemented).
 
 ## Version tags
 
