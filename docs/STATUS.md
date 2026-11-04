@@ -52,8 +52,24 @@ Latest tags: `harden-runtime`, `secrets-mcp`, `api-v1-help`, `help-center`, `liv
 `api-explorer-parity`, `fix-ui-audit`, `fix-run-failures`, `run-actions`, `readiness-hello-nextjs`, `console-ops`,
 `forgejo`, `agent-verdicts`, `console-auth`, `harden-runners`, `forge-ssh-public`, `readiness-qa`,
 `factory-identity`, `factory-purge`, `readiness-identity`, `unify-factory-api`, `fix-forge-pr-files`,
-`readiness-forge-files`, `graphite-command`, `add-run-retry`. `bun run ci` 746 pass; smoke passes; Playwright 57;
-UI audit clean.
+`readiness-forge-files`, `graphite-command`, `add-run-retry`, `train-game-factory`, `train-game-run`. `bun run ci`
+746 pass; smoke passes; Playwright 57; UI audit clean.
+
+### Train game lights-off factory (2026-11-03)
+
+Added `factories/admin/train-game` (`fac_01M6J3A931Y4JFBRAPVY9FYSNM`), a fully autonomous factory for a
+React + Three.js browser game:
+
+- Stages: triage → spec → implement → review (two independent reviewers) → verify (Playwright QA) → ship.
+- Every gate is `agent`; `mergePolicy: auto_on_green`; `agentVerdict: required`.
+- QA builds the app and runs Playwright against the production preview; review runs a two-reviewer committee.
+- Lights-off run `wi_01M6J3HS2V0BR9QAGHA399FAYD` shipped **PR #1** in `acme/train-game` with zero human
+  decisions. QA reported **6/6 Playwright checks passed** (canvas, HUD, throttle, teleport + Space delivery,
+  three-delivery win, reset, clean console) in Chromium 156.0.8078.4.
+- The PR and `main` contain the actual `train-game/` source (React, Three.js, Vite, TypeScript), not a patch
+  artifact.
+- The first triage attempt failed because Docker could not resolve `ai-utility`; the work item was retried after
+  pointing API/worker at the reachable Tailscale IP, then completed on attempt 2.
 
 ### Graphite Command shell (2026-11-03)
 
