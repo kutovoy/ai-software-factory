@@ -1,0 +1,36 @@
+agentDefaults:
+  harness:
+    model: env:FACTORY_MODEL
+    type: opencode
+  runner: local-docker
+agentVerdict: required
+alias: Train Game
+description: "Builds a React + Three.js browser game: drive a 3D train, carry cargo between stations, and deliver it while a Playwright QA agent verifies the built game."
+gates:
+  deploy: agent
+  implement: agent
+  plan: agent
+  pr_review: agent
+  review: agent
+  spec: agent
+id: fac_01M6J3A931Y4JFBRAPVY9FYSNM
+mergePolicy: auto_on_green
+name: train-game
+repositories:
+  - name: train-game
+    owner: acme
+schemaVersion: v1alpha1
+secrets: []
+stages:
+  - agent: triage
+    name: triage
+  - agent: spec
+    name: spec
+  - agent: implement
+    name: implement
+  - agent: review
+    name: review
+    reviewers: 2
+  - agent: qa
+    name: verify
+  - name: ship

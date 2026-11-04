@@ -1,0 +1,10 @@
+description: Docker runner for the React + Three.js train game.
+failureSessionRetentionMinutes: 30
+instanceShape:
+  memoryGb: 4
+  vcpus: 2
+platform:
+  arch: x86_64
+  linux:
+    dockerImage: node:22-bookworm
+  os: linux
