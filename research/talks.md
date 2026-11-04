@@ -1,8 +1,8 @@
 # Software Factory Talks
 
-Captured 2026-10-28. Metadata (title / channel / duration / upload date) verified with `yt-dlp`;
+Captured 2026-10-28; extended 2026-11-03 with transcript + frame review. Metadata (title / channel / duration / upload date) verified with `yt-dlp`;
 ideas extracted from video descriptions, chapter timestamps, and the AI Engineer talk pages
-(edited transcripts + slide chapters). Companion file: `research/ecosystem.md`.
+(edited transcripts + slide chapters). Companion files: `research/ecosystem.md`, `research/software-factory-ideas.md` (proposed roadmap).
 
 Reproduce metadata:
 ```bash
@@ -33,6 +33,11 @@ yt-dlp --skip-download --write-auto-subs --sub-langs en --skip-download URL   # 
 | 17 | **AI Governance for developers: deploying autonomous coding agents safely** | Platform Engineering | Platform Engineering | https://www.youtube.com/watch?v=Qjw0PSoVsJk | 23:33 | (1) Autonomous agents can ship features or trigger incidents. (2) A practical framework for **safe deployment** of coding agents. (3) Guardrails, approvals, and blast-radius control. (4) What to measure before widening autonomy. (5) Directly relevant to our lights-on → lights-off dial. |
 | 18 | **Microsoft Build 2026 — agent-first keynote** | Microsoft (Satya Nadella et al.) | Microsoft Developer | https://www.youtube.com/watch?v=nlGqajJEsWs | 6:40:25 (full day; recaps ~11–17 min) | (1) The platform shift is "agent-first": from software you operate to agents that do the work. (2) Copilot + GitHub as the agent surface across the SDLC. (3) Agent governance/identity as platform concerns. (4) Agents in the IDE, in Actions, and in the OS. (5) Useful for the *platform* framing; light on factory internals. |
 
+| 19 | **How to Build a Software Factory for AI Coding Agents** | Boundary (Vaibhav Gupta + Dex Horthy) | Boundary / AI that Works | https://www.youtube.com/watch?v=tGbjIvvYuHE | 1:10:45 | (1) Enterprise factory stack: **control plane/orchestration → harness → dev environment → infrastructure**. (2) Each layer is buy-or-build; the hard parts are the interfaces (ACP/AG-UI, harness lifecycle, dev-env contracts). (3) Factory = agents build, test and get feedback; humans move up to factory engineering. (4) Dev environments are part of the outer harness, not a separate layer below it; identity/provisioning belong there. (5) Enterprise wants to bring compute and parts of the dev environment; don't force a vertical cloud agent. |
+| 20 | **What It Actually Takes to Build a Software Factory** | Tereza Tížková (Factory) | AI Engineer | https://www.youtube.com/watch?v=vGCJ7diEtrw | 22:49 | (1) Full cycle: **signal → triage → plan → execute → validate → iterate**. (2) Three properties: agnostic, autonomous, always improving. (3) Classifier-based model routing: score task difficulty, pick cheapest model above a quality threshold, fall back on failure. (4) Missions = orchestrator writes a **validation contract** before code; workers build in sequence with fresh context; validators never wrote the code. (5) Two validators: scrutiny (code/tests/lint/typecheck) and user-testing (computer-use against the running app). (6) Progressive context disclosure for MCP/tool schemas. (7) Agent readiness is measurable: style, build, testing, docs, dev env, observability, security, task discovery. |
+| 21 | **From AI Coding Agents to the Software Factory** | Eno Reyes (Factory AI) | Arize AI / Observe 2026 | https://www.youtube.com/watch?v=SkoT4RkteSA | 15:06 | (1) Signal-to-deployment pipeline: signal → triage → plan → execute → validate → ship → monitor, then loop. (2) Canonical automations: code review, security, QA (browser/API/desktop), docs, incident response, deployment. (3) Same agent on every surface: CLI, IDE, desktop, Slack, web, API, CI/webhooks. (4) Governance: identity/access, model allowlists, agent controls, audit/OTEL, compliance. (5) Agent readiness: tests, linters, typecheck, formatters give deterministic correctness signals; low-readiness repos can decelerate. (6) Measure outcomes: cycle time, autonomy ratio, code shelf life, incident MTT, cost per PR — not tokens or lines. |
+| 22 | **I Built a Self-Improving Software Factory** | Eric Tech | Eric Tech | https://www.youtube.com/watch?v=aggJvNZxfKA | 12:37 | (1) Telemetry (Sentry/PostHog) → verified tickets → GitHub project board → builder/QA/reviewer specialists. (2) Tickets are tracked in GitHub issues with agent comments and PR links as the audit log. (3) Skill maps: prepare (ponytail + context7) → build (implement/diagnose/design) → check (verification/code review/humanizer) → handoff. (4) QA pyramid: unit → component/integration → Playwright E2E; use the right testing library per ticket. (5) UI refinement loop: diagnose → fix → style → motion → polish, repeat. (6) Guard hooks: secret scanning, protected push, delete-outside, worktree cleanup, skill evals, README sync. |
+
 ### Honorable mentions (not in the table, worth a skim)
 
 - **Agentic SDLC at Uber — Building Blocks for Uber's Software Factory**, Uday Kiran Medisetty & Adam Huda,
@@ -41,8 +46,6 @@ yt-dlp --skip-download --write-auto-subs --sub-langs en --skip-download URL   # 
   runtime underneath a factory.
 - **Building Your Own Software Factory with Claude Code + Codex**, Leon van Zyl, 27:34 —
   https://www.youtube.com/watch?v=AsvzMlLyQ38 (two-harness setup).
-- **I Built a Self-Improving Software Factory**, Eric Tech, 12:37 —
-  https://www.youtube.com/watch?v=aggJvNZxfKA (small-scale self-improvement demo).
 - **How Factory is building autonomous software with Claude**, Claude channel, 10:38 —
   https://www.youtube.com/watch?v=N6FkmdL0Lg0 (vendor case study).
 - **The great software factory debate**, LinearB, 57:21 — https://www.youtube.com/watch?v=8fqTBWWnK3Y

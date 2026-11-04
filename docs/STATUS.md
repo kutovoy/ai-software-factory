@@ -22,7 +22,9 @@ unauthorized IDs return 404. The delete path is a verified hard purge: DB rows, 
 running workflows and run directories, with git history and forge repos kept.
 
 Next: **Phase 6c** — external OIDC/IdP (group→org mappings), remote runners, Temporal Cloud and
-multi-tenant isolation. Also pending: the live GitHub path.
+multi-tenant isolation. Also pending: the live GitHub path. The proposed **factory-engineering roadmap**
+(validation contract, agent readiness, outcome metrics, guard hooks, then self-improvement/routing/intake)
+is recorded in `research/software-factory-ideas.md`; it is not approved for execution yet.
 
 ### Readiness and public-release prep (2026-11-01)
 
@@ -70,6 +72,30 @@ React + Three.js browser game:
   artifact.
 - The first triage attempt failed because Docker could not resolve `ai-utility`; the work item was retried after
   pointing API/worker at the reachable Tailscale IP, then completed on attempt 2.
+
+### Factory engineering roadmap (proposed 2026-11-03)
+
+Research review of five AI-conference talks (Boundary, Eric Tech, Zach Lloyd, Tereza Tížková, Eno Reyes)
+produced a proposed roadmap in `research/software-factory-ideas.md`. It is recorded but **not approved for
+execution** yet.
+
+The thesis: the next gain is not more agents; it is making the factory measurable, verifiable and
+self-tuning. First-sprint candidates:
+
+1. **Validation contract + QA pyramid** — spec emits a machine-checkable contract; QA attaches evidence;
+   review verifies it; unit/component/integration/E2E tiers, not Playwright only.
+2. **Agent readiness** — deterministic score for tests, linters, typecheck, docs, dev env, observability,
+   security and task discovery; warn/block before autonomy.
+3. **Outcome metrics** — human interactions per PR, autonomy ratio, signal→production cycle time, code shelf
+   life, incident MTT, cost per PR / accepted change.
+4. **Deterministic guard hooks** — secret scan, protected push, delete-outside-workspace, worktree cleanup,
+   skill evals, README/docs sync.
+5. **Factory Stack page** — explain the 00–06 stack (factories-as-code → data/context → compute → inference
+   → improvement → orchestration → access) in Help.
+
+Next candidates: trace-driven self-improvement, classifier-based model routing + spend caps, work intake from
+Sentry/PostHog/Slack/Linear, progressive context/MCP discovery, governance/autonomy levels, surface-agnostic
+agent, and long-running missions. Phase 6c infrastructure work remains blocked on external IdP/infra decisions.
 
 ### Graphite Command shell (2026-11-03)
 
@@ -1552,12 +1578,16 @@ both accepted; `benchmarkGateRequired` is true exactly when `fullyAutonomous`; k
 
 ## Next
 
-1. Phase 6: multi-tenant/ops, auth/users, and the MCPs & apps page (per-agent MCP wiring).
-2. Real runner path: build `factory-runner:local`, verify `opencode serve` readiness + proxy env inside
-   the container against a live model endpoint. Run a real (non-fake) benchmark once calibration and a
-   model endpoint exist. Exercise `RUNNER_SANDBOX=exec` on a macOS host with a real harness.
-3. Replace `sandbox-exec` behind the same `RUNNER_SANDBOX` flag when Apple removes it; consider a
-   `seatbelt`-free fallback (e.g. a per-run macOS user or Docker-only default).
+See `research/software-factory-ideas.md` for the full proposed roadmap. The first sprint, once approved:
+
+1. Validation contract + QA pyramid.
+2. Agent readiness score/gate.
+3. Outcome metrics dashboard.
+4. Deterministic guard hooks.
+5. Factory Stack help page.
+
+Phase 6c (OIDC/IdP, remote runners, Temporal Cloud, multi-tenant isolation) remains blocked on external
+infrastructure/IdP decisions. The live GitHub forge path still needs a PAT, repo and webhook secret.
 
 ## Open questions
 

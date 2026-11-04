@@ -1,6 +1,6 @@
 # Handover
 
-State as of 2026-11-01. Everything below is committed and tagged. Public-release prep: `README.md`, `LICENSE`
+State as of 2026-11-03. Everything below is committed and tagged. Public-release prep: `README.md`, `LICENSE`
 (MIT, © Nick Kutovyy), `NOTICE` (attribution request), `SECURITY.md`, `CONTRIBUTING.md`.
 
 ## What exists
@@ -92,6 +92,10 @@ lets you validate wiring without touching a repo. GitHub delivers to
 3. **Forge proxy mode**: SSH ships by default; the Caddy overlay is live-validated for session auth and HTTP,
    but a websocket upgrade has not been exercised end to end.
 4. **Promotion** merges the definition repo but does not rewrite the local checkout; `runs/canary/` GC is manual.
+5. **Factory engineering roadmap** is proposed in `research/software-factory-ideas.md`: validation contract +
+   QA pyramid, agent readiness, outcome metrics, guard hooks, then trace-driven self-improvement, model routing,
+   work intake, progressive context, governance, surface-agnostic agents and missions. Not approved for execution
+   yet.
 
 ## Version tags
 
