@@ -251,5 +251,10 @@ export function toOrchestrationConfig(config: ApiConfig): OrchestrationConfig {
     mergeIdleCycles: config.mergeIdleCycles,
     canaryKeepTrees: config.canaryKeepTrees,
     canaryDeployTimeoutMs: config.canaryDeployTimeoutMs,
+    runnerReaperEnabled: process.env.RUNNER_REAPER !== '0',
+    runnerReaperIntervalMs: intFromEnv(process.env.RUNNER_REAPER_INTERVAL_MS, 5 * 60 * 1000),
+    runnerReaperDryRun: process.env.RUNNER_REAPER_DRY_RUN === '1',
+    runnerReaperMaxAgeMs: intFromEnv(process.env.RUNNER_REAPER_MAX_AGE_MS, 6 * 60 * 60 * 1000),
+    runnerReaperGraceMs: intFromEnv(process.env.RUNNER_REAPER_GRACE_MS, 5 * 60 * 1000),
   };
 }

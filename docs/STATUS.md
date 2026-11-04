@@ -122,6 +122,29 @@ Measured after (same data): `/inbox` 0.019–0.023s, `/work-items` 0.016s, `/cha
 skipped; Playwright 61/61; inbox and auth-scope integration suites pass. `bun run perf:read-path`
 re-measures the SLOs over warm rounds.
 
+### Runner container leak fix and reaper (2026-11-04)
+
+Docker Desktop had 29 `factory-runner-factory-run_*` containers. All 29 mapped to runs still
+marked `running`; 5 workflows were `CANCELED` and 24 were no longer visible to Temporal; none
+had `kill-runner` or finish-run steps.
+
+Root cause: `RunWorkflow` awaited `readTerminalState` outside its `CancellationScope.nonCancellable`,
+so cancellation after `collectArtifacts` skipped `finishRunActivity` and `killRunner`.
+
+Fixed:
+
+- one non-cancellable cleanup scope covering terminal event, artifacts, terminal-state read,
+  finish, proxy revocation and `killRunner` (kill last, best-effort);
+- `leaseRunner` heartbeats and kills the deterministic container name on cancellation;
+- `killRunner` cleans up by deterministic name even without a lease handle;
+- label-based reaper in the worker + `bun run reap:runners` (dry-run default, `--apply`);
+- Temporal `shutdownGraceTime`/`shutdownForceTime` and compose `stop_grace_period: 150s`.
+
+One-time cleanup: dry-run found 29 would-remove, 0 errors; `--apply` removed all 29 containers
+and marked their runs `error` with `runner_orphaned: workflow_closed|workflow_missing`. Worker/API
+rebuilt; the worker reaper starts cleanly and sees zero managed containers. `bun run typecheck`
+and `bun test` (628 pass / 172 integration skipped) pass. See ADR-044.
+
 ### Graphite Command shell (2026-11-03)
 
 The left menu and header now follow the selected **Graphite Command** direction:

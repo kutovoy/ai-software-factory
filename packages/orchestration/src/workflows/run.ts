@@ -320,71 +320,151 @@ export async function RunWorkflow(input: RunInput): Promise<RunOutcome> {
       ? failure
       : pump?.terminalSummary;
 
-  // Cleanup runs even when the workflow itself is being cancelled.
-  await CancellationScope.nonCancellable(async () => {
-    if (status === 'cancelled') {
-      await harness.cancelHarness({ input, reason: cancelReason ?? 'cancelled' });
-    }
-    // Exactly one terminal event, whether or not the adapter emitted one.
-    await persistence.appendTerminalEvent({
-      runId,
-      stepId: 'terminal',
-      status,
-      summary,
-    });
-  });
-
   let artifacts: RunArtifact[] = [];
   let costUsd: number | null = null;
   let inputTokens: number | null = null;
   let outputTokens: number | null = null;
+  let terminalLastSeq = 0;
 
-  if (lease) {
-    try {
-      const collected = await CancellationScope.nonCancellable(() =>
-        runner.collectArtifacts({ input, lease: lease as LeaseInfo }),
-      );
-      artifacts = collected.artifacts;
-      if (collected.usage) {
-        costUsd = collected.usage.costUsd ?? null;
-        inputTokens = collected.usage.inputTokens;
-        outputTokens = collected.usage.outputTokens;
-      }
-    } catch (error) {
-      // Artifact collection must not change the run's verdict; record and continue.
-      await persistence.persistStep({
-        runId,
-        stepId: 'artifacts-error',
-        kind: 'artifacts',
-        status: 'error',
-        error: describeFailure(error),
-      });
-    }
-  }
-
-  const terminal = await persistence.readTerminalState({ runId });
-
+  /**
+   * Every post-run step lives in one non-cancellable scope. Previously only
+   * `collectArtifacts` and the final writes were wrapped; `readTerminalState` sat between
+   * them, so a cancellation delivered at that await skipped `finishRunActivity` and
+   * `killRunner`, leaving the sandbox container and a `running` run row behind.
+   *
+   * Each step is best-effort except the terminal event: the run row is the read model, and
+   * the runner reaper reconciles a row that could not be finished. `killRunner` is always
+   * attempted last, even when artifact collection or finish fails.
+   */
   await CancellationScope.nonCancellable(async () => {
-    await persistence.finishRunActivity({
-      runId,
-      status,
-      summary: summary ?? null,
-      error: status === 'error' ? (failure ?? summary ?? 'run failed') : null,
-      costUsd,
-      inputTokens,
-      outputTokens,
-      artifacts,
-    });
-    await proxy.revokeProxyToken({ runId });
+    if (status === 'cancelled') {
+      try {
+        await harness.cancelHarness({ input, reason: cancelReason ?? 'cancelled' });
+      } catch {
+        // The harness may already be gone; the terminal event still records the outcome.
+      }
+    }
+
+    // Exactly one terminal event, whether or not the adapter emitted one. If the write
+    // fails, still continue to the runner kill: a container must not outlive the run.
+    try {
+      await persistence.appendTerminalEvent({
+        runId,
+        stepId: 'terminal',
+        status,
+        summary,
+      });
+    } catch (error) {
+      await persistence
+        .persistStep({
+          runId,
+          stepId: 'terminal-event-error',
+          kind: 'persist',
+          status: 'error',
+          error: describeFailure(error),
+        })
+        .catch(() => undefined);
+    }
+
     if (lease) {
-      await runner.killRunner({ input, lease });
+      try {
+        const collected = await runner.collectArtifacts({
+          input,
+          lease: lease as LeaseInfo,
+        });
+        artifacts = collected.artifacts;
+        if (collected.usage) {
+          costUsd = collected.usage.costUsd ?? null;
+          inputTokens = collected.usage.inputTokens;
+          outputTokens = collected.usage.outputTokens;
+        }
+      } catch (error) {
+        // Artifact collection must not change the run's verdict; record and continue.
+        await persistence
+          .persistStep({
+            runId,
+            stepId: 'artifacts-error',
+            kind: 'artifacts',
+            status: 'error',
+            error: describeFailure(error),
+          })
+          .catch(() => undefined);
+      }
+    }
+
+    try {
+      const terminal = await persistence.readTerminalState({ runId });
+      terminalLastSeq = terminal.lastSeq;
+    } catch (error) {
+      await persistence
+        .persistStep({
+          runId,
+          stepId: 'terminal-state-error',
+          kind: 'persist',
+          status: 'error',
+          error: describeFailure(error),
+        })
+        .catch(() => undefined);
+    }
+
+    try {
+      await persistence.finishRunActivity({
+        runId,
+        status,
+        summary: summary ?? null,
+        error: status === 'error' ? (failure ?? summary ?? 'run failed') : null,
+        costUsd,
+        inputTokens,
+        outputTokens,
+        artifacts,
+      });
+    } catch (error) {
+      await persistence
+        .persistStep({
+          runId,
+          stepId: 'finish-run-error',
+          kind: 'persist',
+          status: 'error',
+          error: describeFailure(error),
+        })
+        .catch(() => undefined);
+    }
+
+    try {
+      await proxy.revokeProxyToken({ runId });
+    } catch (error) {
+      await persistence
+        .persistStep({
+          runId,
+          stepId: 'revoke-proxy-token-error',
+          kind: 'proxy',
+          status: 'error',
+          error: describeFailure(error),
+        })
+        .catch(() => undefined);
+    }
+
+    if (lease) {
+      try {
+        await runner.killRunner({ input, lease });
+      } catch (error) {
+        await persistence
+          .persistStep({
+            runId,
+            stepId: 'kill-runner-error',
+            kind: 'runner',
+            status: 'error',
+            error: describeFailure(error),
+          })
+          .catch(() => undefined);
+      }
     }
   });
 
   return {
     runId,
     status,
-    lastSeq: terminal.lastSeq || lastSeq || pump?.lastSeq || 0,
+    lastSeq: terminalLastSeq || lastSeq || pump?.lastSeq || 0,
     summary,
   };
 }

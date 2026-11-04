@@ -89,6 +89,18 @@ export interface OrchestrationConfig {
   canaryKeepTrees: number;
   /** Timeout for the optional promotion `deployHook` command. */
   canaryDeployTimeoutMs: number;
+  /**
+   * Orphan runner reaper. The worker compares label-managed sandbox containers with the
+   * run read model and Temporal, and removes containers whose run is terminal/missing.
+   */
+  runnerReaperEnabled: boolean;
+  runnerReaperIntervalMs: number;
+  /** Log actions without removing anything; use for a first rollout. */
+  runnerReaperDryRun: boolean;
+  /** A container older than this with no live workflow is considered orphaned. */
+  runnerReaperMaxAgeMs: number;
+  /** Do not remove a container whose run just started; avoids a Temporal visibility race. */
+  runnerReaperGraceMs: number;
 }
 
 function intFromEnv(value: string | undefined, fallback: number): number {
@@ -147,5 +159,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): OrchestrationC
     mergeIdleCycles: intFromEnv(env.MERGE_IDLE_CYCLES, 2),
     canaryKeepTrees: intFromEnv(env.CANARY_KEEP_TREES, 3),
     canaryDeployTimeoutMs: intFromEnv(env.CANARY_DEPLOY_TIMEOUT_MS, 60_000),
+    runnerReaperEnabled: env.RUNNER_REAPER !== '0',
+    runnerReaperIntervalMs: intFromEnv(env.RUNNER_REAPER_INTERVAL_MS, 5 * 60 * 1000),
+    runnerReaperDryRun: env.RUNNER_REAPER_DRY_RUN === '1',
+    runnerReaperMaxAgeMs: intFromEnv(env.RUNNER_REAPER_MAX_AGE_MS, 6 * 60 * 60 * 1000),
+    runnerReaperGraceMs: intFromEnv(env.RUNNER_REAPER_GRACE_MS, 5 * 60 * 1000),
   };
 }

@@ -18,6 +18,7 @@
     "migrate": "bun scripts/migrate.ts",
     "smoke": "bash scripts/smoke.sh",
     "perf:read-path": "bash scripts/perf-read-path.sh",
+    "reap:runners": "bun scripts/reap-runners.ts",
     "ci": "bash scripts/ci.sh",
     "factory:delete": "bun scripts/delete-factory.ts"
   },

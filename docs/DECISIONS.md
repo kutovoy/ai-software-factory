@@ -920,3 +920,20 @@ and recent results are exposed at `GET /api/v1/factories/{factoryId}/guard-hooks
 **Consequences:** obvious unsafe PRs fail before a branch is written and leave an audit event; the hooks cannot
 execute arbitrary policy code. Secret patterns are deliberately narrow to avoid false positives; a factory can
 disable the scan explicitly.
+
+## ADR-044 — Runner cleanup is guaranteed and reconciled by a label-based reaper
+
+**Status:** accepted (2026-11-04). **Context:** 29 detached `factory-runner-*` containers leaked because
+`RunWorkflow` awaited `readTerminalState` outside its non-cancellable cleanup scope. A cancellation delivered there
+skipped `finishRunActivity` and `killRunner`; lease-time cancellation and worker kills could also leave containers,
+and nothing reconciled Docker against the run read model.
+**Decision:** all post-run cleanup runs in one `CancellationScope.nonCancellable`, with `killRunner` last and
+best-effort. `leaseRunner` heartbeats so cancellation can be observed while Docker is leasing; `killRunner` can
+derive the deterministic container name when no lease handle exists. The worker periodically runs a label-based
+reaper over `factory.runner`/`factory.run` containers: it removes containers for terminal or missing runs, closed
+or missing workflows (after a grace period), and old containers; it marks orphaned `running` runs `error` with
+`runner_orphaned`. If Temporal is unreachable, live-looking containers are skipped. `bun run reap:runners` exposes
+the same logic with a dry-run default and `--apply`.
+**Consequences:** a cancellation or worker crash cannot silently leave a sandbox forever. The reaper is conservative
+and DB/Temporal-aware rather than a blanket `docker system prune`; a stale `running` row may briefly exist until the
+next reaper pass, and its terminal error is explicit.

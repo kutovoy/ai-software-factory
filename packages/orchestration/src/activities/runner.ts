@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import { ApplicationFailure } from '@temporalio/activity';
+import { ApplicationFailure, heartbeat as activityHeartbeat } from '@temporalio/activity';
 import { FakeAdapter, type SessionHandle, type UsageReport } from '@factory/adapters';
 import {
   appendWorkItemEvent,
@@ -20,6 +20,7 @@ import {
   isRunnerError,
   type Artifact,
   type RunnerBackend,
+  type RunnerHandle,
 } from '@factory/runners';
 import { loadConfig } from '../config';
 import { harnessPasswordFor, harnessProbeHeaders } from '../harness-auth';
@@ -90,6 +91,16 @@ function harnessCommandWithProxyEnv(
   return `${prefix} ${DEFAULT_HARNESS_COMMAND}`;
 }
 
+function isEphemeralRun(input: RunInput): boolean {
+  return (
+    input.harness === 'fake' ||
+    input.runner === 'fake' ||
+    // A replay is an in-process adapter: it re-emits a recording and applies its patch,
+    // so it needs a workspace but no sandbox process (spec `benchmark-replay`).
+    Boolean(input.replayFrom)
+  );
+}
+
 function backendFor(input: RunInput): RunnerBackend {
   const config = loadConfig();
   const kind =
@@ -153,12 +164,7 @@ export async function leaseRunner(args: {
   // idempotent per `(runId, name)`.
   const secretNames = await recordRunSecretNames(args.input);
 
-  const ephemeral =
-    args.input.harness === 'fake' ||
-    args.input.runner === 'fake' ||
-    // A replay is an in-process adapter: it re-emits a recording and applies its patch,
-    // so it needs a workspace but no sandbox process (spec `benchmark-replay`).
-    Boolean(args.input.replayFrom);
+  const ephemeral = isEphemeralRun(args.input);
   const workspace = join(runDir(config.runsDir, args.input.runId), 'workspace');
   await mkdir(workspace, { recursive: true });
 
@@ -200,8 +206,23 @@ export async function leaseRunner(args: {
   const patchFile = args.input.patchRunId
     ? patchPath(config.runsDir, args.input.patchRunId)
     : undefined;
-  const handle = await backend
-    .lease({
+  const runnerId = `factory-${args.input.runId}`;
+  let leaseHeartbeatError: unknown;
+  const leaseHeartbeat = setInterval(() => {
+    try {
+      // Docker build/run/readiness can take minutes. Heartbeats make Temporal able to
+      // deliver cancellation to this activity while it is still leasing, instead of
+      // discovering the cancellation only after a container already exists.
+      activityHeartbeat({ step: 'lease-runner' });
+    } catch (error) {
+      leaseHeartbeatError = error;
+    }
+  }, 5_000);
+  leaseHeartbeat.unref?.();
+
+  let handle: RunnerHandle;
+  try {
+    handle = await backend.lease({
       runId: args.input.runId,
       repo: {
         path: args.input.repo?.path ?? args.input.factoryRoot,
@@ -221,43 +242,56 @@ export async function leaseRunner(args: {
       runDir: runDir(config.runsDir, args.input.runId),
       // The local sandbox denies network unless the stage/factory grants it (task 6).
       networkPolicy: args.input.networkPolicy ?? 'denied',
-    })
-    .catch(async (error: unknown) => {
-      // A *requested* sandbox profile the host cannot honour fails the run here instead of
-      // running unconfined (spec `runner-sandbox` › "Missing bwrap"). Record the same
-      // `runner.sandbox_unavailable` identifier on the sandbox step so the run detail
-      // explains the cause, then let the activity fail with the runner error code.
-      if (isRunnerError(error) && error.code === 'runner.sandbox_unavailable') {
-        const details = (error.details ?? {}) as { mode?: string };
-        const detail = {
-          event: 'runner.sandbox_unavailable',
-          mode: details.mode ?? 'bwrap',
-          active: false,
-          platform: process.platform,
-          reason: error.message,
-          runId: args.input.runId,
-        };
-        await upsertStep({
-          runId: args.input.runId,
-          stepId: 'sandbox',
-          kind: 'runner',
-          status: 'error',
-          detail,
-          error: error.message,
-        });
-        const workItemMatch = /^run_([0-9A-HJKMNP-TV-Z]{26})(?:_|$)/.exec(args.input.runId);
-        if (workItemMatch) {
-          await appendWorkItemEvent(getSql(), {
-            workItemId: `wi_${workItemMatch[1]}`,
-            type: 'runner.sandbox_unavailable',
-            actor: 'runner',
-            payload: detail,
-          }).catch(() => undefined);
-        }
-        console.warn(`[runner] runner.sandbox_unavailable ${JSON.stringify(detail)}`);
-      }
-      rethrowWithCause(error);
     });
+
+    if (leaseHeartbeatError) {
+      // Cancellation arrived while the lease was completing. Remove the sandbox now so
+      // the workflow's cleanup (which has no lease object) does not have to guess.
+      await backend.kill(runnerId).catch(() => undefined);
+      throw leaseHeartbeatError;
+    }
+  } catch (error) {
+    // The lease may have created a container before failing. `kill` falls back to the
+    // deterministic container name, so it also covers the no-lease path.
+    await backend.kill(runnerId).catch(() => undefined);
+
+    // A *requested* sandbox profile the host cannot honour fails the run here instead of
+    // running unconfined (spec `runner-sandbox` › "Missing bwrap"). Record the same
+    // `runner.sandbox_unavailable` identifier on the sandbox step so the run detail
+    // explains the cause, then let the activity fail with the runner error code.
+    if (isRunnerError(error) && error.code === 'runner.sandbox_unavailable') {
+      const details = (error.details ?? {}) as { mode?: string };
+      const detail = {
+        event: 'runner.sandbox_unavailable',
+        mode: details.mode ?? 'bwrap',
+        active: false,
+        platform: process.platform,
+        reason: error.message,
+        runId: args.input.runId,
+      };
+      await upsertStep({
+        runId: args.input.runId,
+        stepId: 'sandbox',
+        kind: 'runner',
+        status: 'error',
+        detail,
+        error: error.message,
+      });
+      const workItemMatch = /^run_([0-9A-HJKMNP-TV-Z]{26})(?:_|$)/.exec(args.input.runId);
+      if (workItemMatch) {
+        await appendWorkItemEvent(getSql(), {
+          workItemId: `wi_${workItemMatch[1]}`,
+          type: 'runner.sandbox_unavailable',
+          actor: 'runner',
+          payload: detail,
+        }).catch(() => undefined);
+      }
+      console.warn(`[runner] runner.sandbox_unavailable ${JSON.stringify(detail)}`);
+    }
+    rethrowWithCause(error);
+  } finally {
+    clearInterval(leaseHeartbeat);
+  }
 
   const lease: LeaseInfo = {
     runnerId: handle.runnerId,
@@ -498,7 +532,32 @@ export async function collectArtifacts(args: {
 /** Stops and removes the sandbox; the run directory is retained. Idempotent. */
 export async function killRunner(args: { input: RunInput; lease?: LeaseInfo }): Promise<void> {
   const lease = args.lease ?? ephemeralLeases.get(args.input.runId);
-  if (!lease || lease.ephemeral) {
+  if (!lease) {
+    // Cancellation can arrive before the lease activity returns a handle. The container
+    // name is deterministic, so a best-effort kill still covers that path. Ephemeral runs
+    // have no sandbox at all.
+    if (!isEphemeralRun(args.input)) {
+      const backend = backendFor(args.input);
+      await backend.kill(`factory-${args.input.runId}`).catch((error: unknown) => {
+        console.warn(
+          `[runner] orphan kill failed for ${args.input.runId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
+      await upsertStep({
+        runId: args.input.runId,
+        stepId: 'kill-runner',
+        kind: 'runner',
+        status: 'ok',
+        detail: { runnerId: `factory-${args.input.runId}`, orphanCleanup: true },
+      }).catch(() => undefined);
+    }
+    ephemeralLeases.delete(args.input.runId);
+    await dropSession(args.input.runId);
+    return;
+  }
+  if (lease.ephemeral) {
     ephemeralLeases.delete(args.input.runId);
     await dropSession(args.input.runId);
     return;

@@ -54,6 +54,8 @@ against any endpoint.
 ### Runners and the inference boundary
 Harness execution happens in a sandbox leased by the worker (Docker; local process with an optional macOS
 `sandbox-exec` jail). The sandbox gets a per-run proxy token, never the provider key; the API revokes it at run end.
+Cancellation and lease failure clean up the sandbox in a non-cancellable scope, and a worker-side label reaper
+reconciles orphaned `factory-runner-*` containers against the run read model and Temporal.
 Workspace modes support containerised workers.
 
 ### Measurement

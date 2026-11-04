@@ -24,6 +24,7 @@ export { getForge, resolveForge, setForge } from './activities/forge';
 export * from './run-dir';
 export * from './failures';
 export * from './db';
+export * from './runner-reaper';
 export * from './sessions';
 export * from './scoring/context';
 export * from './models/judgement';

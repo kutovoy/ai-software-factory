@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { Worker, NativeConnection } from '@temporalio/worker';
 import * as activities from './activities';
 import { loadConfig, type OrchestrationConfig } from './config';
+import { reapRunnerContainers } from './runner-reaper';
 
 /**
  * Worker entrypoint: registers `RunWorkflow` and every activity on one task queue.
@@ -30,6 +31,9 @@ export async function createWorker(config: OrchestrationConfig = loadConfig()): 
     activities,
     maxConcurrentActivityTaskExecutions: config.maxConcurrentActivityTaskExecutions,
     maxConcurrentWorkflowTaskExecutions: config.maxConcurrentWorkflowTaskExecutions,
+    // Give in-flight activities time to finish cleanup before the worker is force-stopped.
+    shutdownGraceTime: '90s',
+    shutdownForceTime: '120s',
   });
 }
 
@@ -44,6 +48,7 @@ export async function runWorker(config: OrchestrationConfig = loadConfig()): Pro
   process.once('SIGTERM', () => shutdown('SIGTERM'));
 
   startHeartbeat(process.env.WORKER_HEARTBEAT_FILE);
+  startRunnerReaper(config);
 
   log('worker_started', {
     address: config.temporalAddress,
@@ -58,6 +63,46 @@ export async function runWorker(config: OrchestrationConfig = loadConfig()): Pro
   return worker;
 }
 
+/**
+ * Periodic orphan-container reaper. The Docker socket and Postgres are both available to
+ * the worker; this is the safety net for cancellations that land before `killRunner`, and
+ * for workers that are killed mid-cleanup.
+ */
+function startRunnerReaper(config: OrchestrationConfig): void {
+  if (!config.runnerReaperEnabled) return;
+
+  let inFlight = false;
+  const tick = async (): Promise<void> => {
+    if (inFlight) return;
+    inFlight = true;
+    try {
+      const result = await reapRunnerContainers(config);
+      if (result.removed > 0 || result.wouldRemove > 0 || result.errors.length > 0) {
+        log('runner_reaper', {
+          scanned: result.scanned,
+          removed: result.removed,
+          wouldRemove: result.wouldRemove,
+          skipped: result.skipped,
+          errors: result.errors,
+          actions: result.actions.filter((action) => action.action !== 'skipped'),
+        });
+      }
+    } catch (error) {
+      logError('runner_reaper_failed', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      inFlight = false;
+    }
+  };
+
+  void tick();
+  const timer = setInterval(() => {
+    void tick();
+  }, config.runnerReaperIntervalMs);
+  timer.unref?.();
+}
+
 /** Liveness file for compose healthchecks: mtime older than 60s means a dead worker. */
 function startHeartbeat(file: string | undefined): void {
   if (!file) return;
@@ -70,6 +115,10 @@ function startHeartbeat(file: string | undefined): void {
 
 function log(event: string, fields: Record<string, unknown>): void {
   process.stdout.write(`${JSON.stringify({ level: 'info', event, ts: new Date().toISOString(), ...fields })}\n`);
+}
+
+function logError(event: string, fields: Record<string, unknown>): void {
+  process.stderr.write(`${JSON.stringify({ level: 'error', event, ts: new Date().toISOString(), ...fields })}\n`);
 }
 
 if (typeof Bun !== 'undefined' && Bun.main === import.meta.path) {
