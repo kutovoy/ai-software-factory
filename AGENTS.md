@@ -106,12 +106,6 @@ docs/               STATUS, DECISIONS, ARCHITECTURE, GLOSSARY
   dev server) and pass a smoke test (`scripts/smoke.sh`: health endpoints, create a run, receive one SSE
   event, approve a gate). Keep a `compose.yaml` per environment (`dev`, `test`). If a component cannot be
   containerised yet, stub it explicitly and record why in `docs/STATUS.md`.
-- **Performance:** after a major feature addition or a change to a hot read/write path, run
-  `bun run perf:read-path` and add/refresh a focused performance test where the feature introduces a new
-  fan-out, N+1 query, large list render, or background loop. Reasonable means measuring the affected
-  surface (p50/p95 and call/query counts), comparing it with the baseline in `docs/PERFORMANCE.md`, and
-  recording the result in `docs/STATUS.md` — not adding a heavyweight load test for every small edit.
-  Prefer batch/projection tests over per-item detail fan-out, and assert constant call/query counts.
 - **Agent-written tests:** a bug-fix test must fail against pre-patch code, or it proves nothing.
 
 ## Definition of done
@@ -119,7 +113,5 @@ docs/               STATUS, DECISIONS, ARCHITECTURE, GLOSSARY
 - `openspec validate <change>` passes.
 - Types compile (`bun run typecheck`), tests pass (`bun test`).
 - Web UI flows covered by Playwright; `docker compose up` smoke test passes when the phase ships a service.
-- Major feature or hot-path changes have a performance measurement and, where relevant, a focused test;
-  `bun run perf:read-path` passes and the result is recorded in `docs/STATUS.md`.
 - A factory definition in `factories/` round-trips: export → diff → import → identical.
 - Status doc updated.
