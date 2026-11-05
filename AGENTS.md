@@ -72,6 +72,10 @@ docs/               STATUS, DECISIONS, ARCHITECTURE, GLOSSARY
 - **README stays current:** any change to features, install steps, supported models/harnesses, architecture or
   licensing must update `README.md` in the same change. It is the public front door; keep its structure and
   claims accurate, and keep the Creator/attribution section intact.
+- **What's new stays current:** every user-visible feature, route, model/harness, install or licensing change
+  must add a dated one-line entry to the README's `## What's new` section in the same change. Keep the list short
+  (the latest ~8 entries) and point readers to `docs/STATUS.md` for the full history; do not let the changelog
+  become a second status document.
 
 ## Delegation
 
@@ -115,3 +119,4 @@ docs/               STATUS, DECISIONS, ARCHITECTURE, GLOSSARY
 - Web UI flows covered by Playwright; `docker compose up` smoke test passes when the phase ships a service.
 - A factory definition in `factories/` round-trips: export → diff → import → identical.
 - Status doc updated.
+- README `## What's new` updated for every user-visible change.

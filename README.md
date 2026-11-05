@@ -32,6 +32,33 @@ This project is that factory, built to be **self-hosted, inspectable and yours**
 - **It measures and improves itself.** Scorers, judge calibration, benchmarks at pinned commits, then a
   propose → probe → compose loop with three authority levels: PR-only, auto-merge on a benchmark win, or canary.
 
+## What's new
+
+Short, dated highlights of user-visible changes. Full detail lives in `docs/STATUS.md`.
+
+- **2026-11-05 — RustFS artifact store.** Replaced the archived AGPLv3 community object store with
+  RustFS (Apache-2.0). Remote artifacts upload through short-lived presigned PUT grants; run detail
+  downloads them through an authenticated presigned GET, with object keys and checksums recorded
+  centrally.
+- **2026-11-05 — Remote runners on Linux, Windows and macOS.** Linux uses Docker, Windows uses a
+  native PowerShell process backend, and macOS uses a native `sandbox-exec` backend. Platform-specific
+  preflight/install commands, CIM/sysctl host metrics and a Runners Playwright E2E cover enrollment,
+  heartbeat, alerts and cleanup.
+- **2026-11-04 — Remote runner control plane + observability.** UI enrollment, one-time token → bearer
+  agent token, outbound command queue, central Temporal scheduling, CPU/RAM/disk/inode/heartbeat
+  metrics and configurable alerts. Remote hosts get no Temporal/Postgres access and no provider
+  credentials.
+- **2026-11-04 — Runner cleanup hardening.** Long artifact collection now heartbeats instead of timing
+  out, and the reaper tolerates concurrent `docker rm` races.
+- **2026-11-03 — Factory engineering foundation + roadmap 6–11.** Validation contracts and the QA
+  pyramid, agent readiness, guard hooks, trace scoring, routing + spend caps, external intake, MCP
+  discovery, governance/autonomy levels and the CLI surface.
+- **2026-11-02 — Factory identity + complete purge.** Committed `fac_<ulid>` ids, owner-scoped paths
+  and nested URLs; deletion is a verified hard purge of DB rows, schedules, workflows and run
+  directories.
+
+See `docs/STATUS.md` for the complete history and `docs/DECISIONS.md` for the architecture decisions.
+
 ## Features
 
 ### Definitions as code
