@@ -184,7 +184,9 @@ export async function ensureForgeOrg(config: ApiConfig, user: User): Promise<str
       `${base}/orgs/${encodeURIComponent(org)}/members/${encodeURIComponent(user.username)}`,
       { method: 'PUT', headers, signal: timeout() },
     );
-    if (!member.ok && member.status !== 409) {
+    // Forgejo answers 405 for this membership call on some versions; the org creator is
+    // already an owner, so it is not a failure. 409 is the same "already a member" case.
+    if (!member.ok && member.status !== 409 && member.status !== 405) {
       log('warn', 'forge_org_provision_failed', {
         userId: user.id,
         org,
