@@ -312,10 +312,6 @@ publicly with the demo credentials.
 Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Changes go through OpenSpec, tests are
 mandatory, and help/README stay current with the code.
 
-## Creator
-
-Built by **Nick Kutovyy**.
-
 If you use, fork or redistribute this project, please keep the attribution:
 
 > Software Factory — originally created by Nick Kutovyy.
