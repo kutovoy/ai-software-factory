@@ -177,6 +177,10 @@ talks only to the API (ADR-012); the browser never reaches a harness or the data
 
 ## Getting started
 
+You can simply point your harness (Claude/OpenCode/etc) to this repository and ask it to start it locally. Follow up with asks to create a project in the factory.
+
+Or you can do it manually:
+
 Prerequisites: Docker (with Compose), Git. Bun 1.4+ only if you run things outside containers.
 
 ```bash
