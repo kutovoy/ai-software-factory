@@ -129,7 +129,10 @@ kill(runnerId)                                 # idempotent
 
 - `local-docker`: container per run, bind-mounted worktree, no host network by default.
 - `local-process` (fallback): git worktree + `sandbox-exec` (macOS) for cheap runs.
-- `remote-worker` (later): same image, pull-based queue, mTLS, per-tenant namespace.
+- `remote-runner` (planned): UI-enrolled host agent over outbound mTLS, central Temporal scheduling,
+  no Temporal/Postgres on the host; Linux Docker first, Windows native/Windows containers and macOS
+  native/Tart later. Host CPU/RAM/disk metrics and alerts are part of the workstream. See
+  `docs/REMOTE_RUNNERS_PLAN.md`; implementation branch `feat/remote-runners` when started.
 
 Secrets are resolved **outside** the sandbox and injected as env only for the tools that need them;
 inference credentials never enter the runner (Warp's four-boundary model).

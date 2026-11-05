@@ -155,5 +155,7 @@ review. They are research artifacts, not committed product assets.
 
 ## Approval gate
 
-The roadmap is recorded here but **not approved for execution**. On approval, the first sprint becomes OpenSpec
-changes (one per item), with the validation contract and readiness items first.
+Roadmap items 1–11 are implemented (see `docs/STATUS.md`). Long-running missions (item 12) remain
+proposed. The next planned workstream is remote runners + host observability; it is documented in
+`docs/REMOTE_RUNNERS_PLAN.md` and is **not started** (implementation branch `feat/remote-runners` when
+approved). On approval, each non-trivial slice becomes an OpenSpec change.

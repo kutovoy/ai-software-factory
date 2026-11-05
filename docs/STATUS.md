@@ -28,6 +28,15 @@ trace-driven self-improvement, classifier routing + spend caps, work intake, pro
 governance/autonomy levels and the surface-agnostic CLI. The remaining roadmap item is long-running
 missions (item 12) in `research/software-factory-ideas.md`.
 
+**Next implementation workstream — remote runners + host observability (planned, not started).**
+The plan is `docs/REMOTE_RUNNERS_PLAN.md`. The implementation branch will be `feat/remote-runners`;
+no branch or code has been created yet. Planned OpenSpec changes: `add-remote-runners` (Linux agent,
+enrollment, outbound mTLS, central scheduling, UI add-host) then `add-runner-observability`
+(CPU/RAM/disk metrics, charts, alerts). Central Temporal remains the durable scheduler; remote hosts
+get **no Temporal or Postgres access**. Linux comes first, then Windows native/Windows containers,
+then macOS native/Tart. Alerts cover CPU, RAM, disk/inodes, heartbeat loss and lease queue wait, with
+console inbox + webhook delivery.
+
 ### Readiness and public-release prep (2026-11-01)
 
 **End-to-end lights-off readiness: PASS.** A new `hello-nextjs` factory (six agents, every gate `agent`,
@@ -1670,12 +1679,17 @@ both accepted; `benchmarkGateRequired` is true exactly when `fullyAutonomous`; k
 ## Next
 
 Roadmap items 1–11 are implemented (see the sections above and `research/software-factory-ideas.md`).
-The remaining roadmap candidate is long-running missions (item 12). Phase 6c (OIDC/IdP, remote runners,
-Temporal Cloud, multi-tenant isolation) remains blocked on external infrastructure/IdP decisions. The
-live GitHub forge path still needs a PAT, repo and webhook secret.
+The remaining roadmap candidate is long-running missions (item 12).
 
-Phase 6c (OIDC/IdP, remote runners, Temporal Cloud, multi-tenant isolation) remains blocked on external
-infrastructure/IdP decisions. The live GitHub forge path still needs a PAT, repo and webhook secret.
+The next implementation workstream is **remote runners + runner observability**, planned in
+`docs/REMOTE_RUNNERS_PLAN.md`. It will start on `feat/remote-runners` with `add-remote-runners` and
+`add-runner-observability`; no branch or code has been created yet. Central Temporal schedules; remote
+hosts run an outbound-mTLS agent with no Temporal/Postgres access. Linux is first, then Windows
+(native/Windows containers), then macOS (native/Tart). Host CPU/RAM/disk metrics and alerts are part of
+the observability change.
+
+Phase 6c OIDC/IdP, Temporal Cloud and multi-tenant isolation remain blocked on external infrastructure/IdP
+decisions. The live GitHub forge path still needs a PAT, repo and webhook secret.
 
 ## Open questions
 

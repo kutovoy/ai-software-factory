@@ -49,10 +49,17 @@ proposal dedupe + impact ranking, PR generation against the definition repo, ben
 a PR (or auto-merges in lights-off), and can be rolled back in one click.
 
 ## Phase 6 — Team & cloud (ongoing)
-Build: auth/users/roles, remote runners (pull queue, mTLS, per-tenant isolation), **Temporal Cloud**
-(namespaces + search attributes; retire the local dev server), managed Postgres, cost/quota controls,
+Build: auth/users/roles, remote runners (UI-enrolled outbound-mTLS host agents, central Temporal
+scheduling, no Temporal/Postgres on remote hosts, Linux first, then Windows native/Windows containers,
+then macOS native/Tart), runner host CPU/RAM/disk metrics and alerts, **Temporal Cloud** (namespaces +
+search attributes; retire the local dev server), managed Postgres, cost/quota controls,
 Teams/Jira/GitLab integrations, multi-tenant namespaces.
-**Exit:** a second user and a remote Linux runner operate the same factory with per-tenant isolation.
+**Exit:** a second user and a remote Linux runner operate the same factory with per-tenant isolation,
+and the console shows each runner's CPU/RAM/disk health with firing/resolved alerts.
+
+**Remote-runner plan:** `docs/REMOTE_RUNNERS_PLAN.md`. Implementation branch when started:
+`feat/remote-runners`; OpenSpec changes `add-remote-runners` then `add-runner-observability`. No branch
+or code has been created yet.
 
 ## Cross-cutting, every phase
 - OpenSpec change per phase; `docs/STATUS.md` updated; ADR added for every irreversible choice.

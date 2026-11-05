@@ -957,3 +957,28 @@ intake.
 **Consequences:** the factory can be tuned, capped and audited without adding a second execution path.
 Keyword routing/context selection is intentionally explainable and replaceable; budgets are guardrails, not
 sandboxes; OIDC/IdP, remote runners, Temporal Cloud and multi-tenant isolation remain Phase 6c blockers.
+
+## ADR-046 — Remote runner control plane + host observability (proposed)
+
+**Status:** proposed (2026-11-04; planning only, no implementation branch or code yet).
+**Context:** local Docker runners work, but remote hosts need UI-driven enrollment, platform-specific
+sandboxes and host health visibility. GPUSTACK’s Add Worker flow is the reference: preflight command,
+generated install command, agent registration/heartbeat, and local workload spawning.
+**Decision:**
+- Use a GPUSTACK-style **runner host agent** enrolled from the console: preflight → generated install
+  command → agent registers over outbound mTLS. One-time enrollment token exchanged for a short-lived
+  certificate/worker token; no long-lived token in the command line.
+- Keep **central Temporal** as the durable scheduler. Remote hosts get **no Temporal or Postgres
+  access**; the agent is an executor over an agent-initiated control stream.
+- Central scheduler selects hosts by platform, pool, labels, tenant and capacity; no match is
+  `no_matching_runner`.
+- Platform order: Linux Docker first; Windows native process (MSBuild/dotnet) with optional Windows
+  containers; macOS native Xcode process with optional Tart VM.
+- Host observability is part of the workstream: CPU, RAM, disk/inodes, load, heartbeat, leases; alerts
+  with configurable thresholds, dedupe, acknowledge/silence, console inbox + webhook.
+- Implementation branch when started: `feat/remote-runners`; OpenSpec changes `add-remote-runners`
+  then `add-runner-observability`.
+**Consequences:** the current security model stays intact (secrets and provider keys central, no DB on
+remote hosts), but the runner protocol becomes a network protocol with mTLS, lease TTLs and resumable
+event streams. Windows/macOS native runners are weaker isolation than Linux containers and need
+dedicated hosts/VMs for untrusted code. Plan: `docs/REMOTE_RUNNERS_PLAN.md`.
