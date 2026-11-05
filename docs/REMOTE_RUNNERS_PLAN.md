@@ -1,11 +1,11 @@
 # Remote runners and worker observability — plan
 
-**Status:** Linux, Windows and macOS native agents + observability + MinIO artifacts implemented on
+**Status:** Linux, Windows and macOS native agents + observability + RustFS artifacts implemented on
 `main`; OpenSpec changes archived.
 **Last updated:** 2026-11-05.
 **Merged to:** `main`.
 **OpenSpec changes:** `2026-11-04-add-remote-runners` (control plane, observability) and
-`2026-11-05-add-runner-platforms-and-artifacts` (Windows/macOS native agents, MinIO artifacts, Runners E2E).
+`2026-11-05-add-runner-platforms-and-artifacts` (Windows/macOS native agents, RustFS artifacts, Runners E2E).
 
 This document is the handoff/compaction anchor for the next workstream. It records the
 GPUSTACK review, the chosen direction, the metrics/alerts scope, and the phase boundaries.
@@ -296,7 +296,7 @@ existing `/api/v1/factories/:factoryId/...` convention.
   per-tenant pools, microVM/K8s later for untrusted tenants.
 - Windows/macOS native runners are weaker isolation; use dedicated VMs/users for untrusted
   code.
-- Artifacts in MinIO (S3-compatible); DB stores object key/hash/size only; logs scrubbed before upload.
+- Artifacts in RustFS (S3-compatible); DB stores object key/hash/size only; logs scrubbed before upload.
 - Metrics contain no secrets; alert reads are tenant-scoped.
 
 ---
@@ -352,7 +352,7 @@ existing `/api/v1/factories/:factoryId/...` convention.
 - macOS isolation: **decided** — native `sandbox-exec` first; Tart VM for untrusted code is a follow-up.
 - Are runner hosts trusted single-tenant or untrusted multi-tenant? Drives isolation and
   network model.
-- Artifact store: **decided** — MinIO as the default S3-compatible store (ADR-047); local disk
+- Artifact store: **decided** — RustFS as the default S3-compatible store (ADR-047); local disk
   only as a development fallback.
 - Alert channel: console inbox + webhook first; email/Slack later.
 - Network: public mTLS vs VPN/Tailscale. Recommendation: outbound-only mTLS; VPN optional.
@@ -377,6 +377,6 @@ existing `/api/v1/factories/:factoryId/...` convention.
   and streams canonical events back to the central worker, which stays the single event
   writer. This avoids a reverse harness tunnel while keeping Temporal/Postgres off the
   host. The agent token is bearer-authenticated; deploy behind TLS, with mTLS certificate
-  fingerprinting reserved for the hardening phase. Artifacts upload directly to MinIO through
+  fingerprinting reserved for the hardening phase. Artifacts upload directly to RustFS through
   short-lived presigned PUT grants; `patch.diff` stays inline for downstream stages and is also stored
   as an object (ADR-047).

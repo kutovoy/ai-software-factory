@@ -38,15 +38,15 @@ get **no Temporal or Postgres access** and no provider credentials. The console 
 sparklines and leases, and an alert list with acknowledge/silence. The worker evaluates CPU, RAM,
 disk/inode, heartbeat-age and queue-wait rules; migration 022 seeds the default rules. mTLS
 certificate issuance remains a follow-up. Artifact blobs
-use MinIO as the S3-compatible store (ADR-047): the agent uploads them directly through short-lived
+use RustFS as the S3-compatible store (ADR-047): the agent uploads them directly through short-lived
 presigned PUT grants, the worker records object keys/hashes, and the run detail downloads them via an
 authenticated presigned GET. See `docs/REMOTE_RUNNERS_PLAN.md`.
 
-**Remote runner platforms + MinIO artifacts — implemented** (2026-11-05, OpenSpec
+**Remote runner platforms + RustFS artifacts — implemented** (2026-11-05, OpenSpec
 `2026-11-05-add-runner-platforms-and-artifacts`). Windows hosts run the native PowerShell process backend
 (`RUNNER_BACKEND=local`) with PowerShell preflight/install and CIM metrics; macOS hosts run the
 native process backend under `sandbox-exec` with bash preflight/install and `sysctl`/`ps` metrics.
-The Runners wizard enables both platforms. MinIO is the default S3-compatible artifact store:
+The Runners wizard enables both platforms. RustFS is the default S3-compatible artifact store:
 presigned PUT uploads keep blobs off the command channel, object metadata travels with the run,
 and an authenticated download route serves a presigned GET or the local file. A Runners Playwright
 E2E covers enrollment, simulated heartbeat, host detail, alert firing/ack and deletion. Remaining
@@ -318,7 +318,7 @@ What is left:
 
 1. **Phase 6c** — external OIDC/IdP and group→org mappings (Keycloak/Authentik/Zitadel), Temporal Cloud,
    multi-tenant credential isolation. Remote runners now ship Linux/Windows/macOS native agents with
-   MinIO artifact upload/download; mTLS certificate issuance, Windows containers, macOS Tart and a real
+   RustFS artifact upload/download; mTLS certificate issuance, Windows containers, macOS Tart and a real
    remote-host E2E remain.
 2. **Live GitHub path** — implemented and contract-tested, not exercised against a real repository (needs a PAT).
 3. **Forge proxy mode** — SSH ships on the default stack; the Caddy mode is live-validated for session auth and
@@ -1702,7 +1702,7 @@ The remaining roadmap candidate is long-running missions (item 12).
 The **remote runner + observability** work is implemented and archived (OpenSpec
 `2026-11-04-add-remote-runners` plus `2026-11-05-add-runner-platforms-and-artifacts`): enrollment, outbound
 command queue, central scheduling, Linux Docker / Windows native / macOS native agents, host
-CPU/RAM/disk metrics and alerts, and MinIO artifact upload/download. See
+CPU/RAM/disk metrics and alerts, and RustFS artifact upload/download. See
 `docs/REMOTE_RUNNERS_PLAN.md`.
 
 Next follow-ups: Windows containers, macOS Tart VMs, mTLS certificate issuance/rotation,

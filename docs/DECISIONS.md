@@ -981,35 +981,39 @@ generated install command, agent registration/heartbeat, and local workload spaw
   with configurable thresholds, dedupe, acknowledge/silence, console inbox + webhook.
 - Merged to `main`; archived OpenSpec changes `2026-11-04-add-remote-runners` and
   `2026-11-05-add-runner-platforms-and-artifacts` cover the control plane, host observability, Linux/Windows/macOS
-  native agents and MinIO artifact transfer. The agent runs the harness adapter locally and streams
+  native agents and RustFS artifact transfer. The agent runs the harness adapter locally and streams
   canonical events back to the central writer; the MVP uses a bearer agent token behind TLS, with mTLS
-  certificate fingerprinting reserved for hardening. Artifact blobs upload directly to MinIO through
+  certificate fingerprinting reserved for hardening. Artifact blobs upload directly to RustFS through
   short-lived presigned grants; `patch.diff` also stays inline for downstream stages.
 **Consequences:** the current security model stays intact (secrets and provider keys central, no DB on
 remote hosts), but the runner protocol becomes a network protocol with mTLS, lease TTLs and resumable
 event streams. Windows/macOS native runners are weaker isolation than Linux containers and need
 dedicated hosts/VMs for untrusted code. Plan: `docs/REMOTE_RUNNERS_PLAN.md`.
 
-## ADR-047 — MinIO as the S3-compatible artifact store for remote runners
+## ADR-047 — RustFS as the S3-compatible artifact store for remote runners
 
-**Status:** accepted (2026-11-04).
+**Status:** accepted (2026-11-04; revised 2026-11-05 from MinIO to RustFS).
 **Context:** the remote-runner MVP returns only `patch.diff`; other artifact blobs are collected into
 a temporary directory on the agent and deleted, so the central run has metadata but no bytes. Review
 and verify gates, console inspection, benchmarks and audit need durable evidence. The store must be
 reachable from runner hosts over outbound HTTPS, support presigned upload/download and checksums, and
-must not require long-lived object-store credentials on hosts.
-**Decision:** use **MinIO** as the default S3-compatible artifact store, accessed through the standard
-S3 API. MinIO removed its Docker Hub images in September 2026; compose uses the Chainguard hardened
-MinIO image (`cgr.dev/chainguard/minio`) and its bundled `mc` client for bucket creation. The central control plane owns bucket configuration and credentials; agents receive
-short-lived, run-scoped presigned PUT grants (or temporary credentials). Store per-tenant/run prefixes,
-record object key, SHA-256, size and content type in Postgres, verify checksums before marking
-artifacts available, and serve downloads through short-lived presigned GETs or the API. Keep storage
-behind an interface so S3/R2 can be swapped by configuration.
-**Consequences:** MinIO becomes part of the compose/dev stack and a deployment dependency; artifact
+must not require long-lived object-store credentials on hosts. The original choice, MinIO Community
+Edition, was archived in 2026, its Docker Hub images were removed, and it no longer receives security
+updates; its AGPLv3 licence also complicates redistribution in a bundled product.
+**Decision:** use **RustFS** as the default S3-compatible artifact store, accessed through the standard
+S3 API. RustFS is Apache-2.0, actively maintained, S3-compatible and ships a MinIO-like console. Compose
+runs `rustfs/rustfs` and creates the bucket with a signed `curl` request; the central control plane owns
+bucket configuration and credentials, and agents receive short-lived, run-scoped presigned PUT grants
+(never long-lived object-store credentials). Store per-tenant/run prefixes, record object key, SHA-256,
+size and content type in Postgres, verify checksums before marking artifacts available, and serve
+downloads through short-lived presigned GETs or the API. Keep storage behind an interface so S3/R2 can
+be swapped by configuration.
+**Consequences:** RustFS becomes part of the compose/dev stack and a deployment dependency; artifact
 transfer stays outbound-only and does not traverse Temporal. Retention/GC, quotas and encryption at
-rest become control-plane responsibilities. The transfer path now ships: the agent uploads blobs and
-the API serves presigned downloads after a run-access check. MinIO is AGPLv3; self-hosted internal use
-is acceptable, but redistribution needs a licence review.
+rest become control-plane responsibilities. RustFS is younger than MinIO or Ceph, so pin a version,
+run backup/restore and security drills, and validate upgrades before production. Apache-2.0 avoids the
+AGPLv3 redistribution obligations that made MinIO unsuitable for a bundled product. The API still serves
+presigned downloads after a run-access check.
 
 ## ADR-048 — Native Windows and macOS runner backends
 

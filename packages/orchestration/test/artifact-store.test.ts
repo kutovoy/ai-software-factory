@@ -19,8 +19,8 @@ const configured = {
   ARTIFACT_STORE: 's3',
   S3_ENDPOINT: 'http://localhost:9000',
   S3_BUCKET: 'factory-artifacts',
-  S3_ACCESS_KEY: 'minio',
-  S3_SECRET_KEY: 'minio-secret',
+  S3_ACCESS_KEY: 'rustfs',
+  S3_SECRET_KEY: 'rustfs-secret',
   S3_REGION: 'us-east-1',
   S3_FORCE_PATH_STYLE: '1',
   S3_PRESIGN_EXPIRY_SECONDS: '900',
@@ -61,11 +61,11 @@ describe('resolveArtifactStoreConfig', () => {
   test('clamps expiry and honours an internal endpoint override', () => {
     const config = resolveArtifactStoreConfig({
       ...configured,
-      S3_INTERNAL_ENDPOINT: 'http://minio:9000',
+      S3_INTERNAL_ENDPOINT: 'http://rustfs:9000',
       S3_PRESIGN_EXPIRY_SECONDS: '999999',
       S3_MAX_ARTIFACT_BYTES: '1024',
     });
-    expect(config.internalEndpoint).toBe('http://minio:9000');
+    expect(config.internalEndpoint).toBe('http://rustfs:9000');
     expect(config.presignExpirySeconds).toBe(7 * 24 * 60 * 60);
     expect(config.maxArtifactBytes).toBe(1024);
   });

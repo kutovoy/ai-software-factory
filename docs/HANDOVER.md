@@ -15,7 +15,7 @@ CLI/CI surface. `bun run ci` 655 pass; smoke passed; Playwright 61/61. Runner cl
 |---|---|---|
 | Definition schema + CLI | `packages/core`, `packages/cli` | `factory validate/export/import/diff/fmt/version`, canonical YAML, semantic diff, git version pinning |
 | Harness adapters | `packages/adapters` | canonical `FactoryEvent`, `FakeAdapter`, opencode adapter (installed v2 API, v1-tolerant) |
-| Runners | `packages/runners` | Docker + local backends, remote Linux/Windows/macOS agents; harness runs *inside* the sandbox; MinIO artifact upload; secret boundary |
+| Runners | `packages/runners` | Docker + local backends, remote Linux/Windows/macOS agents; harness runs *inside* the sandbox; RustFS artifact upload; secret boundary |
 | Orchestration | `packages/orchestration` | Temporal: `RunWorkflow`, `FactoryWorkflow`, `StageWorkflow`, `ScoringWorkflow`, `BenchmarkWorkflow`, `ImprovementWorkflow`, `CanaryWorkflow`, `MergeQueueWorkflow` |
 | Code forges | `packages/forge` | `CodeForge` contract, fake + GitHub (token by ref, dry-run, offline contract tests) |
 | Merge queue | `packages/merge` | serialized merge train, bisect on red, single-commit revert, manual revert |
@@ -97,7 +97,7 @@ lets you validate wiring without touching a repo. GitHub delivers to
    Remote runners now ship Linux Docker, Windows native and macOS native agents on `main` (archived OpenSpec
    `2026-11-04-add-remote-runners` plus `2026-11-05-add-runner-platforms-and-artifacts`): console enrollment, one-time
    token → bearer agent token, outbound command queue, central Temporal scheduling, agent-side sandbox +
-   harness adapter, central CPU/RAM/disk/heartbeat metrics with alerts, and MinIO artifact upload/download
+   harness adapter, central CPU/RAM/disk/heartbeat metrics with alerts, and RustFS artifact upload/download
    through short-lived presigned grants. Remote hosts never get Temporal/Postgres, provider credentials or
    long-lived object-store credentials. Follow-ups: Windows containers, macOS Tart, mTLS certificate
    issuance/rotation, launchd/Windows service wrappers, retention/GC automation and a real remote-host E2E.

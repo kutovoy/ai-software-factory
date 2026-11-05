@@ -4,9 +4,9 @@ import { createHash, createHmac } from 'node:crypto';
  * AWS Signature Version 4 query-string presigning for S3-compatible stores (ADR-047).
  *
  * The control plane hands agents short-lived presigned PUT/GET URLs instead of object-store
- * credentials. This module is deliberately dependency-free (no AWS SDK): MinIO, S3 and R2
+ * credentials. This module is deliberately dependency-free (no AWS SDK): RustFS, S3 and R2
  * all accept the same SigV4 query-string form, and path-style addressing is the default
- * because that is what a self-hosted MinIO serves.
+ * because that is what a self-hosted RustFS serves.
  *
  * Reference: <https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html>
  */
@@ -25,7 +25,7 @@ export interface S3PresignInput {
   region?: string;
   /** Grant lifetime in seconds (1–604800; S3 rejects more than 7 days). */
   expiresInSeconds?: number;
-  /** MinIO default: `/bucket/key` instead of `bucket.host/key`. */
+  /** RustFS default: `/bucket/key` instead of `bucket.host/key`. */
   forcePathStyle?: boolean;
   /** Signed when provided; the uploader must send the exact same header value. */
   contentType?: string;

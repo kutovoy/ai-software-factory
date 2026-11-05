@@ -10,7 +10,7 @@ import {
 /**
  * Artifact store abstraction (ADR-047, spec `artifact-store`).
  *
- * MinIO is the default S3-compatible backend; S3/R2 are selected by configuration. The
+ * RustFS is the default S3-compatible backend; S3/R2 are selected by configuration. The
  * control plane owns bucket + credentials and only ever hands agents short-lived presigned
  * grants. Storage is off unless `ARTIFACT_STORE=s3` *and* endpoint/bucket/credentials are
  * present, so an unconfigured deployment keeps the metadata-only behaviour.

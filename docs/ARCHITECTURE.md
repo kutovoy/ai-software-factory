@@ -132,7 +132,7 @@ kill(runnerId)                                 # idempotent
 - `remote-runner` (Linux/Windows/macOS): a UI-enrolled host agent polls an outbound command queue, runs
   the sandbox and harness adapter locally and streams canonical events back to the central worker. Central
   Temporal schedules; the host gets no Temporal/Postgres credentials. Host CPU/RAM/disk metrics and
-  alerts are stored centrally. Artifacts upload directly to MinIO via short-lived presigned grants.
+  alerts are stored centrally. Artifacts upload directly to RustFS via short-lived presigned grants.
   The agent uses a bearer agent token behind TLS; mTLS fingerprinting, Windows containers, macOS Tart
   and service-manager wrappers are follow-ups. See `docs/REMOTE_RUNNERS_PLAN.md`,
   `openspec/specs/remote-runners/spec.md`, `openspec/specs/artifact-store/spec.md` and

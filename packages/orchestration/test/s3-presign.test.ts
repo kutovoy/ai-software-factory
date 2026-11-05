@@ -77,18 +77,18 @@ describe('presignS3Url', () => {
     endpoint: 'http://localhost:9000',
     bucket: 'factory-artifacts',
     key: 'tenants/default/runs/run_1/patch.diff',
-    accessKey: 'minio',
-    secretKey: 'minio-secret',
+    accessKey: 'rustfs',
+    secretKey: 'rustfs-secret',
     now: FIXED_NOW,
   };
 
-  test('GET presigns a path-style MinIO URL with a spec-correct signature', () => {
+  test('GET presigns a path-style RustFS URL with a spec-correct signature', () => {
     const result = presignS3Get(base);
 
     const canonicalUri = '/factory-artifacts/tenants/default/runs/run_1/patch.diff';
     const canonicalQuery = [
       'X-Amz-Algorithm=AWS4-HMAC-SHA256',
-      'X-Amz-Credential=minio%2F20261104%2Fus-east-1%2Fs3%2Faws4_request',
+      'X-Amz-Credential=rustfs%2F20261104%2Fus-east-1%2Fs3%2Faws4_request',
       'X-Amz-Date=20261104T000000Z',
       'X-Amz-Expires=900',
       'X-Amz-SignedHeaders=host',
@@ -113,7 +113,7 @@ describe('presignS3Url', () => {
         signedHeaders: 'host',
         amzDate: '20261104T000000Z',
         scope: '20261104/us-east-1/s3/aws4_request',
-        secretKey: 'minio-secret',
+        secretKey: 'rustfs-secret',
         region: 'us-east-1',
       }),
     );
@@ -135,7 +135,7 @@ describe('presignS3Url', () => {
       canonicalUri: '/factory-artifacts/tenants/default/runs/run_1/patch.diff',
       canonicalQuery: [
         'X-Amz-Algorithm=AWS4-HMAC-SHA256',
-        'X-Amz-Credential=minio%2F20261104%2Fus-east-1%2Fs3%2Faws4_request',
+        'X-Amz-Credential=rustfs%2F20261104%2Fus-east-1%2Fs3%2Faws4_request',
         'X-Amz-Date=20261104T000000Z',
         'X-Amz-Expires=900',
         'X-Amz-SignedHeaders=content-type%3Bhost',
@@ -144,7 +144,7 @@ describe('presignS3Url', () => {
       signedHeaders: 'content-type;host',
       amzDate: '20261104T000000Z',
       scope: '20261104/us-east-1/s3/aws4_request',
-      secretKey: 'minio-secret',
+      secretKey: 'rustfs-secret',
       region: 'us-east-1',
     });
     expect(result.signature).toBe(signature);
@@ -191,7 +191,7 @@ describe('presignS3Url', () => {
     expect(() => presignS3Url({ ...base, method: 'GET', accessKey: '' })).toThrow(/accessKey/);
     expect(() => presignS3Url({ ...base, method: 'GET', secretKey: '' })).toThrow(/secretKey/);
     expect(() => presignS3Url({ ...base, method: 'GET', bucket: '' })).toThrow(/bucket/);
-    expect(() => presignS3Url({ ...base, method: 'GET', endpoint: 'ftp://minio' })).toThrow(
+    expect(() => presignS3Url({ ...base, method: 'GET', endpoint: 'ftp://rustfs' })).toThrow(
       /unsupported/,
     );
   });

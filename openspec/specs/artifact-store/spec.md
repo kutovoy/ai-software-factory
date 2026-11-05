@@ -1,18 +1,18 @@
 # artifact-store Specification
 
 ## Purpose
-Durable object storage for run artifacts. Remote runner agents upload collected blobs directly to a MinIO S3-compatible store through short-lived, run-scoped presigned PUT grants; the control plane records object keys, hashes and sizes and serves downloads only after the normal run-access check. Storage is disabled unless explicitly configured.
+Durable object storage for run artifacts. Remote runner agents upload collected blobs directly to a RustFS S3-compatible store through short-lived, run-scoped presigned PUT grants; the control plane records object keys, hashes and sizes and serves downloads only after the normal run-access check. Storage is disabled unless explicitly configured.
 
 ## Requirements
 
 ### Requirement: Object-store configuration
 
-The control plane SHALL support an S3-compatible artifact store with MinIO as the default
+The control plane SHALL support an S3-compatible artifact store with RustFS as the default
 backend, configured by environment and swappable with S3/R2 by configuration.
 
-#### Scenario: MinIO default
-- **WHEN** `ARTIFACT_STORE=s3` and MinIO endpoint/bucket/credentials are configured
-- **THEN** the control plane uses the MinIO S3 API for artifact storage
+#### Scenario: RustFS default
+- **WHEN** `ARTIFACT_STORE=s3` and RustFS endpoint/bucket/credentials are configured
+- **THEN** the control plane uses the RustFS S3 API for artifact storage
 - **AND** no object-store credentials are sent to runner hosts
 
 #### Scenario: Disabled store

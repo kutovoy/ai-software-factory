@@ -25,7 +25,7 @@ export interface ApiConfig {
    */
   factoryRegistryTtlMs: number;
   runsDir: string;
-  /** S3-compatible artifact store (MinIO default, ADR-047); disabled unless configured. */
+  /** S3-compatible artifact store (RustFS default, ADR-047); disabled unless configured. */
   artifactStore: ArtifactStoreConfig;
   /** Git root that contains `factoryRoot`; runners clone this at `definitionCommit`. */
   repoRoot: string;

@@ -14,7 +14,7 @@ export interface OrchestrationConfig {
   factoryRoot: string;
   /** Directory that holds `runs/<runId>/{events.jsonl,patch.diff,artifacts/}`. */
   runsDir: string;
-  /** S3-compatible artifact store (MinIO default, ADR-047); disabled unless configured. */
+  /** S3-compatible artifact store (RustFS default, ADR-047); disabled unless configured. */
   artifactStore: ArtifactStoreConfig;
   /** Public base URL of the API's inference proxy, as seen from the sandbox. */
   proxyPublicUrl: string;

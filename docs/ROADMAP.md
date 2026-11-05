@@ -60,7 +60,7 @@ and the console shows each runner's CPU/RAM/disk health with firing/resolved ale
 **Remote-runner plan:** `docs/REMOTE_RUNNERS_PLAN.md`. Linux Docker, Windows native and macOS native
 agents are implemented on `main` (archived OpenSpec `2026-11-04-add-remote-runners` plus
 `2026-11-05-add-runner-platforms-and-artifacts`): enrollment, outbound command queue, central scheduling,
-agent-side sandbox/harness, host CPU/RAM/disk metrics and alerts, and MinIO artifact upload/download.
+agent-side sandbox/harness, host CPU/RAM/disk metrics and alerts, and RustFS artifact upload/download.
 Windows containers, macOS Tart VMs, mTLS certificate issuance and service-manager wrappers are
 follow-ups.
 

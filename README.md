@@ -62,7 +62,7 @@ A **remote runner agent** enrolls from the console, polls an outbound command qu
 sandbox and harness adapter on its own host. Linux uses Docker; Windows and macOS use native process
 backends (PowerShell / `sandbox-exec`). It never receives Temporal or Postgres credentials. The console
 shows each host's CPU, RAM, disk/inode usage, leases and alerts; configurable rules cover thresholds,
-missing heartbeats and queue wait. Run artifacts upload directly to MinIO through short-lived presigned
+missing heartbeats and queue wait. Run artifacts upload directly to RustFS through short-lived presigned
 grants, so logs, screenshots and test reports remain downloadable after the host is gone. The agent
 uses a bearer token behind TLS; mTLS certificate fingerprinting, Windows containers and macOS Tart are
 follow-ups.
