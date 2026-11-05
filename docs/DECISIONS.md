@@ -960,8 +960,8 @@ sandboxes; OIDC/IdP, remote runners, Temporal Cloud and multi-tenant isolation r
 
 ## ADR-046 — Remote runner control plane + host observability
 
-**Status:** accepted (2026-11-04, Linux MVP implemented on `feat/remote-runners`; Windows/macOS and
-mTLS certificate issuance are follow-ups).
+**Status:** accepted (2026-11-04, Linux MVP merged to `main` and archived as
+`2026-11-04-add-remote-runners`; Windows/macOS and mTLS certificate issuance are follow-ups).
 **Context:** local Docker runners work, but remote hosts need UI-driven enrollment, platform-specific
 sandboxes and host health visibility. GPUSTACK’s Add Worker flow is the reference: preflight command,
 generated install command, agent registration/heartbeat, and local workload spawning.
@@ -978,7 +978,7 @@ generated install command, agent registration/heartbeat, and local workload spaw
   containers; macOS native Xcode process with optional Tart VM.
 - Host observability is part of the workstream: CPU, RAM, disk/inodes, load, heartbeat, leases; alerts
   with configurable thresholds, dedupe, acknowledge/silence, console inbox + webhook.
-- Implementation branch: `feat/remote-runners`; OpenSpec change `add-remote-runners` covers the
+- Merged to `main`; archived OpenSpec change `2026-11-04-add-remote-runners` covers the
   Linux control plane and host observability. The agent runs the harness adapter locally and streams
   canonical events back to the central writer; the MVP uses a bearer agent token behind TLS, with mTLS
   certificate fingerprinting reserved for hardening. Only `patch.diff` content is transferred back;

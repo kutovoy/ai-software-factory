@@ -57,8 +57,8 @@ Teams/Jira/GitLab integrations, multi-tenant namespaces.
 **Exit:** a second user and a remote Linux runner operate the same factory with per-tenant isolation,
 and the console shows each runner's CPU/RAM/disk health with firing/resolved alerts.
 
-**Remote-runner plan:** `docs/REMOTE_RUNNERS_PLAN.md`. Linux MVP implemented on `feat/remote-runners`
-(OpenSpec `add-remote-runners`): enrollment, outbound command queue, central scheduling, agent-side
+**Remote-runner plan:** `docs/REMOTE_RUNNERS_PLAN.md`. Linux MVP implemented on `main` and archived
+(OpenSpec `2026-11-04-add-remote-runners`): enrollment, outbound command queue, central scheduling, agent-side
 sandbox/harness, host CPU/RAM/disk metrics and alerts. Windows native/Windows containers, macOS
 native/Tart, mTLS certificate issuance and full artifact transfer are follow-ups.
 

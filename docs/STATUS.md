@@ -28,8 +28,8 @@ trace-driven self-improvement, classifier routing + spend caps, work intake, pro
 governance/autonomy levels and the surface-agnostic CLI. The remaining roadmap item is long-running
 missions (item 12) in `research/software-factory-ideas.md`.
 
-**Remote runners + host observability — Linux MVP implemented** (2026-11-04, branch
-`feat/remote-runners`, OpenSpec `add-remote-runners`). A remote host enrolls from the console with a
+**Remote runners + host observability — Linux MVP implemented** (2026-11-04, merged to
+`main`, archived OpenSpec `2026-11-04-add-remote-runners`). A remote host enrolls from the console with a
 one-time token, exchanges it for a bearer agent token, then heartbeats and polls an outbound command
 queue. The agent runs a Docker sandbox and the harness adapter locally and streams canonical events
 back to the central worker, which remains the single event writer and Temporal scheduler. Remote hosts
@@ -1685,9 +1685,9 @@ both accepted; `benchmarkGateRequired` is true exactly when `fullyAutonomous`; k
 Roadmap items 1–11 are implemented (see the sections above and `research/software-factory-ideas.md`).
 The remaining roadmap candidate is long-running missions (item 12).
 
-The Linux **remote runner + observability MVP** is implemented on `feat/remote-runners` (OpenSpec
-`add-remote-runners`): enrollment, outbound command queue, central scheduling, agent-side sandbox and
-harness adapter, host CPU/RAM/disk metrics and alerts. See `docs/REMOTE_RUNNERS_PLAN.md`.
+The Linux **remote runner + observability MVP** is implemented and archived (OpenSpec
+`2026-11-04-add-remote-runners`): enrollment, outbound command queue, central scheduling, agent-side
+sandbox and harness adapter, host CPU/RAM/disk metrics and alerts. See `docs/REMOTE_RUNNERS_PLAN.md`.
 
 Next follow-ups: Windows native/Windows-container agent, macOS native/Tart agent, mTLS certificate
 issuance/rotation, and artifact-blob transfer beyond `patch.diff`. Phase 6c OIDC/IdP, Temporal Cloud and

@@ -134,7 +134,8 @@ kill(runnerId)                                 # idempotent
   Temporal schedules; the host gets no Temporal/Postgres credentials. Host CPU/RAM/disk metrics and
   alerts are stored centrally. The MVP uses a bearer agent token behind TLS; mTLS fingerprinting,
   Windows native/Windows containers and macOS native/Tart are follow-ups. See
-  `docs/REMOTE_RUNNERS_PLAN.md` and `openspec/changes/add-remote-runners`.
+  `docs/REMOTE_RUNNERS_PLAN.md`, `openspec/specs/remote-runners/spec.md` and
+  `openspec/changes/archive/2026-11-04-add-remote-runners`.
 
 Secrets are resolved **outside** the sandbox and injected as env only for the tools that need them;
 inference credentials never enter the runner (Warp's four-boundary model).

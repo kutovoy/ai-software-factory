@@ -94,7 +94,7 @@ lets you validate wiring without touching a repo. GitHub delivers to
 ## Known gaps / next
 
 1. **Phase 6c**: external OIDC/IdP group→org mappings, Temporal Cloud, per-tenant isolation.
-   Remote runners have a **Linux MVP** on `feat/remote-runners` (OpenSpec `add-remote-runners`): console
+   Remote runners have a **Linux MVP** on `main` (archived OpenSpec `2026-11-04-add-remote-runners`): console
    enrollment, one-time token → bearer agent token, outbound command queue, central Temporal scheduling,
    agent-side Docker sandbox + harness adapter, and central CPU/RAM/disk/heartbeat metrics with alerts.
    Remote hosts never get Temporal/Postgres or provider credentials. Follow-ups: Windows native/Windows

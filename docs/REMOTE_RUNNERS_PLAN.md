@@ -1,11 +1,11 @@
 # Remote runners and worker observability — plan
 
-**Status:** Linux MVP + observability implemented on `feat/remote-runners`.
+**Status:** Linux MVP + observability implemented on `main` and archived.
 **Last updated:** 2026-11-04.
-**Implementation branch:** `feat/remote-runners`.
-**OpenSpec change:** `add-remote-runners` (Linux control plane + CPU/RAM/disk metrics,
-charts and alerts). Windows and macOS get follow-up changes (`add-windows-runner`,
-`add-macos-runner`).
+**Merged to:** `main`.
+**OpenSpec change:** `2026-11-04-add-remote-runners` (archived; Linux control plane +
+CPU/RAM/disk metrics, charts and alerts). Windows and macOS get follow-up changes
+(`add-windows-runner`, `add-macos-runner`).
 
 This document is the handoff/compaction anchor for the next workstream. It records the
 GPUSTACK review, the chosen direction, the metrics/alerts scope, and the phase boundaries.
@@ -370,8 +370,9 @@ existing `/api/v1/factories/:factoryId/...` convention.
 - Linux first, then Windows native/Windows containers, then macOS native/Tart.
 - Host metrics: CPU, RAM, disk/inodes, load, leases, heartbeat; alerts with configurable
   thresholds, dedupe, acknowledge/silence, console inbox + webhook.
-- Implementation branch when started: `feat/remote-runners`.
-- Planned OpenSpec changes: `add-remote-runners`, then `add-runner-observability`.
+- Implementation branch: `feat/remote-runners` (merged to `main`).
+- OpenSpec change: `add-remote-runners`, archived as `2026-11-04-add-remote-runners`;
+  `add-runner-observability` was folded into it.
 - **Implementation note (MVP):** the first slice runs the harness adapter *on the agent*
   and streams canonical events back to the central worker, which stays the single event
   writer. This avoids a reverse harness tunnel while keeping Temporal/Postgres off the
