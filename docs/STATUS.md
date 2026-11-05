@@ -320,7 +320,7 @@ without changing the default single-origin setup (ADR-034).
   talking to the forge (the console proxy redirects every request without a session, token or
   not), and prints both HTTP and SSH clone URLs.
 - **Public repo.** `.github/ISSUE_TEMPLATE/{bug_report,feature_request,config}.yml` and
-  `.github/PULL_REQUEST_TEMPLATE.md`; a real console screenshot at `docs/assets/console.png`
+  `.github/PULL_REQUEST_TEMPLATE.md`; a real console screenshot at `docs/assets/console-dashboard.png`
   embedded in `README.md`; a CI badge for `kutovoy/ai-software-factory` next to the
   license/stack badges. Creator/attribution section untouched.
 - **Docs/help.** README (SSH clone, proxy mode, services table), `docs/HANDOVER.md` (transport

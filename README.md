@@ -11,7 +11,7 @@ triage → spec → implement → review → verify → ship — with human gate
 ![Bun](https://img.shields.io/badge/Bun-1.4-f9f1e1)
 ![Temporal](https://img.shields.io/badge/Temporal-durable%20workflows-000000)
 
-![The factory console: a dashboard with autonomy state, work items, runs and deliverables](docs/assets/console.png)
+![The factory console: a dashboard with autonomy state, work items, runs and deliverables](docs/assets/console-dashboard.png)
 
 ## Introduction
 
