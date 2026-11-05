@@ -15,8 +15,9 @@ import {
   type UsageReport,
 } from '@factory/adapters';
 import { DockerRunnerBackend } from './docker';
+import { uploadArtifacts, type AgentArtifactUploadOptions } from './artifact-upload';
 import { RunnerError } from './errors';
-import { LocalRunnerBackend } from './local';
+import { LocalRunnerBackend, powershellQuote } from './local';
 import {
   normalizeRunnerSpec,
   type Artifact,
@@ -27,6 +28,7 @@ import {
   type RunnerHandle,
   type RunnerSpec,
 } from './protocol';
+import { toNodePlatform } from './remote-protocol';
 import type {
   RemoteArtifactResult,
   RunnerCommandEnvelope,
@@ -37,6 +39,7 @@ import type {
   RemoteRunStartResult,
   RemoteSmokeResult,
   RunnerPreflightCheck,
+  RunnerHostPlatform,
 } from './remote-protocol';
 import { runCommand } from './util';
 
@@ -57,6 +60,11 @@ import { runCommand } from './util';
 
 export interface AgentRuntimeOptions {
   agentVersion?: string;
+  /**
+   * Platform recorded at enrollment. The runtime maps it to `process.platform` so the
+   * native backend, metrics and sandbox agree with what the console shows.
+   */
+  platform?: RunnerHostPlatform;
   /** Sandbox backend. `docker` is the production default; `local` is for dev/test hosts. */
   backend?: 'docker' | 'local';
   /** Docker network shared with the worker (containerised deployments). */
@@ -67,6 +75,12 @@ export interface AgentRuntimeOptions {
   resolveSecret?: (name: string) => string | undefined;
   /** Parent directory for temp patch/artifact directories. Defaults to `os.tmpdir()`. */
   tempRoot?: string;
+  /**
+   * Optional object-store upload for collected artifacts (ADR-047). When set, the agent asks
+   * the control plane for presigned PUT grants and uploads each blob; the inline patch is
+   * kept either way. Absent → metadata-only collection (the existing behaviour).
+   */
+  artifactUpload?: AgentArtifactUploadOptions;
 }
 
 export interface AgentAdapterOptions {
@@ -312,11 +326,15 @@ export class RunnerAgentRuntime {
 
   private readonly backend: RunnerBackend;
   private readonly tempRoot: string;
+  private readonly platform: NodeJS.Platform;
+  private readonly artifactUpload?: AgentArtifactUploadOptions;
   private readonly jobs = new Map<string, AgentJob>();
 
   constructor(options: AgentRuntimeOptions = {}) {
     this.agentVersion = options.agentVersion ?? '0.0.0';
     this.tempRoot = options.tempRoot ?? tmpdir();
+    this.platform = options.platform ? toNodePlatform(options.platform) : process.platform;
+    this.artifactUpload = options.artifactUpload;
 
     const shared = {
       ...(options.allowedSecrets ? { allowedSecrets: options.allowedSecrets } : {}),
@@ -324,7 +342,7 @@ export class RunnerAgentRuntime {
     };
     this.backend =
       options.backend === 'local'
-        ? new LocalRunnerBackend(shared)
+        ? new LocalRunnerBackend({ ...shared, platform: this.platform })
         : new DockerRunnerBackend({
             ...shared,
             ...(options.network ? { network: options.network } : {}),
@@ -551,11 +569,12 @@ export class RunnerAgentRuntime {
 
   private async collectArtifacts(input: {
     runnerId: string;
+    runId?: string;
     request: ArtifactRequest;
   }): Promise<RemoteArtifactResult> {
     const destDir = await this.createTempDir('artifacts-');
     try {
-      const artifacts: Artifact[] = await this.backend.artifacts(input.runnerId, {
+      let artifacts: Artifact[] = await this.backend.artifacts(input.runnerId, {
         ...input.request,
         destDir,
         includeGitDiff: true,
@@ -569,10 +588,28 @@ export class RunnerAgentRuntime {
         usage = await job.adapter.getUsage(job.session).catch(() => null);
       }
 
+      const uploadErrors: string[] = [];
+      if (this.artifactUpload && artifacts.length > 0) {
+        const runId = input.runId ?? job?.runId ?? runIdFromRunnerId(input.runnerId);
+        try {
+          const uploaded = await uploadArtifacts(
+            artifacts,
+            { runnerId: input.runnerId, runId, destDir },
+            this.artifactUpload,
+          );
+          artifacts = uploaded.artifacts;
+          uploadErrors.push(...uploaded.uploadErrors);
+        } catch (error) {
+          // Upload must never lose the collected metadata or the inline patch.
+          uploadErrors.push(`artifact upload failed: ${errorMessage(error)}`);
+        }
+      }
+
       return {
         artifacts,
         ...(patch !== undefined ? { patch } : {}),
         ...(usage !== undefined ? { usage } : {}),
+        ...(uploadErrors.length > 0 ? { uploadErrors } : {}),
       };
     } finally {
       await rm(destDir, { recursive: true, force: true }).catch(() => undefined);
@@ -642,13 +679,13 @@ export class RunnerAgentRuntime {
   private async probeDisk(): Promise<RunnerPreflightCheck> {
     try {
       await mkdir(this.tempRoot, { recursive: true });
-      const result = await runCommand(['df', '-Pk', this.tempRoot], { timeoutMs: 5_000 });
-      if (result.code !== 0) return { ok: false, detail: result.stderr.slice(-300) };
-      const line = result.stdout.trim().split('\n').at(-1) ?? '';
-      const fields = line.trim().split(/\s+/);
-      const availableKb = Number.parseInt(fields[3] ?? '', 10);
-      if (!Number.isFinite(availableKb)) return { ok: false, detail: `unexpected df output "${line}"` };
-      const availableBytes = availableKb * 1024;
+      const availableBytes =
+        this.platform === 'win32'
+          ? await windowsFreeBytes(this.tempRoot)
+          : await posixFreeBytes(this.tempRoot);
+      if (availableBytes === undefined) {
+        return { ok: false, detail: `free disk space could not be read at ${this.tempRoot}` };
+      }
       const minFreeBytes = 512 * 1024 * 1024;
       return availableBytes >= minFreeBytes
         ? { ok: true, detail: `${availableBytes} bytes free at ${this.tempRoot}` }
@@ -750,14 +787,27 @@ function readRespondPayload(payload: unknown): {
   return { runId, requestId, decision };
 }
 
-function readArtifactsPayload(payload: unknown): { runnerId: string; request: ArtifactRequest } {
+function readArtifactsPayload(payload: unknown): {
+  runnerId: string;
+  runId?: string;
+  request: ArtifactRequest;
+} {
   const record = asRecord(payload);
   const request = (record.request ?? payload) as ArtifactRequest;
   const runnerId = typeof record.runnerId === 'string' ? record.runnerId : '';
   if (runnerId === '') {
     throw new RunnerError('invalid_spec', 'artifacts requires a runnerId');
   }
-  return { runnerId, request };
+  return {
+    runnerId,
+    ...(typeof record.runId === 'string' && record.runId !== '' ? { runId: record.runId } : {}),
+    request,
+  };
+}
+
+/** Fallback when the command omits `runId`: the default runner id is `factory-<runId>`. */
+function runIdFromRunnerId(runnerId: string): string {
+  return runnerId.startsWith('factory-') ? runnerId.slice('factory-'.length) : runnerId;
 }
 
 function readRunnerId(payload: unknown): string {
@@ -789,6 +839,28 @@ function metadataTitle(metadata: Record<string, unknown> | undefined): string | 
 
 function basicAuthHeader(password: string): string {
   return `Basic ${Buffer.from(`opencode:${password}`, 'utf8').toString('base64')}`;
+}
+
+/** `df -Pk <path>` free bytes on POSIX. */
+async function posixFreeBytes(path: string): Promise<number | undefined> {
+  const result = await runCommand(['df', '-Pk', path], { timeoutMs: 5_000 }).catch(() => undefined);
+  if (!result || result.code !== 0) return undefined;
+  const line = result.stdout.trim().split('\n').at(-1) ?? '';
+  const fields = line.trim().split(/\s+/);
+  const availableKb = Number.parseInt(fields[3] ?? '', 10);
+  return Number.isFinite(availableKb) ? availableKb * 1024 : undefined;
+}
+
+/** Windows has no `df`: ask PowerShell for the free space of the temp directory's drive. */
+async function windowsFreeBytes(path: string): Promise<number | undefined> {
+  const script = `(Get-PSDrive -Name ((Get-Item -LiteralPath ${powershellQuote(path)}).PSDrive.Name)).Free`;
+  const result = await runCommand(
+    ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script],
+    { timeoutMs: 10_000 },
+  ).catch(() => undefined);
+  if (!result || result.code !== 0) return undefined;
+  const availableBytes = Number.parseInt(result.stdout.trim(), 10);
+  return Number.isFinite(availableBytes) ? availableBytes : undefined;
 }
 
 async function probeApi(apiUrl: string): Promise<RunnerPreflightCheck> {

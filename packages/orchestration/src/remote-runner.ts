@@ -112,26 +112,38 @@ export class RemoteRunnerBackend implements RunnerBackend {
     return (await this.collect(runnerId, request)).artifacts;
   }
 
-  /** Artifact collection plus the usage report the agent captured from the adapter. */
+  /** Artifact collection plus the usage report and upload errors the agent reported. */
   async collect(
     runnerId: string,
     request: ArtifactRequest,
-  ): Promise<{ artifacts: Artifact[]; usage: unknown | null }> {
+  ): Promise<{ artifacts: Artifact[]; usage: unknown | null; uploadErrors: string[] }> {
     const hostId = await this.hostFor(runnerId);
+    const lease = await getLeaseByRunnerId(runnerId);
     const result = (await this.send(
       hostId,
       'artifacts',
-      { runnerId, request: { ...request, destDir: request.destDir } },
+      {
+        runnerId,
+        ...(lease ? { runId: lease.runId } : {}),
+        request: { ...request, destDir: request.destDir },
+      },
       this.config.remoteCommandTimeoutMs,
-    )) as { artifacts: Artifact[]; patch?: string; usage?: unknown };
+    )) as { artifacts: Artifact[]; patch?: string; usage?: unknown; uploadErrors?: unknown };
 
-    // The agent returns the patch body; blobs stay on the remote host in the MVP.
+    // The agent returns the patch body for downstream stages; blobs are uploaded to the
+    // artifact store by the agent (ADR-047), so only metadata travels through the queue.
     if (typeof result.patch === 'string') {
       const patchFile = join(request.destDir, 'patch.diff');
       await mkdir(dirname(patchFile), { recursive: true });
       await writeFile(patchFile, result.patch, 'utf8');
     }
-    return { artifacts: result.artifacts ?? [], usage: result.usage ?? null };
+    return {
+      artifacts: result.artifacts ?? [],
+      usage: result.usage ?? null,
+      uploadErrors: Array.isArray(result.uploadErrors)
+        ? result.uploadErrors.filter((entry): entry is string => typeof entry === 'string')
+        : [],
+    };
   }
 
   async kill(runnerId: string): Promise<void> {

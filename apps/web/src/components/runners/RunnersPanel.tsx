@@ -30,10 +30,11 @@ import type {
 /**
  * Runners console surface (spec `runner-observability` › Console visibility).
  *
- * The MVP runs a Linux runner agent on a remote host: it polls the API outbound with a
- * bearer token, executes the harness locally and reports heartbeats. Nothing here executes
- * a tool — the page enrolls hosts, drains them, and reads the metrics/alerts the agent
- * reported. Windows and macOS agents are a later phase; the platform select says so.
+ * A remote runner is a host that runs the harness itself and polls the API outbound with a
+ * bearer token, then reports heartbeats. Nothing here executes a tool — the page enrolls
+ * hosts, drains them, and reads the metrics/alerts the agent reported. Linux agents run in
+ * Docker containers; Windows and macOS agents run natively on the host, which is weaker
+ * isolation than a per-run container.
  */
 
 interface FormState {
@@ -369,15 +370,12 @@ export function RunnersPanel({
                 className={FIELD}
               >
                 <option value="linux">linux</option>
-                <option value="windows" disabled>
-                  windows (later)
-                </option>
-                <option value="macos" disabled>
-                  macos (later)
-                </option>
+                <option value="windows">windows</option>
+                <option value="macos">macos</option>
               </select>
               <span className="mt-1 block text-[11px] text-slate-500">
-                The MVP agent is Linux-only; Windows/macOS are a later phase.
+                Linux runs the agent in Docker; Windows and macOS run it natively on the host.
+                Native runners have weaker isolation than a per-run container.
               </span>
             </label>
             <label className="text-xs text-slate-600">
@@ -850,9 +848,10 @@ export function RunnersPanel({
       </details>
 
       <p className="text-[11px] text-slate-500" data-testid="runner-console-note">
-        A gauge with no value means the agent has not reported that metric yet — not 0%.
-        Alerts are evaluated centrally from the heartbeat samples; the console only displays
-        and acknowledges them.
+        Linux hosts run the agent in Docker containers; Windows and macOS hosts run it natively,
+        which is weaker isolation — use a dedicated VM or user for untrusted code. A gauge with no
+        value means the agent has not reported that metric yet — not 0%. Alerts are evaluated
+        centrally from the heartbeat samples; the console only displays and acknowledges them.
       </p>
     </div>
   );

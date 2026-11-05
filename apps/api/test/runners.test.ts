@@ -257,4 +257,93 @@ describe('rendered commands', () => {
     expect(command.split('\n').at(-1)).not.toContain(token);
     expect(command).toContain("--name 'factory-runner-linux-runner-1'");
   });
+
+  test('macOS preflight is bash and checks Xcode CLT, Bun and sandbox-exec', () => {
+    const script = preflightCommand(apiBase, token, 'macos');
+    expect(script.startsWith('#!/usr/bin/env bash')).toBe(true);
+    expect(script).toContain(`${apiBase}/api/v1/runner-enrollments/${token}/preflight`);
+    expect(script).toContain('xcode-select -p');
+    expect(script).toContain('command -v bun');
+    expect(script).toContain('sandbox-exec');
+    expect(script).toContain('df -Pk');
+    expect(script).toContain('curl -fsS -X POST "$API_URL"');
+    // Linux-only checks must not leak into the macOS script.
+    expect(script).not.toContain('docker version');
+  });
+
+  test('macOS install selects the native backend and sandbox-exec from a checkout', () => {
+    const command = installCommand({
+      apiBase,
+      token,
+      name: 'Mac Runner',
+      platform: 'macos',
+      pool: 'default',
+      labels: { xcode: '15' },
+      maxConcurrent: 1,
+    });
+    expect(command).toContain(`export RUNNER_ENROLLMENT_TOKEN='${token}'`);
+    expect(command).toContain('export RUNNER_BACKEND=local');
+    expect(command).toContain('export RUNNER_SANDBOX=exec');
+    expect(command).toContain('https://bun.sh/install');
+    expect(command).toContain('nohup bun packages/runners/src/agent.ts');
+    expect(command).toContain('agent.pid');
+    expect(command).toContain("export RUNNER_PLATFORM='macos'");
+    expect(command).not.toContain('docker run');
+  });
+
+  test('Windows preflight is PowerShell and checks PowerShell, git, Bun and disk', () => {
+    const script = preflightCommand(apiBase, token, 'windows');
+    expect(script).toContain('$PSVersionTable.PSVersion');
+    expect(script).toContain('Get-Command git');
+    expect(script).toContain('Get-Command bun');
+    expect(script).toContain('Get-PSDrive');
+    expect(script).toContain('ConvertTo-Json');
+    expect(script).toContain('Invoke-RestMethod');
+    expect(script).toContain('dotnet');
+    expect(script).toContain(`${apiBase}/api/v1/runner-enrollments/${token}/preflight`);
+    expect(script).not.toContain('#!/usr/bin/env bash');
+  });
+
+  test('Windows install selects the native backend and starts hidden from a checkout', () => {
+    const command = installCommand({
+      apiBase,
+      token,
+      name: "Win Runner's",
+      platform: 'windows',
+      pool: 'default',
+      labels: { dotnet: '8' },
+      maxConcurrent: 4,
+    });
+    // PowerShell single-quote escaping: an embedded quote doubles.
+    expect(command).toContain(`$env:RUNNER_ENROLLMENT_TOKEN = '${token}'`);
+    expect(command).toContain("$env:RUNNER_NAME = 'Win Runner''s'");
+    expect(command).toContain("$env:RUNNER_BACKEND = 'local'");
+    expect(command).toContain("$env:RUNNER_PLATFORM = 'windows'");
+    expect(command).toContain('bun.sh/install.ps1');
+    expect(command).toContain('Start-Process');
+    expect(command).toContain('-WindowStyle Hidden');
+    expect(command).toContain('agent.pid');
+    expect(command).not.toContain('docker run');
+  });
+
+  test('generated commands never carry provider credentials', () => {
+    const platforms = ['linux', 'macos', 'windows'] as const;
+    for (const platform of platforms) {
+      const preflight = preflightCommand(apiBase, token, platform);
+      const install = installCommand({
+        apiBase,
+        token,
+        name: 'Runner',
+        platform,
+        pool: 'default',
+        labels: {},
+        maxConcurrent: 1,
+      });
+      for (const script of [preflight, install]) {
+        expect(script).not.toMatch(/OPENAI|ANTHROPIC|GEMINI|AZURE_OPENAI|S3_SECRET|S3_ACCESS/);
+        expect(script).not.toMatch(/_API_KEY/);
+        expect(script).not.toContain('FACTORY_MODEL');
+      }
+    }
+  });
 });

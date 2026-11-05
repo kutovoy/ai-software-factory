@@ -476,7 +476,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
           '`RUNNER_SANDBOX=exec` (macOS only) wraps the harness in a generated SBPL profile: reads of system paths + workspace, writes only to workspace/run dir/tmp, outbound network denied unless the stage grants `networkPolicy: allowed`.',
           '`RUNNER_SANDBOX=bwrap` (Linux) runs the harness in a bubblewrap jail: read-only `/`, private `/tmp`, a writable bind of the workspace, `--chdir` into it, and `--unshare-net` when the policy denies network. On Linux an unset value auto-selects `bwrap` when the binary is installed.',
           'A requested profile the host cannot honour is never a silent fallback: `RUNNER_SANDBOX=bwrap` without `bwrap` fails the run with `runner.sandbox_unavailable`, recorded on the sandbox step. `exec` on a non-macOS host keeps the older behaviour (unconfined, with the same record). The default is `none`.',
-          'Artifacts are captured by path + sha256 into `runs/<runId>/artifacts/`; a missing artifact makes deterministic scoring an `error` score without failing the run.',
+          'Artifacts are captured by path + sha256 into `runs/<runId>/artifacts/`; remote runs upload them to MinIO through short-lived presigned grants and the run detail serves an authenticated download. A missing artifact makes deterministic scoring an `error` score without failing the run.',
           'The compose worker ships the docker CLI (not the daemon) and leases sandboxes through the mounted `/var/run/docker.sock`; `docker compose exec worker docker version` must print a server version.',
           'Because the worker is itself a container, sandboxes join the dedicated `factory-runners` network (`RUNNER_NETWORK`) instead of publishing a host port, and the workspace travels with `docker cp` (`RUNNER_WORKSPACE_MODE=copy`) — the daemon cannot see the worker filesystem. A host worker keeps the bind mount and the 127.0.0.1 port.',
         ],
@@ -507,7 +507,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     slug: 'concepts/runners',
     title: 'Remote runners',
     section: 'concepts',
-    status: 'Shipped — change `add-remote-runners` (Linux MVP)',
+    status: 'Shipped — Linux Docker, Windows native, macOS native (`add-runner-platforms-and-artifacts`)',
     summary:
       'Enrollment → preflight → install → heartbeat: a host executes runs locally and polls the API outbound, with no Temporal worker and no database access on the host.',
     blocks: [
@@ -552,8 +552,10 @@ export const HELP_ENTRIES: HelpEntry[] = [
         kind: 'list',
         items: [
           'Scheduling: the worker picks a `ready`, non-draining host matching platform, pool, labels and free capacity (`maxConcurrent` minus active leases), then reserves a lease before sending work. No match fails the run with `no_matching_runner`.',
+          'Platforms: Linux hosts run the agent in Docker containers; Windows hosts run it natively with PowerShell (`RUNNER_BACKEND=local` by default) and macOS hosts run it natively under `sandbox-exec` (`RUNNER_SANDBOX=exec`). The wizard generates a bash preflight/install for Linux and macOS and PowerShell for Windows.',
           'Leases: a lease holds one concurrency slot and moves `active → released | expired | error`; an expired command fails the activity with `runner_unavailable` and the workflow records it.',
           'Alert rules: evaluated on heartbeat ingest (threshold + duration) and by a worker loop for stale heartbeats. The default global set covers CPU (85/95%), memory (85/95%), disk (80/90%), disk free bytes, inode usage, heartbeat age (60/150s) and queue wait.',
+          'Artifacts: after collection the agent requests run-scoped presigned PUT grants, uploads logs/screenshots/test reports directly to MinIO, and returns object keys/hashes; the central run keeps the metadata and the run detail downloads the blob through an authenticated presigned GET. No long-lived object-store credential reaches the host.',
           'Provider-key boundary: the agent receives the proxy base URL and a per-run inference token only; `OPENAI_*` provider keys never leave the API/worker. Execution secrets travel as names and are resolved on the agent from its own environment.',
           'Revocation: deleting the host invalidates its agent token and cascades its leases and alert history.',
         ],
@@ -561,9 +563,9 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'callout',
         tone: 'warning',
-        title: 'What the MVP does not do',
+        title: 'What this does not do',
         text:
-          'The agent is Linux-only and runs the harness adapter on the host. Windows and macOS agents are a later phase. Transport security is a bearer token with TLS expected at the edge; `cert_fingerprint` is reserved for mTLS follow-up, not enforced. There is no console editor for alert rules yet — the rules are shown and edited through `PUT /api/v1/runner-alert-rules`.',
+          'Windows and macOS runners are native host processes: weaker isolation than the Linux per-run container, so use a dedicated VM or user for untrusted code (a Windows service wrapper and a launchd plist are documented follow-ups). Transport security is a bearer token with TLS expected at the edge; `cert_fingerprint` is reserved for mTLS follow-up, not enforced. There is no console editor for alert rules yet — the rules are shown and edited through `PUT /api/v1/runner-alert-rules`.',
       },
     ],
     related: [
@@ -915,7 +917,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
         items: [
           'Auto-refresh: the header control (Off / 15s / 30s / 60s, default 15s, remembered per browser) re-runs the server projection on that interval while the tab is visible; it pauses when the tab is hidden and shows when the data was last refreshed.',
           'Filter: status (`running`, `pending`, `ok`, `error`, `cancelled`); the factory comes from the URL.',
-          'Detail: events, steps, artifacts (`runs/<runId>/artifacts/`), permissions, scores and cost.',
+          'Detail: events, steps, artifacts (`runs/<runId>/artifacts/`, or MinIO-backed download links for remote runs), permissions, scores and cost.',
           'Score detail: label, value, rationale, evidence links, provenance (`rubricHash`, judge model/version), calibration state.',
           'Cancel is offered only while the run is `pending`, `running` or `cancelling`; a terminal run shows its end state instead of a dead button.',
           'A chat run that failed or was cancelled can be retried as a new run. A factory stage run cannot: the page links to the work item, where retry re-dispatches the current stage under a new attempt.',
@@ -943,7 +945,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     slug: 'runners',
     title: 'Runners',
     section: 'menu',
-    status: 'Shipped — change `add-remote-runners` (Linux MVP)',
+    status: 'Shipped — Linux Docker, Windows native, macOS native (`add-runner-platforms-and-artifacts`)',
     summary:
       'Enroll remote hosts, read their heartbeat load, leases and alerts, drain a host or delete it. Tool execution stays on the runner, never in the console.',
     pageHref: '/runners',
@@ -956,7 +958,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'list',
         items: [
-          'Add runner: name, platform (Linux in the MVP), arch, pool, `key=value` labels and max concurrency. The API returns a one-time token plus a preflight command and an install command; the token is shown once and only its hash is stored.',
+          'Add runner: name, platform (Linux, Windows or macOS), arch, pool, `key=value` labels and max concurrency. The API returns a one-time token plus a platform-appropriate preflight command (bash for Linux/macOS, PowerShell for Windows) and an install command; the token is shown once and only its hash is stored.',
           'Preflight: run the preflight command on the host, then “check status” reads `GET /api/v1/runners/enrollments/:id` and lists the reported checks pass/fail before installation.',
           'Drain: stops new leases on the host while running leases finish; Resume clears the flag. The status badge shows `draining` alongside the lifecycle status.',
           'Delete: removes the host row and, by cascade, its leases and alert history. There is no undo — the agent token stops working immediately.',
@@ -967,9 +969,9 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'callout',
         tone: 'warning',
-        title: 'Linux MVP',
+        title: 'Platform isolation',
         text:
-          'The agent ships for Linux hosts only; Windows and macOS are a later phase (the platform select says so). The agent authenticates with a bearer token over outbound HTTPS — TLS termination is expected at the central edge, and mTLS is reserved, not built. The agent receives only the per-run inference proxy token and secret names, never provider credentials.',
+          'Linux hosts run the agent in Docker containers. Windows hosts run it natively with PowerShell (`RUNNER_BACKEND=local`, PowerShell preflight/install); macOS hosts run it natively under `sandbox-exec` (`RUNNER_BACKEND=local`, `RUNNER_SANDBOX=exec`). Native runners are weaker isolation than a per-run container — use a dedicated VM or user for untrusted code. The agent authenticates with a bearer token over outbound HTTPS — TLS termination is expected at the central edge, and mTLS is reserved, not built. The agent receives only the per-run inference proxy token and secret names, never provider credentials.',
       },
       {
         kind: 'callout',

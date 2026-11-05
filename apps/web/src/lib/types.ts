@@ -37,6 +37,12 @@ export interface RunArtifact {
   bytes?: number;
   kind?: string;
   sha256?: string;
+  /** Object-store key when the blob lives in the artifact store (ADR-047). */
+  storageKey?: string;
+  /** Bucket that holds the object; present with `storageKey`. */
+  bucket?: string;
+  /** MIME type recorded at upload time. */
+  contentType?: string;
 }
 
 export interface PermissionRow {

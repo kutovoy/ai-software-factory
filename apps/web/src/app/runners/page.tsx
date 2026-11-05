@@ -78,10 +78,12 @@ export default async function RunnersPage() {
       </header>
 
       <p className="text-xs text-slate-500" data-testid="runners-note">
-        Linux MVP: the agent ships for Linux hosts only, runs the harness adapter on the host,
-        and is authenticated by a bearer token — TLS termination is expected at the central
-        edge. Windows and macOS agents are a later phase. Hosts that stop heartbeating are
-        marked <span className="font-mono">unreachable</span> and raise a heartbeat alert.
+        Linux, Windows and macOS hosts are supported: the Linux agent runs in Docker containers,
+        while Windows and macOS agents run natively on the host (PowerShell and sandbox-exec
+        respectively) — weaker isolation, so use a dedicated VM or user for untrusted code. The
+        agent is authenticated by a bearer token over outbound HTTPS — TLS termination is expected
+        at the central edge. Hosts that stop heartbeating are marked{' '}
+        <span className="font-mono">unreachable</span> and raise a heartbeat alert.
       </p>
 
       <section data-testid="runners-summary" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

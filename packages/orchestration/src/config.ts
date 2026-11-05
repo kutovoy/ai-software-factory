@@ -1,4 +1,5 @@
 import { join, resolve } from 'node:path';
+import { resolveArtifactStoreConfig, type ArtifactStoreConfig } from './artifact-store';
 
 /**
  * Runtime configuration, resolved once per process from the environment.
@@ -13,6 +14,8 @@ export interface OrchestrationConfig {
   factoryRoot: string;
   /** Directory that holds `runs/<runId>/{events.jsonl,patch.diff,artifacts/}`. */
   runsDir: string;
+  /** S3-compatible artifact store (MinIO default, ADR-047); disabled unless configured. */
+  artifactStore: ArtifactStoreConfig;
   /** Public base URL of the API's inference proxy, as seen from the sandbox. */
   proxyPublicUrl: string;
   /** Upstream OpenAI-compatible base URL (never exposed to the sandbox). */
@@ -136,6 +139,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): OrchestrationC
     databaseUrl: env.DATABASE_URL ?? 'postgres://factory:factory@localhost:5432/factory',
     factoryRoot,
     runsDir: resolve(env.RUNS_DIR ?? join(process.cwd(), 'runs')),
+    artifactStore: resolveArtifactStoreConfig(env),
     proxyPublicUrl: env.PROXY_PUBLIC_URL ?? 'http://host.docker.internal:8080/v1',
     providerBaseUrl: env.OPENAI_BASE_URL,
     providerKey: env.OPENAI_API_KEY,

@@ -499,6 +499,7 @@ export async function collectArtifacts(args: {
   const config = loadConfig();
   const dir = await ensureRunDir(config.runsDir, args.input.runId);
   const artifacts: RunArtifact[] = [];
+  const uploadErrors: string[] = [];
   let usage: UsageReport | null = null;
 
   const entry = getSession(args.input.runId);
@@ -552,12 +553,18 @@ export async function collectArtifacts(args: {
         .collect(args.lease.runnerId, { destDir: dir, includeGitDiff: true })
         .catch(rethrowWithCause)
         .finally(stopPulse);
+      uploadErrors.push(...collected.uploadErrors);
       for (const artifact of collected.artifacts) {
         artifacts.push({
           path: artifact.path,
           bytes: artifact.bytes,
           sha256: artifact.sha256,
           kind: artifact.kind,
+          // Object-store metadata travels with the run so the console can download the
+          // blob instead of the (deleted) remote temp copy (ADR-047).
+          ...(artifact.storageKey ? { storageKey: artifact.storageKey } : {}),
+          ...(artifact.bucket ? { bucket: artifact.bucket } : {}),
+          ...(artifact.contentType ? { contentType: artifact.contentType } : {}),
         });
       }
       if (collected.usage) usage = collected.usage as UsageReport;
@@ -590,7 +597,13 @@ export async function collectArtifacts(args: {
     stepId: 'collect-artifacts',
     kind: 'artifacts',
     status: 'ok',
-    detail: { artifacts, usage },
+    detail: {
+      artifacts,
+      usage,
+      // Upload failures are recorded honestly: the metadata still exists, but the blob is
+      // not in object storage, so the console must not pretend it is downloadable.
+      ...(uploadErrors.length > 0 ? { uploadErrors } : {}),
+    },
   });
 
   return { artifacts, usage };

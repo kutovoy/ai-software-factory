@@ -143,6 +143,12 @@ export interface Artifact {
   bytes: number;
   sha256: string;
   kind: 'patch' | 'log' | 'screenshot' | 'file';
+  /** Object-store key when the artifact was uploaded (ADR-047). */
+  storageKey?: string;
+  /** Bucket that holds the object; present with `storageKey`. */
+  bucket?: string;
+  /** MIME type recorded at upload time. */
+  contentType?: string;
 }
 
 /**

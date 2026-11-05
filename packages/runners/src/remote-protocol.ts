@@ -23,6 +23,17 @@ import type {
  */
 
 export type RunnerHostPlatform = 'linux' | 'windows' | 'macos';
+
+/**
+ * Maps the enrolled platform to the Node `process.platform` value, so host probes (shell
+ * selection, metrics, sandbox availability) agree with what the control plane recorded.
+ */
+export function toNodePlatform(platform: RunnerHostPlatform): NodeJS.Platform {
+  if (platform === 'windows') return 'win32';
+  if (platform === 'macos') return 'darwin';
+  return 'linux';
+}
+
 export type RunnerHostStatus =
   | 'pending'
   | 'provisioning'
@@ -196,6 +207,42 @@ export interface RemoteArtifactResult {
   /** `patch.diff` content, written centrally into the run directory. */
   patch?: string;
   usage?: UsageReport | null;
+  /**
+   * Artifacts that could not be uploaded to object storage. The metadata and patch are
+   * still returned; the central collect step records these errors (ADR-047).
+   */
+  uploadErrors?: string[];
+}
+
+/** One artifact the agent wants a presigned upload grant for. */
+export interface RemoteArtifactUploadRequest {
+  path: string;
+  bytes: number;
+  sha256: string;
+  kind: Artifact['kind'];
+  contentType?: string;
+}
+
+/** Body of `POST /api/v1/runner-agent/artifacts/presign`. */
+export interface RemotePresignRequest {
+  runnerId: string;
+  runId: string;
+  artifacts: RemoteArtifactUploadRequest[];
+}
+
+/** A run-scoped presigned PUT grant. */
+export interface RemoteArtifactUploadGrant {
+  path: string;
+  key: string;
+  url: string;
+  /** Signed headers the uploader must send (e.g. `content-type`). */
+  headers?: Record<string, string>;
+  bucket?: string;
+}
+
+/** Response of the presign route; `uploads: []` means storage is disabled. */
+export interface RemotePresignResponse {
+  uploads: RemoteArtifactUploadGrant[];
 }
 
 export interface RemoteSmokeResult {

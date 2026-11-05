@@ -121,6 +121,161 @@ export async function cleanupWorkItems(request: APIRequestContext): Promise<void
   }
 }
 
+/* ------------------------------------------------------------ runners */
+
+/**
+ * Remote runner hosts created by the Runners spec. Every host is deleted in `afterEach`
+ * (change `add-runner-platforms-and-artifacts`, task 6.2): an abandoned host keeps its
+ * leases and alert history, and a leftover `ready` host would be picked by the scheduler.
+ */
+const createdHosts: string[] = [];
+
+export function trackHost(hostId: string | null | undefined): void {
+  if (!hostId) return;
+  if (createdHosts.includes(hostId)) return;
+  createdHosts.push(hostId);
+}
+
+/** A name unique across workers and reruns; the host name is unique in the schema. */
+export function uniqueRunnerName(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export async function cleanupHosts(request: APIRequestContext): Promise<void> {
+  for (const hostId of createdHosts.splice(0)) {
+    // Idempotent enough for cleanup: a host deleted in the test answers 404, which is fine.
+    await request
+      .delete(`/api/v1/runners/${encodeURIComponent(hostId)}`)
+      .catch(() => undefined);
+  }
+}
+
+export interface EnrolledRunner {
+  hostId: string;
+  agentToken: string;
+  enrollmentId: string;
+  name: string;
+}
+
+/**
+ * Creates an enrollment through the console API, then exchanges its one-time token the
+ * same way a real agent does. Both calls are API simulations — no Windows/macOS agent is
+ * needed to exercise the control plane.
+ */
+export async function enrollRunner(
+  request: APIRequestContext,
+  input: {
+    name: string;
+    platform?: 'linux' | 'windows' | 'macos';
+    arch?: string;
+    pool?: string;
+    labels?: Record<string, string>;
+    maxConcurrent?: number;
+    agentVersion?: string;
+  },
+): Promise<EnrolledRunner> {
+  const platform = input.platform ?? 'linux';
+  const arch = input.arch ?? 'x64';
+
+  const enrollmentResponse = await request.post('/api/v1/runners/enrollments', {
+    data: {
+      name: input.name,
+      platform,
+      arch,
+      ...(input.pool ? { pool: input.pool } : {}),
+      ...(input.labels ? { labels: input.labels } : {}),
+      ...(input.maxConcurrent ? { maxConcurrent: input.maxConcurrent } : {}),
+    },
+  });
+  expect(
+    enrollmentResponse.ok(),
+    `POST /api/v1/runners/enrollments failed: ${enrollmentResponse.status()} ${await enrollmentResponse.text()}`,
+  ).toBeTruthy();
+  const { enrollment } = (await enrollmentResponse.json()) as {
+    enrollment: { id: string; token: string };
+  };
+  expect(enrollment?.token, 'enrollment response should carry the one-time token').toBeTruthy();
+
+  const enrollResponse = await request.post('/api/v1/runner-agent/enroll', {
+    data: {
+      token: enrollment.token,
+      name: input.name,
+      platform,
+      arch,
+      ...(input.pool ? { pool: input.pool } : {}),
+      ...(input.labels ? { labels: input.labels } : {}),
+      ...(input.maxConcurrent ? { maxConcurrent: input.maxConcurrent } : {}),
+      agentVersion: input.agentVersion ?? 'e2e',
+    },
+  });
+  expect(
+    enrollResponse.ok(),
+    `POST /api/v1/runner-agent/enroll failed: ${enrollResponse.status()} ${await enrollResponse.text()}`,
+  ).toBeTruthy();
+  const { hostId, agentToken } = (await enrollResponse.json()) as {
+    hostId: string;
+    agentToken: string;
+  };
+  expect(hostId, 'enroll response should carry hostId').toBeTruthy();
+  expect(agentToken, 'enroll response should carry the agent token').toBeTruthy();
+  trackHost(hostId);
+
+  return { hostId, agentToken, enrollmentId: enrollment.id, name: input.name };
+}
+
+/** The heartbeat payload every Runners test starts from; callers override per scenario. */
+export function runnerMetrics(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    capturedAt: new Date().toISOString(),
+    cpuPercent: 42,
+    load1: 0.1,
+    load5: 0.1,
+    load15: 0.1,
+    memoryTotalBytes: 1_073_741_824,
+    memoryUsedBytes: 536_870_912,
+    memoryAvailableBytes: 536_870_912,
+    memoryUsedPercent: 50,
+    disks: [
+      {
+        mount: '/',
+        totalBytes: 1_000_000_000,
+        usedBytes: 950_000_000,
+        freeBytes: 50_000_000,
+        usedPercent: 95,
+      },
+    ],
+    agentVersion: 'e2e',
+    leases: 0,
+    ...overrides,
+  };
+}
+
+/** Posts one agent heartbeat with the per-host bearer token. */
+export async function sendHeartbeat(
+  request: APIRequestContext,
+  agentToken: string,
+  overrides: {
+    metrics?: Record<string, unknown>;
+    status?: string;
+    leases?: number;
+  } = {},
+): Promise<void> {
+  const response = await request.post('/api/v1/runner-agent/heartbeat', {
+    headers: { authorization: `Bearer ${agentToken}` },
+    data: {
+      metrics: runnerMetrics(overrides.metrics),
+      status: overrides.status ?? 'ready',
+      leases: overrides.leases ?? 0,
+    },
+  });
+  expect(
+    response.ok(),
+    `POST /api/v1/runner-agent/heartbeat failed: ${response.status()} ${await response.text()}`,
+  ).toBeTruthy();
+}
+
 /** Restores the kill switch after a test enabled autonomy for a factory. */
 export async function pauseAutonomy(
   request: APIRequestContext,

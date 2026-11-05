@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-11-04
+Last updated: 2026-11-05
 
 ## Phase
 
@@ -28,18 +28,30 @@ trace-driven self-improvement, classifier routing + spend caps, work intake, pro
 governance/autonomy levels and the surface-agnostic CLI. The remaining roadmap item is long-running
 missions (item 12) in `research/software-factory-ideas.md`.
 
-**Remote runners + host observability — Linux MVP implemented** (2026-11-04, merged to
-`main`, archived OpenSpec `2026-11-04-add-remote-runners`). A remote host enrolls from the console with a
+**Remote runners + host observability — Linux, Windows and macOS native agents implemented** (2026-11-04/05, merged to
+`main`, archived OpenSpec `2026-11-04-add-remote-runners`; platform/artifact work in `2026-11-05-add-runner-platforms-and-artifacts`). A remote host enrolls from the console with a
 one-time token, exchanges it for a bearer agent token, then heartbeats and polls an outbound command
 queue. The agent runs a Docker sandbox and the harness adapter locally and streams canonical events
 back to the central worker, which remains the single event writer and Temporal scheduler. Remote hosts
 get **no Temporal or Postgres access** and no provider credentials. The console adds a Runners page
 (host list, add-runner preflight/install commands, drain/delete), host detail with CPU/RAM/disk
 sparklines and leases, and an alert list with acknowledge/silence. The worker evaluates CPU, RAM,
-disk/inode, heartbeat-age and queue-wait rules; migration 022 seeds the default rules. Windows/macOS
-agents, mTLS certificate issuance and full artifact transfer remain follow-ups. Artifact blobs
-will use MinIO as the S3-compatible store (ADR-047). See
-`docs/REMOTE_RUNNERS_PLAN.md`.
+disk/inode, heartbeat-age and queue-wait rules; migration 022 seeds the default rules. mTLS
+certificate issuance remains a follow-up. Artifact blobs
+use MinIO as the S3-compatible store (ADR-047): the agent uploads them directly through short-lived
+presigned PUT grants, the worker records object keys/hashes, and the run detail downloads them via an
+authenticated presigned GET. See `docs/REMOTE_RUNNERS_PLAN.md`.
+
+**Remote runner platforms + MinIO artifacts — implemented** (2026-11-05, OpenSpec
+`2026-11-05-add-runner-platforms-and-artifacts`). Windows hosts run the native PowerShell process backend
+(`RUNNER_BACKEND=local`) with PowerShell preflight/install and CIM metrics; macOS hosts run the
+native process backend under `sandbox-exec` with bash preflight/install and `sysctl`/`ps` metrics.
+The Runners wizard enables both platforms. MinIO is the default S3-compatible artifact store:
+presigned PUT uploads keep blobs off the command channel, object metadata travels with the run,
+and an authenticated download route serves a presigned GET or the local file. A Runners Playwright
+E2E covers enrollment, simulated heartbeat, host detail, alert firing/ack and deletion. Remaining
+follow-ups: Windows containers, macOS Tart VMs, mTLS issuance/rotation, launchd/Windows service
+wrappers, retention/GC automation and a real remote-host end-to-end run.
 
 ### Readiness and public-release prep (2026-11-01)
 
@@ -305,8 +317,9 @@ message as the run summary (unit + contract tests updated), which is what the st
 What is left:
 
 1. **Phase 6c** — external OIDC/IdP and group→org mappings (Keycloak/Authentik/Zitadel), Temporal Cloud,
-   multi-tenant credential isolation. Remote runners now have a Linux MVP; Windows/macOS agents, mTLS
-   certificate issuance and full artifact transfer remain.
+   multi-tenant credential isolation. Remote runners now ship Linux/Windows/macOS native agents with
+   MinIO artifact upload/download; mTLS certificate issuance, Windows containers, macOS Tart and a real
+   remote-host E2E remain.
 2. **Live GitHub path** — implemented and contract-tested, not exercised against a real repository (needs a PAT).
 3. **Forge proxy mode** — SSH ships on the default stack; the Caddy mode is live-validated for session auth and
    HTTP reverse-proxying (on a test port), but a websocket upgrade has not been exercised end to end.
@@ -1686,14 +1699,16 @@ both accepted; `benchmarkGateRequired` is true exactly when `fullyAutonomous`; k
 Roadmap items 1–11 are implemented (see the sections above and `research/software-factory-ideas.md`).
 The remaining roadmap candidate is long-running missions (item 12).
 
-The Linux **remote runner + observability MVP** is implemented and archived (OpenSpec
-`2026-11-04-add-remote-runners`): enrollment, outbound command queue, central scheduling, agent-side
-sandbox and harness adapter, host CPU/RAM/disk metrics and alerts. See `docs/REMOTE_RUNNERS_PLAN.md`.
+The **remote runner + observability** work is implemented and archived (OpenSpec
+`2026-11-04-add-remote-runners` plus `2026-11-05-add-runner-platforms-and-artifacts`): enrollment, outbound
+command queue, central scheduling, Linux Docker / Windows native / macOS native agents, host
+CPU/RAM/disk metrics and alerts, and MinIO artifact upload/download. See
+`docs/REMOTE_RUNNERS_PLAN.md`.
 
-Next follow-ups: Windows native/Windows-container agent, macOS native/Tart agent, mTLS certificate
-issuance/rotation, and artifact-blob transfer beyond `patch.diff` to MinIO (ADR-047). Phase 6c OIDC/IdP, Temporal Cloud and
-multi-tenant isolation remain blocked on external infrastructure/IdP decisions. The live GitHub forge path
-still needs a PAT, repo and webhook secret.
+Next follow-ups: Windows containers, macOS Tart VMs, mTLS certificate issuance/rotation,
+launchd/Windows service wrappers, retention/GC automation and a real remote-host end-to-end run.
+Phase 6c OIDC/IdP, Temporal Cloud and multi-tenant isolation remain blocked on external
+infrastructure/IdP decisions. The live GitHub forge path still needs a PAT, repo and webhook secret.
 
 ## Open questions
 

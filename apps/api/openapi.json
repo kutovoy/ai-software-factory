@@ -2446,11 +2446,19 @@
         ],
         "responses": {
           "200": {
-            "description": "Success.",
+            "description": "Success. `artifacts` is an array of `RunArtifact`; object-store metadata is additive.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "artifacts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RunArtifact"
+                      }
+                    }
+                  },
                   "additionalProperties": true
                 }
               }
@@ -2468,6 +2476,98 @@
           },
           "500": {
             "description": "internal_error — unexpected server failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/factories/{factoryId}/runs/{id}/artifacts": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Download a run artifact",
+        "description": "Authorized by the normal run-access guard. When the artifact carries a `storageKey`, the API answers `302` with a short-lived presigned GET URL for the object store. Otherwise it serves the local file from `runs/<runId>/<path>`; a path outside the run directory is refused (`invalid_request`).",
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Run id."
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Artifact path exactly as recorded in the run's `artifacts` array (e.g. `patch.diff`, `artifacts/build.log`)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The artifact bytes (local fallback).",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "302": {
+            "description": "Redirect to a short-lived presigned GET URL for the object store.",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request — missing `path` or a path outside the run directory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "artifact_not_found — the run has no such artifact or the local file is missing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "artifact_store_unavailable — the artifact is stored in object storage but no store is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6919,6 +7019,174 @@
         "security": []
       }
     },
+    "/api/v1/runner-agent/artifacts/presign": {
+      "post": {
+        "tags": [
+          "runners"
+        ],
+        "summary": "Request presigned artifact upload grants",
+        "description": "Agent-authenticated (per-host bearer token). The host must own an active lease for `runnerId`/`runId`. Returns a short-lived, run-scoped presigned PUT URL per artifact under `tenants/<tenant>/runs/<runId>/<sanitized-path>`. `uploads: []` means artifact storage is disabled, so the agent keeps metadata only. No object-store credentials are returned.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "runnerId",
+                  "runId",
+                  "artifacts"
+                ],
+                "properties": {
+                  "runnerId": {
+                    "type": "string"
+                  },
+                  "runId": {
+                    "type": "string"
+                  },
+                  "artifacts": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "path",
+                        "bytes",
+                        "sha256",
+                        "kind"
+                      ],
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "bytes": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[0-9a-fA-F]{64}$"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "patch",
+                            "log",
+                            "screenshot",
+                            "file"
+                          ]
+                        },
+                        "contentType": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Upload grants (or an empty list when storage is disabled).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "uploads"
+                  ],
+                  "properties": {
+                    "uploads": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "path",
+                          "key",
+                          "url"
+                        ],
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "key": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "headers": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
+                          "bucket": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request — malformed body or an unsanitizable artifact path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "agent_unauthorized — missing or invalid agent bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "artifact_lease_mismatch — the host has no active lease for this runner/run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "artifact_too_large — an artifact exceeds `S3_MAX_ARTIFACT_BYTES`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/runner-agent/enroll": {
       "post": {
         "tags": [
@@ -7212,6 +7480,52 @@
             "description": "Optional structured context (ids, limits, offending field)."
           }
         }
+      },
+      "RunArtifact": {
+        "type": "object",
+        "description": "One artifact recorded on a run. `storageKey`/`bucket`/`contentType` are additive (ADR-047): rows written before the artifact store have only `path`/`bytes`/`sha256`/`kind`, and consumers must keep working with both shapes.",
+        "required": [
+          "path",
+          "bytes",
+          "sha256",
+          "kind"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path relative to the run directory."
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{64}$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "patch",
+              "log",
+              "screenshot",
+              "file"
+            ]
+          },
+          "storageKey": {
+            "type": "string",
+            "description": "Object-store key when the blob lives in the artifact store."
+          },
+          "bucket": {
+            "type": "string",
+            "description": "Bucket holding the object; present with `storageKey`."
+          },
+          "contentType": {
+            "type": "string",
+            "description": "MIME type recorded at upload time."
+          }
+        },
+        "additionalProperties": true
       },
       "GateDecisionVerdict": {
         "type": "object",

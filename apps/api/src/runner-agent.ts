@@ -10,11 +10,15 @@ import {
   type RunnerPreflightRequest,
 } from '@factory/runners';
 import {
+  MAX_ARTIFACTS_PER_RUN,
   RunnerEnrollmentError,
+  artifactStoreFromConfig,
   authenticateAgent,
   claimCommand,
   completeCommand,
+  defaultArtifactContentType,
   exchangeEnrollment,
+  getActiveLeaseForHost,
   recordHeartbeat,
   recordPreflight,
   type RunnerHostRecord,
@@ -126,6 +130,26 @@ const resultBodySchema = z
       .optional(),
   })
   .strict();
+
+const presignArtifactSchema = z
+  .object({
+    path: z.string().min(1).max(512),
+    bytes: z.number().int().min(0),
+    sha256: z.string().regex(/^[0-9a-f]{64}$/i),
+    kind: z.enum(['patch', 'log', 'screenshot', 'file']),
+    contentType: z.string().min(1).max(200).optional(),
+  })
+  .strict();
+
+const presignBodySchema = z
+  .object({
+    runnerId: z.string().min(1).max(128),
+    runId: z.string().min(1).max(128),
+    artifacts: z.array(presignArtifactSchema).min(1).max(MAX_ARTIFACTS_PER_RUN),
+  })
+  .strict();
+
+type PresignBody = z.infer<typeof presignBodySchema>;
 
 /** 401 with the stable agent code; the console session cookie is irrelevant here. */
 function agentUnauthorized(message: string): ApiError {
@@ -241,5 +265,66 @@ export function registerRunnerAgent(app: Hono, config: ApiConfig): void {
       throw new ApiError('command_not_found', 404, `no open command "${id}" for this host`, { id });
     }
     return c.json({ ok: true });
+  });
+
+  /* ----------------------------------------------------------- artifacts */
+
+  /**
+   * Presigned upload grants (ADR-047). The agent asks for a run-scoped PUT URL per artifact;
+   * the control plane owns bucket + credentials, so the host never sees a long-lived key.
+   * A disabled store answers `uploads: []` and the agent keeps metadata only.
+   */
+  app.post(`${API_PREFIX}/runner-agent/artifacts/presign`, async (c) => {
+    const host = await requireAgent(c);
+    const body = await readJsonBody<PresignBody>(c, presignBodySchema);
+
+    const lease = await getActiveLeaseForHost({
+      hostId: host.id,
+      runnerId: body.runnerId,
+      runId: body.runId,
+    });
+    if (!lease) {
+      throw new ApiError(
+        'artifact_lease_mismatch',
+        403,
+        `host ${host.id} has no active lease for runner ${body.runnerId} on run ${body.runId}`,
+        { runnerId: body.runnerId, runId: body.runId },
+      );
+    }
+
+    const store = artifactStoreFromConfig(config.artifactStore);
+    if (!store) return c.json({ uploads: [] });
+
+    const maxBytes = config.artifactStore.maxArtifactBytes;
+    const oversized = body.artifacts.filter((artifact) => artifact.bytes > maxBytes);
+    if (oversized.length > 0) {
+      throw new ApiError(
+        'artifact_too_large',
+        413,
+        `artifact exceeds the ${maxBytes}-byte limit`,
+        { maxBytes, paths: oversized.map((artifact) => artifact.path) },
+      );
+    }
+
+    const uploads = body.artifacts.map((artifact) => {
+      const contentType = artifact.contentType ?? defaultArtifactContentType(artifact.kind);
+      try {
+        return store.presignUpload({
+          tenant: host.tenant,
+          runId: body.runId,
+          path: artifact.path,
+          contentType,
+        });
+      } catch (error) {
+        throw invalidRequest(
+          `cannot presign artifact "${artifact.path}": ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          { path: artifact.path },
+        );
+      }
+    });
+
+    return c.json({ uploads });
   });
 }

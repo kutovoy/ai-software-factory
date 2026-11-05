@@ -8,21 +8,34 @@ Three backends implement one protocol:
 | Backend | Use | Isolation |
 |---|---|---|
 | `DockerRunnerBackend` | real runs, integration tests | container per run, workspace bind-mounted, harness inside |
-| `LocalRunnerBackend` | fast tests, dev machines without Docker | host process (dev fallback, **not** a security boundary) |
-| `RemoteRunnerBackend` | remote Linux hosts | agent command queue; the agent owns a Docker sandbox and harness adapter |
+| `LocalRunnerBackend` | fast tests, dev machines, Windows/macOS runner hosts | host process (not a security boundary; `sandbox-exec` on macOS, PowerShell on Windows) |
+| `RemoteRunnerBackend` | remote hosts | agent command queue; the agent owns a Docker sandbox on Linux or a native process sandbox on Windows/macOS |
 
 ## Remote runner agent
 
-`packages/runners/src/agent.ts` is the Linux MVP agent. It enrolls once from the console
-with a one-time token, stores the returned agent token, then heartbeats CPU/RAM/disk
-metrics and polls `/api/v1/runner-agent/commands` over outbound HTTP(S). It never runs a
-Temporal worker and never connects to Postgres.
+`packages/runners/src/agent.ts` is the remote agent. It enrolls once from the console with a
+one-time token, stores the returned agent token, then heartbeats CPU/RAM/disk metrics and polls
+`/api/v1/runner-agent/commands` over outbound HTTP(S). It never runs a Temporal worker and never
+connects to Postgres.
+
+Platforms and default backends:
+
+| Platform | `RUNNER_PLATFORM` | Default `RUNNER_BACKEND` | Sandbox |
+|---|---|---|---|
+| Linux | `linux` | `docker` | container per run (`agent.Dockerfile`) |
+| Windows | `windows` | `local` | native PowerShell process, `taskkill /t` tree kill |
+| macOS | `macos` | `local` | native process, `sandbox-exec` when `RUNNER_SANDBOX=exec` |
+
+An explicit `RUNNER_BACKEND`/`--backend` always wins. The generated install command sets it, so
+an operator never has to guess.
 
 The agent executes `lease`, `exec`, `start-session`, `pump`, `respond-permission`,
 `artifacts`, `cancel`, `kill` and `smoke-test` commands. It runs the harness adapter
 locally and streams canonical events back to the central worker, which remains the only
 writer of the event log. The agent receives only the per-run proxy token; provider keys
 never leave the central API/worker.
+
+### Linux (Docker)
 
 Build the Linux agent image from the repository root:
 
@@ -38,9 +51,53 @@ docker run -d --name factory-runner-agent \
   factory-runner-agent:local
 ```
 
-MVP limits: Linux Docker first; the agent token is bearer-authenticated (deploy behind
-TLS, mTLS certificate fingerprinting is reserved); only `patch.diff` content is transferred
-back, other artifact blobs remain on the remote host.
+### Windows (native PowerShell)
+
+Run from a checkout of this repository in PowerShell (the console generates the same script with
+the enrollment token filled in):
+
+```powershell
+$env:FACTORY_API_URL = 'https://factory.example.com'
+$env:RUNNER_ENROLLMENT_TOKEN = '...'
+$env:RUNNER_STATE_FILE = "$env:LOCALAPPDATA\factory-runner\runner-agent.json"
+$env:RUNNER_PLATFORM = 'windows'
+$env:RUNNER_BACKEND = 'local'
+# Bun is required; the generated install script installs it when missing.
+bun packages/runners/src/agent.ts
+```
+
+The agent's local backend uses `powershell.exe -NoProfile -NonInteractive -Command`, quotes
+array commands PowerShell-style (`& 'cmd' 'arg'`) and terminates the process tree with
+`taskkill /pid <pid> /t /f`. Metrics come from PowerShell/CIM (`Win32_Processor`,
+`Win32_OperatingSystem`, `Win32_LogicalDisk`, `Get-Process`); a failing query degrades the
+sample instead of failing the heartbeat. A Windows service wrapper is a follow-up — the
+generated install command starts the agent hidden with `Start-Process` and writes a pid file.
+
+### macOS (native)
+
+Run from a checkout of this repository:
+
+```bash
+export FACTORY_API_URL='https://factory.example.com'
+export RUNNER_ENROLLMENT_TOKEN='...'
+export RUNNER_STATE_FILE="$HOME/.factory-runner/runner-agent.json"
+export RUNNER_PLATFORM='macos'
+export RUNNER_BACKEND=local
+export RUNNER_SANDBOX=exec   # generated install command sets this
+nohup bun packages/runners/src/agent.ts >>"$HOME/.factory-runner/agent.log" 2>&1 &
+```
+
+Swap comes from `sysctl -n vm.swapusage`, process count from `ps -e`; a missing `sysctl`/`df`
+value degrades without failing the heartbeat. A launchd plist is documented as a follow-up.
+
+### Limitations
+
+- Windows/macOS native runners are weaker isolation than a Linux container per run: use a
+  dedicated VM or user for untrusted code (see `docs/REMOTE_RUNNERS_PLAN.md` §8).
+- `patch.diff` is still returned inline; other artifact blobs are uploaded to the object store
+  when it is configured (ADR-047) and otherwise stay on the runner host.
+- The agent token is bearer-authenticated (deploy behind TLS; mTLS certificate fingerprinting is
+  reserved, not built).
 
 ## Protocol
 
@@ -137,16 +194,20 @@ by injecting `OPENAI_API_KEY` — that is the exact boundary this package enforc
   lease and failures surface as `docker_unavailable`.
 - Bind mounts work through the Docker VM; file ownership usually maps back to the host user,
   so `git diff` on the mounted workspace works for artifact capture.
-- `LocalRunnerBackend` is the no-Docker path. It spawns the harness detached (so `kill`
-  takes the whole process group), strips inference credentials from the inherited env, and
-  picks a free `127.0.0.1` port. It does **not** apply `sandbox-exec` yet: treat it as a dev
-  convenience, not isolation.
+- `LocalRunnerBackend` is the no-Docker path (and the macOS/Windows runner backend). It spawns
+  the harness detached (so `kill` takes the whole process group), strips inference credentials
+  from the inherited env, and picks a free `127.0.0.1` port. With `RUNNER_SANDBOX=exec` it runs
+  the harness under a generated `sandbox-exec` profile: deny by default, read system + workspace,
+  write only the workspace, the run directory and `/private/tmp`, no outbound network unless the
+  stage grants it. Without it the process is unconfined — treat that as a dev convenience, not
+  isolation.
 - `docker build` for the runner image needs network access and a few minutes on first use.
 
 ## Tests
 
-- `bun test` — protocol/secret tests and the local backend end-to-end
-  (lease → exec `echo hi` → artifacts → kill).
+- `bun test` — protocol/secret tests, the local backend end-to-end
+  (lease → exec `echo hi` → artifacts → kill) and platform tests (PowerShell argv/quoting,
+  Windows CIM JSON and macOS `sysctl` metric parsing) that run without a Windows/macOS host.
 - `RUN_SLOW=1 bun test` — the docker integration test (builds the image, leases a container,
   runs `echo hi`, checks no inference env leaked, collects artifacts, kills twice).
 

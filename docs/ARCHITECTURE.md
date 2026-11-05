@@ -129,12 +129,13 @@ kill(runnerId)                                 # idempotent
 
 - `local-docker`: container per run, bind-mounted worktree, no host network by default.
 - `local-process` (fallback): git worktree + `sandbox-exec` (macOS) for cheap runs.
-- `remote-runner` (Linux MVP): a UI-enrolled host agent polls an outbound command queue, runs the
-  sandbox and harness adapter locally and streams canonical events back to the central worker. Central
+- `remote-runner` (Linux/Windows/macOS): a UI-enrolled host agent polls an outbound command queue, runs
+  the sandbox and harness adapter locally and streams canonical events back to the central worker. Central
   Temporal schedules; the host gets no Temporal/Postgres credentials. Host CPU/RAM/disk metrics and
-  alerts are stored centrally. The MVP uses a bearer agent token behind TLS; mTLS fingerprinting,
-  Windows native/Windows containers and macOS native/Tart are follow-ups. See
-  `docs/REMOTE_RUNNERS_PLAN.md`, `openspec/specs/remote-runners/spec.md` and
+  alerts are stored centrally. Artifacts upload directly to MinIO via short-lived presigned grants.
+  The agent uses a bearer agent token behind TLS; mTLS fingerprinting, Windows containers, macOS Tart
+  and service-manager wrappers are follow-ups. See `docs/REMOTE_RUNNERS_PLAN.md`,
+  `openspec/specs/remote-runners/spec.md`, `openspec/specs/artifact-store/spec.md` and
   `openspec/changes/archive/2026-11-04-add-remote-runners`.
 
 Secrets are resolved **outside** the sandbox and injected as env only for the tools that need them;

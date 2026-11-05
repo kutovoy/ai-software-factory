@@ -29,6 +29,8 @@ export * from './runner-hosts';
 export * from './runner-alerts';
 export * from './runner-observability';
 export * from './remote-runner';
+export * from './s3-presign';
+export * from './artifact-store';
 export * from './sessions';
 export * from './scoring/context';
 export * from './models/judgement';

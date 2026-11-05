@@ -386,19 +386,43 @@ export default async function RunDetailPage({
           ) : (
             <CardBody>
               <ul data-testid="run-artifacts" className="space-y-1 text-sm">
-                {artifactList.map((artifact, index) => (
-                  <li
-                    key={`${artifact.path ?? index}`}
-                    className="flex items-center justify-between gap-2"
-                  >
-                    <span className="font-mono text-xs text-slate-700">
-                      {typeof artifact === 'string' ? artifact : artifact.path}
-                    </span>
-                    {typeof artifact === 'object' && artifact.bytes !== undefined ? (
-                      <span className="text-xs text-slate-400">{artifact.bytes} bytes</span>
-                    ) : null}
-                  </li>
-                ))}
+                {artifactList.map((artifact, index) => {
+                  const artifactPath = typeof artifact === 'string' ? artifact : artifact?.path ?? '';
+                  const stored = typeof artifact === 'object' && Boolean(artifact?.storageKey);
+                  return (
+                    <li
+                      key={`${artifactPath || index}`}
+                      className="flex items-center justify-between gap-2"
+                    >
+                      <span className="min-w-0 truncate font-mono text-xs text-slate-700">
+                        {artifactPath || '(unnamed)'}
+                        {stored ? (
+                          <span
+                            data-testid="run-artifact-stored"
+                            className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-500"
+                            title="Stored in the artifact store; the download is a short-lived presigned link."
+                          >
+                            object storage
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="flex items-center gap-3">
+                        {typeof artifact === 'object' && artifact.bytes !== undefined ? (
+                          <span className="text-xs text-slate-400">{artifact.bytes} bytes</span>
+                        ) : null}
+                        {artifactPath ? (
+                          <a
+                            data-testid="run-artifact-download"
+                            href={`/api/v1/factories/${encoded}/runs/${encodeURIComponent(run.id)}/artifacts?path=${encodeURIComponent(artifactPath)}`}
+                            className="text-xs font-medium text-slate-700 underline decoration-slate-300 underline-offset-2 hover:text-slate-900"
+                          >
+                            download
+                          </a>
+                        ) : null}
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
             </CardBody>
           )}

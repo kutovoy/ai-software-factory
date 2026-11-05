@@ -15,7 +15,7 @@ CLI/CI surface. `bun run ci` 655 pass; smoke passed; Playwright 61/61. Runner cl
 |---|---|---|
 | Definition schema + CLI | `packages/core`, `packages/cli` | `factory validate/export/import/diff/fmt/version`, canonical YAML, semantic diff, git version pinning |
 | Harness adapters | `packages/adapters` | canonical `FactoryEvent`, `FakeAdapter`, opencode adapter (installed v2 API, v1-tolerant) |
-| Runners | `packages/runners` | Docker + local backends; harness runs *inside* the sandbox; secret boundary |
+| Runners | `packages/runners` | Docker + local backends, remote Linux/Windows/macOS agents; harness runs *inside* the sandbox; MinIO artifact upload; secret boundary |
 | Orchestration | `packages/orchestration` | Temporal: `RunWorkflow`, `FactoryWorkflow`, `StageWorkflow`, `ScoringWorkflow`, `BenchmarkWorkflow`, `ImprovementWorkflow`, `CanaryWorkflow`, `MergeQueueWorkflow` |
 | Code forges | `packages/forge` | `CodeForge` contract, fake + GitHub (token by ref, dry-run, offline contract tests) |
 | Merge queue | `packages/merge` | serialized merge train, bisect on red, single-commit revert, manual revert |
@@ -94,12 +94,14 @@ lets you validate wiring without touching a repo. GitHub delivers to
 ## Known gaps / next
 
 1. **Phase 6c**: external OIDC/IdP group→org mappings, Temporal Cloud, per-tenant isolation.
-   Remote runners have a **Linux MVP** on `main` (archived OpenSpec `2026-11-04-add-remote-runners`): console
-   enrollment, one-time token → bearer agent token, outbound command queue, central Temporal scheduling,
-   agent-side Docker sandbox + harness adapter, and central CPU/RAM/disk/heartbeat metrics with alerts.
-   Remote hosts never get Temporal/Postgres or provider credentials. Follow-ups: Windows native/Windows
-   containers, macOS native/Tart, mTLS certificate issuance/rotation, and artifact-blob transfer beyond
-   `patch.diff`. See `docs/REMOTE_RUNNERS_PLAN.md`.
+   Remote runners now ship Linux Docker, Windows native and macOS native agents on `main` (archived OpenSpec
+   `2026-11-04-add-remote-runners` plus `2026-11-05-add-runner-platforms-and-artifacts`): console enrollment, one-time
+   token → bearer agent token, outbound command queue, central Temporal scheduling, agent-side sandbox +
+   harness adapter, central CPU/RAM/disk/heartbeat metrics with alerts, and MinIO artifact upload/download
+   through short-lived presigned grants. Remote hosts never get Temporal/Postgres, provider credentials or
+   long-lived object-store credentials. Follow-ups: Windows containers, macOS Tart, mTLS certificate
+   issuance/rotation, launchd/Windows service wrappers, retention/GC automation and a real remote-host E2E.
+   See `docs/REMOTE_RUNNERS_PLAN.md`.
 2. **Live GitHub path**: implemented and contract-tested, not exercised against a real repo.
 3. **Forge proxy mode**: SSH ships by default; the Caddy overlay is live-validated for session auth and HTTP,
    but a websocket upgrade has not been exercised end to end.

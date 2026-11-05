@@ -13,6 +13,7 @@ import {
   type RunnerEnrollmentRequest,
   type RunnerEnrollmentResponse,
   type RunnerHostPlatform,
+  toNodePlatform,
 } from './remote-protocol';
 
 /**
@@ -28,6 +29,12 @@ import {
  */
 
 const PLATFORMS: readonly RunnerHostPlatform[] = ['linux', 'windows', 'macos'];
+/**
+ * Default enrollment platform when neither an option nor `RUNNER_PLATFORM` is set. The
+ * backend default is derived from it: `docker` on Linux, `local` on Windows/macOS
+ * (design `add-runner-platforms-and-artifacts` › Platform defaults).
+ */
+const DEFAULT_PLATFORM: RunnerHostPlatform = 'linux';
 const ENROLL_PATH = '/api/v1/runner-agent/enroll';
 const HEARTBEAT_PATH = '/api/v1/runner-agent/heartbeat';
 const COMMANDS_PATH = '/api/v1/runner-agent/commands';
@@ -53,8 +60,15 @@ export interface AgentOptions {
   maxConcurrent?: number;
   heartbeatIntervalMs?: number;
   commandPollTimeoutMs?: number;
+  /** Sandbox backend. Defaults to `docker` on Linux and `local` on Windows/macOS. */
   backend?: 'docker' | 'local';
   agentVersion?: string;
+  /**
+   * Upload collected artifacts to the control plane's S3-compatible store (ADR-047).
+   * Defaults to `RUNNER_ARTIFACT_UPLOAD !== '0'`; the API answers `uploads: []` when the
+   * store is disabled, so an unconfigured deployment stays metadata-only.
+   */
+  artifactUpload?: boolean;
   allowedSecrets?: readonly string[];
   resolveSecret?: (name: string) => string | undefined;
   network?: string;
@@ -92,6 +106,7 @@ interface AgentConfig {
   commandPollTimeoutMs?: number;
   backend: 'docker' | 'local';
   agentVersion: string;
+  artifactUpload: boolean;
   allowedSecrets?: readonly string[];
   resolveSecret?: (name: string) => string | undefined;
   network?: string;
@@ -113,13 +128,16 @@ export function resolveAgentConfig(
     throw new Error('FACTORY_API_URL is required (e.g. https://factory.example.com)');
   }
 
-  const platformRaw = trim(options.platform ?? env.RUNNER_PLATFORM) ?? 'linux';
+  const platformRaw = trim(options.platform ?? env.RUNNER_PLATFORM) ?? DEFAULT_PLATFORM;
   const platform = platformRaw.toLowerCase() as RunnerHostPlatform;
   if (!PLATFORMS.includes(platform)) {
     throw new Error(`RUNNER_PLATFORM must be one of ${PLATFORMS.join(', ')} (got "${platformRaw}")`);
   }
 
-  const backendRaw = trim(options.backend ?? env.RUNNER_BACKEND) ?? 'docker';
+  // Explicit option/env wins; otherwise Linux keeps the container backend and the native
+  // platforms default to the process backend they can actually run.
+  const defaultBackend = platform === 'linux' ? 'docker' : 'local';
+  const backendRaw = trim(options.backend ?? env.RUNNER_BACKEND) ?? defaultBackend;
   if (backendRaw !== 'docker' && backendRaw !== 'local') {
     throw new Error(`RUNNER_BACKEND must be "docker" or "local" (got "${backendRaw}")`);
   }
@@ -165,6 +183,7 @@ export function resolveAgentConfig(
       trim(options.agentVersion ?? env.RUNNER_AGENT_VERSION) ?? DEFAULT_AGENT_VERSION,
       64,
     ),
+    artifactUpload: options.artifactUpload ?? !isDisabled(env.RUNNER_ARTIFACT_UPLOAD),
     ...(options.allowedSecrets ? { allowedSecrets: options.allowedSecrets } : {}),
     ...(options.resolveSecret ? { resolveSecret: options.resolveSecret } : {}),
     ...(trim(options.network ?? env.RUNNER_DOCKER_NETWORK)
@@ -218,11 +237,21 @@ export async function runAgent(options: AgentOptions = {}): Promise<AgentHandle>
 
   const runtimeOptions: AgentRuntimeOptions = {
     agentVersion: config.agentVersion,
+    platform: config.platform,
     backend: config.backend,
     ...(config.allowedSecrets ? { allowedSecrets: config.allowedSecrets } : {}),
     ...(config.resolveSecret ? { resolveSecret: config.resolveSecret } : {}),
     ...(config.network ? { network: config.network } : {}),
     ...(config.workspaceMode ? { workspaceMode: config.workspaceMode } : {}),
+    ...(config.artifactUpload && agentToken
+      ? {
+          artifactUpload: {
+            apiUrl: config.apiUrl,
+            agentToken,
+            ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+          },
+        }
+      : {}),
   };
   const runtime = new RunnerAgentRuntime(runtimeOptions);
 
@@ -259,7 +288,7 @@ export async function runAgent(options: AgentOptions = {}): Promise<AgentHandle>
     while (!controller.signal.aborted) {
       try {
         const leases = runtime.leases();
-        const metrics = await collectMetrics(config.agentVersion);
+        const metrics = await collectMetrics(config.agentVersion, toNodePlatform(config.platform));
         metrics.leases = leases;
         await request(
           HEARTBEAT_PATH,
@@ -559,6 +588,12 @@ function trim(value: string | undefined): string | undefined {
 
 function definedInt(value: number | string | undefined): boolean {
   return value !== undefined && value !== '';
+}
+
+/** `0` / `false` disable an optional agent feature; anything else (or unset) enables it. */
+function isDisabled(value: string | undefined): boolean {
+  if (value === undefined || value.trim() === '') return false;
+  return value.trim() === '0' || value.trim().toLowerCase() === 'false';
 }
 
 function positiveInt(value: number | string | undefined, min: number, label: string): number {

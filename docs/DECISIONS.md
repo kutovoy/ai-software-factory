@@ -960,8 +960,9 @@ sandboxes; OIDC/IdP, remote runners, Temporal Cloud and multi-tenant isolation r
 
 ## ADR-046 — Remote runner control plane + host observability
 
-**Status:** accepted (2026-11-04, Linux MVP merged to `main` and archived as
-`2026-11-04-add-remote-runners`; Windows/macOS and mTLS certificate issuance are follow-ups).
+**Status:** accepted (2026-11-04, Linux/Windows/macOS native agents merged to `main`; archived as
+`2026-11-04-add-remote-runners` plus `2026-11-05-add-runner-platforms-and-artifacts`; mTLS certificate issuance,
+Windows containers, macOS Tart and service-manager wrappers are follow-ups).
 **Context:** local Docker runners work, but remote hosts need UI-driven enrollment, platform-specific
 sandboxes and host health visibility. GPUSTACK’s Add Worker flow is the reference: preflight command,
 generated install command, agent registration/heartbeat, and local workload spawning.
@@ -978,11 +979,12 @@ generated install command, agent registration/heartbeat, and local workload spaw
   containers; macOS native Xcode process with optional Tart VM.
 - Host observability is part of the workstream: CPU, RAM, disk/inodes, load, heartbeat, leases; alerts
   with configurable thresholds, dedupe, acknowledge/silence, console inbox + webhook.
-- Merged to `main`; archived OpenSpec change `2026-11-04-add-remote-runners` covers the
-  Linux control plane and host observability. The agent runs the harness adapter locally and streams
+- Merged to `main`; archived OpenSpec changes `2026-11-04-add-remote-runners` and
+  `2026-11-05-add-runner-platforms-and-artifacts` cover the control plane, host observability, Linux/Windows/macOS
+  native agents and MinIO artifact transfer. The agent runs the harness adapter locally and streams
   canonical events back to the central writer; the MVP uses a bearer agent token behind TLS, with mTLS
-  certificate fingerprinting reserved for hardening. Only `patch.diff` content is transferred back;
-  other artifact blobs remain on the remote host until object storage is wired.
+  certificate fingerprinting reserved for hardening. Artifact blobs upload directly to MinIO through
+  short-lived presigned grants; `patch.diff` also stays inline for downstream stages.
 **Consequences:** the current security model stays intact (secrets and provider keys central, no DB on
 remote hosts), but the runner protocol becomes a network protocol with mTLS, lease TTLs and resumable
 event streams. Windows/macOS native runners are weaker isolation than Linux containers and need
@@ -997,13 +999,31 @@ and verify gates, console inspection, benchmarks and audit need durable evidence
 reachable from runner hosts over outbound HTTPS, support presigned upload/download and checksums, and
 must not require long-lived object-store credentials on hosts.
 **Decision:** use **MinIO** as the default S3-compatible artifact store, accessed through the standard
-S3 API. The central control plane owns bucket configuration and credentials; agents receive
+S3 API. MinIO removed its Docker Hub images in September 2026; compose uses the Chainguard hardened
+MinIO image (`cgr.dev/chainguard/minio`) and its bundled `mc` client for bucket creation. The central control plane owns bucket configuration and credentials; agents receive
 short-lived, run-scoped presigned PUT grants (or temporary credentials). Store per-tenant/run prefixes,
 record object key, SHA-256, size and content type in Postgres, verify checksums before marking
 artifacts available, and serve downloads through short-lived presigned GETs or the API. Keep storage
 behind an interface so S3/R2 can be swapped by configuration.
 **Consequences:** MinIO becomes part of the compose/dev stack and a deployment dependency; artifact
 transfer stays outbound-only and does not traverse Temporal. Retention/GC, quotas and encryption at
-rest become control-plane responsibilities. Remote runs remain patch-only until the transfer path
-ships. MinIO is AGPLv3; self-hosted internal use is acceptable, but redistribution needs a licence
-review.
+rest become control-plane responsibilities. The transfer path now ships: the agent uploads blobs and
+the API serves presigned downloads after a run-access check. MinIO is AGPLv3; self-hosted internal use
+is acceptable, but redistribution needs a licence review.
+
+## ADR-048 — Native Windows and macOS runner backends
+
+**Status:** accepted (2026-11-05, implemented in `2026-11-05-add-runner-platforms-and-artifacts`).
+**Context:** the remote-runner MVP was Linux-only even though the host registry and wire protocol
+already carry a `platform` field. Windows and macOS hosts need to execute runs without Docker, and
+the agent must keep the same lease/exec/events/artifacts/kill contract.
+**Decision:** add native process backends for Windows and macOS on top of the existing local backend.
+Windows uses PowerShell for command execution, PowerShell quoting, `taskkill /t /f` for process-tree
+termination and CIM/performance counters for host metrics. macOS uses the host shell with optional
+`sandbox-exec` confinement, `sysctl`/`ps` for swap and process metrics. `RUNNER_BACKEND` defaults to
+`docker` on Linux and `local` on Windows/macOS. Enrollment generates platform-appropriate preflight and
+install commands; native runners are documented as weaker isolation than Linux containers.
+**Consequences:** Windows/macOS hosts can enroll and run without Docker, but they need dedicated
+hosts/users or VMs for untrusted code. Windows containers, macOS Tart VMs, launchd/Windows service
+wrappers and live Windows-host verification remain follow-ups. The protocol and provider-key boundary
+stay unchanged.

@@ -1,5 +1,11 @@
 import { join, resolve } from 'node:path';
-import type { HarnessId, OrchestrationConfig, RunnerKindName } from '@factory/orchestration';
+import {
+  resolveArtifactStoreConfig,
+  type ArtifactStoreConfig,
+  type HarnessId,
+  type OrchestrationConfig,
+  type RunnerKindName,
+} from '@factory/orchestration';
 
 /**
  * API configuration. Everything is env-driven so the same image runs in compose, CI and
@@ -19,6 +25,8 @@ export interface ApiConfig {
    */
   factoryRegistryTtlMs: number;
   runsDir: string;
+  /** S3-compatible artifact store (MinIO default, ADR-047); disabled unless configured. */
+  artifactStore: ArtifactStoreConfig;
   /** Git root that contains `factoryRoot`; runners clone this at `definitionCommit`. */
   repoRoot: string;
   /** Clone URL a remote runner can use (remote runs cannot read this host's path). */
@@ -174,6 +182,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     remoteAlertIntervalMs: intFromEnv(env.REMOTE_ALERT_INTERVAL_MS, 30_000),
     remoteHeartbeatIntervalMs: intFromEnv(env.REMOTE_HEARTBEAT_INTERVAL_MS, 15_000),
     runsDir: resolve(env.RUNS_DIR ?? 'runs'),
+    artifactStore: resolveArtifactStoreConfig(env),
     proxyPublicUrl: env.PROXY_PUBLIC_URL ?? 'http://host.docker.internal:8080/v1',
     providerBaseUrl: env.OPENAI_BASE_URL,
     providerKey: env.OPENAI_API_KEY,
@@ -234,6 +243,7 @@ export function toOrchestrationConfig(config: ApiConfig): OrchestrationConfig {
     databaseUrl: config.databaseUrl,
     factoryRoot: config.factoryRoot,
     runsDir: config.runsDir,
+    artifactStore: config.artifactStore,
     proxyPublicUrl: config.proxyPublicUrl,
     providerBaseUrl: config.providerBaseUrl,
     providerKey: config.providerKey,

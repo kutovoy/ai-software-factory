@@ -36,11 +36,68 @@ import {
   hashArtifacts,
   prepareWorkspace,
   removeDir,
+  runCommand,
   sleep,
   streamCommand,
   waitForReady,
   writePatch,
 } from './util';
+
+export type LocalShellKind = 'posix' | 'powershell' | 'cmd';
+
+/** The native backend's default shell: PowerShell on Windows, `/bin/sh` elsewhere. */
+export function defaultShell(platform: NodeJS.Platform): string {
+  return platform === 'win32' ? 'powershell.exe' : '/bin/sh';
+}
+
+/** Classifies a shell path/name so argv and quoting match the interpreter. */
+export function shellKind(shell: string): LocalShellKind {
+  const base = (shell.replace(/\\/g, '/').split('/').pop() ?? '').toLowerCase();
+  if (base === 'powershell.exe' || base === 'powershell' || base === 'pwsh.exe' || base === 'pwsh') {
+    return 'powershell';
+  }
+  if (base === 'cmd.exe' || base === 'cmd') return 'cmd';
+  return 'posix';
+}
+
+/**
+ * `<shell> -c <command>` on POSIX, `-NoProfile -NonInteractive -Command` for PowerShell
+ * and `/d /s /c` for cmd.exe. Windows has no `/bin/sh`, so the flags are shell-specific.
+ */
+export function shellArgv(shell: string, command: string): string[] {
+  const kind = shellKind(shell);
+  if (kind === 'powershell') {
+    return [shell, '-NoProfile', '-NonInteractive', '-Command', command];
+  }
+  if (kind === 'cmd') return [shell, '/d', '/s', '/c', command];
+  return [shell, '-c', command];
+}
+
+/** Single-quotes a PowerShell literal; an embedded `'` doubles (PowerShell escaping). */
+export function powershellQuote(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function cmdQuote(value: string): string {
+  if (value === '' || /[\s"&|<>^()%!,;=]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
+/**
+ * Joins an argv array into a single command line for the selected shell.
+ *
+ * POSIX uses `'…'` with `'\''` escaping (identical to the pre-Windows behaviour). PowerShell
+ * needs the call operator (`&`) so a quoted program name is still executed, with single-quoted
+ * arguments; cmd.exe uses double quotes.
+ */
+export function quoteCommandArgs(args: readonly string[], shell: string): string {
+  const kind = shellKind(shell);
+  if (kind === 'powershell') {
+    return args.length === 0 ? '' : `& ${args.map(powershellQuote).join(' ')}`;
+  }
+  if (kind === 'cmd') return args.map(cmdQuote).join(' ');
+  return args.map(posixQuote).join(' ');
+}
 
 export interface LocalRunnerOptions {
   allowedSecrets?: readonly string[];
@@ -48,6 +105,7 @@ export interface LocalRunnerOptions {
   readyTimeoutMs?: number;
   /** Extra env for the harness process. */
   harnessEnv?: Record<string, string>;
+  /** Shell used to run commands. Defaults to `/bin/sh` (POSIX) or `powershell.exe` (win32). */
   shell?: string;
   /**
    * `exec` confines the harness with macOS sandbox-exec, `bwrap` with a Linux bubblewrap
@@ -90,6 +148,9 @@ interface LocalLease {
  * Linux auto-selects bwrap when the binary is installed. Any other platform falls back to
  * the unsandboxed process and records `runner.sandbox_unavailable` on the lease step; a
  * *requested* bwrap that is missing fails the lease instead of degrading.
+ *
+ * On Windows the same backend runs the harness through `powershell.exe` (no `/bin/sh`),
+ * quotes array commands PowerShell-style and terminates the process tree with `taskkill`.
  */
 export class LocalRunnerBackend implements RunnerBackend {
   readonly kind = 'local' as const;
@@ -109,8 +170,8 @@ export class LocalRunnerBackend implements RunnerBackend {
     this.resolveSecret = options.resolveSecret;
     this.readyTimeoutMs = options.readyTimeoutMs ?? 30_000;
     this.harnessEnv = options.harnessEnv ?? {};
-    this.shell = options.shell ?? '/bin/sh';
     this.platform = options.platform ?? process.platform;
+    this.shell = options.shell ?? defaultShell(this.platform);
     this.which = options.which;
     this.sandboxMode =
       options.sandbox ??
@@ -162,7 +223,7 @@ export class LocalRunnerBackend implements RunnerBackend {
     const runDir = spec.runDir ?? dirname(workspace);
     const network = spec.networkPolicy ?? 'denied';
     let profilePath: string | null = null;
-    let argv = [this.shell, '-c', command];
+    let argv = shellArgv(this.shell, command);
     if (availability.active && this.sandboxMode === 'exec') {
       await mkdir(runDir, { recursive: true });
       profilePath = join(runDir, '.sandbox.sb');
@@ -191,7 +252,9 @@ export class LocalRunnerBackend implements RunnerBackend {
     const child = spawn(argv[0] as string, argv.slice(1), {
       cwd: workspace,
       env: env as NodeJS.ProcessEnv,
-      detached: true,
+      // POSIX: its own process group so `kill` takes the whole tree. Windows has no
+      // process groups; `taskkill /t` walks the tree instead.
+      detached: this.platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -264,7 +327,7 @@ export class LocalRunnerBackend implements RunnerBackend {
     Object.assign(env, req.env ?? {});
 
     const commandString = Array.isArray(req.command)
-      ? req.command.map(shellQuote).join(' ')
+      ? quoteCommandArgs(req.command, this.shell)
       : req.command;
     const cwd = req.cwd ?? lease.workspace;
     let command: string[];
@@ -282,7 +345,7 @@ export class LocalRunnerBackend implements RunnerBackend {
     } else if (lease.sandbox.active && lease.profilePath) {
       command = sandboxCommand(lease.profilePath, this.shell, commandString);
     } else {
-      command = [this.shell, '-c', commandString];
+      command = shellArgv(this.shell, commandString);
     }
 
     for await (const event of streamCommand(command, {
@@ -370,6 +433,28 @@ export class LocalRunnerBackend implements RunnerBackend {
 
   private async terminate(child?: ChildProcess): Promise<void> {
     if (!child?.pid) return;
+
+    if (this.platform === 'win32') {
+      // Windows has no process groups: `taskkill /t` walks the child tree, `/f` forces it.
+      const result = await runCommand(
+        ['taskkill', '/pid', String(child.pid), '/t', '/f'],
+        { timeoutMs: 10_000 },
+      ).catch(() => undefined);
+      if (!result || result.code !== 0) {
+        // Fall back to the direct child when taskkill is missing or the pid is already gone.
+        try {
+          child.kill();
+        } catch {
+          return;
+        }
+      }
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        if (child.exitCode !== null) return;
+        await sleep(100);
+      }
+      return;
+    }
+
     try {
       // The harness is spawned detached, so killing the group also stops its children.
       process.kill(-child.pid, 'SIGTERM');
@@ -394,6 +479,6 @@ export class LocalRunnerBackend implements RunnerBackend {
   }
 }
 
-function shellQuote(value: string): string {
+function posixQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }

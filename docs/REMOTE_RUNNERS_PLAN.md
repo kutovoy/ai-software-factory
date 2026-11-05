@@ -1,11 +1,11 @@
 # Remote runners and worker observability — plan
 
-**Status:** Linux MVP + observability implemented on `main` and archived.
-**Last updated:** 2026-11-04.
+**Status:** Linux, Windows and macOS native agents + observability + MinIO artifacts implemented on
+`main`; OpenSpec changes archived.
+**Last updated:** 2026-11-05.
 **Merged to:** `main`.
-**OpenSpec change:** `2026-11-04-add-remote-runners` (archived; Linux control plane +
-CPU/RAM/disk metrics, charts and alerts). Windows and macOS get follow-up changes
-(`add-windows-runner`, `add-macos-runner`).
+**OpenSpec changes:** `2026-11-04-add-remote-runners` (control plane, observability) and
+`2026-11-05-add-runner-platforms-and-artifacts` (Windows/macOS native agents, MinIO artifacts, Runners E2E).
 
 This document is the handoff/compaction anchor for the next workstream. It records the
 GPUSTACK review, the chosen direction, the metrics/alerts scope, and the phase boundaries.
@@ -348,16 +348,15 @@ existing `/api/v1/factories/:factoryId/...` convention.
 
 ## 11. Open questions
 
-- Windows first backend: native process or Windows containers? Recommendation: native
-  process first.
-- macOS isolation: `sandbox-exec` vs Tart VM? Recommendation: Tart VM for untrusted code.
+- Windows first backend: **decided** — native process first; Windows containers are a follow-up.
+- macOS isolation: **decided** — native `sandbox-exec` first; Tart VM for untrusted code is a follow-up.
 - Are runner hosts trusted single-tenant or untrusted multi-tenant? Drives isolation and
   network model.
 - Artifact store: **decided** — MinIO as the default S3-compatible store (ADR-047); local disk
   only as a development fallback.
 - Alert channel: console inbox + webhook first; email/Slack later.
 - Network: public mTLS vs VPN/Tailscale. Recommendation: outbound-only mTLS; VPN optional.
-- OS order: Linux → Windows → macOS.
+- OS order: **implemented** — Linux Docker, Windows native, macOS native; Windows containers and macOS Tart remain.
 - Retention: raw 1-minute samples 7 days, 5-minute rollups 30 days (proposal).
 
 ---
@@ -371,12 +370,13 @@ existing `/api/v1/factories/:factoryId/...` convention.
 - Linux first, then Windows native/Windows containers, then macOS native/Tart.
 - Host metrics: CPU, RAM, disk/inodes, load, leases, heartbeat; alerts with configurable
   thresholds, dedupe, acknowledge/silence, console inbox + webhook.
-- Implementation branch: `feat/remote-runners` (merged to `main`).
-- OpenSpec change: `add-remote-runners`, archived as `2026-11-04-add-remote-runners`;
-  `add-runner-observability` was folded into it.
+- Implementation branches: `feat/remote-runners` and `feat/runner-platforms-artifacts` (merged to `main`).
+- OpenSpec changes: `add-remote-runners` (archived as `2026-11-04-add-remote-runners`) and
+  `2026-11-05-add-runner-platforms-and-artifacts`; `add-runner-observability` was folded into the first.
 - **Implementation note (MVP):** the first slice runs the harness adapter *on the agent*
   and streams canonical events back to the central worker, which stays the single event
   writer. This avoids a reverse harness tunnel while keeping Temporal/Postgres off the
   host. The agent token is bearer-authenticated; deploy behind TLS, with mTLS certificate
-  fingerprinting reserved for the hardening phase. Only `patch.diff` content is transferred
-  back in the MVP; the next slice uploads other artifact blobs to MinIO (ADR-047).
+  fingerprinting reserved for the hardening phase. Artifacts upload directly to MinIO through
+  short-lived presigned PUT grants; `patch.diff` stays inline for downstream stages and is also stored
+  as an object (ADR-047).

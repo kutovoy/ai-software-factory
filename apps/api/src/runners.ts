@@ -107,14 +107,29 @@ function shq(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+/** Single-quotes a PowerShell literal; an embedded `'` doubles. */
+function psq(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+/** Escapes `\` and `"` for a bash-built JSON string and drops newlines. */
+const BASH_JSON_ESCAPE = [
+  'json_escape() {',
+  '  printf \'%s\' "$1" | sed -e \'s/\\\\/\\\\\\\\/g\' -e \'s/"/\\\\"/g\' | tr -d \'\\n\'',
+  '}',
+  'check_json() { printf \'{"ok":%s,"detail":"%s"}\' "$1" "$(json_escape "$2")"; }',
+].join('\n');
+
 function runnerSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '') || 'runner';
 }
 
 /**
  * The preflight script the operator runs on the target host **before** installing the
- * agent. It checks docker/git/curl and free disk, then posts the result to the enrollment
- * so the console can show pass/fail while the operator is still on that machine.
+ * agent. It checks the tools the selected platform's agent needs, then posts the result to
+ * the enrollment so the console can show pass/fail while the operator is still on that
+ * machine: docker/git/curl/disk on Linux, git/curl/Bun/Xcode CLT/disk/sandbox-exec on macOS
+ * and PowerShell/git/Bun/disk (plus optional dotnet/MSBuild) on Windows.
  */
 export function preflightCommand(
   apiBase: string,
@@ -122,12 +137,18 @@ export function preflightCommand(
   platform: RunnerHostPlatform = 'linux',
 ): string {
   const url = `${apiBase.replace(/\/+$/, '')}/api/v1/runner-enrollments/${token}/preflight`;
+  if (platform === 'windows') return windowsPreflight(url);
+  if (platform === 'macos') return macosPreflight(url);
+  return linuxPreflight(url);
+}
+
+function linuxPreflight(url: string): string {
   return [
     '#!/usr/bin/env bash',
     '# Runner preflight: verifies the tools the agent needs and reports to the control plane.',
     'set -u',
     `API_URL=${shq(url)}`,
-    'PLATFORM=' + shq(platform),
+    "PLATFORM='linux'",
     'docker_ok=false; docker_detail="docker not found"',
     'if command -v docker >/dev/null 2>&1; then',
     "  docker_detail=$(docker version --format '{{.Server.Version}}' 2>/dev/null || echo 'daemon unreachable')",
@@ -150,12 +171,107 @@ export function preflightCommand(
   ].join('\n');
 }
 
+function macosPreflight(url: string): string {
+  return [
+    '#!/usr/bin/env bash',
+    '# Runner preflight (macOS): checks git, curl, Bun, Xcode command-line tools, free disk',
+    '# and sandbox-exec, then posts the result to the enrollment.',
+    'set -u',
+    `API_URL=${shq(url)}`,
+    "PLATFORM='macos'",
+    BASH_JSON_ESCAPE,
+    'git_ok=false; git_detail="git not found"',
+    'if command -v git >/dev/null 2>&1; then',
+    '  git_detail=$(git --version 2>/dev/null || echo "git unavailable"); git_ok=true',
+    'fi',
+    'curl_ok=false',
+    'command -v curl >/dev/null 2>&1 && curl_ok=true',
+    'bun_ok=false; bun_detail="bun not found"',
+    'if command -v bun >/dev/null 2>&1; then',
+    '  bun_detail=$(bun --version 2>/dev/null || echo "bun unavailable"); bun_ok=true',
+    'fi',
+    'xcode_ok=false; xcode_detail="Xcode command-line tools not installed"',
+    'if command -v xcode-select >/dev/null 2>&1 && xcode-select -p >/dev/null 2>&1; then',
+    '  xcode_detail=$(xcode-select -p 2>/dev/null); xcode_ok=true',
+    'fi',
+    'sandbox_ok=false; sandbox_detail="/usr/bin/sandbox-exec missing"',
+    'if [ -x /usr/bin/sandbox-exec ]; then sandbox_ok=true; sandbox_detail="sandbox-exec available"; fi',
+    'free_kb=$(df -Pk . 2>/dev/null | awk \'NR==2 {print $4}\')',
+    'disk_ok=false',
+    'if [ -n "${free_kb:-}" ] && [ "$free_kb" -ge 5242880 ]; then disk_ok=true; fi',
+    'payload=$(printf \'{"platform":"%s","checks":{"git":%s,"curl":%s,"bun":%s,"xcode":%s,"sandbox":%s,"disk":%s}}\' \\',
+    '  "$PLATFORM" "$(check_json "$git_ok" "$git_detail")" "$(check_json "$curl_ok" "curl available")" \\',
+    '  "$(check_json "$bun_ok" "$bun_detail")" "$(check_json "$xcode_ok" "$xcode_detail")" \\',
+    '  "$(check_json "$sandbox_ok" "$sandbox_detail")" "$(check_json "$disk_ok" "${free_kb:-0} KB free")")',
+    'curl -fsS -X POST "$API_URL" -H \'content-type: application/json\' -d "$payload"',
+    'echo',
+    'echo "Preflight reported. The console shows pass/fail for this enrollment."',
+  ].join('\n');
+}
+
+function windowsPreflight(url: string): string {
+  return [
+    '# Runner preflight (Windows): checks PowerShell, git, Bun, free disk and optional dotnet/MSBuild.',
+    '# Run it in PowerShell; it posts the check map to the enrollment.',
+    "$ErrorActionPreference = 'SilentlyContinue'",
+    `$apiUrl = ${psq(url)}`,
+    "$platform = 'windows'",
+    '',
+    '$psCheck = @{ ok = $true; detail = "PowerShell $($PSVersionTable.PSVersion)" }',
+    '$git = Get-Command git -ErrorAction SilentlyContinue',
+    'if ($git) { $gitCheck = @{ ok = $true; detail = ((& git --version 2>$null) -join " ").Trim() } }',
+    'else { $gitCheck = @{ ok = $false; detail = "git not found" } }',
+    '$bun = Get-Command bun -ErrorAction SilentlyContinue',
+    'if ($bun) { $bunCheck = @{ ok = $true; detail = ((& bun --version 2>$null) -join " ").Trim() } }',
+    'else { $bunCheck = @{ ok = $false; detail = "bun not found" } }',
+    '',
+    '# dotnet/MSBuild are optional for a native Windows agent: reported, never blocking.',
+    '$dotnet = Get-Command dotnet -ErrorAction SilentlyContinue',
+    'if ($dotnet) { $dotnetCheck = @{ ok = $true; detail = ((& dotnet --version 2>$null) -join " ").Trim() } }',
+    'else { $dotnetCheck = @{ ok = $true; detail = "dotnet not installed (optional)" } }',
+    '$msbuild = Get-Command msbuild -ErrorAction SilentlyContinue',
+    'if ($msbuild) { $msbuildCheck = @{ ok = $true; detail = $msbuild.Source } }',
+    'else { $msbuildCheck = @{ ok = $true; detail = "MSBuild not installed (optional)" } }',
+    '',
+    '$drive = (Get-Item -LiteralPath $env:TEMP).PSDrive.Name',
+    '$freeBytes = [int64](Get-PSDrive -Name $drive -ErrorAction SilentlyContinue).Free',
+    '$diskCheck = @{ ok = ($freeBytes -ge 5GB); detail = "$freeBytes bytes free on $drive" }',
+    '',
+    '$checks = [ordered]@{',
+    '  powershell = $psCheck',
+    '  git = $gitCheck',
+    '  bun = $bunCheck',
+    '  dotnet = $dotnetCheck',
+    '  msbuild = $msbuildCheck',
+    '  disk = $diskCheck',
+    '}',
+    '$body = @{ platform = $platform; checks = $checks } | ConvertTo-Json -Depth 5 -Compress',
+    "Invoke-RestMethod -Method Post -Uri $apiUrl -ContentType 'application/json' -Body $body",
+    "Write-Host 'Preflight reported. The console shows pass/fail for this enrollment.'",
+  ].join('\n');
+}
+
 /**
- * MVP install command: the agent runs from the mounted repository in `oven/bun`, with the
- * host docker socket and a data volume for the sandbox state. The enrollment token is an
- * environment variable, not an argument.
+ * Install command generation. Linux keeps the containerised agent (docker socket + data
+ * volume); Windows and macOS run the agent natively from a repository checkout, installing
+ * Bun when it is missing. The enrollment token is always an environment variable, never an
+ * argument, and no provider credential is ever part of the command.
  */
 export function installCommand(input: {
+  apiBase: string;
+  token: string;
+  name: string;
+  platform: RunnerHostPlatform;
+  pool: string;
+  labels: Record<string, string>;
+  maxConcurrent: number;
+}): string {
+  if (input.platform === 'windows') return windowsInstall(input);
+  if (input.platform === 'macos') return macosInstall(input);
+  return linuxInstall(input);
+}
+
+function linuxInstall(input: {
   apiBase: string;
   token: string;
   name: string;
@@ -176,6 +292,7 @@ export function installCommand(input: {
     `  --name ${shq(`factory-runner-${slug}`)} \\`,
     `  --restart unless-stopped \\`,
     `  --network factory-runners \\`,
+    `  --add-host host.docker.internal:host-gateway \\`,
     `  -v /var/run/docker.sock:/var/run/docker.sock \\`,
     `  -v ${shq(`factory-runner-${slug}-data`)}:/data \\`,
     `  -e FACTORY_API_URL=${shq(apiBase)} \\`,
@@ -189,6 +306,81 @@ export function installCommand(input: {
     `  -e RUNNER_WORKSPACE_MODE=copy \\`,
     `  -e RUNNER_DOCKER_NETWORK=factory-runners \\`,
     `  factory-runner-agent:local`,
+  ].join('\n');
+}
+
+function macosInstall(input: {
+  apiBase: string;
+  token: string;
+  name: string;
+  pool: string;
+  labels: Record<string, string>;
+  maxConcurrent: number;
+}): string {
+  const apiBase = input.apiBase.replace(/\/+$/, '');
+  return [
+    '# Native macOS agent install: run this from a checkout of this repository.',
+    '# The agent uses the process backend under sandbox-exec; a launchd service wrapper is',
+    '# a documented follow-up. The enrollment token travels in the environment.',
+    'set -euo pipefail',
+    `export FACTORY_API_URL=${shq(apiBase)}`,
+    `export RUNNER_ENROLLMENT_TOKEN=${shq(input.token)}`,
+    'export RUNNER_STATE_FILE="$HOME/.factory-runner/runner-agent.json"',
+    `export RUNNER_NAME=${shq(input.name)}`,
+    "export RUNNER_PLATFORM='macos'",
+    `export RUNNER_POOL=${shq(input.pool)}`,
+    `export RUNNER_LABELS=${shq(JSON.stringify(input.labels))}`,
+    `export RUNNER_MAX_CONCURRENT=${shq(String(input.maxConcurrent))}`,
+    'export RUNNER_BACKEND=local',
+    'export RUNNER_SANDBOX=exec',
+    'if ! command -v bun >/dev/null 2>&1; then',
+    '  curl -fsSL https://bun.sh/install | bash',
+    '  export PATH="$HOME/.bun/bin:$PATH"',
+    'fi',
+    'mkdir -p "$HOME/.factory-runner"',
+    'LOG="$HOME/.factory-runner/agent.log"',
+    'PID_FILE="$HOME/.factory-runner/agent.pid"',
+    'nohup bun packages/runners/src/agent.ts >>"$LOG" 2>&1 &',
+    'echo $! > "$PID_FILE"',
+    'echo "Agent started (pid $(cat "$PID_FILE")); logs: $LOG"',
+  ].join('\n');
+}
+
+function windowsInstall(input: {
+  apiBase: string;
+  token: string;
+  name: string;
+  pool: string;
+  labels: Record<string, string>;
+  maxConcurrent: number;
+}): string {
+  const apiBase = input.apiBase.replace(/\/+$/, '');
+  return [
+    '# Native Windows agent install: run this in PowerShell from a checkout of this repository.',
+    '# The agent starts hidden with Start-Process; a Windows service wrapper is a follow-up.',
+    "$ErrorActionPreference = 'Stop'",
+    `$env:FACTORY_API_URL = ${psq(apiBase)}`,
+    `$env:RUNNER_ENROLLMENT_TOKEN = ${psq(input.token)}`,
+    '$env:RUNNER_STATE_FILE = "$env:LOCALAPPDATA\\factory-runner\\runner-agent.json"',
+    `$env:RUNNER_NAME = ${psq(input.name)}`,
+    "$env:RUNNER_PLATFORM = 'windows'",
+    `$env:RUNNER_POOL = ${psq(input.pool)}`,
+    `$env:RUNNER_LABELS = ${psq(JSON.stringify(input.labels))}`,
+    `$env:RUNNER_MAX_CONCURRENT = ${psq(String(input.maxConcurrent))}`,
+    "$env:RUNNER_BACKEND = 'local'",
+    "$agentDir = Join-Path $env:LOCALAPPDATA 'factory-runner'",
+    'New-Item -ItemType Directory -Force -Path $agentDir | Out-Null',
+    'if (-not (Get-Command bun -ErrorAction SilentlyContinue)) {',
+    '  powershell -NoProfile -ExecutionPolicy Bypass -Command "irm bun.sh/install.ps1 | iex"',
+    "  $env:Path = [System.Environment]::GetEnvironmentVariable('Path', 'User') + ';' + [System.Environment]::GetEnvironmentVariable('Path', 'Machine')",
+    '}',
+    '$bun = (Get-Command bun -ErrorAction Stop).Source',
+    "$log = Join-Path $agentDir 'agent.log'",
+    "$errLog = Join-Path $agentDir 'agent.err.log'",
+    "$pidFile = Join-Path $agentDir 'agent.pid'",
+    "$agentProcess = Start-Process -FilePath $bun -ArgumentList 'packages/runners/src/agent.ts' -WorkingDirectory (Get-Location) -RedirectStandardOutput $log -RedirectStandardError $errLog -WindowStyle Hidden -PassThru",
+    'Set-Content -Path $pidFile -Value $agentProcess.Id',
+    'Write-Host "Agent started (pid $($agentProcess.Id)); logs: $log"',
   ].join('\n');
 }
 

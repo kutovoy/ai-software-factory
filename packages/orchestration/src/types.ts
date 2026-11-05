@@ -180,6 +180,12 @@ export interface RunArtifact {
   bytes: number;
   sha256: string;
   kind: 'patch' | 'log' | 'screenshot' | 'file';
+  /** Object-store key when the blob lives in the artifact store (ADR-047). */
+  storageKey?: string;
+  /** Bucket the object lives in; present with `storageKey`. */
+  bucket?: string;
+  /** MIME type recorded at upload time. */
+  contentType?: string;
 }
 
 export interface RunOutcome {

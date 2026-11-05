@@ -578,6 +578,29 @@ export async function getLeaseByRunnerId(runnerId: string): Promise<RunnerLeaseR
   return rows[0] ? toLease(rows[0]) : null;
 }
 
+/**
+ * Agent-facing authorization for artifact presign (ADR-047): the bearer-authenticated host
+ * must own an *active, unexpired* lease for the `(runnerId, runId)` pair it asks to upload.
+ * A mismatched host or run is refused before any grant is signed.
+ */
+export async function getActiveLeaseForHost(input: {
+  hostId: string;
+  runnerId: string;
+  runId: string;
+}): Promise<RunnerLeaseRecord | null> {
+  const sql = getSql();
+  const rows = (await sql`
+    select * from runner_leases
+    where host_id = ${input.hostId}
+      and runner_id = ${input.runnerId}
+      and run_id = ${input.runId}
+      and state = 'active'
+      and expires_at > now()
+    limit 1
+  `) as Record<string, unknown>[];
+  return rows[0] ? toLease(rows[0]) : null;
+}
+
 export async function listLeases(
   hostId: string,
   options: { state?: RunnerLeaseState; limit?: number } = {},

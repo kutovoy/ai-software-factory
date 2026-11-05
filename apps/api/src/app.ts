@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { Hono, type Context, type Handler } from 'hono';
 import { z } from 'zod';
 import {
+  artifactStoreFromConfig,
   cancelRun,
   getRun,
   hasPermissionRequest,
@@ -13,6 +15,7 @@ import {
   submitPermissionDecision,
   temporalHealthy,
   type HarnessId,
+  type RunArtifact,
 } from '@factory/orchestration';
 import {
   automationPauseBodySchema,
@@ -151,6 +154,10 @@ import {
   summarize,
   type CreateRunBody,
 } from './runs';
+import {
+  contentDispositionForArtifact,
+  planArtifactDownload,
+} from './artifacts';
 import { createEventStream, parseLastEventId } from './sse';
 import {
   calibrationBodySchema,
@@ -821,6 +828,74 @@ export function createApp(config: ApiConfig): Hono {
   });
 
   /* ---------------------------------------------------------------- events */
+
+  /**
+   * Artifact download (spec `artifact-store` › Download). Authorized by the normal run-access
+   * guard; a stored blob redirects to a short-lived presigned GET, a local artifact streams
+   * from `runs/<runId>/<path>` with traversal protection.
+   */
+  api.get('/factories/:factoryId/runs/:id/artifacts', async (c) => {
+    const runId = c.req.param('id');
+    const record = await factoryOf(c);
+    const run = await assertRunAccess(runId, viewerOf(config, c.get('user')), record.id);
+
+    const artifactPath = c.req.query('path');
+    if (!artifactPath) throw invalidRequest('query `path` is required', { runId });
+
+    const artifacts = Array.isArray(run.artifacts) ? (run.artifacts as RunArtifact[]) : [];
+    const artifact = artifacts.find((entry) => entry && entry.path === artifactPath);
+    if (!artifact) {
+      throw new ApiError(
+        'artifact_not_found',
+        404,
+        `run ${runId} has no artifact "${artifactPath}"`,
+        { runId, path: artifactPath },
+      );
+    }
+
+    const store = artifact.storageKey ? artifactStoreFromConfig(config.artifactStore) : null;
+    if (artifact.storageKey && !store) {
+      throw new ApiError(
+        'artifact_store_unavailable',
+        409,
+        'artifact storage is not configured; this blob cannot be downloaded',
+        { runId, path: artifactPath },
+      );
+    }
+
+    const plan = planArtifactDownload({
+      artifact,
+      runsDir: config.runsDir,
+      runId,
+      ...(store ? { presignGet: (storageKey: string) => store.presignDownload({ key: storageKey }) } : {}),
+    });
+    if (!plan) {
+      throw invalidRequest('artifact path escapes the run directory', { path: artifactPath });
+    }
+    if (plan.kind === 'redirect') return c.redirect(plan.url, 302);
+
+    let body: Buffer;
+    try {
+      body = await readFile(plan.path);
+    } catch {
+      throw new ApiError(
+        'artifact_not_found',
+        404,
+        `artifact "${artifactPath}" is not available on this host`,
+        { runId, path: artifactPath },
+      );
+    }
+
+    return new Response(body, {
+      status: 200,
+      headers: {
+        'content-type': plan.contentType,
+        'content-length': String(body.byteLength),
+        'content-disposition': contentDispositionForArtifact(artifactPath),
+        'cache-control': 'private, no-store',
+      },
+    });
+  });
 
   api.get('/factories/:factoryId/runs/:id/events', async (c) => {
     const runId = c.req.param('id');

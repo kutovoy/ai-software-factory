@@ -110,6 +110,54 @@ services:
       retries: 40
       start_period: 20s
 
+  # S3-compatible artifact store (ADR-047). LOCAL DEVELOPMENT ONLY: the published S3 and
+  # console ports are for inspecting objects from the host; production deployments must put
+  # MinIO behind TLS and set S3_ENDPOINT to an endpoint runner hosts can reach.
+  # MinIO removed its Docker Hub images in September 2026. The Chainguard hardened
+  # MinIO image is the supported container distribution used here.
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-factory-minio}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-factory-minio-secret}
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'mc alias set local http://127.0.0.1:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" >/dev/null && mc ready local',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  # Creates the artifact bucket once. `restart: no` keeps it a one-shot init job; the API and
+  # agent upload path tolerate a missing bucket by returning upload errors instead of losing
+  # the run's metadata (spec `artifact-store` › Upload).
+  minio-init:
+    image: cgr.dev/chainguard/minio:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-factory-minio}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-factory-minio-secret}
+      S3_BUCKET: ${S3_BUCKET:-factory-artifacts}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" &&
+        mc mb --ignore-existing "local/$$S3_BUCKET" &&
+        mc anonymous set none "local/$$S3_BUCKET"
+    restart: 'no'
+
   api:
     build:
       context: .
@@ -146,6 +194,21 @@ services:
       REMOTE_COMMAND_TIMEOUT_MS: ${REMOTE_COMMAND_TIMEOUT_MS:-120000}
       REMOTE_LEASE_TTL_MS: ${REMOTE_LEASE_TTL_MS:-900000}
       REMOTE_ALERT_INTERVAL_MS: ${REMOTE_ALERT_INTERVAL_MS:-30000}
+      # Artifact store (ADR-047). Compose enables MinIO; agents receive only short-lived
+      # presigned URLs. S3_ENDPOINT is the URL a runner host can reach (localhost works for
+      # a host-local agent; override for a remote host). S3_INTERNAL_ENDPOINT is server-side.
+      ARTIFACT_STORE: ${ARTIFACT_STORE:-s3}
+      # The generated Linux agent container reaches MinIO through the host gateway; macOS
+      # native agents should set S3_ENDPOINT=http://localhost:9000 (or a public TLS URL).
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://host.docker.internal:9000}
+      S3_INTERNAL_ENDPOINT: ${S3_INTERNAL_ENDPOINT:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-factory-artifacts}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-factory-minio}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-factory-minio-secret}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-1}
+      S3_PRESIGN_EXPIRY_SECONDS: ${S3_PRESIGN_EXPIRY_SECONDS:-900}
+      S3_MAX_ARTIFACT_BYTES: ${S3_MAX_ARTIFACT_BYTES:-52428800}
       # SLA for a human permission wait before it is auto-denied (ADR-013).
       PERMISSION_TIMEOUT_MS: ${PERMISSION_TIMEOUT_MS:-1800000}
       # Scoring: stub judge in compose (no credentials); daily cap bounds judge spend.
@@ -212,6 +275,10 @@ services:
         condition: service_healthy
       temporal:
         condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     healthcheck:
       # /health stays unversioned on purpose: a probe must not follow a version bump.
       test:
@@ -295,6 +362,20 @@ services:
       REMOTE_COMMAND_TIMEOUT_MS: ${REMOTE_COMMAND_TIMEOUT_MS:-120000}
       REMOTE_LEASE_TTL_MS: ${REMOTE_LEASE_TTL_MS:-900000}
       REMOTE_ALERT_INTERVAL_MS: ${REMOTE_ALERT_INTERVAL_MS:-30000}
+      # Artifact store metadata (ADR-047): the agent uploads; the worker records keys and
+      # upload errors. Same bucket/credentials as the API so a presigned key is interpretable.
+      ARTIFACT_STORE: ${ARTIFACT_STORE:-s3}
+      # The generated Linux agent container reaches MinIO through the host gateway; macOS
+      # native agents should set S3_ENDPOINT=http://localhost:9000 (or a public TLS URL).
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://host.docker.internal:9000}
+      S3_INTERNAL_ENDPOINT: ${S3_INTERNAL_ENDPOINT:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-factory-artifacts}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-factory-minio}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-factory-minio-secret}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-1}
+      S3_PRESIGN_EXPIRY_SECONDS: ${S3_PRESIGN_EXPIRY_SECONDS:-900}
+      S3_MAX_ARTIFACT_BYTES: ${S3_MAX_ARTIFACT_BYTES:-52428800}
       # Model references (ADR-028): the worker resolves env:FACTORY_* at dispatch time.
       FACTORY_MODEL: ${FACTORY_MODEL:-best_llm}
       FACTORY_SMALL_MODEL: ${FACTORY_SMALL_MODEL:-best_llm}
@@ -381,6 +462,7 @@ services:
 volumes:
   pgdata:
   forgejo-data:
+  minio-data:
 
 networks:
   # Sandboxes only. Kept off the default network so a run cannot reach Postgres, Temporal
