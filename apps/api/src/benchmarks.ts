@@ -66,7 +66,7 @@ import { pinVersion, resolveRunDefaults } from './runs';
  */
 
 const HARNESSES = ['opencode', 'claude-code', 'codex', 'gemini', 'generic-cli', 'fake'] as const;
-const RUNNERS = ['local-docker', 'local-process', 'fake'] as const;
+const RUNNERS = ['local-docker', 'local-process', 'remote', 'fake'] as const;
 
 export const benchmarkRunBodySchema = z
   .object({

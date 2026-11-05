@@ -109,6 +109,8 @@ import {
   type MergeRevertBody,
 } from './merge-queue';
 import { registerProxy } from './proxy';
+import { registerRunnerAgent } from './runner-agent';
+import { registerRunners } from './runners';
 import { purgeFactoryForApi } from './purge';
 import { getReadinessForApi } from './readiness';
 import { getGuardHooksForApi } from './guard';
@@ -202,7 +204,7 @@ const PERMISSIONS: Record<HarnessId, 'interactive' | 'static' | 'none'> = {
 };
 
 const harnessEnum = z.enum(['opencode', 'claude-code', 'codex', 'gemini', 'generic-cli', 'fake']);
-const runnerEnum = z.enum(['local-docker', 'local-process', 'fake']);
+const runnerEnum = z.enum(['local-docker', 'local-process', 'remote', 'fake']);
 
 const runBodySchema = z
   .object({
@@ -1139,6 +1141,18 @@ export function createApp(config: ApiConfig): Hono {
 
   registerWebhooks(api, config, factoryOf);
   registerIntake(api, config, factoryOf);
+
+  /* ------------------------------------------------------------- runners */
+
+  // Console-facing control plane: hosts, enrollments, metrics, alerts and rules. Registered
+  // on the auth-protected router, so owner/admin scope applies like every other resource.
+  registerRunners(api, config);
+
+  // Agent routes are authenticated by a per-host bearer token, not a console session, so
+  // they live on the root app and bypass `authMiddleware` (`AUTH_REQUIRED=1` must not lock
+  // a remote agent out). Registered before the sub-app mount so the `/api/v1/*` session
+  // middleware cannot intercept them.
+  registerRunnerAgent(app, config);
 
   // One prefix for every resource route (ADR-030): the sub-app's routes are copied here
   // with `API_PREFIX` prepended. Unversioned resource paths therefore 404.

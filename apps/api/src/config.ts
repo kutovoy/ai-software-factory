@@ -21,6 +21,20 @@ export interface ApiConfig {
   runsDir: string;
   /** Git root that contains `factoryRoot`; runners clone this at `definitionCommit`. */
   repoRoot: string;
+  /** Clone URL a remote runner can use (remote runs cannot read this host's path). */
+  runnerRepoUrl?: string;
+  /** Route runs to the remote-runner backend when the definition asks for `remote`. */
+  remoteRunnerEnabled: boolean;
+  remoteRunnerPlatform: string;
+  remoteRunnerPool: string;
+  /** How long a central activity waits for one agent command result. */
+  remoteCommandTimeoutMs: number;
+  /** Lease TTL for a remote sandbox. */
+  remoteLeaseTtlMs: number;
+  /** Worker loop cadence for heartbeat-age alerts and lease expiry. */
+  remoteAlertIntervalMs: number;
+  /** Agent heartbeat interval advertised at enrollment. */
+  remoteHeartbeatIntervalMs: number;
   /** Base URL the sandbox should use to reach this API's `/v1/*` proxy. */
   proxyPublicUrl: string;
   /** Upstream OpenAI-compatible endpoint; never sent to a runner. */
@@ -136,7 +150,7 @@ function harnessFromEnv(value: string | undefined): HarnessId | null {
 }
 
 function runnerFromEnv(value: string | undefined): RunnerKindName | null {
-  const allowed: RunnerKindName[] = ['local-docker', 'local-process', 'fake'];
+  const allowed: RunnerKindName[] = ['local-docker', 'local-process', 'remote', 'fake'];
   return allowed.includes(value as RunnerKindName) ? (value as RunnerKindName) : null;
 }
 
@@ -151,6 +165,14 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     factoryRoot,
     factoryRegistryTtlMs: intFromEnv(env.FACTORY_REGISTRY_TTL_MS, 60_000),
     repoRoot: resolve(env.REPO_ROOT ?? join(factoryRoot, '..')),
+    ...(env.RUNNER_REPO_URL ? { runnerRepoUrl: env.RUNNER_REPO_URL } : {}),
+    remoteRunnerEnabled: boolFromEnv(env.REMOTE_RUNNER, false),
+    remoteRunnerPlatform: env.REMOTE_RUNNER_PLATFORM ?? 'linux',
+    remoteRunnerPool: env.REMOTE_RUNNER_POOL ?? 'default',
+    remoteCommandTimeoutMs: intFromEnv(env.REMOTE_COMMAND_TIMEOUT_MS, 120_000),
+    remoteLeaseTtlMs: intFromEnv(env.REMOTE_LEASE_TTL_MS, 15 * 60 * 1000),
+    remoteAlertIntervalMs: intFromEnv(env.REMOTE_ALERT_INTERVAL_MS, 30_000),
+    remoteHeartbeatIntervalMs: intFromEnv(env.REMOTE_HEARTBEAT_INTERVAL_MS, 15_000),
     runsDir: resolve(env.RUNS_DIR ?? 'runs'),
     proxyPublicUrl: env.PROXY_PUBLIC_URL ?? 'http://host.docker.internal:8080/v1',
     providerBaseUrl: env.OPENAI_BASE_URL,
@@ -216,6 +238,14 @@ export function toOrchestrationConfig(config: ApiConfig): OrchestrationConfig {
     providerBaseUrl: config.providerBaseUrl,
     providerKey: config.providerKey,
     defaultRunner: process.env.RUNNER_BACKEND === 'local' ? 'local' : 'docker',
+    remoteRunnerEnabled: config.remoteRunnerEnabled,
+    remoteRunnerPlatform: config.remoteRunnerPlatform,
+    remoteRunnerPool: config.remoteRunnerPool,
+    remoteCommandTimeoutMs: config.remoteCommandTimeoutMs,
+    remoteLeaseTtlMs: config.remoteLeaseTtlMs,
+    remoteAlertIntervalMs: config.remoteAlertIntervalMs,
+    remoteHeartbeatIntervalMs: config.remoteHeartbeatIntervalMs,
+    ...(config.runnerRepoUrl ? { runnerRepoUrl: config.runnerRepoUrl } : {}),
     runnerWorkspaceMode: process.env.RUNNER_WORKSPACE_MODE === 'copy' ? 'copy' : 'bind',
     permissionTimeoutMs: config.permissionTimeoutMs,
     gateSlaMs: config.gateSlaMs,

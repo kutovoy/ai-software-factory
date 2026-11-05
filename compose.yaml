@@ -137,6 +137,15 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-provider-secret}
       PROXY_STUB_UPSTREAM: ${PROXY_STUB_UPSTREAM:-1}
       EXPOSE_RUN_TOKEN: ${EXPOSE_RUN_TOKEN:-1}
+      # Remote runner control plane (Linux MVP). Disabled by default; enable after a host
+      # agent is enrolled. The agent never receives Temporal/Postgres credentials.
+      REMOTE_RUNNER: ${REMOTE_RUNNER:-0}
+      REMOTE_RUNNER_PLATFORM: ${REMOTE_RUNNER_PLATFORM:-linux}
+      REMOTE_RUNNER_POOL: ${REMOTE_RUNNER_POOL:-default}
+      RUNNER_REPO_URL: ${RUNNER_REPO_URL:-}
+      REMOTE_COMMAND_TIMEOUT_MS: ${REMOTE_COMMAND_TIMEOUT_MS:-120000}
+      REMOTE_LEASE_TTL_MS: ${REMOTE_LEASE_TTL_MS:-900000}
+      REMOTE_ALERT_INTERVAL_MS: ${REMOTE_ALERT_INTERVAL_MS:-30000}
       # SLA for a human permission wait before it is auto-denied (ADR-013).
       PERMISSION_TIMEOUT_MS: ${PERMISSION_TIMEOUT_MS:-1800000}
       # Scoring: stub judge in compose (no credentials); daily cap bounds judge spend.
@@ -277,6 +286,15 @@ services:
       # or Temporal) and the workspace is copied in/out with `docker cp`.
       RUNNER_NETWORK: ${RUNNER_NETWORK:-factory-runners}
       RUNNER_WORKSPACE_MODE: ${RUNNER_WORKSPACE_MODE:-copy}
+      # Remote runner control plane (Linux MVP). The worker writes commands to Postgres and
+      # waits for agent results; no Temporal/Postgres credentials go to the remote host.
+      REMOTE_RUNNER: ${REMOTE_RUNNER:-0}
+      REMOTE_RUNNER_PLATFORM: ${REMOTE_RUNNER_PLATFORM:-linux}
+      REMOTE_RUNNER_POOL: ${REMOTE_RUNNER_POOL:-default}
+      RUNNER_REPO_URL: ${RUNNER_REPO_URL:-}
+      REMOTE_COMMAND_TIMEOUT_MS: ${REMOTE_COMMAND_TIMEOUT_MS:-120000}
+      REMOTE_LEASE_TTL_MS: ${REMOTE_LEASE_TTL_MS:-900000}
+      REMOTE_ALERT_INTERVAL_MS: ${REMOTE_ALERT_INTERVAL_MS:-30000}
       # Model references (ADR-028): the worker resolves env:FACTORY_* at dispatch time.
       FACTORY_MODEL: ${FACTORY_MODEL:-best_llm}
       FACTORY_SMALL_MODEL: ${FACTORY_SMALL_MODEL:-best_llm}

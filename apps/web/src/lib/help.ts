@@ -500,6 +500,76 @@ export const HELP_ENTRIES: HelpEntry[] = [
       { label: 'Runs page', href: '/help/runs' },
       { label: 'Secrets', href: '/help/secrets' },
       { label: 'Register a secret', href: '/help/secrets/register' },
+      { label: 'Remote runners', href: '/help/concepts/runners' },
+    ],
+  },
+  {
+    slug: 'concepts/runners',
+    title: 'Remote runners',
+    section: 'concepts',
+    status: 'Shipped — change `add-remote-runners` (Linux MVP)',
+    summary:
+      'Enrollment → preflight → install → heartbeat: a host executes runs locally and polls the API outbound, with no Temporal worker and no database access on the host.',
+    blocks: [
+      {
+        kind: 'prose',
+        text:
+          'A remote runner moves compute out of the central process. The host runs `factory-runner-agent`, which polls the API over outbound HTTP(S) with a bearer token, leases a sandbox locally, starts the harness adapter, pumps the canonical events back and cleans up. The central worker still owns the durable workflow: it writes commands to a database-backed queue, waits for the result, appends the events to the single-writer event log and records permissions. The host needs no inbound port, no Temporal worker and no Postgres client.',
+      },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Create the enrollment',
+            detail:
+              'Name, platform, arch, pool, labels and capacity. The response carries a one-time token, an expiry, a preflight command and an install command.',
+            command:
+              'curl -sS -b /tmp/factory-cookies.txt -X POST http://localhost:8080/api/v1/runners/enrollments \\\n  -H \'content-type: application/json\' \\\n  -d \'{"name":"build-01","platform":"linux","arch":"x64","pool":"default","labels":{"zone":"eu"},"maxConcurrent":2}\'',
+            expected:
+              '`enrollment.token`, `enrollment.expiresAt`, `enrollment.preflightCommand` and `enrollment.installCommand`. Only the token hash is stored, so the token cannot be shown again.',
+          },
+          {
+            title: 'Run the preflight on the host',
+            detail:
+              'The preflight script posts platform checks for the enrollment token, so a missing runtime or an unsupported host fails before installation. The Runners page reads them back with `GET /api/v1/runners/enrollments/:id`.',
+            expected: 'Each check is stored on the enrollment and rendered pass/fail on the page.',
+          },
+          {
+            title: 'Install and enroll the agent',
+            detail:
+              'The install command starts the agent with the token. It exchanges the token for a per-host agent token (returned once), marks the enrollment used and creates a `ready` host row.',
+            expected:
+              'A host appears in the list with its platform, pool and a fresh heartbeat. A reused or expired token is refused with `enrollment_invalid`.',
+          },
+          {
+            title: 'Watch the heartbeat',
+            expected:
+              'CPU, RAM, disk/inode usage, load, uptime and lease count are stored per sample; the host detail page charts them. A host that stops heartbeating becomes `unreachable` and raises a heartbeat-age alert.',
+          },
+        ],
+      },
+      {
+        kind: 'list',
+        items: [
+          'Scheduling: the worker picks a `ready`, non-draining host matching platform, pool, labels and free capacity (`maxConcurrent` minus active leases), then reserves a lease before sending work. No match fails the run with `no_matching_runner`.',
+          'Leases: a lease holds one concurrency slot and moves `active → released | expired | error`; an expired command fails the activity with `runner_unavailable` and the workflow records it.',
+          'Alert rules: evaluated on heartbeat ingest (threshold + duration) and by a worker loop for stale heartbeats. The default global set covers CPU (85/95%), memory (85/95%), disk (80/90%), disk free bytes, inode usage, heartbeat age (60/150s) and queue wait.',
+          'Provider-key boundary: the agent receives the proxy base URL and a per-run inference token only; `OPENAI_*` provider keys never leave the API/worker. Execution secrets travel as names and are resolved on the agent from its own environment.',
+          'Revocation: deleting the host invalidates its agent token and cascades its leases and alert history.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'What the MVP does not do',
+        text:
+          'The agent is Linux-only and runs the harness adapter on the host. Windows and macOS agents are a later phase. Transport security is a bearer token with TLS expected at the edge; `cert_fingerprint` is reserved for mTLS follow-up, not enforced. There is no console editor for alert rules yet — the rules are shown and edited through `PUT /api/v1/runner-alert-rules`.',
+      },
+    ],
+    related: [
+      { label: 'Runners page', href: '/help/runners' },
+      { label: 'Runners and sandboxes', href: '/help/concepts/runners-and-sandboxes' },
+      { label: 'Troubleshooting: runner alerts', href: '/help/troubleshooting/runner-alerts' },
     ],
   },
   {
@@ -867,6 +937,52 @@ export const HELP_ENTRIES: HelpEntry[] = [
     related: [
       { label: 'Runners and sandboxes', href: '/help/concepts/runners-and-sandboxes' },
       { label: 'Scoring and calibration', href: '/help/concepts/scoring-and-calibration' },
+    ],
+  },
+  {
+    slug: 'runners',
+    title: 'Runners',
+    section: 'menu',
+    status: 'Shipped — change `add-remote-runners` (Linux MVP)',
+    summary:
+      'Enroll remote hosts, read their heartbeat load, leases and alerts, drain a host or delete it. Tool execution stays on the runner, never in the console.',
+    pageHref: '/runners',
+    blocks: [
+      {
+        kind: 'prose',
+        text:
+          'Runners is the operator surface for remote hosts. A host runs the harness and its sandbox itself; the console and the API only enroll it, read what it reports and send it work. The summary counts ready hosts, active leases, active alerts and pools, and the host table shows name, platform/arch, pool and labels, status, the last heartbeat, CPU/RAM/disk load from the newest sample, leases in use against capacity, and the active alert count. A host detail page adds sparklines over the stored samples, the raw heartbeat payload, its leases and its alerts.',
+      },
+      {
+        kind: 'list',
+        items: [
+          'Add runner: name, platform (Linux in the MVP), arch, pool, `key=value` labels and max concurrency. The API returns a one-time token plus a preflight command and an install command; the token is shown once and only its hash is stored.',
+          'Preflight: run the preflight command on the host, then “check status” reads `GET /api/v1/runners/enrollments/:id` and lists the reported checks pass/fail before installation.',
+          'Drain: stops new leases on the host while running leases finish; Resume clears the flag. The status badge shows `draining` alongside the lifecycle status.',
+          'Delete: removes the host row and, by cascade, its leases and alert history. There is no undo — the agent token stops working immediately.',
+          'Alerts: firing, acknowledged, silenced and resolved rows with severity, metric value, rule id, message and last-seen time; Acknowledge and Silence 1h call the alert endpoints and refresh the list. Resolved history is collapsed under a summary.',
+          'Alert rules: shown read-only. The API seeds the default global thresholds; editing them is `PUT /api/v1/runner-alert-rules` until the console grows an editor.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Linux MVP',
+        text:
+          'The agent ships for Linux hosts only; Windows and macOS are a later phase (the platform select says so). The agent authenticates with a bearer token over outbound HTTPS — TLS termination is expected at the central edge, and mTLS is reserved, not built. The agent receives only the per-run inference proxy token and secret names, never provider credentials.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Empty is not zero',
+        text:
+          'A gauge with no value means the agent has not reported that metric yet, not that usage is 0%. “No runners enrolled” and “no firing alerts” are the healthy empty states; deleting a host removes its history rather than archiving it.',
+      },
+    ],
+    related: [
+      { label: 'Remote runners', href: '/help/concepts/runners' },
+      { label: 'Runners and sandboxes', href: '/help/concepts/runners-and-sandboxes' },
+      { label: 'Troubleshooting: runner alerts', href: '/help/troubleshooting/runner-alerts' },
     ],
   },
   {
@@ -1870,6 +1986,42 @@ export const HELP_ENTRIES: HelpEntry[] = [
     related: [
       { label: 'Choose the model through the environment', href: '/help/factories/model-env' },
       { label: 'Runners and sandboxes', href: '/help/concepts/runners-and-sandboxes' },
+      { label: 'Remote runners', href: '/help/concepts/runners' },
+    ],
+  },
+  {
+    slug: 'troubleshooting/runner-alerts',
+    title: 'A runner alert fires or a host disappears',
+    section: 'troubleshooting',
+    status: 'Symptom → check',
+    summary:
+      'A threshold crossed, a heartbeat went stale, or a run cannot find a host — and what acknowledge, silence and drain actually change.',
+    blocks: [
+      {
+        kind: 'list',
+        items: [
+          '`no_matching_runner` — no `ready`, non-draining host matches the run\'s platform, pool and labels, or every matching host is at capacity. Check the host table: status, pool, labels and `activeLeases / maxConcurrent`. Drain explains a host that looks healthy but takes no work.',
+          'A host stays `pending` or `provisioning` — the enrollment was never exchanged. Run the preflight and install commands from the enrollment panel; an expired or reused token is refused with `enrollment_invalid`, so create a new enrollment.',
+          'A host is `unreachable` — its last heartbeat is older than the threshold. The agent polls outbound: check the host process, its network path to the API and its bearer token. The last reported metrics stay visible; they are stale, not deleted.',
+          '`heartbeat-warning` / `heartbeat-critical` — heartbeat age crossed 60s / 150s. Same check; the alert resolves on its own once heartbeats resume.',
+          'A CPU/memory/disk alert keeps firing after Acknowledge — acknowledging records the actor and moves the state to `acknowledged`; it does not clear the threshold. The alert resolves when the metric returns below the threshold for the rule window.',
+          'Silence did not hide the alert — a silenced alert stays in the list by design (it is excluded from firing notifications until `until`). The console silences for one hour; the API takes any `until`.',
+          'A gauge is empty — the agent did not report that metric. It is `—`, not 0%. Check the raw heartbeat payload on the host detail page; a metric the agent never sends cannot be charted.',
+          'The agent answers `401` — its bearer token was revoked (host deleted) or rotated. Re-enroll the host; deleting a host also removes its leases and alert history.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Alerts are evidence, not the fix',
+        text:
+          'Rules are evaluated centrally from the stored heartbeat samples — the console only displays and acknowledges them. A rule change goes through `PUT /api/v1/runner-alert-rules`; the default global thresholds are seeded by migration `022_remote_runners.sql`.',
+      },
+    ],
+    related: [
+      { label: 'Remote runners', href: '/help/concepts/runners' },
+      { label: 'Runners page', href: '/help/runners' },
+      { label: 'Troubleshooting: a run will not start', href: '/help/troubleshooting/run-wont-start' },
     ],
   },
   {
@@ -2005,6 +2157,7 @@ export interface HelpContext {
 const TOP_LEVEL_ROUTES: Record<string, string> = {
   '/chat': 'chat',
   '/inbox': 'inbox',
+  '/runners': 'runners',
   '/secrets': 'secrets',
   '/users': 'users',
 };

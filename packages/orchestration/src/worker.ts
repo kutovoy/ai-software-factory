@@ -3,6 +3,7 @@ import { Worker, NativeConnection } from '@temporalio/worker';
 import * as activities from './activities';
 import { loadConfig, type OrchestrationConfig } from './config';
 import { reapRunnerContainers } from './runner-reaper';
+import { sweepRunnerObservability } from './runner-observability';
 
 /**
  * Worker entrypoint: registers `RunWorkflow` and every activity on one task queue.
@@ -49,6 +50,7 @@ export async function runWorker(config: OrchestrationConfig = loadConfig()): Pro
 
   startHeartbeat(process.env.WORKER_HEARTBEAT_FILE);
   startRunnerReaper(config);
+  startRunnerObservability(config);
 
   log('worker_started', {
     address: config.temporalAddress,
@@ -100,6 +102,38 @@ function startRunnerReaper(config: OrchestrationConfig): void {
   const timer = setInterval(() => {
     void tick();
   }, config.runnerReaperIntervalMs);
+  timer.unref?.();
+}
+
+/**
+ * Heartbeat-age alerts and lease expiry. Remote hosts have no Temporal/Postgres access,
+ * so this central loop is the only place that can notice a host that stopped reporting.
+ */
+function startRunnerObservability(config: OrchestrationConfig): void {
+  if (!config.remoteRunnerEnabled) return;
+
+  let inFlight = false;
+  const tick = async (): Promise<void> => {
+    if (inFlight) return;
+    inFlight = true;
+    try {
+      const result = await sweepRunnerObservability();
+      if (result.alerts > 0 || result.expiredLeases > 0) {
+        log('runner_observability', result);
+      }
+    } catch (error) {
+      logError('runner_observability_failed', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      inFlight = false;
+    }
+  };
+
+  void tick();
+  const timer = setInterval(() => {
+    void tick();
+  }, config.remoteAlertIntervalMs);
   timer.unref?.();
 }
 

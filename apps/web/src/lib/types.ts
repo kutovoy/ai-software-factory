@@ -1554,3 +1554,180 @@ export interface UserWire {
   createdAt: string | null;
   updatedAt: string | null;
 }
+
+/* ----------------------------------------- remote runners (change `add-remote-runners`) */
+
+/**
+ * Host lifecycle, mirrored from the `runner_hosts.status` check constraint
+ * (`packages/core/migrations/022_remote_runners.sql`). `ready` is the only state the
+ * scheduler will lease from; `drain` is a separate operator flag on top of it.
+ */
+export type RunnerHostStatusWire =
+  | 'pending'
+  | 'provisioning'
+  | 'initializing'
+  | 'ready'
+  | 'not_ready'
+  | 'unreachable'
+  | 'maintenance'
+  | 'deleting'
+  | 'error';
+
+export type RunnerLeaseStateWire = 'active' | 'released' | 'expired' | 'error';
+
+export type RunnerAlertStateWire = 'firing' | 'acknowledged' | 'resolved' | 'silenced';
+
+export type RunnerAlertSeverityWire = 'warning' | 'critical';
+
+export type RunnerAlertScopeWire = 'global' | 'pool' | 'host';
+
+export type RunnerAlertComparisonWire = 'gt' | 'lt';
+
+/** Labels are operator-declared `key: value` pairs used by the scheduler's match. */
+export type RunnerLabelsWire = Record<string, string>;
+
+/** A registered remote host (`GET /runners`, `GET /runners/:id`). */
+export interface RunnerHostWire {
+  id: string;
+  name: string;
+  owner: string | null;
+  tenant: string;
+  platform: string;
+  arch: string;
+  pool: string;
+  labels: RunnerLabelsWire;
+  maxConcurrent: number;
+  agentVersion: string | null;
+  status: RunnerHostStatusWire;
+  drain: boolean;
+  lastHeartbeat: string | null;
+  enrolledAt: string | null;
+  /** Leases currently held by this host (capacity is `maxConcurrent - activeLeases`). */
+  activeLeases: number;
+  cpuPercent: number | null;
+  memoryUsedPercent: number | null;
+  diskUsedPercent: number | null;
+  /** Non-resolved alerts (firing + acknowledged + silenced). */
+  alertCount: number;
+  /** Latest raw heartbeat payload, for the extra counters the gauges do not surface. */
+  metrics?: Record<string, unknown> | null;
+}
+
+/** One stored heartbeat sample (`runner_metrics`). */
+export interface RunnerMetricSampleWire {
+  capturedAt: string;
+  cpuPercent: number | null;
+  memoryUsedPercent: number | null;
+  diskUsedPercent: number | null;
+  metrics: Record<string, unknown> | null;
+}
+
+/** A reserved execution slot (`runner_leases`). */
+export interface RunnerLeaseWire {
+  id: string;
+  runId: string;
+  runnerId: string;
+  hostId?: string;
+  state: RunnerLeaseStateWire;
+  createdAt: string | null;
+  expiresAt: string | null;
+  lastHeartbeat: string | null;
+}
+
+/** A threshold alert (`runner_alerts`). */
+export interface RunnerAlertWire {
+  id: string;
+  hostId: string;
+  hostName: string;
+  ruleId: string;
+  metric: string;
+  severity: RunnerAlertSeverityWire;
+  state: RunnerAlertStateWire;
+  value: number | null;
+  message: string;
+  firstSeen: string | null;
+  lastSeen: string | null;
+  acknowledgedAt: string | null;
+  acknowledgedBy: string | null;
+  silencedUntil: string | null;
+  resolvedAt: string | null;
+}
+
+/** An alert rule (`runner_alert_rules`); the migration seeds the default global set. */
+export interface RunnerAlertRuleWire {
+  id: string;
+  scope: RunnerAlertScopeWire;
+  hostId: string | null;
+  pool: string | null;
+  metric: string;
+  comparison: RunnerAlertComparisonWire;
+  threshold: number;
+  durationSeconds: number;
+  severity: RunnerAlertSeverityWire;
+  channel: string;
+  enabled: boolean;
+}
+
+/** A preflight check reported by the enrollment script, before installation. */
+export interface RunnerPreflightCheckWire {
+  id: string;
+  label?: string;
+  ok: boolean;
+  detail?: string | null;
+}
+
+export interface RunnerPreflightWire {
+  status: string;
+  checks: RunnerPreflightCheckWire[];
+  checkedAt?: string | null;
+  message?: string | null;
+}
+
+/**
+ * An enrollment. The create response carries the one-time `token` plus the commands;
+ * the follow-up read (`GET /runners/enrollments/:id`) carries the stored `preflight`.
+ * The token is returned exactly once — the API keeps only its hash.
+ */
+export interface RunnerEnrollmentWire {
+  id: string;
+  name: string;
+  platform: string;
+  arch: string;
+  pool: string;
+  labels: RunnerLabelsWire;
+  maxConcurrent: number;
+  expiresAt: string | null;
+  usedAt: string | null;
+  /** Present only in the create response. */
+  token?: string;
+  preflightCommand?: string;
+  installCommand?: string;
+  preflight?: RunnerPreflightWire | null;
+}
+
+export interface RunnerEnrollmentResponseWire {
+  enrollment: RunnerEnrollmentWire;
+}
+
+export interface RunnersResponseWire {
+  hosts: RunnerHostWire[];
+}
+
+export interface RunnerDetailResponseWire {
+  host: RunnerHostWire;
+  metrics: RunnerMetricSampleWire[];
+  leases: RunnerLeaseWire[];
+  alerts: RunnerAlertWire[];
+}
+
+export interface RunnerAlertsResponseWire {
+  alerts: RunnerAlertWire[];
+}
+
+export interface RunnerAlertRulesResponseWire {
+  rules: RunnerAlertRuleWire[];
+}
+
+export interface RunnerAlertResponseWire {
+  alert: RunnerAlertWire;
+}

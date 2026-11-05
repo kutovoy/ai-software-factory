@@ -17,7 +17,7 @@ export type HarnessId =
   | 'generic-cli'
   | 'fake';
 
-export type RunnerKindName = 'local-docker' | 'local-process' | 'fake';
+export type RunnerKindName = 'local-docker' | 'local-process' | 'remote' | 'fake';
 
 export interface RunPrompt {
   text: string;
@@ -92,7 +92,7 @@ export interface RunInput {
 
 export interface LeaseInfo {
   runnerId: string;
-  kind: 'docker' | 'local';
+  kind: 'docker' | 'local' | 'remote';
   workspace: string;
   harnessUrl?: string;
   /** True when the run uses the in-process scripted adapter (no sandbox process). */

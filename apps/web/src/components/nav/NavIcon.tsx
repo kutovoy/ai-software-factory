@@ -57,6 +57,12 @@ const ICON_PATHS: Record<string, string[]> = {
   ],
   'chevron-left': ['m15 18-6-6 6-6'],
   'chevron-right': ['m9 18 6-6-6-6'],
+  server: [
+    'M2 3h20v7H2z',
+    'M2 14h20v7H2z',
+    'M6 6.5h.01',
+    'M6 17.5h.01',
+  ],
 };
 
 export function NavIcon({

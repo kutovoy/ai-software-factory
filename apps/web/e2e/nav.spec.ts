@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { factoryId, factoryPage } from './helpers';
 
-const TOP_LEVEL = ['nav-chat', 'nav-inbox', 'nav-runs', 'nav-secrets', 'nav-users'];
+const TOP_LEVEL = ['nav-chat', 'nav-inbox', 'nav-runs', 'nav-runners', 'nav-secrets', 'nav-users'];
 
 const FACTORY_LEVEL = [
   'nav-dashboard',
@@ -38,6 +38,7 @@ const FACTORY_PAGE_MARKERS: Record<string, string[]> = {
 
 /** Top-level pages that must render real data (Secrets shipped in Phase 6). */
 const TOP_LEVEL_MARKERS: Record<string, string[]> = {
+  'nav-runners': ['runners-panel'],
   'nav-secrets': ['secrets-registry', 'secrets-unavailable'],
   'nav-users': ['users-admin', 'users-forbidden', 'users-unavailable'],
 };

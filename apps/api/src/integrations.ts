@@ -47,7 +47,7 @@ export const githubIntegrationBodySchema = z
      * declares"; CI/compose set `fake` so deliveries are exercised without credentials.
      */
     harness: z.enum(['opencode', 'claude-code', 'codex', 'gemini', 'generic-cli', 'fake']).optional(),
-    runner: z.enum(['local-docker', 'local-process', 'fake']).optional(),
+    runner: z.enum(['local-docker', 'local-process', 'remote', 'fake']).optional(),
     enabled: z.boolean().optional(),
   })
   .strict();

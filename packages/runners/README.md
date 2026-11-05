@@ -3,12 +3,44 @@
 Sandbox leasing and tool execution, isolated from the API process. The API/worker never
 spawns a shell: every command and every harness tool call runs inside a leased runner.
 
-Two backends implement one protocol:
+Three backends implement one protocol:
 
 | Backend | Use | Isolation |
 |---|---|---|
 | `DockerRunnerBackend` | real runs, integration tests | container per run, workspace bind-mounted, harness inside |
 | `LocalRunnerBackend` | fast tests, dev machines without Docker | host process (dev fallback, **not** a security boundary) |
+| `RemoteRunnerBackend` | remote Linux hosts | agent command queue; the agent owns a Docker sandbox and harness adapter |
+
+## Remote runner agent
+
+`packages/runners/src/agent.ts` is the Linux MVP agent. It enrolls once from the console
+with a one-time token, stores the returned agent token, then heartbeats CPU/RAM/disk
+metrics and polls `/api/v1/runner-agent/commands` over outbound HTTP(S). It never runs a
+Temporal worker and never connects to Postgres.
+
+The agent executes `lease`, `exec`, `start-session`, `pump`, `respond-permission`,
+`artifacts`, `cancel`, `kill` and `smoke-test` commands. It runs the harness adapter
+locally and streams canonical events back to the central worker, which remains the only
+writer of the event log. The agent receives only the per-run proxy token; provider keys
+never leave the central API/worker.
+
+Build the Linux agent image from the repository root:
+
+```bash
+docker build -t factory-runner-agent:local -f packages/runners/agent.Dockerfile .
+docker run -d --name factory-runner-agent \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v factory-runner-data:/data \
+  -e FACTORY_API_URL=https://factory.example.com \
+  -e RUNNER_ENROLLMENT_TOKEN=... \
+  -e RUNNER_STATE_FILE=/data/runner-agent.json \
+  -e RUNNER_WORKSPACE_MODE=copy \
+  factory-runner-agent:local
+```
+
+MVP limits: Linux Docker first; the agent token is bearer-authenticated (deploy behind
+TLS, mTLS certificate fingerprinting is reserved); only `patch.diff` content is transferred
+back, other artifact blobs remain on the remote host.
 
 ## Protocol
 

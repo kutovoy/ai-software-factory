@@ -58,6 +58,12 @@ Cancellation and lease failure clean up the sandbox in a non-cancellable scope, 
 reconciles orphaned `factory-runner-*` containers against the run read model and Temporal.
 Workspace modes support containerised workers.
 
+A Linux **remote runner agent** enrolls from the console, polls an outbound command queue and runs the
+sandbox and harness adapter on its own host. It never receives Temporal or Postgres credentials. The
+console shows each host's CPU, RAM, disk/inode usage, leases and alerts; configurable rules cover
+thresholds, missing heartbeats and queue wait. The MVP uses a bearer agent token behind TLS; mTLS
+certificate fingerprinting, Windows and macOS backends are follow-ups.
+
 ### Measurement
 Deterministic scorers and LLM judges, sampling and budgets, rubric hashes, full provenance, and calibration against
 a golden set. Metrics are derived queries (throughput, cost per PR and per stage, cycle time, autonomy, human

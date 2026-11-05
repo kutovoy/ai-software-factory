@@ -12,6 +12,9 @@ export type KnownFailureCode =
   | 'docker_unavailable'
   | 'model_unresolved'
   | 'runner_unavailable'
+  | 'no_matching_runner'
+  | 'remote_repo_url_required'
+  | 'remote_command_timeout'
   | 'permission_timeout';
 
 /**
@@ -46,7 +49,17 @@ const HINTS: Record<KnownFailureCode, string> = {
   runner_unavailable:
     'The runner sandbox could not be created. Build the runner image ' +
     '(`docker build -t factory-runner:local packages/runners/docker`) and check that the ' +
-    'harness install (opencode) succeeded inside it.',
+    'harness install (opencode) succeeded inside it. For a remote run, check that the agent is ' +
+    'online and its host status is ready.',
+  no_matching_runner:
+    'No remote host matched the run’s platform, pool, labels and free capacity. Enroll a host on ' +
+    'the Runners page (or free a slot) and retry.',
+  remote_repo_url_required:
+    'A remote run needs RUNNER_REPO_URL: the agent cannot read the central checkout path. Set the ' +
+    'clone URL the host can reach and retry.',
+  remote_command_timeout:
+    'The remote agent did not answer a command before its deadline. Check the host heartbeat, the ' +
+    'agent logs and the Runners page; the lease may have expired.',
   permission_timeout:
     'The run waited for a permission decision past the SLA, so it was auto-denied and failed. ' +
     'Decide faster in the Inbox, raise PERMISSION_TIMEOUT_MS, or set autoAllowPermissions for ' +

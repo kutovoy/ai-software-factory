@@ -93,12 +93,13 @@ lets you validate wiring without touching a repo. GitHub delivers to
 
 ## Known gaps / next
 
-1. **Phase 6c**: external OIDC/IdP group→org mappings, remote runners, Temporal Cloud, per-tenant isolation.
-   Remote runners are the next planned workstream: `docs/REMOTE_RUNNERS_PLAN.md` (GPUSTACK-style host
-   agents, outbound mTLS, central Temporal scheduling, no Temporal/Postgres on remote hosts; Linux first,
-   then Windows native/Windows containers, then macOS native/Tart). The implementation branch will be
-   `feat/remote-runners`; OpenSpec changes `add-remote-runners` then `add-runner-observability` (CPU/RAM/
-   disk metrics and alerts). No branch or code has been created yet.
+1. **Phase 6c**: external OIDC/IdP group→org mappings, Temporal Cloud, per-tenant isolation.
+   Remote runners have a **Linux MVP** on `feat/remote-runners` (OpenSpec `add-remote-runners`): console
+   enrollment, one-time token → bearer agent token, outbound command queue, central Temporal scheduling,
+   agent-side Docker sandbox + harness adapter, and central CPU/RAM/disk/heartbeat metrics with alerts.
+   Remote hosts never get Temporal/Postgres or provider credentials. Follow-ups: Windows native/Windows
+   containers, macOS native/Tart, mTLS certificate issuance/rotation, and artifact-blob transfer beyond
+   `patch.diff`. See `docs/REMOTE_RUNNERS_PLAN.md`.
 2. **Live GitHub path**: implemented and contract-tested, not exercised against a real repo.
 3. **Forge proxy mode**: SSH ships by default; the Caddy overlay is live-validated for session auth and HTTP,
    but a websocket upgrade has not been exercised end to end.

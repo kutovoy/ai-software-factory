@@ -210,6 +210,7 @@ export async function RunWorkflow(input: RunInput): Promise<RunOutcome> {
         input,
         lease,
         sessionRef: null,
+        ...(harnessEnv ? { harnessEnv } : {}),
       });
       if (cancelRequested) {
         cancelled = true;

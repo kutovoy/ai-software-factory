@@ -17,12 +17,14 @@ import {
   DEFAULT_HARNESS_COMMAND,
   DockerRunnerBackend,
   LocalRunnerBackend,
+  RunnerError,
   isRunnerError,
   type Artifact,
   type RunnerBackend,
   type RunnerHandle,
 } from '@factory/runners';
 import { loadConfig } from '../config';
+import { RemoteRunnerBackend, isRemoteRun } from '../remote-runner';
 import { harnessPasswordFor, harnessProbeHeaders } from '../harness-auth';
 import { heartbeat } from '../heartbeat';
 import { getSql, upsertStep } from '../db';
@@ -77,7 +79,7 @@ function rethrowWithCause(error: unknown): never {
  * password otherwise and then rejects the adapter's readiness probe with
  * `401 Authentication required` (see `harness-auth.ts`).
  */
-function harnessCommandWithProxyEnv(
+export function harnessCommandWithProxyEnv(
   env: Record<string, string> | undefined,
   runId: string,
 ): string {
@@ -103,6 +105,15 @@ function isEphemeralRun(input: RunInput): boolean {
 
 function backendFor(input: RunInput): RunnerBackend {
   const config = loadConfig();
+  if (isRemoteRun(input)) {
+    if (!config.remoteRunnerEnabled) {
+      throw new RunnerError(
+        'no_matching_runner',
+        'runner: remote is requested but REMOTE_RUNNER is not enabled',
+      );
+    }
+    return new RemoteRunnerBackend(config);
+  }
   const kind =
     input.runner === 'local-process' || config.defaultRunner === 'local' ? 'local' : 'docker';
   return kind === 'docker'
@@ -206,6 +217,18 @@ export async function leaseRunner(args: {
   const patchFile = args.input.patchRunId
     ? patchPath(config.runsDir, args.input.patchRunId)
     : undefined;
+  // A remote agent cannot read the central patch path; send the diff body instead.
+  const patchContent =
+    patchFile && existsSync(patchFile) && isRemoteRun(args.input)
+      ? await readFile(patchFile, 'utf8')
+      : undefined;
+  if (isRemoteRun(args.input) && !args.input.repo?.url) {
+    throw new RunnerError(
+      'remote_repo_url_required',
+      'remote runs need a clone URL (RUNNER_REPO_URL) because the agent cannot read the central checkout',
+      { runId: args.input.runId },
+    );
+  }
   const runnerId = `factory-${args.input.runId}`;
   let leaseHeartbeatError: unknown;
   const leaseHeartbeat = setInterval(() => {
@@ -228,7 +251,10 @@ export async function leaseRunner(args: {
         path: args.input.repo?.path ?? args.input.factoryRoot,
         url: args.input.repo?.url,
         commit: args.input.repo?.commit ?? args.input.definitionCommit,
-        ...(patchFile && existsSync(patchFile) ? { patch: patchFile } : {}),
+        ...(patchFile && existsSync(patchFile) && !isRemoteRun(args.input)
+          ? { patch: patchFile }
+          : {}),
+        ...(patchContent !== undefined ? { patchContent } : {}),
       },
       harness: {
         command: harnessCommandWithProxyEnv(args.harnessEnv, args.input.runId),
@@ -242,6 +268,13 @@ export async function leaseRunner(args: {
       runDir: runDir(config.runsDir, args.input.runId),
       // The local sandbox denies network unless the stage/factory grants it (task 6).
       networkPolicy: args.input.networkPolicy ?? 'denied',
+      ...(isRemoteRun(args.input)
+        ? {
+            platform: config.remoteRunnerPlatform as 'linux' | 'windows' | 'macos',
+            pool: config.remoteRunnerPool,
+            tenant: 'default',
+          }
+        : {}),
     });
 
     if (leaseHeartbeatError) {
@@ -498,16 +531,31 @@ export async function collectArtifacts(args: {
     }
   } else {
     const backend = backendFor(args.input);
-    const collected: Artifact[] = await backend
-      .artifacts(args.lease.runnerId, { destDir: dir, includeGitDiff: true })
-      .catch(rethrowWithCause);
-    for (const artifact of collected) {
-      artifacts.push({
-        path: artifact.path,
-        bytes: artifact.bytes,
-        sha256: artifact.sha256,
-        kind: artifact.kind,
-      });
+    if (isRemoteRun(args.input)) {
+      const collected = await (backend as RemoteRunnerBackend)
+        .collect(args.lease.runnerId, { destDir: dir, includeGitDiff: true })
+        .catch(rethrowWithCause);
+      for (const artifact of collected.artifacts) {
+        artifacts.push({
+          path: artifact.path,
+          bytes: artifact.bytes,
+          sha256: artifact.sha256,
+          kind: artifact.kind,
+        });
+      }
+      if (collected.usage) usage = collected.usage as UsageReport;
+    } else {
+      const collected: Artifact[] = await backend
+        .artifacts(args.lease.runnerId, { destDir: dir, includeGitDiff: true })
+        .catch(rethrowWithCause);
+      for (const artifact of collected) {
+        artifacts.push({
+          path: artifact.path,
+          bytes: artifact.bytes,
+          sha256: artifact.sha256,
+          kind: artifact.kind,
+        });
+      }
     }
     // Verify the patch exists even when the backend reported nothing (empty diff is fine).
     try {

@@ -1,6 +1,6 @@
 import { RunnerError } from './errors';
 
-export type RunnerKind = 'docker' | 'local';
+export type RunnerKind = 'docker' | 'local' | 'remote';
 
 /** Where the workspace comes from. Exactly one of `path` / `url`. */
 export interface RepoSpec {
@@ -15,6 +15,11 @@ export interface RepoSpec {
    * the sandbox starts. Downstream stages see the change the upstream stage produced.
    */
   patch?: string;
+  /**
+   * Remote agents cannot read the central host path, so the diff body travels in the
+   * payload and the agent writes it to a temp file before checkout.
+   */
+  patchContent?: string;
 }
 
 export interface HarnessSpec {
@@ -71,6 +76,12 @@ export interface RunnerSpec {
   networkPolicy?: 'allowed' | 'denied';
   /** Readiness timeout in ms. Defaults to 60_000. */
   readyTimeoutMs?: number;
+  /** Remote scheduling hints. Ignored by local backends. */
+  platform?: 'linux' | 'windows' | 'macos';
+  pool?: string;
+  labels?: Record<string, string>;
+  /** Tenant/owner scope for a remote host. */
+  tenant?: string;
 }
 
 export interface RunnerHandle {

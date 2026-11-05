@@ -1,12 +1,15 @@
 
 import type { FactoryEvent, PromptPart } from '@factory/adapters';
 import { AdapterError } from '@factory/adapters';
+import type { RemotePumpResult, RemoteRunStartPayload, RemoteRunStartResult } from '@factory/runners';
 import { loadConfig } from '../config';
 import { harnessPasswordFor } from '../harness-auth';
 import { heartbeat } from '../heartbeat';
 import { isCancelRequested, listSteps, setRunSessionRef, upsertStep } from '../db';
 import { pumpSegment } from '../pump';
+import { RemoteRunnerBackend, isRemoteRun } from '../remote-runner';
 import { appendEvent, recordPermissionRequest } from './persist';
+import { harnessCommandWithProxyEnv } from './runner';
 import {
   agentDefinitionsFor,
   capabilitiesOf,
@@ -15,6 +18,7 @@ import {
   getOrCreateStream,
   getSession,
   getStream,
+  mcpWiringFor,
 } from '../sessions';
 import type {
   HarnessStartInfo,
@@ -47,7 +51,11 @@ export async function startHarness(args: {
   input: RunInput;
   lease: LeaseInfo;
   sessionRef?: string | null;
+  /** Proxy base URL + per-run token, baked into the harness command (never a provider key). */
+  harnessEnv?: Record<string, string>;
 }): Promise<HarnessStartInfo> {
+  if (isRemoteRun(args.input)) return startRemoteHarness(args);
+
   const existed = getSession(args.input.runId) !== undefined;
   const entry = await ensureSession(args.input, {
     harnessUrl: args.lease.harnessUrl,
@@ -92,6 +100,101 @@ export async function startHarness(args: {
 }
 
 /**
+ * Remote start: the agent owns the harness adapter and sandbox. The central worker only
+ * records the returned session metadata; it never talks to the harness directly.
+ */
+async function startRemoteHarness(args: {
+  input: RunInput;
+  lease: LeaseInfo;
+  sessionRef?: string | null;
+  harnessEnv?: Record<string, string>;
+}): Promise<HarnessStartInfo> {
+  const config = loadConfig();
+  const remote = new RemoteRunnerBackend(config);
+  const agents = agentDefinitionsFor(args.input);
+  const activeAgent = args.input.agent
+    ? agents?.find((agent) => agent.name === args.input.agent)
+    : undefined;
+  const promptParts = promptPartsFor(args.input.prompt, activeAgent);
+  const mcp = mcpWiringFor(args.input);
+  const harnessCommand = harnessCommandWithProxyEnv(args.harnessEnv, args.input.runId);
+  // The agent needs the same derived password for its adapter; the command also carries it
+  // for the harness process, but the adapter authenticates its HTTP calls separately.
+  const remoteHarnessEnv = {
+    ...(args.harnessEnv ?? {}),
+    OPENCODE_SERVER_PASSWORD: harnessPasswordFor(args.input.runId),
+  };
+
+  const payload: RemoteRunStartPayload = {
+    runId: args.input.runId,
+    runnerId: args.lease.runnerId,
+    harness: args.input.harness,
+    ...(args.input.model ? { model: args.input.model } : {}),
+    leaseSpec: {
+      runId: args.input.runId,
+      runnerId: args.lease.runnerId,
+      ...(args.input.repo?.url ? { repo: { url: args.input.repo.url, commit: args.input.repo.commit } } : {}),
+      harness: { command: harnessCommand, port: 4096, readyPath: '/api/info' },
+      networkPolicy: args.input.networkPolicy ?? 'denied',
+      keepWorkspace: false,
+    },
+    harnessCommand,
+    harnessEnv: remoteHarnessEnv,
+    harnessPort: 4096,
+    readyPath: '/api/info',
+    readyTimeoutMs: 60_000,
+    promptParts,
+    ...(agents ? { agents } : {}),
+    ...(mcp ? { mcp } : {}),
+    sessionRef: args.sessionRef ?? null,
+    ...(args.input.fakeDelayMs !== undefined ? { fakeDelayMs: args.input.fakeDelayMs } : {}),
+    metadata: { factory: args.input.factory, definitionCommit: args.input.definitionCommit },
+  };
+
+  const result = (await remote.sendForRunner(
+    args.lease.runnerId,
+    'start-session',
+    payload,
+    15 * 60 * 1000,
+  )) as RemoteRunStartResult;
+
+  if (result.sessionRef) await setRunSessionRef(args.input.runId, result.sessionRef);
+
+  await upsertStep({
+    runId: args.input.runId,
+    stepId: 'start-harness',
+    kind: 'harness',
+    status: 'ok',
+    detail: {
+      harness: args.input.harness,
+      model: args.input.model ?? null,
+      harnessUrl: result.harnessUrl ?? null,
+      sessionRef: result.sessionRef ?? null,
+      resumed: Boolean(args.sessionRef),
+      remote: true,
+      mcp: result.mcp ?? { supported: false, servers: [], permissions: {} },
+    },
+  });
+
+  return {
+    ...(result.sessionRef ? { sessionRef: result.sessionRef } : {}),
+    ...(result.harnessUrl ? { harnessUrl: result.harnessUrl } : {}),
+    capabilities: (result.capabilities as HarnessStartInfo['capabilities']) ?? {
+      streaming: true,
+      toolCalls: true,
+      permissions: 'interactive',
+      resume: false,
+      fork: false,
+      usage: true,
+      structuredOutput: false,
+      mcp: false,
+    },
+    ...(result.mcp ? { mcp: result.mcp as HarnessStartInfo['mcp'] } : {}),
+    resumed: Boolean(args.sessionRef),
+  };
+}
+
+/**
  * Streams one segment of the adapter and returns as soon as the harness asks for a
  * permission decision (ADR-013).
  *
@@ -104,6 +207,127 @@ export async function startHarness(args: {
  * decisions the workflow already holds, so a replayed `permission.requested` after a
  * worker restart is forwarded rather than surfaced again.
  */
+/**
+ * Remote pump: the agent streams canonical events from its local adapter; this activity
+ * remains the single writer of the central event log. It loops over idle windows so the
+ * workflow sees the same `permission`/`terminal`/`cancelled`/`closed` contract.
+ */
+async function pumpRemoteEvents(args: {
+  input: RunInput;
+  lease: LeaseInfo;
+  fromSeq?: number;
+  decided?: Record<string, PermissionDecisionValue>;
+}): Promise<PumpResult> {
+  const config = loadConfig();
+  const remote = new RemoteRunnerBackend(config);
+  const runId = args.input.runId;
+  let lastSeq = args.fromSeq ?? 0;
+  let appended = 0;
+  let costUsd = 0;
+  let droppedEvents = 0;
+
+  await upsertStep({ runId, stepId: 'stream', kind: 'harness', status: 'running' });
+
+  for (;;) {
+    if (await isCancelRequested(runId)) {
+      await remote
+        .sendForRunner(args.lease.runnerId, 'cancel', { runId, reason: 'cancelled' }, 60_000)
+        .catch(() => undefined);
+      return {
+        stopReason: 'cancelled',
+        terminalStatus: 'cancelled',
+        lastSeq,
+        appended,
+        droppedEvents,
+        costUsd,
+      };
+    }
+
+    const result = (await remote.sendForRunner(
+      args.lease.runnerId,
+      'pump',
+      {
+        runId,
+        fromSeq: lastSeq,
+        ...(args.decided ? { decided: args.decided } : {}),
+        waitMs: 20_000,
+      },
+      60_000,
+    )) as RemotePumpResult;
+
+    for (const event of result.events ?? []) {
+      const written = await appendEvent({ runId, stepId: 'stream', event });
+      if (written.appended) {
+        appended += 1;
+        lastSeq = Math.max(lastSeq, written.seq ?? (event as { seq?: number }).seq ?? 0);
+      } else {
+        lastSeq = Math.max(lastSeq, (event as { seq?: number }).seq ?? 0);
+      }
+    }
+    costUsd += result.costUsd ?? 0;
+    droppedEvents += result.droppedEvents ?? 0;
+    heartbeat({ waitingForEvent: result.stopReason === 'idle', lastSeq });
+
+    if (result.stopReason === 'permission' && result.permissionRequestId) {
+      await recordPermissionRequest({
+        runId,
+        requestId: result.permissionRequestId,
+        action: result.permissionAction ?? 'permission',
+        detail: {},
+      });
+      return {
+        stopReason: 'permission',
+        terminalStatus: result.terminalStatus ?? null,
+        ...(result.terminalSummary ? { terminalSummary: result.terminalSummary } : {}),
+        lastSeq,
+        appended,
+        droppedEvents,
+        costUsd,
+        permissionRequestId: result.permissionRequestId,
+        ...(result.permissionAction ? { permissionAction: result.permissionAction } : {}),
+      };
+    }
+
+    if (result.stopReason === 'terminal') {
+      return {
+        stopReason: 'terminal',
+        terminalStatus: result.terminalStatus ?? 'ok',
+        ...(result.terminalSummary ? { terminalSummary: result.terminalSummary } : {}),
+        lastSeq,
+        appended,
+        droppedEvents,
+        costUsd,
+      };
+    }
+
+    if (result.stopReason === 'cancelled') {
+      return {
+        stopReason: 'cancelled',
+        terminalStatus: 'cancelled',
+        lastSeq,
+        appended,
+        droppedEvents,
+        costUsd,
+      };
+    }
+
+    if (result.stopReason === 'closed') {
+      return {
+        stopReason: 'closed',
+        terminalStatus: result.terminalStatus ?? null,
+        ...(result.terminalSummary ? { terminalSummary: result.terminalSummary } : {}),
+        lastSeq,
+        appended,
+        droppedEvents,
+        costUsd,
+      };
+    }
+
+    // `idle`: no event yet. Keep the activity alive and heartbeat; the harness may be
+    // thinking or waiting on a long tool call.
+  }
+}
+
 export async function pumpEvents(args: {
   input: RunInput;
   lease: LeaseInfo;
@@ -111,6 +335,8 @@ export async function pumpEvents(args: {
   fromSeq?: number;
   decided?: Record<string, PermissionDecisionValue>;
 }): Promise<PumpResult> {
+  if (isRemoteRun(args.input)) return pumpRemoteEvents(args);
+
   const entry = await ensureSession(args.input, {
     harnessUrl: args.lease.harnessUrl,
     sessionRef: args.sessionRef ?? null,
@@ -286,6 +512,18 @@ export async function pumpEvents(args: {
 
 /** Stops the harness session; safe to call when the session was never started. */
 export async function cancelHarness(args: { input: RunInput; reason?: string }): Promise<void> {
+  if (isRemoteRun(args.input)) {
+    const remote = new RemoteRunnerBackend(loadConfig());
+    await remote
+      .sendForRunner(
+        `factory-${args.input.runId}`,
+        'cancel',
+        { runId: args.input.runId, ...(args.reason ? { reason: args.reason } : {}) },
+        60_000,
+      )
+      .catch(() => undefined);
+    return;
+  }
   const entry = getSession(args.input.runId);
   if (!entry) return;
   try {
@@ -301,6 +539,16 @@ export async function respondPermission(args: {
   requestId: string;
   decision: 'allow' | 'deny' | 'always';
 }): Promise<void> {
+  if (isRemoteRun(args.input)) {
+    const remote = new RemoteRunnerBackend(loadConfig());
+    await remote.sendForRunner(
+      `factory-${args.input.runId}`,
+      'respond-permission',
+      { runId: args.input.runId, requestId: args.requestId, decision: args.decision },
+      60_000,
+    );
+    return;
+  }
   const entry = getSession(args.input.runId);
   if (!entry) return;
   await entry.adapter.respondToPermission(entry.handle, args.requestId, args.decision);

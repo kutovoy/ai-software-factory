@@ -116,7 +116,7 @@ export const createWorkItemBodySchema = z
     prompt: z.string().max(8000).optional(),
     harness: z.enum(['opencode', 'claude-code', 'codex', 'gemini', 'generic-cli', 'fake']).optional(),
     model: modelSchema.optional(),
-    runner: z.enum(['local-docker', 'local-process', 'fake']).optional(),
+    runner: z.enum(['local-docker', 'local-process', 'remote', 'fake']).optional(),
     /**
      * ADR-022: hand the pull request to the merge queue instead of merging it in `ship`.
      * Defaults to the factory's GitHub integration setting.

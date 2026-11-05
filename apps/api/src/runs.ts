@@ -89,6 +89,7 @@ export function pinVersion(dir: string, factory: string): { commit: string; dirt
 /** Maps a definition runner name (`local-docker`, `local-process`, …) to a backend. */
 export function mapRunnerName(name: string | undefined): RunInput['runner'] {
   if (!name) return 'local-docker';
+  if (name.includes('remote')) return 'remote';
   if (name.includes('docker')) return 'local-docker';
   if (name.includes('process') || name.includes('local')) return 'local-process';
   return 'local-docker';
@@ -228,6 +229,15 @@ export async function createRun(
     throw invalidRequest('chat requires a non-empty prompt');
   }
 
+  if (runner === 'remote' && !config.runnerRepoUrl) {
+    throw new ApiError(
+      'remote_repo_url_required',
+      422,
+      'remote runs need RUNNER_REPO_URL: the agent cannot read the central checkout path',
+      { runner },
+    );
+  }
+
   const runId = newRunId();
   const workflowId = workflowIdFor(runId);
 
@@ -242,7 +252,12 @@ export async function createRun(
     model,
     agent: body.agent,
     runner,
-    repo: { path: config.repoRoot, commit },
+    // A remote agent cannot read this host's checkout path, so remote runs clone the
+    // configured forge URL. Local backends keep using the path (faster, offline-friendly).
+    repo:
+      runner === 'remote' && config.runnerRepoUrl
+        ? { url: config.runnerRepoUrl, commit }
+        : { path: config.repoRoot, commit },
     prompt: body.prompt ? { text: body.prompt, files: body.files } : null,
     kind: options.kind,
     title: body.title ?? (options.kind === 'chat' ? body.prompt?.slice(0, 80) : undefined),

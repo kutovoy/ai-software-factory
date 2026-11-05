@@ -107,6 +107,9 @@
     "packages/runners": {
       "name": "@factory/runners",
       "version": "0.0.0",
+      "dependencies": {
+        "@factory/adapters": "workspace:*",
+      },
     },
   },
   "packages": {

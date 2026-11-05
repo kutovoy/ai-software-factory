@@ -14,6 +14,12 @@ export const RUNNER_ERROR_CODES = [
    */
   'runner.sandbox_unavailable',
   'runner_not_found',
+  /** No remote host matched the requested platform/pool/labels/capacity. */
+  'no_matching_runner',
+  /** A remote run needs a clone URL; the central host path is not visible to the agent. */
+  'remote_repo_url_required',
+  /** The agent did not answer a command before its deadline. */
+  'remote_command_timeout',
   'exec_failed',
   'exec_timeout',
   'artifact_not_found',

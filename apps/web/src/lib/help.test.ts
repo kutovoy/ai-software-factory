@@ -152,6 +152,9 @@ describe('contextual help routing', () => {
     );
     expect(helpSlugForPath('/secrets')).toBe('secrets');
     expect(helpSlugForPath('/users')).toBe('users');
+    // The Runners surface is one page plus a host detail; both resolve to the same entry.
+    expect(helpSlugForPath('/runners')).toBe('runners');
+    expect(helpSlugForPath('/runners/rhn_01ARZ3NDEKTSV4RRFFQ69G5FAV')).toBe('runners');
   });
 
   test('factory pages map by segment, defaulting to dashboard', () => {
@@ -189,6 +192,7 @@ describe('contextual help routing', () => {
     for (const path of [
       '/chat',
       '/inbox',
+      '/runners',
       '/secrets',
       '/users',
       '/factories/fac_01ARZ3NDEKTSV4RRFFQ69G5FAV/work-items',

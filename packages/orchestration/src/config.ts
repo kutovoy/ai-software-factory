@@ -20,6 +20,20 @@ export interface OrchestrationConfig {
   providerKey?: string;
   /** Default runner backend when the definition does not name one. */
   defaultRunner: 'docker' | 'local';
+  /** Enable the remote-runner control plane (Linux agent MVP). */
+  remoteRunnerEnabled: boolean;
+  remoteRunnerPlatform: string;
+  remoteRunnerPool: string;
+  /** How long an activity waits for one agent command result. */
+  remoteCommandTimeoutMs: number;
+  /** Lease TTL for a remote sandbox; the agent re-attaches by runnerId. */
+  remoteLeaseTtlMs: number;
+  /** Worker loop cadence for heartbeat-age alerts and lease expiry. */
+  remoteAlertIntervalMs: number;
+  /** Agent heartbeat interval advertised at enrollment. */
+  remoteHeartbeatIntervalMs: number;
+  /** Clone URL a remote agent can use; remote runs cannot read the central path. */
+  runnerRepoUrl?: string;
   /**
    * User-defined docker network the docker backend attaches sandboxes to. Unset means the
    * sandbox publishes an ephemeral 127.0.0.1 port (correct for a host worker only).
@@ -126,6 +140,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): OrchestrationC
     providerBaseUrl: env.OPENAI_BASE_URL,
     providerKey: env.OPENAI_API_KEY,
     defaultRunner: env.RUNNER_BACKEND === 'local' ? 'local' : 'docker',
+    remoteRunnerEnabled: env.REMOTE_RUNNER === '1' || env.REMOTE_RUNNER?.toLowerCase() === 'true',
+    remoteRunnerPlatform: env.REMOTE_RUNNER_PLATFORM ?? 'linux',
+    remoteRunnerPool: env.REMOTE_RUNNER_POOL ?? 'default',
+    remoteCommandTimeoutMs: intFromEnv(env.REMOTE_COMMAND_TIMEOUT_MS, 120_000),
+    remoteLeaseTtlMs: intFromEnv(env.REMOTE_LEASE_TTL_MS, 15 * 60 * 1000),
+    remoteAlertIntervalMs: intFromEnv(env.REMOTE_ALERT_INTERVAL_MS, 30_000),
+    remoteHeartbeatIntervalMs: intFromEnv(env.REMOTE_HEARTBEAT_INTERVAL_MS, 15_000),
+    ...(env.RUNNER_REPO_URL ? { runnerRepoUrl: env.RUNNER_REPO_URL } : {}),
     ...(env.RUNNER_NETWORK ? { runnerNetwork: env.RUNNER_NETWORK } : {}),
     runnerWorkspaceMode: env.RUNNER_WORKSPACE_MODE === 'copy' ? 'copy' : 'bind',
     permissionTimeoutMs: intFromEnv(env.PERMISSION_TIMEOUT_MS, 30 * 60 * 1000),

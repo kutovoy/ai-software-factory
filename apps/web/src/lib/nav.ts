@@ -17,6 +17,7 @@ export const TOP_NAV: NavItem[] = [
   { href: '/inbox', label: 'Inbox', testId: 'nav-inbox', icon: 'inbox' },
   { href: '/work-items', label: 'Work items', testId: 'nav-work-items', factoryScoped: true, icon: 'list' },
   { href: '/runs', label: 'Runs', testId: 'nav-runs', factoryScoped: true, icon: 'play' },
+  { href: '/runners', label: 'Runners', testId: 'nav-runners', icon: 'server' },
   { href: '/secrets', label: 'Secrets', testId: 'nav-secrets', icon: 'key' },
   { href: '/users', label: 'Users', testId: 'nav-users', icon: 'users' },
 ];

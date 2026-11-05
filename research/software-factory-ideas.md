@@ -156,6 +156,6 @@ review. They are research artifacts, not committed product assets.
 ## Approval gate
 
 Roadmap items 1–11 are implemented (see `docs/STATUS.md`). Long-running missions (item 12) remain
-proposed. The next planned workstream is remote runners + host observability; it is documented in
-`docs/REMOTE_RUNNERS_PLAN.md` and is **not started** (implementation branch `feat/remote-runners` when
-approved). On approval, each non-trivial slice becomes an OpenSpec change.
+proposed. Remote runners + host observability have a **Linux MVP** on `feat/remote-runners`
+(`add-remote-runners`); Windows/macOS agents, mTLS certificate issuance and full artifact transfer are
+follow-ups. See `docs/REMOTE_RUNNERS_PLAN.md`. Each non-trivial slice becomes an OpenSpec change.

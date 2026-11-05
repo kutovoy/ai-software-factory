@@ -1,11 +1,11 @@
 # Remote runners and worker observability — plan
 
-**Status:** planning only. No implementation branch or code has been created yet.
+**Status:** Linux MVP + observability implemented on `feat/remote-runners`.
 **Last updated:** 2026-11-04.
-**Implementation branch (when started):** `feat/remote-runners`.
-**Planned OpenSpec changes:** `add-remote-runners` (control plane, Linux first), then
-`add-runner-observability` (CPU/RAM/disk metrics, charts, alerts). Windows and macOS get
-follow-up changes (`add-windows-runner`, `add-macos-runner`).
+**Implementation branch:** `feat/remote-runners`.
+**OpenSpec change:** `add-remote-runners` (Linux control plane + CPU/RAM/disk metrics,
+charts and alerts). Windows and macOS get follow-up changes (`add-windows-runner`,
+`add-macos-runner`).
 
 This document is the handoff/compaction anchor for the next workstream. It records the
 GPUSTACK review, the chosen direction, the metrics/alerts scope, and the phase boundaries.
@@ -372,4 +372,9 @@ existing `/api/v1/factories/:factoryId/...` convention.
   thresholds, dedupe, acknowledge/silence, console inbox + webhook.
 - Implementation branch when started: `feat/remote-runners`.
 - Planned OpenSpec changes: `add-remote-runners`, then `add-runner-observability`.
-- **Do not start code or create the branch until explicitly approved.**
+- **Implementation note (MVP):** the first slice runs the harness adapter *on the agent*
+  and streams canonical events back to the central worker, which stays the single event
+  writer. This avoids a reverse harness tunnel while keeping Temporal/Postgres off the
+  host. The agent token is bearer-authenticated; deploy behind TLS, with mTLS certificate
+  fingerprinting reserved for the hardening phase. Only `patch.diff` content is transferred
+  back in the MVP; other artifact blobs remain on the remote host.
