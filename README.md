@@ -36,6 +36,10 @@ This project is that factory, built to be **self-hosted, inspectable and yours**
 
 Short, dated highlights of user-visible changes. Full detail lives in `docs/STATUS.md`.
 
+- **2026-11-05 — Live runner verification + hardening.** macOS M5 native and Linux Docker remote
+  runners completed real opencode jobs end-to-end. The tests fixed remote repo specs, native opencode
+  config, sandbox ports/HOME, remote run directories, terminal-status fallback, agent shutdown reaping
+  and split agent/browser artifact endpoints.
 - **2026-11-05 — RustFS artifact store.** Replaced the archived AGPLv3 community object store with
   RustFS (Apache-2.0). Remote artifacts upload through short-lived presigned PUT grants; run detail
   downloads them through an authenticated presigned GET, with object keys and checksums recorded

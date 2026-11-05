@@ -1006,8 +1006,10 @@ runs `rustfs/rustfs` and creates the bucket with a signed `curl` request; the ce
 bucket configuration and credentials, and agents receive short-lived, run-scoped presigned PUT grants
 (never long-lived object-store credentials). Store per-tenant/run prefixes, record object key, SHA-256,
 size and content type in Postgres, verify checksums before marking artifacts available, and serve
-downloads through short-lived presigned GETs or the API. Keep storage behind an interface so S3/R2 can
-be swapped by configuration.
+downloads through short-lived presigned GETs or the API. `S3_ENDPOINT` is the agent-facing upload URL;
+`S3_PUBLIC_ENDPOINT` is the browser-facing download URL and defaults to it, so a Linux agent can upload
+via `host.docker.internal` while the console redirects to `localhost`. Keep storage behind an interface
+so S3/R2 can be swapped by configuration.
 **Consequences:** RustFS becomes part of the compose/dev stack and a deployment dependency; artifact
 transfer stays outbound-only and does not traverse Temporal. Retention/GC, quotas and encryption at
 rest become control-plane responsibilities. RustFS is younger than MinIO or Ceph, so pin a version,
@@ -1017,7 +1019,8 @@ presigned downloads after a run-access check.
 
 ## ADR-048 — Native Windows and macOS runner backends
 
-**Status:** accepted (2026-11-05, implemented in `2026-11-05-add-runner-platforms-and-artifacts`).
+**Status:** accepted (2026-11-05, implemented in `2026-11-05-add-runner-platforms-and-artifacts`;
+macOS live verification 2026-11-05).
 **Context:** the remote-runner MVP was Linux-only even though the host registry and wire protocol
 already carry a `platform` field. Windows and macOS hosts need to execute runs without Docker, and
 the agent must keep the same lease/exec/events/artifacts/kill contract.
@@ -1028,6 +1031,8 @@ termination and CIM/performance counters for host metrics. macOS uses the host s
 `docker` on Linux and `local` on Windows/macOS. Enrollment generates platform-appropriate preflight and
 install commands; native runners are documented as weaker isolation than Linux containers.
 **Consequences:** Windows/macOS hosts can enroll and run without Docker, but they need dedicated
-hosts/users or VMs for untrusted code. Windows containers, macOS Tart VMs, launchd/Windows service
-wrappers and live Windows-host verification remain follow-ups. The protocol and provider-key boundary
-stay unchanged.
+hosts/users or VMs for untrusted code. Native agents receive the runner `opencode.json` inline through
+`OPENCODE_CONFIG_CONTENT` (the Docker image bakes the same file), and macOS `sandbox-exec` leases get a
+per-run writable HOME/XDG tree so opencode can keep its session DB and cache inside the jail. Windows
+containers, macOS Tart VMs, launchd/Windows service wrappers and live Windows-host verification remain
+follow-ups. The protocol and provider-key boundary stay unchanged.

@@ -17,9 +17,11 @@ import {
   DEFAULT_HARNESS_COMMAND,
   DockerRunnerBackend,
   LocalRunnerBackend,
+  RUNNER_OPENCODE_CONFIG,
   RunnerError,
   isRunnerError,
   type Artifact,
+  type RepoSpec,
   type RunnerBackend,
   type RunnerHandle,
 } from '@factory/runners';
@@ -94,11 +96,19 @@ function activityPulse(step: string): () => void {
 export function harnessCommandWithProxyEnv(
   env: Record<string, string> | undefined,
   runId: string,
+  harness?: string,
 ): string {
-  const entries = [
+  const entries: Array<[string, string]> = [
     ...Object.entries(env ?? {}).filter(([, value]) => value !== ''),
-    ['OPENCODE_SERVER_PASSWORD', harnessPasswordFor(runId)] as [string, string],
+    ['OPENCODE_SERVER_PASSWORD', harnessPasswordFor(runId)],
   ];
+  // Native macOS/Windows agents do not have the runner Docker image's baked-in
+  // `opencode.json`. Passing the same config inline keeps `factory/best_llm` (and the
+  // per-run proxy credentials) resolvable on every backend. Docker tolerates the
+  // duplicate config source.
+  if (harness === 'opencode') {
+    entries.push(['OPENCODE_CONFIG_CONTENT', RUNNER_OPENCODE_CONFIG]);
+  }
   const prefix = entries
     .map(([name, value]) => `${name}='${value.replace(/'/g, `'\\''`)}'`)
     .join(' ');
@@ -134,6 +144,30 @@ function backendFor(input: RunInput): RunnerBackend {
         workspaceMode: config.runnerWorkspaceMode,
       })
     : new LocalRunnerBackend();
+}
+
+/**
+ * Builds the checkout source for a run.
+ *
+ * Local backends clone the central checkout path. Remote agents cannot see that path, so
+ * they receive the configured clone URL instead. The two are mutually exclusive because
+ * `normalizeRunnerSpec` rejects a spec with both `path` and `url`; this helper keeps that
+ * invariant in one place and is unit-tested.
+ */
+export function repoSpecForRun(
+  input: RunInput,
+  patchFile?: string,
+  patchContent?: string,
+  fallbackRemoteUrl?: string,
+): RepoSpec {
+  const remote = isRemoteRun(input);
+  const url = input.repo?.url ?? fallbackRemoteUrl;
+  return {
+    ...(remote ? { url } : { path: input.repo?.path ?? input.factoryRoot }),
+    commit: input.repo?.commit ?? input.definitionCommit,
+    ...(patchFile && !remote ? { patch: patchFile } : {}),
+    ...(patchContent !== undefined ? { patchContent } : {}),
+  };
 }
 
 /**
@@ -234,7 +268,8 @@ export async function leaseRunner(args: {
     patchFile && existsSync(patchFile) && isRemoteRun(args.input)
       ? await readFile(patchFile, 'utf8')
       : undefined;
-  if (isRemoteRun(args.input) && !args.input.repo?.url) {
+  const remoteRepoUrl = config.runnerRepoUrl;
+  if (isRemoteRun(args.input) && !args.input.repo?.url && !remoteRepoUrl) {
     throw new RunnerError(
       'remote_repo_url_required',
       'remote runs need a clone URL (RUNNER_REPO_URL) because the agent cannot read the central checkout',
@@ -259,17 +294,18 @@ export async function leaseRunner(args: {
   try {
     handle = await backend.lease({
       runId: args.input.runId,
-      repo: {
-        path: args.input.repo?.path ?? args.input.factoryRoot,
-        url: args.input.repo?.url,
-        commit: args.input.repo?.commit ?? args.input.definitionCommit,
-        ...(patchFile && existsSync(patchFile) && !isRemoteRun(args.input)
-          ? { patch: patchFile }
-          : {}),
-        ...(patchContent !== undefined ? { patchContent } : {}),
-      },
+      repo: repoSpecForRun(
+        args.input,
+        patchFile && existsSync(patchFile) ? patchFile : undefined,
+        patchContent,
+        remoteRepoUrl,
+      ),
       harness: {
-        command: harnessCommandWithProxyEnv(args.harnessEnv, args.input.runId),
+        command: harnessCommandWithProxyEnv(
+          args.harnessEnv,
+          args.input.runId,
+          args.input.harness,
+        ),
         // opencode protects `/api/info` with the server password; the readiness probe
         // must authenticate or the lease waits 60s and fails on a healthy sandbox.
         ...(args.input.harness === 'opencode'
@@ -277,7 +313,9 @@ export async function leaseRunner(args: {
           : {}),
       },
       keepWorkspace: false,
-      runDir: runDir(config.runsDir, args.input.runId),
+      // The run directory is a central-host path. A remote agent has its own temp
+      // workspace and must not try to mkdir `/app/runs/...` on macOS/Windows.
+      ...(isRemoteRun(args.input) ? {} : { runDir: runDir(config.runsDir, args.input.runId) }),
       // The local sandbox denies network unless the stage/factory grants it (task 6).
       networkPolicy: args.input.networkPolicy ?? 'denied',
       ...(isRemoteRun(args.input)

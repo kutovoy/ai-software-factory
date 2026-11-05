@@ -8,6 +8,7 @@ import {
   type AdapterStats,
   type FactoryEvent,
   type HarnessAdapter,
+  type HarnessSessionStatus,
   type JsonValue,
   type McpSessionWiring,
   type PermissionDecision,
@@ -140,6 +141,11 @@ export interface PumpSource {
   next(): Promise<IteratorResult<FactoryEvent>>;
   respond(requestId: string, decision: PermissionDecision): Promise<void>;
   stats?(): AdapterStats;
+  /**
+   * Optional terminal-state probe used only when a pump window ends idle. A harness that
+   * failed before the stream subscribed would otherwise never produce a terminal event.
+   */
+  status?(): Promise<HarnessSessionStatus | undefined>;
 }
 
 export interface PumpOptions {
@@ -231,7 +237,21 @@ export async function pumpJobEvents(
       return build('terminal');
     }
     if (outcome === 'aborted') return build('cancelled');
-    if (outcome === 'timeout') return build('idle');
+    if (outcome === 'timeout') {
+      // The event stream may have gone quiet because the harness failed before the
+      // adapter subscribed. Ask the harness for its terminal outcome; if it has one,
+      // close the run instead of idling forever.
+      if (source.status) {
+        const status = await source.status().catch(() => undefined);
+        if (status?.terminal) {
+          state.terminal = true;
+          state.terminalStatus = status.status ?? 'error';
+          if (status.summary !== undefined) state.terminalSummary = status.summary;
+          return build('terminal');
+        }
+      }
+      return build('idle');
+    }
 
     state.pendingNext = null;
 
@@ -353,6 +373,17 @@ export class RunnerAgentRuntime {
   /** Number of live sessions (sandboxes) this agent is running. */
   leases(): number {
     return this.jobs.size;
+  }
+
+  /**
+   * Kills every live session and its sandbox. Called on agent shutdown so a SIGTERM does
+   * not leave an `opencode serve` child (or a Docker container) behind.
+   */
+  async shutdown(): Promise<void> {
+    const runnerIds = [...new Set([...this.jobs.values()].map((job) => job.runnerId))];
+    await Promise.all(
+      runnerIds.map((runnerId) => this.kill(runnerId).catch(() => undefined)),
+    );
   }
 
   /** Dispatches one command from the control plane. Errors surface as thrown values. */
@@ -702,6 +733,9 @@ export class RunnerAgentRuntime {
       next: () => job.iterator.next(),
       respond: (requestId, decision) => job.adapter.respondToPermission(job.session, requestId, decision),
       stats: () => job.adapter.getStats?.() ?? { droppedEvents: 0, emittedEvents: 0 },
+      ...(job.adapter.getStatus
+        ? { status: () => job.adapter.getStatus?.(job.session) ?? Promise.resolve(undefined) }
+        : {}),
     };
   }
 

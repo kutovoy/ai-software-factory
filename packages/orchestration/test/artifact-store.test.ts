@@ -69,6 +69,18 @@ describe('resolveArtifactStoreConfig', () => {
     expect(config.presignExpirySeconds).toBe(7 * 24 * 60 * 60);
     expect(config.maxArtifactBytes).toBe(1024);
   });
+
+  test('separates the agent upload endpoint from the browser download endpoint', () => {
+    const config = resolveArtifactStoreConfig({
+      ...configured,
+      S3_ENDPOINT: 'http://host.docker.internal:9000',
+      S3_PUBLIC_ENDPOINT: 'http://localhost:9000',
+    });
+    expect(config.endpoint).toBe('http://host.docker.internal:9000');
+    expect(config.publicEndpoint).toBe('http://localhost:9000');
+    // The internal endpoint still defaults to the upload endpoint.
+    expect(config.internalEndpoint).toBe('http://host.docker.internal:9000');
+  });
 });
 
 describe('artifact keys', () => {
@@ -117,6 +129,26 @@ describe('S3ArtifactStore', () => {
     const url = store.presignDownload({ key: 'tenants/default/runs/run_1/patch.diff' });
     expect(url.startsWith('http://localhost:9000/factory-artifacts/tenants/default/runs/run_1/patch.diff?')).toBe(true);
     expect(url).toContain('X-Amz-Expires=900');
+  });
+
+  test('uses the public endpoint for downloads but the upload endpoint for grants', () => {
+    const split = new S3ArtifactStore(
+      resolveArtifactStoreConfig({
+        ...configured,
+        S3_ENDPOINT: 'http://host.docker.internal:9000',
+        S3_PUBLIC_ENDPOINT: 'http://localhost:9000',
+      }),
+      () => FIXED_NOW,
+    );
+    const grant = split.presignUpload({
+      tenant: 'default',
+      runId: 'run_1',
+      path: 'patch.diff',
+      contentType: 'text/x-diff',
+    });
+    expect(grant.url.startsWith('http://host.docker.internal:9000/')).toBe(true);
+    const download = split.presignDownload({ key: grant.key });
+    expect(download.startsWith('http://localhost:9000/')).toBe(true);
   });
 
   test('a disabled store cannot be constructed', () => {

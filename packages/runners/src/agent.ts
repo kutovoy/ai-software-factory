@@ -388,9 +388,15 @@ export async function runAgent(options: AgentOptions = {}): Promise<AgentHandle>
     agentVersion: config.agentVersion,
   });
 
-  const done = Promise.all([heartbeatLoop(), commandLoop()]).then(() => {
-    log('agent_stopped', { hostId });
-  });
+  const done = Promise.all([heartbeatLoop(), commandLoop()])
+    .then(async () => {
+      // The loops stop on SIGTERM/SIGINT, but a running harness is a separate child
+      // process (or Docker container). Reap it before the agent exits.
+      await runtime.shutdown().catch((error: unknown) => {
+        logError('agent_shutdown_failed', { message: errorMessage(error) });
+      });
+      log('agent_stopped', { hostId });
+    });
 
   const cleanup = (): void => {
     for (const signal of signals) process.removeListener(signal, onSignal);

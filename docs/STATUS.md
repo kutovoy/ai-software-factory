@@ -53,6 +53,37 @@ E2E covers enrollment, simulated heartbeat, host detail, alert firing/ack and de
 follow-ups: Windows containers, macOS Tart VMs, mTLS issuance/rotation, launchd/Windows service
 wrappers, retention/GC automation and a real remote-host end-to-end run.
 
+**Live runner verification — macOS M5 + Linux Docker (2026-11-05).** Both platforms ran real
+`opencode` jobs through the remote command queue on this machine:
+
+- macOS native agent (`RUNNER_BACKEND=local`, `RUNNER_SANDBOX=exec`): run
+  `run_mw3t7g4i_265452a4` completed `ok`; the lease recorded `sandbox {mode: exec, active: true}`,
+  the harness reached the per-run inference proxy, and `patch.diff` uploaded to RustFS and downloaded
+  through the authenticated artifact route.
+- Linux agent container (`RUNNER_BACKEND=docker`, workspace `copy`, network `factory-runners`): run
+  `run_mw3u0k5g_a1024e73` completed `ok`; the sandbox container was created and removed cleanly, the
+  agent uploaded through `host.docker.internal:9000`, and the browser-facing download used
+  `localhost:9000` via `S3_PUBLIC_ENDPOINT`.
+
+Fixes forced by the live tests (on `feat/live-runner-platform-tests`):
+
+- Remote leases sent both the central checkout path and the clone URL; the repo spec now sends only
+  `url` for remote runs (and falls back to `RUNNER_REPO_URL` for work-item stages).
+- Native macOS runs lacked the runner `opencode.json`; `OPENCODE_CONFIG_CONTENT` now travels in the
+  harness command, so `factory/best_llm` resolves outside the Docker image.
+- The local backend rewrote the harness port only for the exact default command; env-prefixed
+  commands now rewrite the default port/hostname too.
+- Remote leases received the central `/app/runs/...` path; the agent now uses its own per-run
+  sandbox directory.
+- `sandbox-exec` leases now get a per-run writable HOME/XDG tree for opencode state/cache.
+- A harness that failed before the event stream subscribed left the run `running`; the agent now
+  probes the session outcome on an idle pump and closes the run.
+- Agent shutdown now reaps live harness/sandbox children.
+- Upload and download endpoints can differ (`S3_ENDPOINT` vs `S3_PUBLIC_ENDPOINT`).
+
+Remaining: a truly separate remote host, live Windows verification, Windows containers, macOS Tart,
+mTLS issuance/rotation and launchd/Windows service wrappers.
+
 ### Readiness and public-release prep (2026-11-01)
 
 **End-to-end lights-off readiness: PASS.** A new `hello-nextjs` factory (six agents, every gate `agent`,

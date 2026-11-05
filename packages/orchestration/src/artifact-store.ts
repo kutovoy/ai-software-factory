@@ -20,8 +20,10 @@ export type ArtifactStoreMode = 's3' | 'none';
 
 export interface ArtifactStoreConfig {
   mode: ArtifactStoreMode;
-  /** Public endpoint agents use for presigned URLs (must be reachable from runner hosts). */
+  /** Endpoint agents use for presigned uploads (must be reachable from runner hosts). */
   endpoint?: string;
+  /** Endpoint browsers use for presigned downloads; defaults to `endpoint`. */
+  publicEndpoint?: string;
   /** Server-side endpoint for optional HEAD verification; defaults to `endpoint`. */
   internalEndpoint?: string;
   bucket?: string;
@@ -65,7 +67,8 @@ function intFromEnv(value: string | undefined, fallback: number, min: number, ma
 export function resolveArtifactStoreConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): ArtifactStoreConfig {
-  const endpoint = trim(env.S3_ENDPOINT ?? env.S3_PUBLIC_ENDPOINT);
+  const endpoint = trim(env.S3_ENDPOINT) ?? trim(env.S3_PUBLIC_ENDPOINT);
+  const publicEndpoint = trim(env.S3_PUBLIC_ENDPOINT) ?? endpoint;
   const internalEndpoint = trim(env.S3_INTERNAL_ENDPOINT) ?? endpoint;
   const bucket = trim(env.S3_BUCKET);
   const accessKey = trim(env.S3_ACCESS_KEY);
@@ -76,6 +79,7 @@ export function resolveArtifactStoreConfig(
   return {
     mode: requested && configured ? 's3' : 'none',
     ...(endpoint ? { endpoint } : {}),
+    ...(publicEndpoint ? { publicEndpoint } : {}),
     ...(internalEndpoint ? { internalEndpoint } : {}),
     ...(bucket ? { bucket } : {}),
     ...(accessKey ? { accessKey } : {}),
@@ -278,10 +282,11 @@ export class S3ArtifactStore {
     };
   }
 
-  /** Short-lived presigned GET for a stored artifact. */
+  /** Short-lived presigned GET for a stored artifact (browser-facing endpoint by default). */
   presignDownload(input: { key: string; endpoint?: string }): string {
     return presignS3Get({
-      endpoint: input.endpoint ?? (this.config.endpoint as string),
+      endpoint:
+        input.endpoint ?? this.config.publicEndpoint ?? (this.config.endpoint as string),
       bucket: this.bucket,
       key: input.key,
       accessKey: this.config.accessKey as string,

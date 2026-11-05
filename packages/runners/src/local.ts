@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { RunnerError } from './errors';
 import {
@@ -48,6 +49,23 @@ export type LocalShellKind = 'posix' | 'powershell' | 'cmd';
 /** The native backend's default shell: PowerShell on Windows, `/bin/sh` elsewhere. */
 export function defaultShell(platform: NodeJS.Platform): string {
   return platform === 'win32' ? 'powershell.exe' : '/bin/sh';
+}
+
+/**
+ * Rewrites the default harness command to a host-local port and loopback hostname.
+ *
+ * The command may carry an env prefix (`OPENAI_BASE_URL='…' OPENAI_API_KEY='…'
+ * OPENCODE_SERVER_PASSWORD='…' opencode serve …`) added by the workflow, so equality
+ * alone is not enough. The exact default substring is replaced wherever it appears; a
+ * custom command with an explicit port is left untouched.
+ */
+export function localHarnessCommand(configured: string, port: number): string {
+  const local = `opencode serve --hostname 127.0.0.1 --port ${port}`;
+  if (configured === DEFAULT_HARNESS_COMMAND) return local;
+  if (configured.includes(DEFAULT_HARNESS_COMMAND)) {
+    return configured.replace(DEFAULT_HARNESS_COMMAND, local);
+  }
+  return configured;
 }
 
 /** Classifies a shell path/name so argv and quoting match the interpreter. */
@@ -127,6 +145,10 @@ interface LocalLease {
   startedAt: number;
   stderr: string;
   profilePath: string | null;
+  /** Per-run sandbox directory created by the backend (removed on kill). */
+  sandboxRunDir: string | null;
+  /** Per-run HOME/XDG dir for macOS sandbox-exec (removed on kill). */
+  sandboxHome: string | null;
   /** Network policy the jail was built with (`--unshare-net` when denied). */
   sandboxNetwork: 'allowed' | 'denied';
   /** Resolved bubblewrap binary when the jail is active. */
@@ -210,17 +232,41 @@ export class LocalRunnerBackend implements RunnerBackend {
     const workspace = await prepareWorkspace(spec.repo, spec.workspace);
     const port = await freePort();
 
+    // A remote lease has no central run directory. Give the sandbox its own per-run
+    // directory instead of writing `/tmp/.sandbox.sb` or a central `/app/runs/...` path.
+    const sandboxRunDir =
+      !spec.runDir && availability.active
+        ? await mkdtemp(join(tmpdir(), 'factory-sandbox-run-'))
+        : null;
+    const runDir = spec.runDir ?? sandboxRunDir ?? dirname(workspace);
+
+    // macOS `sandbox-exec` allows writes only to the workspace/run dir/tmp. opencode also
+    // needs a writable HOME/XDG tree for its session DB, cache and state; a per-run home
+    // keeps that inside the jail without touching the operator's real home.
+    const sandboxHome =
+      availability.active && this.sandboxMode === 'exec'
+        ? await mkdtemp(join(tmpdir(), 'factory-sandbox-home-'))
+        : null;
+    if (sandboxHome) {
+      await Promise.all([
+        mkdir(join(sandboxHome, '.config'), { recursive: true }),
+        mkdir(join(sandboxHome, '.local', 'share'), { recursive: true }),
+        mkdir(join(sandboxHome, '.local', 'state'), { recursive: true }),
+        mkdir(join(sandboxHome, '.cache'), { recursive: true }),
+      ]);
+    }
+
     const env: Record<string, string> = {
       ...sanitizeHostEnv(process.env),
       ...this.harnessEnv,
       ...spec.harness.env,
       ...spec.env,
+      ...(sandboxHome ? sandboxHomeEnv(sandboxHome) : {}),
       PORT: String(port),
     };
     for (const secret of secrets) env[secret.name] = secret.value;
 
     const command = this.harnessCommand(spec.harness.command, port);
-    const runDir = spec.runDir ?? dirname(workspace);
     const network = spec.networkPolicy ?? 'denied';
     let profilePath: string | null = null;
     let argv = shellArgv(this.shell, command);
@@ -233,6 +279,7 @@ export class LocalRunnerBackend implements RunnerBackend {
           workspace,
           runDir,
           network,
+          ...(sandboxHome ? { extraWritePaths: [sandboxHome] } : {}),
         }),
         'utf8',
       );
@@ -288,7 +335,11 @@ export class LocalRunnerBackend implements RunnerBackend {
       });
     } catch (error) {
       await this.terminate(child);
-      await removeDir(workspace).catch(() => undefined);
+      await Promise.all([
+        removeDir(workspace).catch(() => undefined),
+        ...(sandboxRunDir ? [removeDir(sandboxRunDir).catch(() => undefined)] : []),
+        ...(sandboxHome ? [removeDir(sandboxHome).catch(() => undefined)] : []),
+      ]);
       throw new RunnerError(
         'runner_unavailable',
         error instanceof Error ? error.message : String(error),
@@ -305,6 +356,8 @@ export class LocalRunnerBackend implements RunnerBackend {
       startedAt: Date.now(),
       stderr,
       profilePath,
+      sandboxRunDir,
+      sandboxHome,
       sandboxNetwork: network,
       bwrapBinary: availability.binary,
       sandbox,
@@ -322,6 +375,7 @@ export class LocalRunnerBackend implements RunnerBackend {
 
     const env: Record<string, string> = {
       ...sanitizeHostEnv(process.env),
+      ...(lease.sandboxHome ? sandboxHomeEnv(lease.sandboxHome) : {}),
     };
     for (const secret of lease.secrets) env[secret.name] = secret.value;
     Object.assign(env, req.env ?? {});
@@ -400,6 +454,8 @@ export class LocalRunnerBackend implements RunnerBackend {
 
     await this.terminate(lease.child);
     if (!lease.keepWorkspace) await removeDir(lease.workspace).catch(() => undefined);
+    if (lease.sandboxRunDir) await removeDir(lease.sandboxRunDir).catch(() => undefined);
+    if (lease.sandboxHome) await removeDir(lease.sandboxHome).catch(() => undefined);
     this.leases.delete(runnerId);
   }
 
@@ -411,11 +467,7 @@ export class LocalRunnerBackend implements RunnerBackend {
   /* ---------------------------------------------------------------------- */
 
   private harnessCommand(configured: string, port: number): string {
-    if (configured === DEFAULT_HARNESS_COMMAND) {
-      // The default command hardcodes the container port; locally we pick a free one.
-      return `opencode serve --hostname 127.0.0.1 --port ${port}`;
-    }
-    return configured;
+    return localHarnessCommand(configured, port);
   }
 
   private isAlive(lease: LocalLease): boolean {
@@ -477,6 +529,17 @@ export class LocalRunnerBackend implements RunnerBackend {
       child.kill('SIGKILL');
     }
   }
+}
+
+/** Writable HOME/XDG tree for a macOS `sandbox-exec` lease. */
+function sandboxHomeEnv(home: string): Record<string, string> {
+  return {
+    HOME: home,
+    XDG_CONFIG_HOME: join(home, '.config'),
+    XDG_DATA_HOME: join(home, '.local', 'share'),
+    XDG_STATE_HOME: join(home, '.local', 'state'),
+    XDG_CACHE_HOME: join(home, '.cache'),
+  };
 }
 
 function posixQuote(value: string): string {

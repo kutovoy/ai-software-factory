@@ -10,3 +10,4 @@ export * from './agent-metrics';
 export * from './artifact-upload';
 export * from './agent-runtime';
 export * from './agent';
+export * from './opencode-config';

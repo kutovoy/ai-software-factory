@@ -4,6 +4,7 @@ import type {
   AgentDescriptor,
   FileDiff,
   HarnessAdapter,
+  HarnessSessionStatus,
   PermissionDecision,
   PromptOptions,
   PromptPart,
@@ -738,6 +739,8 @@ interface SessionState {
 
 interface SessionInfo {
   id?: string;
+  /** v2 terminal outcome: succeeded | failed | interrupted (absent while running). */
+  outcome?: string;
   cost?: number;
   tokens?: {
     input?: number;
@@ -815,6 +818,63 @@ export class OpencodeAdapter implements HarnessAdapter {
       `opencode at ${this.baseUrl} did not answer /api/info within ${this.readiness.timeoutMs}ms`,
       { baseUrl: this.baseUrl, timeoutMs: this.readiness.timeoutMs, lastError },
     );
+  }
+
+  /**
+   * Terminal-state probe. The global `/api/event` stream only reports events that happen
+   * after subscription; a session that already failed can therefore leave a pump idle
+   * forever. Polling the session's `outcome` lets the remote agent close the run.
+   */
+  async getStatus(handle: SessionHandle): Promise<HarnessSessionStatus | undefined> {
+    const ref = handle.sessionRef;
+    if (!ref) return undefined;
+    try {
+      const response = await this.transport.request<{ data?: SessionInfo }>(
+        'GET',
+        `/api/session/${encodeURIComponent(ref)}`,
+      );
+      const outcome = response?.data?.outcome;
+      if (outcome === 'succeeded') return { terminal: true, status: 'ok' };
+      if (outcome === 'failed') {
+        return {
+          terminal: true,
+          status: 'error',
+          summary: await this.sessionFailureSummary(ref).catch(() => 'harness session failed'),
+        };
+      }
+      if (outcome === 'interrupted') return { terminal: true, status: 'cancelled' };
+      return { terminal: false };
+    } catch {
+      // A transient HTTP failure must not turn into a false terminal state; the next
+      // pump or the lease kill handles a genuinely unreachable harness.
+      return undefined;
+    }
+  }
+
+  private async sessionFailureSummary(sessionRef: string): Promise<string> {
+    const response = await this.transport.request<{ data?: unknown[] }>(
+      'GET',
+      `/api/session/${encodeURIComponent(sessionRef)}/message`,
+    );
+    for (const value of response?.data ?? []) {
+      if (!value || typeof value !== 'object') continue;
+      const message = value as Record<string, unknown>;
+      if (message.type !== 'assistant') continue;
+      const error = message.error;
+      if (error && typeof error === 'object') {
+        const text = (error as Record<string, unknown>).message;
+        if (typeof text === 'string' && text !== '') return text;
+      }
+      const retry = message.retry;
+      if (retry && typeof retry === 'object') {
+        const nested = (retry as Record<string, unknown>).error;
+        if (nested && typeof nested === 'object') {
+          const text = (nested as Record<string, unknown>).message;
+          if (typeof text === 'string' && text !== '') return text;
+        }
+      }
+    }
+    return 'harness session failed';
   }
 
   async startSession(req: StartSessionRequest): Promise<SessionHandle> {

@@ -121,6 +121,18 @@ export interface AdapterStats {
   emittedEvents: number;
 }
 
+/**
+ * Optional terminal-state probe for a harness whose event stream can miss the final
+ * event (for example a session that failed before the adapter subscribed). The remote
+ * agent calls this only when a pump window ends idle, so a dead session cannot leave a
+ * run `running` forever.
+ */
+export interface HarnessSessionStatus {
+  terminal: boolean;
+  status?: 'ok' | 'error' | 'cancelled';
+  summary?: string;
+}
+
 export interface HarnessAdapter {
   readonly id: AdapterId;
   readonly capabilities: AdapterCapabilities;
@@ -149,6 +161,9 @@ export interface HarnessAdapter {
 
   /** Optional observability hook (dropped/emitted counters). */
   getStats?(): AdapterStats;
+
+  /** Optional terminal-state probe; used when the event stream has gone quiet. */
+  getStatus?(handle: SessionHandle): Promise<HarnessSessionStatus | undefined>;
 }
 
 export function supportsInteractivePermissions(capabilities: AdapterCapabilities): boolean {

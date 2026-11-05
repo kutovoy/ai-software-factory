@@ -117,7 +117,11 @@ async function startRemoteHarness(args: {
     : undefined;
   const promptParts = promptPartsFor(args.input.prompt, activeAgent);
   const mcp = mcpWiringFor(args.input);
-  const harnessCommand = harnessCommandWithProxyEnv(args.harnessEnv, args.input.runId);
+  const harnessCommand = harnessCommandWithProxyEnv(
+    args.harnessEnv,
+    args.input.runId,
+    args.input.harness,
+  );
   // The agent needs the same derived password for its adapter; the command also carries it
   // for the harness process, but the adapter authenticates its HTTP calls separately.
   const remoteHarnessEnv = {
@@ -212,6 +216,20 @@ async function startRemoteHarness(args: {
  * remains the single writer of the central event log. It loops over idle windows so the
  * workflow sees the same `permission`/`terminal`/`cancelled`/`closed` contract.
  */
+async function markStreamStep(
+  runId: string,
+  status: 'ok' | 'error',
+  detail: Record<string, unknown>,
+): Promise<void> {
+  await upsertStep({
+    runId,
+    stepId: 'stream',
+    kind: 'harness',
+    status,
+    detail,
+  });
+}
+
 async function pumpRemoteEvents(args: {
   input: RunInput;
   lease: LeaseInfo;
@@ -289,9 +307,18 @@ async function pumpRemoteEvents(args: {
     }
 
     if (result.stopReason === 'terminal') {
+      const terminalStatus = result.terminalStatus ?? 'ok';
+      await markStreamStep(runId, terminalStatus === 'error' ? 'error' : 'ok', {
+        stopReason: result.stopReason,
+        terminalStatus,
+        lastSeq,
+        appended,
+        droppedEvents,
+        costUsd,
+      });
       return {
         stopReason: 'terminal',
-        terminalStatus: result.terminalStatus ?? 'ok',
+        terminalStatus,
         ...(result.terminalSummary ? { terminalSummary: result.terminalSummary } : {}),
         lastSeq,
         appended,
@@ -301,6 +328,14 @@ async function pumpRemoteEvents(args: {
     }
 
     if (result.stopReason === 'cancelled') {
+      await markStreamStep(runId, 'ok', {
+        stopReason: result.stopReason,
+        terminalStatus: 'cancelled',
+        lastSeq,
+        appended,
+        droppedEvents,
+        costUsd,
+      });
       return {
         stopReason: 'cancelled',
         terminalStatus: 'cancelled',
@@ -312,9 +347,18 @@ async function pumpRemoteEvents(args: {
     }
 
     if (result.stopReason === 'closed') {
+      const terminalStatus = result.terminalStatus ?? null;
+      await markStreamStep(runId, terminalStatus === 'error' ? 'error' : 'ok', {
+        stopReason: result.stopReason,
+        terminalStatus,
+        lastSeq,
+        appended,
+        droppedEvents,
+        costUsd,
+      });
       return {
         stopReason: 'closed',
-        terminalStatus: result.terminalStatus ?? null,
+        terminalStatus,
         ...(result.terminalSummary ? { terminalSummary: result.terminalSummary } : {}),
         lastSeq,
         appended,

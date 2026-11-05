@@ -6,6 +6,7 @@ import {
   createOpencodeMapper,
   parseSseString,
   type FactoryEvent,
+  type OpencodeTransport,
 } from '../src';
 import { FIXTURE_SESSION, ReplayTransport, loadFixture } from './replay';
 
@@ -66,6 +67,55 @@ describe('OpencodeAdapter readiness', () => {
       expect(adapterError.code).toBe('harness_unreachable');
       expect(adapterError.toJSON()).toMatchObject({ code: 'harness_unreachable' });
     }
+  });
+});
+
+describe('OpencodeAdapter terminal status', () => {
+  test('reports a failed session with the provider error', async () => {
+    const transport: OpencodeTransport = {
+      async request<T>(method: string, path: string): Promise<T> {
+        if (method === 'GET' && path === '/api/session/ses_failed') {
+          return { data: { id: 'ses_failed', outcome: 'failed' } } as T;
+        }
+        if (method === 'GET' && path === '/api/session/ses_failed/message') {
+          return {
+            data: [
+              { type: 'assistant', error: { message: 'Model unavailable: factory/best_llm' } },
+            ],
+          } as T;
+        }
+        throw new AdapterError('harness_error', `unexpected ${method} ${path}`);
+      },
+      async *stream(): AsyncIterable<unknown> {
+        // not used by getStatus
+      },
+    };
+    const adapter = new OpencodeAdapter({ baseUrl: 'http://fixture', transport });
+
+    await expect(
+      adapter.getStatus({ adapterId: 'opencode', runId: 'run_failed', sessionRef: 'ses_failed' }),
+    ).resolves.toEqual({
+      terminal: true,
+      status: 'error',
+      summary: 'Model unavailable: factory/best_llm',
+    });
+  });
+
+  test('leaves a running session non-terminal', async () => {
+    const transport: OpencodeTransport = {
+      async request<T>(method: string, path: string): Promise<T> {
+        if (method === 'GET' && path === '/api/session/ses_running') {
+          return { data: { id: 'ses_running' } } as T;
+        }
+        throw new AdapterError('harness_error', `unexpected ${method} ${path}`);
+      },
+      async *stream(): AsyncIterable<unknown> {},
+    };
+    const adapter = new OpencodeAdapter({ baseUrl: 'http://fixture', transport });
+
+    await expect(
+      adapter.getStatus({ adapterId: 'opencode', runId: 'run_running', sessionRef: 'ses_running' }),
+    ).resolves.toEqual({ terminal: false });
   });
 });
 

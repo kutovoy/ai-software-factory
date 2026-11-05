@@ -2,7 +2,14 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { LocalRunnerBackend, runCommand, type ExecEvent, type RunnerHandle } from '../src';
+import {
+  DEFAULT_HARNESS_COMMAND,
+  LocalRunnerBackend,
+  localHarnessCommand,
+  runCommand,
+  type ExecEvent,
+  type RunnerHandle,
+} from '../src';
 
 const HARNESS = `node -e "require('http').createServer((q,s)=>s.end('ok')).listen(process.env.PORT,'0.0.0.0')"`;
 
@@ -42,11 +49,37 @@ async function collect(stream: AsyncIterable<ExecEvent>): Promise<{
 
 afterEach(async () => {
   for (const instance of backends.splice(0)) {
-    for (const runnerId of ['runner_local', 'runner_timeout', 'runner_secret', 'runner_bwrap']) {
+    for (const runnerId of [
+      'runner_local',
+      'runner_timeout',
+      'runner_secret',
+      'runner_bwrap',
+      'runner_sandbox_home',
+    ]) {
       await instance.kill(runnerId).catch(() => undefined);
     }
   }
   for (const dir of workspaces.splice(0)) await rm(dir, { recursive: true, force: true });
+});
+
+describe('localHarnessCommand', () => {
+  test('rewrites the bare default to a free loopback port', () => {
+    expect(localHarnessCommand(DEFAULT_HARNESS_COMMAND, 4321)).toBe(
+      'opencode serve --hostname 127.0.0.1 --port 4321',
+    );
+  });
+
+  test('rewrites the default when the workflow prefixes env assignments', () => {
+    const configured = `OPENAI_BASE_URL='http://localhost:8080/v1' OPENAI_API_KEY='run-token' ${DEFAULT_HARNESS_COMMAND}`;
+    expect(localHarnessCommand(configured, 4321)).toBe(
+      `OPENAI_BASE_URL='http://localhost:8080/v1' OPENAI_API_KEY='run-token' opencode serve --hostname 127.0.0.1 --port 4321`,
+    );
+  });
+
+  test('leaves a custom command with an explicit port untouched', () => {
+    const custom = 'node -e "require(\'http\').createServer((q,s)=>s.end(\'ok\')).listen(4321)"';
+    expect(localHarnessCommand(custom, 4321)).toBe(custom);
+  });
 });
 
 describe('LocalRunnerBackend', () => {
@@ -173,6 +206,32 @@ describe('LocalRunnerBackend', () => {
         readyTimeoutMs: 500,
       }),
     ).rejects.toMatchObject({ code: 'runner_unavailable' });
+  });
+
+  test('macOS sandbox-exec gets a writable per-run HOME/XDG tree', async () => {
+    if (process.platform !== 'darwin') return; // the profile is macOS-only
+
+    const runner = backend({ sandbox: 'exec', platform: 'darwin' });
+    const handle = await runner.lease({
+      runId: 'run-local-sandbox-home',
+      runnerId: 'runner_sandbox_home',
+      harness: { command: HARNESS, readyPath: '/', port: 0 },
+    });
+
+    expect(handle.sandbox).toEqual({ mode: 'exec', active: true, reason: null });
+
+    const result = await collect(
+      runner.exec(handle.runnerId, {
+        command:
+          'printf "HOME=%s\\n" "$HOME"; mkdir -p "$HOME/.cache/opencode" && echo home-write-ok; mkdir -p "$XDG_STATE_HOME/opencode" && echo state-write-ok',
+      }),
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('HOME=/');
+    expect(result.stdout).toContain('factory-sandbox-home-');
+    expect(result.stdout).toContain('home-write-ok');
+    expect(result.stdout).toContain('state-write-ok');
+    expect(result.stderr).toBe('');
   });
 
   test('a requested bwrap sandbox fails instead of running unsandboxed', async () => {

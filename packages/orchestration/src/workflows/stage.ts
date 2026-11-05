@@ -155,6 +155,9 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
       ...(input.agent ? { agent: input.agent } : {}),
       runner: input.runner,
       ...(input.repo ? { repo: input.repo } : {}),
+      // Remote harnesses need the proxy/artifact-store network; the host's egress policy
+      // is the boundary. Local sandboxes keep the default denial.
+      ...(input.runner === 'remote' ? { networkPolicy: 'allowed' as const } : {}),
       ...(input.patchRunId ? { patchRunId: input.patchRunId } : {}),
       prompt: { text: prompt },
       kind: 'run',

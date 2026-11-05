@@ -258,6 +258,10 @@ export async function createRun(
       runner === 'remote' && config.runnerRepoUrl
         ? { url: config.runnerRepoUrl, commit }
         : { path: config.repoRoot, commit },
+    // A remote harness must reach the per-run inference proxy and the artifact store. The
+    // remote host's egress allowlist is the real boundary; denying outbound here would make
+    // every remote run fail before the first model call.
+    ...(runner === 'remote' ? { networkPolicy: 'allowed' as const } : {}),
     prompt: body.prompt ? { text: body.prompt, files: body.files } : null,
     kind: options.kind,
     title: body.title ?? (options.kind === 'chat' ? body.prompt?.slice(0, 80) : undefined),

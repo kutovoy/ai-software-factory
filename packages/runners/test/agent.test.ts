@@ -183,6 +183,24 @@ describe('pumpJobEvents', () => {
     expect(result.stopReason).toBe('cancelled');
   });
 
+  test('closes an idle pump when the harness reports a terminal failure', async () => {
+    const source: PumpSource = {
+      next: () => new Promise<IteratorResult<FactoryEvent>>(() => undefined),
+      respond: async () => undefined,
+      status: async () => ({
+        terminal: true,
+        status: 'error',
+        summary: 'Model unavailable: factory/best_llm',
+      }),
+    };
+    const state = emptyState();
+
+    const result = await pumpJobEvents(state, source, { waitMs: 20 });
+    expect(result.stopReason).toBe('terminal');
+    expect(result.terminalStatus).toBe('error');
+    expect(result.terminalSummary).toContain('Model unavailable');
+  });
+
   test('reports a stream failure as a terminal error instead of throwing', async () => {
     const source: PumpSource = {
       next: () => Promise.reject(new Error('harness stream broke')),
