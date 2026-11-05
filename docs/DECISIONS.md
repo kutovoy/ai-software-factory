@@ -987,3 +987,23 @@ generated install command, agent registration/heartbeat, and local workload spaw
 remote hosts), but the runner protocol becomes a network protocol with mTLS, lease TTLs and resumable
 event streams. Windows/macOS native runners are weaker isolation than Linux containers and need
 dedicated hosts/VMs for untrusted code. Plan: `docs/REMOTE_RUNNERS_PLAN.md`.
+
+## ADR-047 — MinIO as the S3-compatible artifact store for remote runners
+
+**Status:** accepted (2026-11-04).
+**Context:** the remote-runner MVP returns only `patch.diff`; other artifact blobs are collected into
+a temporary directory on the agent and deleted, so the central run has metadata but no bytes. Review
+and verify gates, console inspection, benchmarks and audit need durable evidence. The store must be
+reachable from runner hosts over outbound HTTPS, support presigned upload/download and checksums, and
+must not require long-lived object-store credentials on hosts.
+**Decision:** use **MinIO** as the default S3-compatible artifact store, accessed through the standard
+S3 API. The central control plane owns bucket configuration and credentials; agents receive
+short-lived, run-scoped presigned PUT grants (or temporary credentials). Store per-tenant/run prefixes,
+record object key, SHA-256, size and content type in Postgres, verify checksums before marking
+artifacts available, and serve downloads through short-lived presigned GETs or the API. Keep storage
+behind an interface so S3/R2 can be swapped by configuration.
+**Consequences:** MinIO becomes part of the compose/dev stack and a deployment dependency; artifact
+transfer stays outbound-only and does not traverse Temporal. Retention/GC, quotas and encryption at
+rest become control-plane responsibilities. Remote runs remain patch-only until the transfer path
+ships. MinIO is AGPLv3; self-hosted internal use is acceptable, but redistribution needs a licence
+review.

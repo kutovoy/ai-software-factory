@@ -37,7 +37,8 @@ get **no Temporal or Postgres access** and no provider credentials. The console 
 (host list, add-runner preflight/install commands, drain/delete), host detail with CPU/RAM/disk
 sparklines and leases, and an alert list with acknowledge/silence. The worker evaluates CPU, RAM,
 disk/inode, heartbeat-age and queue-wait rules; migration 022 seeds the default rules. Windows/macOS
-agents, mTLS certificate issuance and full artifact transfer remain follow-ups. See
+agents, mTLS certificate issuance and full artifact transfer remain follow-ups. Artifact blobs
+will use MinIO as the S3-compatible store (ADR-047). See
 `docs/REMOTE_RUNNERS_PLAN.md`.
 
 ### Readiness and public-release prep (2026-11-01)
@@ -1690,7 +1691,7 @@ The Linux **remote runner + observability MVP** is implemented and archived (Ope
 sandbox and harness adapter, host CPU/RAM/disk metrics and alerts. See `docs/REMOTE_RUNNERS_PLAN.md`.
 
 Next follow-ups: Windows native/Windows-container agent, macOS native/Tart agent, mTLS certificate
-issuance/rotation, and artifact-blob transfer beyond `patch.diff`. Phase 6c OIDC/IdP, Temporal Cloud and
+issuance/rotation, and artifact-blob transfer beyond `patch.diff` to MinIO (ADR-047). Phase 6c OIDC/IdP, Temporal Cloud and
 multi-tenant isolation remain blocked on external infrastructure/IdP decisions. The live GitHub forge path
 still needs a PAT, repo and webhook secret.
 

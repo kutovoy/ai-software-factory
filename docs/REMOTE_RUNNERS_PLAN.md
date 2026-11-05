@@ -296,7 +296,7 @@ existing `/api/v1/factories/:factoryId/...` convention.
   per-tenant pools, microVM/K8s later for untrusted tenants.
 - Windows/macOS native runners are weaker isolation; use dedicated VMs/users for untrusted
   code.
-- Artifacts in S3/MinIO; DB stores path/hash only; logs scrubbed before upload.
+- Artifacts in MinIO (S3-compatible); DB stores object key/hash/size only; logs scrubbed before upload.
 - Metrics contain no secrets; alert reads are tenant-scoped.
 
 ---
@@ -353,7 +353,8 @@ existing `/api/v1/factories/:factoryId/...` convention.
 - macOS isolation: `sandbox-exec` vs Tart VM? Recommendation: Tart VM for untrusted code.
 - Are runner hosts trusted single-tenant or untrusted multi-tenant? Drives isolation and
   network model.
-- Artifact store: S3/MinIO vs local disk first.
+- Artifact store: **decided** — MinIO as the default S3-compatible store (ADR-047); local disk
+  only as a development fallback.
 - Alert channel: console inbox + webhook first; email/Slack later.
 - Network: public mTLS vs VPN/Tailscale. Recommendation: outbound-only mTLS; VPN optional.
 - OS order: Linux → Windows → macOS.
@@ -378,4 +379,4 @@ existing `/api/v1/factories/:factoryId/...` convention.
   writer. This avoids a reverse harness tunnel while keeping Temporal/Postgres off the
   host. The agent token is bearer-authenticated; deploy behind TLS, with mTLS certificate
   fingerprinting reserved for the hardening phase. Only `patch.diff` content is transferred
-  back in the MVP; other artifact blobs remain on the remote host.
+  back in the MVP; the next slice uploads other artifact blobs to MinIO (ADR-047).
