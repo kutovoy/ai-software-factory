@@ -68,6 +68,18 @@ function rethrowWithCause(error: unknown): never {
   throw error;
 }
 
+/**
+ * Keeps a long activity alive while it is blocked on a slow external operation
+ * (`docker cp` of a large artifact tree, a quiet shell command). The Temporal heartbeat
+ * timeout is 60s for runner activities; a 5s pulse is cheap and prevents a successful
+ * collection from being retried as a heartbeat timeout.
+ */
+function activityPulse(step: string): () => void {
+  const timer = setInterval(() => heartbeat({ step }), 5_000);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+
 
 /**
  * `@factory/runners` bans every `OPENAI_*` name from `spec.env` and `spec.harness.env`
@@ -428,6 +440,7 @@ export async function runCommand(args: {
   const backend = backendFor(args.input);
   const chunks: string[] = [];
   let exitCode = 0;
+  const stopPulse = activityPulse(args.stepId);
 
   try {
     for await (const event of backend.exec(args.lease.runnerId, {
@@ -444,6 +457,8 @@ export async function runCommand(args: {
     }
   } catch (error) {
     rethrowWithCause(error);
+  } finally {
+    stopPulse();
   }
 
   const logPath = join(artifactsDir(config.runsDir, args.input.runId), `${args.stepId}.log`);
@@ -532,9 +547,11 @@ export async function collectArtifacts(args: {
   } else {
     const backend = backendFor(args.input);
     if (isRemoteRun(args.input)) {
+      const stopPulse = activityPulse('collect-artifacts');
       const collected = await (backend as RemoteRunnerBackend)
         .collect(args.lease.runnerId, { destDir: dir, includeGitDiff: true })
-        .catch(rethrowWithCause);
+        .catch(rethrowWithCause)
+        .finally(stopPulse);
       for (const artifact of collected.artifacts) {
         artifacts.push({
           path: artifact.path,
@@ -545,9 +562,11 @@ export async function collectArtifacts(args: {
       }
       if (collected.usage) usage = collected.usage as UsageReport;
     } else {
+      const stopPulse = activityPulse('collect-artifacts');
       const collected: Artifact[] = await backend
         .artifacts(args.lease.runnerId, { destDir: dir, includeGitDiff: true })
-        .catch(rethrowWithCause);
+        .catch(rethrowWithCause)
+        .finally(stopPulse);
       for (const artifact of collected) {
         artifacts.push({
           path: artifact.path,

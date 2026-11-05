@@ -131,7 +131,11 @@ export function defaultReaperDeps(config: OrchestrationConfig): RunnerReaperDeps
     },
     removeContainer: async (id) => {
       const result = await runCommand(['docker', 'rm', '-f', id], { timeoutMs: 30_000 });
-      if (result.code !== 0 && !/No such container/i.test(result.stderr)) {
+      if (
+        result.code !== 0 &&
+        !/No such container/i.test(result.stderr) &&
+        !/already in progress/i.test(result.stderr)
+      ) {
         throw new Error(`docker rm failed for ${id}: ${result.stderr.slice(-1000)}`);
       }
     },

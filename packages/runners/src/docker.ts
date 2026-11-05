@@ -581,7 +581,11 @@ export class DockerRunnerBackend implements RunnerBackend {
     const result = await runCommand([this.dockerBin, 'rm', '-f', containerName], {
       timeoutMs: this.controlTimeoutMs,
     });
-    if (result.code !== 0 && !/No such container/i.test(result.stderr)) {
+    if (
+      result.code !== 0 &&
+      !/No such container/i.test(result.stderr) &&
+      !/already in progress/i.test(result.stderr)
+    ) {
       throw new RunnerError('runner_unavailable', `cannot remove ${containerName}`, {
         containerName,
         stderr: result.stderr.slice(-1000),
