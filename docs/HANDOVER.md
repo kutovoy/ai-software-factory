@@ -20,6 +20,12 @@ promotion rewrites and commits the local definition checkout when clean, and rec
 `promotion_pending_deploy` instead of overwriting a dirty worktree. OpenSpec
 `2026-11-05-add-retention-quotas-promotion`.
 
+**Fresh cycle (2026-11-06):** deleted and recreated `hello-nextjs` as
+`fac_01M6QCY01B28JHAMTGNHZRHRRR` (all gates `agent`, `auto_on_green`, autonomy `full`). Work item
+`wi_01M6QCY2JBB2RYBGEK980GBPC8` reached `done` with zero human decisions; PR #12 merged with
+`site/app/page.tsx` containing `<h1>Hello, world!</h1>`. No managed runner containers remained. The
+rebuilt stack also passed a budget read and a manual run GC dry-run.
+
 ## What exists
 
 | Layer | Location | Notes |
