@@ -36,6 +36,10 @@ This project is that factory, built to be **self-hosted, inspectable and yours**
 
 Short, dated highlights of user-visible changes. Full detail lives in `docs/STATUS.md`.
 
+- **2026-11-06 — Remote-runner factory cycles.** Full `runner: remote` work items passed on macOS
+  native and Linux Docker, including every stage, concurrent review, artifacts and ship (PRs #13 and #14).
+  Work-item runner overrides now win over stage defaults, remote pumps heartbeat while queued, and the
+  Linux agent joins the sandbox network.
 - **2026-11-05 — Retention, quotas and promotion checkout.** The worker now sweeps terminal runs,
   run directories, artifact blobs and terminal canary trees on a configurable age/keep policy; the Runs
   page adds a manual GC with dry-run. Factories can cap daily/monthly spend and concurrent runs, shown

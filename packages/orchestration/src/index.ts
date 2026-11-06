@@ -7,6 +7,7 @@
  */
 export * from './config';
 export * from './types';
+export * from './stage-runner';
 export * from './client';
 export * from './factory-client';
 export * from './scoring-client';

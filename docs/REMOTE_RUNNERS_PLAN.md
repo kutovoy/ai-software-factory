@@ -7,6 +7,8 @@ merged to `main`; macOS M5 native and Linux Docker runs live-verified.
 **OpenSpec changes:** `2026-11-04-add-remote-runners` (control plane, observability),
 `2026-11-05-add-runner-platforms-and-artifacts` (Windows/macOS native agents, RustFS artifacts, Runners
 E2E) and `2026-11-05-harden-live-runner-platforms` (fixes forced by live macOS/Linux runs).
+**Live factory cycles:** macOS native and Linux Docker both ran full `runner: remote` work items
+(all stages, concurrent review, artifacts and ship) on 2026-11-06; see `docs/STATUS.md`.
 
 This document is the handoff/compaction anchor for the next workstream. It records the
 GPUSTACK review, the chosen direction, the metrics/alerts scope, and the phase boundaries.
@@ -383,8 +385,9 @@ existing `/api/v1/factories/:factoryId/...` convention.
   `feat/live-runner-platform-tests` (merged to `main`); `feat/retention-quotas-promotion` carries the
   operational follow-ups and is not merged yet.
 - OpenSpec changes: `add-remote-runners` (archived as `2026-11-04-add-remote-runners`),
-  `2026-11-05-add-runner-platforms-and-artifacts` and
-  `2026-11-05-harden-live-runner-platforms` (archived after live verification);
+  `2026-11-05-add-runner-platforms-and-artifacts`,
+  `2026-11-05-harden-live-runner-platforms` (archived after live verification) and
+  `2026-11-06-harden-remote-factory-runs` (work-item runner override + remote pump liveness);
   `add-runner-observability` was folded into the first.
 - **Implementation note (MVP):** the first slice runs the harness adapter *on the agent*
   and streams canonical events back to the central worker, which stays the single event

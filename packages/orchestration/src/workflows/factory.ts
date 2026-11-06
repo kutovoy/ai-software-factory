@@ -9,6 +9,7 @@ import {
   startChild,
 } from '@temporalio/workflow';
 import type * as activities from '../activities';
+import { selectStageRunner } from '../stage-runner';
 import type {
   AutonomyPausedSignal,
   CancelWorkItemSignal,
@@ -302,7 +303,12 @@ export async function FactoryWorkflow(
 
     const stageHarness = input.harnessOverride ?? node.harness ?? input.defaultHarness;
     // The fake harness always runs on the ephemeral fake runner, never a sandbox.
-    const stageRunner = stageHarness === 'fake' ? 'fake' : (node.runner ?? input.defaultRunner);
+    const stageRunner = selectStageRunner({
+      harness: stageHarness,
+      ...(input.runnerOverride ? { runnerOverride: input.runnerOverride } : {}),
+      ...(node.runner ? { nodeRunner: node.runner } : {}),
+      defaultRunner: input.defaultRunner,
+    });
 
     const common: Omit<StageWorkflowInput, 'phase' | 'gate'> = {
       workItemId: input.workItemId,

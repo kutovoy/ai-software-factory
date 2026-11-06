@@ -51,6 +51,16 @@ docker run -d --name factory-runner-agent \
   factory-runner-agent:local
 ```
 
+If the agent creates sandboxes on `factory-runners` (`RUNNER_DOCKER_NETWORK=factory-runners`, the
+compose default), the agent container must also join that network so it can probe the sandbox
+harness by container IP:
+
+```bash
+docker network connect factory-runners factory-runner-agent
+```
+
+Without it, a lease fails `runner_unavailable: harness at http://172.x.x.x:4096 was not ready`.
+
 ### Windows (native PowerShell)
 
 Run from a checkout of this repository in PowerShell (the console generates the same script with
@@ -93,9 +103,11 @@ value degrades without failing the heartbeat. A launchd plist is documented as a
 Native macOS runs receive the runner `opencode.json` through `OPENCODE_CONFIG_CONTENT`; a
 `sandbox-exec` lease also gets a per-run writable HOME/XDG tree for opencode state/cache.
 
-**Live verification (2026-11-05):** macOS M5 native (`RUNNER_BACKEND=local`, `RUNNER_SANDBOX=exec`)
-and Linux Docker agents on Docker Desktop both completed real opencode chat runs with RustFS artifact
-upload/download and no provider key on the agent. See `docs/STATUS.md` for run IDs and fixes.
+**Live verification (2026-11-05/06):** macOS M5 native (`RUNNER_BACKEND=local`, `RUNNER_SANDBOX=exec`)
+and Linux Docker agents on Docker Desktop completed real opencode chat runs and full factory work items
+with RustFS artifact upload/download and no provider key on the agent. The macOS factory cycle
+(`wi_01M6QNBWD32RBR54WJXZ29MN15`, PR #13) and Linux cycle (`wi_01M6QSJCFF0BSWWPQTZHKXY0X7`, PR #14)
+ran every stage on `runner: remote`. See `docs/STATUS.md` for run IDs and fixes.
 
 ### Limitations
 

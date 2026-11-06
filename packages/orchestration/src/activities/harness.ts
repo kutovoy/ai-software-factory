@@ -4,7 +4,7 @@ import { AdapterError } from '@factory/adapters';
 import type { RemotePumpResult, RemoteRunStartPayload, RemoteRunStartResult } from '@factory/runners';
 import { loadConfig } from '../config';
 import { harnessPasswordFor } from '../harness-auth';
-import { heartbeat } from '../heartbeat';
+import { heartbeat, heartbeatPulse } from '../heartbeat';
 import { isCancelRequested, listSteps, setRunSessionRef, upsertStep } from '../db';
 import { pumpSegment } from '../pump';
 import { RemoteRunnerBackend, isRemoteRun } from '../remote-runner';
@@ -261,17 +261,27 @@ async function pumpRemoteEvents(args: {
       };
     }
 
-    const result = (await remote.sendForRunner(
-      args.lease.runnerId,
-      'pump',
-      {
-        runId,
-        fromSeq: lastSeq,
-        ...(args.decided ? { decided: args.decided } : {}),
-        waitMs: 20_000,
-      },
-      60_000,
-    )) as RemotePumpResult;
+    const result = (await (async () => {
+      // A remote command may sit behind other commands in the agent's serial queue. Keep
+      // the activity alive while it waits; otherwise Temporal kills a healthy run with
+      // `activity Heartbeat timeout` before the agent can answer.
+      const stopPulse = heartbeatPulse({ waitingForRemote: true, lastSeq });
+      try {
+        return (await remote.sendForRunner(
+          args.lease.runnerId,
+          'pump',
+          {
+            runId,
+            fromSeq: lastSeq,
+            ...(args.decided ? { decided: args.decided } : {}),
+            waitMs: 20_000,
+          },
+          Math.max(120_000, config.remoteCommandTimeoutMs),
+        )) as RemotePumpResult;
+      } finally {
+        stopPulse();
+      }
+    })());
 
     for (const event of result.events ?? []) {
       const written = await appendEvent({ runId, stepId: 'stream', event });

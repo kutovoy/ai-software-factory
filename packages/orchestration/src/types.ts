@@ -327,6 +327,11 @@ export interface FactoryWorkflowInput {
   harnessOverride?: HarnessId;
   defaultModel?: string;
   defaultRunner: RunnerKindName;
+  /**
+   * Explicit runner override for every stage (e.g. `runner: "remote"` on the work-item
+   * body). Wins over the runner declared by the stage agent.
+   */
+  runnerOverride?: RunnerKindName;
   /** Spend caps + quotas copied from the definition (roadmap item 7, quotas change). */
   budget?: {
     maxCostUsdPerRun?: number;

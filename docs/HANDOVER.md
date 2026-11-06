@@ -21,6 +21,13 @@ promotion rewrites and commits the local definition checkout when clean, and rec
 `promotion_pending_deploy` instead of overwriting a dirty worktree. OpenSpec
 `2026-11-05-add-retention-quotas-promotion`.
 
+**Remote factory cycles (2026-11-06):** full `runner: remote` work items passed on macOS native
+(`wi_01M6QNBWD32RBR54WJXZ29MN15`, PR #13) and Linux Docker (`wi_01M6QSJCFF0BSWWPQTZHKXY0X7`, PR #14),
+including every stage run, concurrent review, artifacts and ship. Fixes: work-item `runner` override
+precedence, remote pump heartbeat while waiting on the serial command queue (120s minimum), and the
+Linux agent joining `factory-runners` so it can probe sandbox IPs. OpenSpec
+`2026-11-06-harden-remote-factory-runs`.
+
 **Fresh cycle (2026-11-06):** deleted and recreated `hello-nextjs` as
 `fac_01M6QCY01B28JHAMTGNHZRHRRR` (all gates `agent`, `auto_on_green`, autonomy `full`). Work item
 `wi_01M6QCY2JBB2RYBGEK980GBPC8` reached `done` with zero human decisions; PR #12 merged with
@@ -114,21 +121,22 @@ lets you validate wiring without touching a repo. GitHub delivers to
 The full numbered list is in `docs/ROADMAP.md` §What's left. Highest-priority remaining:
 
 1. **Roadmap item 12 — long-running missions.** Unblocked: design and build the durable mission model.
-2. **Full remote-runner factory cycle on macOS and Linux.** Unblocked: run `hello-nextjs` with
-   `runner: remote` end-to-end, including stage/work-item runs, not only chat.
-3. **Live remote work-item stage.** Unblocked: verify the `RUNNER_REPO_URL` fallback and patch propagation.
-4. **Runner metric retention + rollups.** Unblocked: raw 1-minute samples for 7 days, 5-minute rollups for
+2. **Runner metric retention + rollups.** Unblocked: raw 1-minute samples for 7 days, 5-minute rollups for
    30 days.
-5. **launchd + Windows service wrappers.** Unblocked.
-6. **mTLS certificate issuance/rotation.** Unblocked to prototype; production blocked on a PKI decision.
-7. **Windows live verification, Windows containers and macOS Tart.** Blocked on a Windows host/container
+3. **launchd + Windows service wrappers.** Unblocked.
+4. **mTLS certificate issuance/rotation.** Unblocked to prototype; production blocked on a PKI decision.
+5. **Windows live verification, Windows containers and macOS Tart.** Blocked on a Windows host/container
    runtime and Tart/macOS VM infrastructure.
-8. **Separate remote-host E2E.** Blocked on a second physical or VM host.
-9. **Forge proxy websocket upgrade and benchmark replay scope.** Unblocked.
-10. **Live GitHub path.** Blocked on a PAT, real repository and webhook secret.
-11. **Phase 6c OIDC/IdP, Temporal Cloud, managed Postgres and multi-tenant isolation.** Blocked on
-    IdP/infrastructure and cloud-account decisions.
-12. **Teams/Jira/GitLab deep integrations.** Unblocked but lower priority.
+6. **Separate remote-host E2E.** Blocked on a second physical or VM host.
+7. **Forge proxy websocket upgrade and benchmark replay scope.** Unblocked.
+8. **Live GitHub path.** Blocked on a PAT, real repository and webhook secret.
+9. **Phase 6c OIDC/IdP, Temporal Cloud, managed Postgres and multi-tenant isolation.** Blocked on
+   IdP/infrastructure and cloud-account decisions.
+10. **Teams/Jira/GitLab deep integrations.** Unblocked but lower priority.
+
+Full `runner: remote` factory cycles on macOS native and Linux Docker are done (work items
+`wi_01M6QNBWD32RBR54WJXZ29MN15` and `wi_01M6QSJCFF0BSWWPQTZHKXY0X7`; PRs #13 and #14), including
+the stage/work-item path, remote artifacts and concurrent review runs.
 
 Remote runners now ship Linux Docker, Windows native and macOS native agents (archived OpenSpec
 `2026-11-04-add-remote-runners`, `2026-11-05-add-runner-platforms-and-artifacts` and
@@ -235,13 +243,12 @@ Then open http://localhost:3000, pick a factory, and create a work item. `hello-
 The full numbered remaining roadmap is in `docs/ROADMAP.md` §What's left. In short:
 
 1. Roadmap item 12 — long-running missions (unblocked).
-2. Full remote-runner factory cycle and live remote work-item stage (unblocked).
-3. Runner metric retention/rollups, service wrappers and mTLS prototype (unblocked).
-4. Windows live verification, Windows containers, macOS Tart and a separate remote host (blocked on hosts).
-5. Forge proxy websocket upgrade and benchmark replay scope (unblocked).
-6. Live GitHub path (blocked on PAT/repository/webhook secret).
-7. Phase 6c OIDC/IdP, Temporal Cloud, managed Postgres and multi-tenant isolation (blocked on infrastructure).
-8. Teams/Jira/GitLab deep integrations (unblocked, lower priority).
+2. Runner metric retention/rollups, service wrappers and mTLS prototype (unblocked).
+3. Windows live verification, Windows containers, macOS Tart and a separate remote host (blocked on hosts).
+4. Forge proxy websocket upgrade and benchmark replay scope (unblocked).
+5. Live GitHub path (blocked on PAT/repository/webhook secret).
+6. Phase 6c OIDC/IdP, Temporal Cloud, managed Postgres and multi-tenant isolation (blocked on infrastructure).
+7. Teams/Jira/GitLab deep integrations (unblocked, lower priority).
 
 ## Specs
 

@@ -63,6 +63,7 @@ import {
   type FactoryWorkflowResume,
   type GateDecisionValue,
   type LoopStageName,
+  type RunnerKindName,
   type StageGraphSummary,
   type StageNodeSummary,
   workItemWorkflowId,
@@ -438,6 +439,7 @@ export async function createWorkItemForApi(
     ...(body.harness ? { harnessOverride: body.harness } : {}),
     ...(defaults.model ? { defaultModel: defaults.model } : {}),
     defaultRunner: defaults.runner,
+    ...(body.runner ? { runnerOverride: body.runner } : {}),
     autoAllowPermissions: true,
     permissionTimeoutMs: config.permissionTimeoutMs,
     ...(mergeQueue ? { mergeQueue: true } : {}),
@@ -1437,6 +1439,9 @@ async function buildRetryInput(
     defaultHarness: defaults.harness,
     ...(defaults.model ? { defaultModel: defaults.model } : {}),
     defaultRunner: defaults.runner,
+    ...(typeof snapshot.runner === 'string'
+      ? { runnerOverride: snapshot.runner as RunnerKindName }
+      : {}),
     autoAllowPermissions: true,
     permissionTimeoutMs: config.permissionTimeoutMs,
     ...(mergeQueue ? { mergeQueue: true } : {}),

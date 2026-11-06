@@ -98,7 +98,35 @@ promotion now rewrites and commits the local definition checkout when the worktr
 non-git checkout is never overwritten and records `promotion_pending_deploy` instead. Migration 023 adds
 the retention/quota read-path indexes.
 
-### Fresh hello-nextjs lights-off run (2026-11-06) Deleted `hello-nextjs`
+### Remote-runner factory cycles (2026-11-06)
+
+Two full work items ran with `runner: remote`, including every stage run, not only chat:
+
+- **macOS M5 native** (`RUNNER_BACKEND=local`, `RUNNER_SANDBOX=exec`, host `m5-macos-remote-3`):
+  work item `wi_01M6QNBWD32RBR54WJXZ29MN15` reached `done`; PR #13 merged
+  (`merge_commit_sha 9d47e80`) with `site/app/page.tsx` containing `<h1>Hello, world!</h1>`.
+  Runs: triage, spec, implement, two review runs, verify, ship; all `runner: remote`.
+- **Linux Docker** (agent container on Docker Desktop, host `linux-remote-3`): work item
+  `wi_01M6QSJCFF0BSWWPQTZHKXY0X7` reached `done`; PR #14 merged
+  (`merge_commit_sha 0933982`) with the same hello-world page. Runs: triage, spec, implement,
+  two review runs, verify, ship; all `runner: remote`.
+- Artifacts were uploaded to RustFS (`storageKey` recorded) and downloaded through the API; no
+  managed sandbox containers remained; agents and host rows were removed after verification.
+
+Issues found and fixed:
+
+- A work-item `runner: remote` request was ignored for factory stages because the compiled stage
+  node runner always won. `runnerOverride` now has explicit precedence (fake → override → node →
+  default); the retry snapshot keeps it.
+- Concurrent review runs caused `activity Heartbeat timeout` while waiting on the agent's serial
+  command queue. The remote pump now heartbeats while waiting and allows at least 120s.
+- The Linux agent container must join `factory-runners` (in addition to the default bridge) to
+  reach sandbox container IPs; the first Linux lease failed `harness ... was not ready` until the
+  network was connected. This is documented in `packages/runners/README.md`.
+
+### Fresh hello-nextjs lights-off run (2026-11-06)
+
+Deleted `hello-nextjs`
 (`fac_01M6ND4JXHE8DXSQVEFNJWNST9`) through the API purge and recreated it from the preserved definition as
 `fac_01M6QCY01B28JHAMTGNHZRHRRR` with all gates `agent`, `mergePolicy: auto_on_green`, `autonomyLevel: full`
 and an audited autonomy override. Work item `wi_01M6QCY2JBB2RYBGEK980GBPC8` ran `triage → spec → implement →
