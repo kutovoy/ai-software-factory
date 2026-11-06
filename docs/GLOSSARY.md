@@ -14,6 +14,9 @@ Terms used across specs, code and UI. Keep this aligned with `packages/core` typ
 | **Worker agent** | An agent that executes one stage (e.g. implementer, reviewer). Ephemeral session, persistent identity/history. |
 | **Crew** | Human members of a factory (the people who approve gates). |
 | **Run** | One agent execution: prompt → tool calls → artifacts → terminal state. Emits an append-only event log. |
+| **Retention / GC** | The lifecycle policy for run evidence: terminal runs beyond the age/keep policy are removed with their rows, run directory, artifact blobs and terminal canary trees; active runs are protected. |
+| **Quota** | A per-factory admission cap: lifetime/daily/monthly spend or concurrent runs. Exhaustion refuses new work with `factory_budget_exhausted` or `factory_quota_exhausted`. |
+| **Promotion checkout** | After a canary merge, the local definition tree is rewritten from the candidate and committed when the git worktree is clean; a dirty checkout records `promotion_pending_deploy`. |
 | **Event log** | JSONL stream of everything a run did (messages, tool calls, diffs, approvals, cost). Audit trail + eval input. |
 | **Runner** | An execution environment (local subprocess sandbox or remote worker) where tool calls actually happen. The web process never executes tools. |
 | **Harness** | Everything around the model that makes it an agent: prompt, tools, memory, skills, orchestration, plugins. Supplied by an *adapter*. |

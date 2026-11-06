@@ -1,8 +1,9 @@
 # Handover
 
-State as of 2026-11-05. Everything below is committed; `feat/live-runner-platform-tests` was fast-forwarded
-into `main`. Public-release prep: `README.md`, `LICENSE` (MIT, © Nick Kutovyy), `NOTICE` (attribution request),
-`SECURITY.md`, `CONTRIBUTING.md`.
+State as of 2026-11-06. `main` contains the runner/platform, RustFS and live-verification work. The
+`feat/retention-quotas-promotion` branch contains retention/GC, quotas, promotion checkout and the fresh
+`hello-nextjs` verification commits; it is not merged or pushed. Public-release prep: `README.md`, `LICENSE`
+(MIT, © Nick Kutovyy), `NOTICE` (attribution request), `SECURITY.md`, `CONTRIBUTING.md`.
 
 **Latest (2026-11-05):** live macOS M5 native and Linux Docker remote-runner verification. Real opencode
 chat runs completed on both backends: macOS with `RUNNER_BACKEND=local` + `RUNNER_SANDBOX=exec`
@@ -39,7 +40,7 @@ rebuilt stack also passed a budget read and a manual run GC dry-run.
 | Evals | `packages/evals` | scorers (deterministic + judge), calibration, benchmarks, Pareto, self-improvement, lessons |
 | API | `apps/api` | path-versioned under `/api/v1` (ADR-030); OpenAPI 3.1 at `GET /api/v1/openapi.json`; every factory-scoped resource nested under `/api/v1/factories/<factoryId>/…` (runs/SSE, permissions, chat, work items, gates, autonomy, governance, budget, readiness, guard hooks, scores, calibration, scoring, benchmarks, improvement, proposals, lessons, canary, MCPs, capabilities, intake, merge queue, automations); global factories/auth/secrets/integrations/webhooks |
 | Web console | `apps/web` | full nav parity; global chat/inbox/secrets/users/help; factory pages nested under `/factories/<id>/…` including readiness, score detail and MCPs; work-item validation contract panel; Factory Stack help |
-| Examples | `factories/example`, `factories/example-lights-off` | lights-on (spec/plan/PR human) vs canary authority |
+| Examples | `factories/example`, `factories/example-lights-off`, `factories/hello-nextjs` | lights-on (spec/plan/PR human) vs canary authority; `hello-nextjs` is the lights-off verification factory |
 
 ## Run it
 
@@ -110,28 +111,34 @@ lets you validate wiring without touching a repo. GitHub delivers to
 
 ## Known gaps / next
 
-1. **Phase 6c**: external OIDC/IdP group→org mappings, Temporal Cloud, per-tenant isolation.
-   Remote runners now ship Linux Docker, Windows native and macOS native agents on `main` (archived OpenSpec
-   `2026-11-04-add-remote-runners`, `2026-11-05-add-runner-platforms-and-artifacts` and
-   `2026-11-05-harden-live-runner-platforms`): console enrollment, one-time token → bearer agent token,
-   outbound command queue, central Temporal scheduling, agent-side sandbox + harness adapter, central
-   CPU/RAM/disk/heartbeat metrics with alerts, and RustFS artifact upload/download through short-lived
-   presigned grants. macOS M5 native (`sandbox-exec`) and Linux Docker runs were live-verified; remote hosts
-   never get Temporal/Postgres, provider credentials or long-lived object-store credentials. Follow-ups:
-   live Windows verification, Windows containers, macOS Tart, mTLS certificate issuance/rotation,
-   launchd/Windows service wrappers and a separate remote-host E2E. See
-   `docs/REMOTE_RUNNERS_PLAN.md`.
-2. **Live GitHub path**: implemented and contract-tested, not exercised against a real repo.
-3. **Forge proxy mode**: SSH ships by default; the Caddy overlay is live-validated for session auth and HTTP,
-   but a websocket upgrade has not been exercised end to end.
-4. **Promotion and GC** are implemented: promotion rewrites the local checkout when clean (and records
-   pending deploy otherwise), the worker sweeps terminal runs/artifacts/canary trees, and the Runs page
-   has a manual GC. `runs/canary/` is still kept to the configured count, not unbounded.
-5. **Factory engineering foundation + roadmap 6–11** are implemented: validation contract + QA pyramid, agent
-   readiness, outcome metrics, guard hooks, Factory Stack help, trace-driven self-improvement, classifier
-   routing + spend caps, work intake, progressive context, governance/autonomy levels and CLI/CI surfaces.
-   Remaining roadmap in `research/software-factory-ideas.md`: long-running missions (item 12). SSO/OIDC stays
-   in Phase 6c.
+The full numbered list is in `docs/ROADMAP.md` §What's left. Highest-priority remaining:
+
+1. **Roadmap item 12 — long-running missions.** Unblocked: design and build the durable mission model.
+2. **Full remote-runner factory cycle on macOS and Linux.** Unblocked: run `hello-nextjs` with
+   `runner: remote` end-to-end, including stage/work-item runs, not only chat.
+3. **Live remote work-item stage.** Unblocked: verify the `RUNNER_REPO_URL` fallback and patch propagation.
+4. **Runner metric retention + rollups.** Unblocked: raw 1-minute samples for 7 days, 5-minute rollups for
+   30 days.
+5. **launchd + Windows service wrappers.** Unblocked.
+6. **mTLS certificate issuance/rotation.** Unblocked to prototype; production blocked on a PKI decision.
+7. **Windows live verification, Windows containers and macOS Tart.** Blocked on a Windows host/container
+   runtime and Tart/macOS VM infrastructure.
+8. **Separate remote-host E2E.** Blocked on a second physical or VM host.
+9. **Forge proxy websocket upgrade and benchmark replay scope.** Unblocked.
+10. **Live GitHub path.** Blocked on a PAT, real repository and webhook secret.
+11. **Phase 6c OIDC/IdP, Temporal Cloud, managed Postgres and multi-tenant isolation.** Blocked on
+    IdP/infrastructure and cloud-account decisions.
+12. **Teams/Jira/GitLab deep integrations.** Unblocked but lower priority.
+
+Remote runners now ship Linux Docker, Windows native and macOS native agents (archived OpenSpec
+`2026-11-04-add-remote-runners`, `2026-11-05-add-runner-platforms-and-artifacts` and
+`2026-11-05-harden-live-runner-platforms`): console enrollment, one-time token → bearer agent token,
+outbound command queue, central Temporal scheduling, agent-side sandbox + harness adapter, central
+CPU/RAM/disk/heartbeat metrics with alerts, and RustFS artifact upload/download through short-lived
+presigned grants. macOS M5 native (`sandbox-exec`) and Linux Docker runs were live-verified; remote hosts
+never get Temporal/Postgres, provider credentials or long-lived object-store credentials. Promotion/GC and
+quotas are implemented in `2026-11-05-add-retention-quotas-promotion`.
+
 6. **Read-path performance**: implemented. `/inbox` went from ~7s to ~0.02s, `/work-items` from
    ~3.5–4s to ~0.016s and `/chat` from ~0.5–0.9s to ~0.008s on the compose stack. Registry read model,
    async git, batch inbox/board projections, React request memoization, session touch throttling,
@@ -225,18 +232,16 @@ Then open http://localhost:3000, pick a factory, and create a work item. `hello-
 
 ### Known gaps
 
-1. **Phase 6c**: external OIDC/IdP with group→org mappings (Keycloak/Authentik/Zitadel optional), Temporal Cloud
-   and multi-tenant credential isolation. Remote runners are implemented and live-verified on macOS/Linux;
-   live Windows verification and a separate remote host remain.
-2. **Live GitHub path**: implemented and contract-tested, never exercised against a real repository (needs a PAT).
-3. **Forge proxy mode**: SSH ships by default; the Caddy overlay is live-validated for session auth and HTTP, but
-   a websocket upgrade has not been exercised end to end. The default single-origin setup proxies HTTP through the
-   console.
-4. **Replay scope**: a replay is a recording of *our* canonical events + patch, not an arbitrary harness
-   tool-response trace.
-5. **Promotion and GC** are implemented: promotion rewrites the local checkout when clean (and records
-   pending deploy otherwise), the worker sweeps terminal runs/artifacts/canary trees, and the Runs page
-   has a manual GC.
+The full numbered remaining roadmap is in `docs/ROADMAP.md` §What's left. In short:
+
+1. Roadmap item 12 — long-running missions (unblocked).
+2. Full remote-runner factory cycle and live remote work-item stage (unblocked).
+3. Runner metric retention/rollups, service wrappers and mTLS prototype (unblocked).
+4. Windows live verification, Windows containers, macOS Tart and a separate remote host (blocked on hosts).
+5. Forge proxy websocket upgrade and benchmark replay scope (unblocked).
+6. Live GitHub path (blocked on PAT/repository/webhook secret).
+7. Phase 6c OIDC/IdP, Temporal Cloud, managed Postgres and multi-tenant isolation (blocked on infrastructure).
+8. Teams/Jira/GitLab deep integrations (unblocked, lower priority).
 
 ## Specs
 

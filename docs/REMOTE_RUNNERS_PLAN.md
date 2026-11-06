@@ -2,7 +2,7 @@
 
 **Status:** Linux, Windows and macOS native agents + observability + RustFS artifacts implemented and
 merged to `main`; macOS M5 native and Linux Docker runs live-verified.
-**Last updated:** 2026-11-05.
+**Last updated:** 2026-11-06.
 **Merged to:** `main` (`feat/live-runner-platform-tests` fast-forwarded after live verification).
 **OpenSpec changes:** `2026-11-04-add-remote-runners` (control plane, observability),
 `2026-11-05-add-runner-platforms-and-artifacts` (Windows/macOS native agents, RustFS artifacts, Runners
@@ -365,7 +365,8 @@ existing `/api/v1/factories/:factoryId/...` convention.
 - Alert channel: console inbox + webhook first; email/Slack later.
 - Network: public mTLS vs VPN/Tailscale. Recommendation: outbound-only mTLS; VPN optional.
 - OS order: **implemented** — Linux Docker, Windows native, macOS native; Windows containers and macOS Tart remain.
-- Retention: raw 1-minute samples 7 days, 5-minute rollups 30 days (proposal).
+- Retention: runner metric retention is still a follow-up — raw 1-minute samples for 7 days, 5-minute
+  rollups for 30 days.
 
 ---
 
@@ -379,7 +380,8 @@ existing `/api/v1/factories/:factoryId/...` convention.
 - Host metrics: CPU, RAM, disk/inodes, load, leases, heartbeat; alerts with configurable
   thresholds, dedupe, acknowledge/silence, console inbox + webhook.
 - Implementation branches: `feat/remote-runners`, `feat/runner-platforms-artifacts` and
-  `feat/live-runner-platform-tests` (all merged to `main`).
+  `feat/live-runner-platform-tests` (merged to `main`); `feat/retention-quotas-promotion` carries the
+  operational follow-ups and is not merged yet.
 - OpenSpec changes: `add-remote-runners` (archived as `2026-11-04-add-remote-runners`),
   `2026-11-05-add-runner-platforms-and-artifacts` and
   `2026-11-05-harden-live-runner-platforms` (archived after live verification);

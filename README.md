@@ -109,6 +109,13 @@ a golden set. Metrics are derived queries (throughput, cost per PR and per stage
 interactions per PR, cost per accepted change, signal-to-production cycle time, incident MTT and merged-code age),
 with `null` + reason rather than fabricated numbers.
 
+### Retention and quotas
+Run evidence has a bounded lifecycle: the worker sweeps terminal runs older than a configurable age beyond the
+newest N per factory, removing their rows, `runs/<id>/` directories, RustFS artifact blobs and terminal canary
+trees; active runs are protected and dry-run reports the plan. The Runs page also exposes a manual GC. Factories
+can cap lifetime, daily and monthly spend plus concurrent runs; admission refuses work with
+`factory_budget_exhausted` or `factory_quota_exhausted`, and the dashboard shows live usage against each cap.
+
 ### Factory engineering
 The factory is measurable, verifiable and explainable, not just autonomous:
 

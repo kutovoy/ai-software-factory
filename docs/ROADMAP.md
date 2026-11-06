@@ -8,14 +8,14 @@ that is validated + archived. Phases 1–3 are solo-on-Mac; phase 6 opens the cl
 - YouTube toolkit (`tools/yt`) + Warp talk analysis + UI nav map.
 - **Exit:** we know the reference product's primitives and our differentiators.
 
-## Phase 1 — Definitions as code (≈2 weeks)
+## Phase 1 — Definitions as code (≈2 weeks) ✅
 Build: `packages/core` schema (Zod) for `factory.yaml` + agents/automations/scorers/benchmarks/skills/
 runners/routing; loader + validator; `export`/`import`/`diff` CLI; git round-trip (write files → commit →
 read back identical); DB index tables; `factories/example` reference factory.
 **Exit:** `factory export | diff | import` is byte-identical; schema validates the Warp example factory
 (adapted); `openspec validate` passes. Nothing else is testable until this exists.
 
-## Phase 2 — Chat → run → events → inbox (≈2–3 weeks)
+## Phase 2 — Chat → run → events → inbox (≈2–3 weeks) ✅
 Build: `packages/adapters` canonical `FactoryEvent` union + **opencode adapter** (HTTP+SSE); `packages/runners`
 local Docker runner (lease/exec/heartbeat/kill); **Temporal worker** with `RunWorkflow` (one per chat message)
 and `RunnerActivity`s; `apps/api` sessions/runs/events (Postgres read model + SSE); `apps/web` New Chat +
@@ -23,7 +23,7 @@ Runs + Inbox with live streaming; append-only JSONL event log.
 **Exit:** from the web chat, a prompt runs on a runner via Temporal, streams tool calls/diffs live, produces
 a patch, and lands in the inbox. No terminal involved. Killing the worker mid-run and restarting resumes it.
 
-## Phase 3 — The factory loop + gates (≈3–4 weeks)
+## Phase 3 — The factory loop + gates (≈3–4 weeks) ✅
 Build: work items, stage graph (triage → spec → plan → implement → review → verify → ship), foreman agent,
 automations (GitHub label, Slack mention, cron), **`FactoryWorkflow`** (one per work item) with child
 workflows per stage, gate primitive (typed decision via Temporal Update/Signal, durable wait, escalation
@@ -34,14 +34,14 @@ push to main), review committee (≥2 reviewers + judge, advisory verdicts), **f
 agent review → merge queue. Both lights-on and fully lights-off paths demoed. Lights-off stays behind a
 benchmark gate until Phase 4 lands.
 
-## Phase 4 — Measurement (≈3 weeks)
+## Phase 4 — Measurement (≈3 weeks) ✅
 Build: `packages/evals` scorer registry (deterministic checks + LLM-as-judge), sampling + cadence,
 judge calibration golden set, dashboard metrics (throughput, cost/PR per stage, cycle time, autonomy),
 benchmark suites with replay at pinned SHAs + `definitionCommit`, Pareto comparison.
 **Exit:** two factory versions benchmarked side by side with a correctness-vs-cost scatter; cost per PR
 attributable to stages.
 
-## Phase 5 — Self-improvement + versioned releases (≈3–4 weeks)
+## Phase 5 — Self-improvement + versioned releases (≈3–4 weeks) ✅
 Build: observer agents, Harness²-style propose→probe→compose, experience library (`INDEX.md`/`EXPERIENCE.md`),
 proposal dedupe + impact ranking, PR generation against the definition repo, benchmark non-regression gate,
 `factory-vN` tags, canary rollout (route X% of work to vN+1), rollback.
@@ -69,6 +69,41 @@ follow-ups.
 **Operational follow-ups:** retention/GC, daily/monthly spend and concurrent-run quotas, and canary
 promotion rewriting the local checkout are implemented (OpenSpec
 `2026-11-05-add-retention-quotas-promotion`).
+
+## What's left (2026-11-06)
+
+Done: Phases 0–5, roadmap items 1–11, remote runners on Linux/macOS (live-verified) and Windows native
+(implemented, not live-verified), retention/GC, cost quotas, promotion checkout, and a fresh
+`hello-nextjs` lights-off cycle with zero human decisions.
+
+Remaining, in rough priority order:
+
+1. **Roadmap item 12 — long-running missions.** Unblocked: design and build the durable mission model.
+2. **Full remote-runner factory cycle on macOS and Linux.** Unblocked: run `hello-nextjs` with
+   `runner: remote` end-to-end, including stage/work-item runs, not only chat.
+3. **Live remote work-item stage.** Unblocked: verify the `RUNNER_REPO_URL` fallback and patch
+   propagation on a remote host.
+4. **Runner metric retention + rollups.** Unblocked: raw 1-minute samples for 7 days, 5-minute
+   rollups for 30 days.
+5. **launchd + Windows service wrappers.** Unblocked: turn the generated agent start commands into
+   managed services.
+6. **mTLS certificate issuance/rotation.** Unblocked to prototype; production is blocked on a PKI
+   decision.
+7. **Live Windows native runner verification.** Blocked on a Windows host.
+8. **Windows containers backend.** Blocked on a Windows host with a container runtime.
+9. **macOS Tart VM backend.** Blocked on Tart/macOS VM infrastructure.
+10. **Separate remote-host E2E.** Blocked on a second physical or VM host.
+11. **Forge proxy websocket upgrade E2E.** Unblocked: exercise the Caddy upgrade path end to end.
+12. **Benchmark replay beyond canonical events + patch.** Unblocked: replay arbitrary harness
+    tool-response traces.
+13. **Live GitHub forge path.** Blocked on a PAT, a real repository and a webhook secret.
+14. **Teams/Jira/GitLab deep integrations.** Unblocked but lower priority; webhook + token clone
+    already covers the basic path.
+15. **Phase 6c — external OIDC/IdP group→org mappings.** Blocked on an IdP/infrastructure decision
+    (Keycloak/Authentik/Zitadel).
+16. **Temporal Cloud.** Blocked on cloud account, namespace and cost decisions.
+17. **Managed Postgres.** Blocked on provider/infrastructure decisions.
+18. **Multi-tenant isolation + Phase 6 exit.** Blocked on items 15–17 and a real remote Linux host.
 
 ## Cross-cutting, every phase
 - OpenSpec change per phase; `docs/STATUS.md` updated; ADR added for every irreversible choice.

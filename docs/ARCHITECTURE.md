@@ -1,7 +1,8 @@
 # Architecture
 
-Status: draft v0.1 (2026-10-28; remote-runner live verification 2026-11-05). Grounded in
-`research/warp-factories.md`, `research/ecosystem.md`, `research/videos/x-PK3yx_MJg/ANALYSIS.md`.
+Status: draft v0.1 (2026-10-28; remote-runner live verification 2026-11-05; retention/quotas/promotion
+2026-11-06). Grounded in `research/warp-factories.md`, `research/ecosystem.md`,
+`research/videos/x-PK3yx_MJg/ANALYSIS.md`.
 
 ## 1. Shape
 
@@ -161,6 +162,17 @@ inference credentials never enter the runner (Warp's four-boundary model).
 
 Rejected: Inngest (per-step cost, wrong step shape), Windmill (not an orchestrator for this).
 Fallback if Temporal ops become painful: Restate (single binary, virtual objects per session).
+
+## 5a. Data lifecycle, quotas and promotion
+
+Run evidence is bounded: the worker sweeps terminal runs older than `RETENTION_DAYS` beyond the newest
+`RETENTION_KEEP_RUNS` per factory, deleting their DB rows, `runs/<id>/` directories, RustFS artifact blobs
+and terminal canary trees. Pending/running runs are protected, and the manual `POST /runs/gc` route uses the
+same core with `dryRun`. Factories can cap lifetime, daily and monthly spend plus concurrent runs; admission
+refuses new work with `factory_budget_exhausted` or `factory_quota_exhausted`, and `GET /budget` projects live
+usage. A promoted canary merges the forge PR, rewrites the local definition checkout when the git worktree is
+clean, and commits it; a dirty or non-git checkout records `promotion_pending_deploy` instead of overwriting
+operator work. See ADR-049 and `openspec/specs/{retention,quotas,self-improvement}`.
 
 ## 6. Measurement and self-improvement
 

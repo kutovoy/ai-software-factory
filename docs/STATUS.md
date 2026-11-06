@@ -21,12 +21,12 @@ The API is nested-only under `/api/v1/factories/:factoryId/…`; members see onl
 unauthorized IDs return 404. The delete path is a verified hard purge: DB rows, Temporal schedules,
 running workflows and run directories, with git history and forge repos kept.
 
-Next: **Phase 6c** — external OIDC/IdP (group→org mappings), remote runners, Temporal Cloud and
-multi-tenant isolation. Also pending: the live GitHub path. Roadmap items 1–11 are implemented:
-validation contract + QA pyramid, agent readiness, outcome metrics, guard hooks, Factory Stack,
-trace-driven self-improvement, classifier routing + spend caps, work intake, progressive context,
-governance/autonomy levels and the surface-agnostic CLI. The remaining roadmap item is long-running
-missions (item 12) in `research/software-factory-ideas.md`.
+Next: **Phase 6c** — external OIDC/IdP (group→org mappings), Temporal Cloud, managed Postgres and
+multi-tenant isolation. Remote runners, retention/GC, cost quotas and promotion checkout are implemented;
+also pending: the live GitHub path. Roadmap items 1–11 are implemented: validation contract + QA pyramid,
+agent readiness, outcome metrics, guard hooks, Factory Stack, trace-driven self-improvement, classifier
+routing + spend caps, work intake, progressive context, governance/autonomy levels and the surface-agnostic
+CLI. The remaining roadmap item is long-running missions (item 12) in `research/software-factory-ideas.md`.
 
 **Remote runners + host observability — Linux, Windows and macOS native agents implemented** (2026-11-04/05, merged to
 `main`, archived OpenSpec `2026-11-04-add-remote-runners`; platform/artifact work in `2026-11-05-add-runner-platforms-and-artifacts`). A remote host enrolls from the console with a
@@ -373,13 +373,16 @@ message as the run summary (unit + contract tests updated), which is what the st
 What is left:
 
 1. **Phase 6c** — external OIDC/IdP and group→org mappings (Keycloak/Authentik/Zitadel), Temporal Cloud,
-   multi-tenant credential isolation. Remote runners now ship Linux/Windows/macOS native agents with
-   RustFS artifact upload/download; macOS M5 native and Linux Docker were live-verified. mTLS certificate
-   issuance, live Windows verification, Windows containers, macOS Tart and a separate remote-host E2E remain.
+   managed Postgres and multi-tenant credential isolation.
 2. **Live GitHub path** — implemented and contract-tested, not exercised against a real repository (needs a PAT).
 3. **Forge proxy mode** — SSH ships on the default stack; the Caddy mode is live-validated for session auth and
    HTTP reverse-proxying (on a test port), but a websocket upgrade has not been exercised end to end.
 4. **Benchmark replay scope** — replays our canonical events + patch, not arbitrary harness tool-response traces.
+5. **Runner follow-ups** — live Windows verification, Windows containers, macOS Tart, mTLS issuance/rotation,
+   launchd/Windows service wrappers, runner metric retention/rollups and a separate remote-host E2E.
+6. **Long-running missions** — roadmap item 12.
+
+The full numbered list with blocked/unblocked status is in `docs/ROADMAP.md` §What's left.
 
 ### Forge transport + public polish (polish-forge-and-public, 2026-11-01)
 
@@ -1764,10 +1767,19 @@ Linux Docker / Windows native / macOS native agents, host CPU/RAM/disk metrics a
 artifact upload/download. macOS M5 native and Linux Docker runs were live-verified end-to-end. See
 `docs/REMOTE_RUNNERS_PLAN.md`.
 
-Next follow-ups: live Windows verification, Windows containers, macOS Tart VMs, mTLS certificate
-issuance/rotation, launchd/Windows service wrappers and a separate remote-host end-to-end run. Phase 6c
-OIDC/IdP, Temporal Cloud and multi-tenant isolation remain blocked on external infrastructure/IdP
-decisions. The live GitHub forge path still needs a PAT, repo and webhook secret.
+Next: **roadmap item 12 — long-running missions**. The **remote runner + observability** work is
+implemented, merged and archived (OpenSpec `2026-11-04-add-remote-runners`,
+`2026-11-05-add-runner-platforms-and-artifacts` and `2026-11-05-harden-live-runner-platforms`):
+enrollment, outbound command queue, central scheduling, Linux Docker / Windows native / macOS native
+agents, host CPU/RAM/disk metrics and alerts, and RustFS artifact upload/download. macOS M5 native and
+Linux Docker runs were live-verified end-to-end. See `docs/REMOTE_RUNNERS_PLAN.md`.
+
+Retention/GC, daily/monthly spend and concurrent-run quotas, and canary promotion rewriting the local
+checkout are implemented (OpenSpec `2026-11-05-add-retention-quotas-promotion`), and a fresh
+`hello-nextjs` lights-off cycle passed on 2026-11-06. The numbered remaining roadmap — including the
+blocked/unblocked status of Windows live verification, Windows containers, macOS Tart, mTLS, service
+wrappers, remote-host E2E, live GitHub, OIDC/IdP, Temporal Cloud, managed Postgres and multi-tenant
+isolation — is in `docs/ROADMAP.md` §What's left.
 
 ## Open questions
 
