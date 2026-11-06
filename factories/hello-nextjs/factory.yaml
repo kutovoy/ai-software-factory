@@ -22,7 +22,7 @@ governance:
   autonomyLevel: full
   requireHumanActions:
     - git.push
-id: fac_01M6ND4JXHE8DXSQVEFNJWNST9
+id: fac_01M6QCY01B28JHAMTGNHZRHRRR
 mcp:
   discovery:
     enabled: true

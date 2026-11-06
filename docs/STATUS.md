@@ -98,6 +98,17 @@ promotion now rewrites and commits the local definition checkout when the worktr
 non-git checkout is never overwritten and records `promotion_pending_deploy` instead. Migration 023 adds
 the retention/quota read-path indexes.
 
+### Fresh hello-nextjs lights-off run (2026-11-06) Deleted `hello-nextjs`
+(`fac_01M6ND4JXHE8DXSQVEFNJWNST9`) through the API purge and recreated it from the preserved definition as
+`fac_01M6QCY01B28JHAMTGNHZRHRRR` with all gates `agent`, `mergePolicy: auto_on_green`, `autonomyLevel: full`
+and an audited autonomy override. Work item `wi_01M6QCY2JBB2RYBGEK980GBPC8` ran `triage → spec → implement →
+review → verify → ship` with zero human decisions and reached `done`; PR #12 merged at
+`2026-11-06T03:37:11Z` (`merge_commit_sha 2f3cc18`), and `site/app/page.tsx` contains
+`<h1>Hello, world!</h1>`. The run used the recreated definition before its new `fac_` id was committed
+(`definitionDirty: true`); the id was committed afterwards. No managed runner containers remained. Also
+verified against the rebuilt stack: `GET /budget` returns lifetime/day/month/concurrency state, and the
+manual run GC dry-run reports all 9 terminal stage runs without deleting them.
+
 ### Readiness and public-release prep (2026-11-01)
 
 **End-to-end lights-off readiness: PASS.** A new `hello-nextjs` factory (six agents, every gate `agent`,
