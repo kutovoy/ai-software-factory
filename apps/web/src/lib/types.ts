@@ -525,6 +525,45 @@ export interface AutonomyState {
   signaled: number;
 }
 
+/* --------------------------------------------------------------- budget */
+
+/** One spend window or the concurrency counter. An absent `cap` means "not configured". */
+export interface BudgetWindowWire {
+  cap?: number;
+  spentUsd: number;
+  exhausted: boolean;
+}
+
+export interface BudgetConcurrencyWire {
+  cap?: number;
+  active: number;
+  exhausted: boolean;
+}
+
+/**
+ * `GET /factories/:factoryId/budget` — declared caps merged with live usage. Lifetime spend
+ * stays top-level (`spentUsd` / `exhausted`); day, month and concurrency are nested so an
+ * unconfigured cap can be reported as absent rather than zero.
+ */
+export interface BudgetWire {
+  maxCostUsdPerRun?: number;
+  maxCostUsdPerStage?: number;
+  maxCostUsdPerFactory?: number;
+  maxCostUsdPerDay?: number;
+  maxCostUsdPerMonth?: number;
+  maxConcurrentRuns?: number;
+  spentUsd: number;
+  exhausted: boolean;
+  day: BudgetWindowWire;
+  month: BudgetWindowWire;
+  concurrency: BudgetConcurrencyWire;
+  anyExhausted: boolean;
+}
+
+export interface BudgetResponseWire {
+  budget: BudgetWire;
+}
+
 /* ---------------------------------------------------------- agent readiness */
 
 export interface ReadinessCheckWire {

@@ -237,6 +237,14 @@ services:
       # Canary follow-ups: keep the last N candidate trees; optional deploy hook timeout.
       CANARY_KEEP_TREES: ${CANARY_KEEP_TREES:-3}
       CANARY_DEPLOY_TIMEOUT_MS: ${CANARY_DEPLOY_TIMEOUT_MS:-60000}
+      # Retention/GC: terminal runs older than RETENTION_DAYS, beyond the newest
+      # RETENTION_KEEP_RUNS per factory, are removed by the worker sweep and the manual
+      # runs/gc route. Set RETENTION_ENABLED=0 to disable; RETENTION_DRY_RUN=1 for a first pass.
+      RETENTION_ENABLED: ${RETENTION_ENABLED:-1}
+      RETENTION_DAYS: ${RETENTION_DAYS:-30}
+      RETENTION_KEEP_RUNS: ${RETENTION_KEEP_RUNS:-100}
+      RETENTION_SWEEP_INTERVAL_MS: ${RETENTION_SWEEP_INTERVAL_MS:-21600000}
+      RETENTION_DRY_RUN: ${RETENTION_DRY_RUN:-0}
       # Webhook HMAC (by secret reference), payload cap and the merge queue.
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-smoke-webhook-secret}
       # Public base URL of the API; the console renders
@@ -269,7 +277,10 @@ services:
     ports:
       - '8080:8080'
     volumes:
-      - ./:/repo:ro
+      # Definitions are git-backed and promotion rewrites the local checkout when a canary
+      # is promoted (ADR-049), so the API needs write access to `/repo`; run workspaces are
+      # still isolated in the runner sandbox.
+      - ./:/repo
       - ./runs:/app/runs
     extra_hosts:
       - 'host.docker.internal:host-gateway'
@@ -407,6 +418,14 @@ services:
       DEFINITION_REPO_OWNER: ${DEFINITION_REPO_OWNER:-factory}
       CANARY_KEEP_TREES: ${CANARY_KEEP_TREES:-3}
       CANARY_DEPLOY_TIMEOUT_MS: ${CANARY_DEPLOY_TIMEOUT_MS:-60000}
+      # Retention/GC: terminal runs older than RETENTION_DAYS, beyond the newest
+      # RETENTION_KEEP_RUNS per factory, are removed by the worker sweep and the manual
+      # runs/gc route. Set RETENTION_ENABLED=0 to disable; RETENTION_DRY_RUN=1 for a first pass.
+      RETENTION_ENABLED: ${RETENTION_ENABLED:-1}
+      RETENTION_DAYS: ${RETENTION_DAYS:-30}
+      RETENTION_KEEP_RUNS: ${RETENTION_KEEP_RUNS:-100}
+      RETENTION_SWEEP_INTERVAL_MS: ${RETENTION_SWEEP_INTERVAL_MS:-21600000}
+      RETENTION_DRY_RUN: ${RETENTION_DRY_RUN:-0}
       # Local runner sandbox (ADR-025): `exec` = macOS sandbox-exec, `none` = unconfined.
       RUNNER_SANDBOX: ${RUNNER_SANDBOX:-none}
       # Phase 3b: merge queue (ADR-022). The queue workflow runs in this worker.
@@ -435,7 +454,10 @@ services:
     # deliver SIGTERM and let activities finish cleanup before SIGKILL.
     stop_grace_period: 150s
     volumes:
-      - ./:/repo:ro
+      # Definitions are git-backed and promotion rewrites the local checkout when a canary
+      # is promoted (ADR-049), so the API needs write access to `/repo`; run workspaces are
+      # still isolated in the runner sandbox.
+      - ./:/repo
       - ./runs:/app/runs
       # Real (non-fake) runs lease sibling containers through the docker backend.
       - /var/run/docker.sock:/var/run/docker.sock

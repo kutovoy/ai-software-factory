@@ -202,3 +202,11 @@ export function presignS3Put(input: Omit<S3PresignInput, 'method'>): S3PresignRe
 export function presignS3Get(input: Omit<S3PresignInput, 'method'>): S3PresignResult {
   return presignS3Url({ ...input, method: 'GET' });
 }
+
+/**
+ * Presigned DELETE for a stored object (retention, change `add-retention-quotas-promotion`).
+ * Same SigV4 query-string form as GET/PUT; the caller sends a bare DELETE with no body.
+ */
+export function presignS3Delete(input: Omit<S3PresignInput, 'method'>): S3PresignResult {
+  return presignS3Url({ ...input, method: 'DELETE' });
+}

@@ -118,6 +118,23 @@ export interface OrchestrationConfig {
   runnerReaperMaxAgeMs: number;
   /** Do not remove a container whose run just started; avoids a Temporal visibility race. */
   runnerReaperGraceMs: number;
+  /**
+   * Retention sweep (change `add-retention-quotas-promotion`). Terminal runs older than
+   * `retentionDays` and beyond the newest `retentionKeepRuns` per factory are removed with
+   * their rows, run directory, stored artifact blobs and terminal canary trees.
+   */
+  retentionEnabled: boolean;
+  retentionDays: number;
+  retentionKeepRuns: number;
+  /** Worker cadence for the retention sweep. */
+  retentionSweepIntervalMs: number;
+  /** Log the sweep plan without deleting anything; use for a first rollout. */
+  retentionDryRun: boolean;
+}
+
+function boolFromEnv(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined || value === '') return fallback;
+  return value === '1' || value.toLowerCase() === 'true';
 }
 
 function intFromEnv(value: string | undefined, fallback: number): number {
@@ -190,5 +207,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): OrchestrationC
     runnerReaperDryRun: env.RUNNER_REAPER_DRY_RUN === '1',
     runnerReaperMaxAgeMs: intFromEnv(env.RUNNER_REAPER_MAX_AGE_MS, 6 * 60 * 60 * 1000),
     runnerReaperGraceMs: intFromEnv(env.RUNNER_REAPER_GRACE_MS, 5 * 60 * 1000),
+    retentionEnabled: boolFromEnv(env.RETENTION_ENABLED, true),
+    retentionDays: intFromEnv(env.RETENTION_DAYS, 30),
+    retentionKeepRuns: intFromEnv(env.RETENTION_KEEP_RUNS, 100),
+    retentionSweepIntervalMs: intFromEnv(env.RETENTION_SWEEP_INTERVAL_MS, 6 * 60 * 60 * 1000),
+    retentionDryRun: boolFromEnv(env.RETENTION_DRY_RUN, false),
   };
 }

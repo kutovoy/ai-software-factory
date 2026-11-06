@@ -80,16 +80,40 @@ export const modelUnresolved = (ref: string, envName: string): ApiError =>
     { ref, env: envName },
   );
 
+/**
+ * Refuses new work when a spend cap is reached. `window` names the cap that tripped
+ * (`lifetime`, `day` or `month`) so a client can point at the right number; the envelope
+ * (`code`, `capUsd`, `spentUsd`) stays the same for every window.
+ */
 export const factoryBudgetExhausted = (
   factory: string,
   capUsd: number,
   spentUsd: number,
+  window: 'lifetime' | 'day' | 'month' = 'lifetime',
 ): ApiError =>
   new ApiError(
     'factory_budget_exhausted',
     409,
-    `factory "${factory}" has spent $${spentUsd.toFixed(2)} of its $${capUsd.toFixed(2)} cap; new work is refused`,
-    { factory, capUsd, spentUsd },
+    `factory "${factory}" has spent $${spentUsd.toFixed(2)} of its $${capUsd.toFixed(2)} ${window === 'lifetime' ? '' : `${window} `}cap; new work is refused`,
+    { factory, capUsd, spentUsd, window },
+  );
+
+/**
+ * Refuses a new run when a non-spend quota is exhausted (change
+ * `add-retention-quotas-promotion`). Concurrency is an admission guard: it counts
+ * pending/running runs and does not lock the worker.
+ */
+export const factoryQuotaExhausted = (
+  factory: string,
+  quota: 'concurrency',
+  cap: number,
+  active: number,
+): ApiError =>
+  new ApiError(
+    'factory_quota_exhausted',
+    409,
+    `factory "${factory}" has ${active} active run(s) at its ${cap}-run ${quota} quota; new runs are refused`,
+    { factory, quota, cap, active },
   );
 
 export const modelNotAllowed = (model: string, allowed: string[]): ApiError =>

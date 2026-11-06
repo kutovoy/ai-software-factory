@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { cpSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative } from 'node:path';
 import { createHash } from 'node:crypto';
 import {
   createCanaryRollout,
@@ -20,7 +20,7 @@ import {
 } from '@factory/core';
 import { FakeForge, ForgeError, type FileChange, type RepoRef } from '@factory/forge';
 import { getSql } from './db';
-import { loadConfig } from './config';
+import { loadConfig, type OrchestrationConfig } from './config';
 import { getForge } from './activities/forge';
 import { startCanaryWorkflow } from './canary-client';
 import type { CanaryObservationSummary, CanaryWorkflowInput } from './types';
@@ -522,17 +522,192 @@ export async function collectCanaryTrees(
 
 /* ------------------------------------------------------------- promotion hook */
 
+/**
+ * Result of rewriting the local factory checkout from the promoted candidate tree
+ * (task 4.1/4.2). `updated` means the factory tree was replaced; `commit` is the local
+ * definition-repo commit that records the promotion. `reason` explains a refusal
+ * (dirty checkout, not a git worktree, missing tree) without treating it as a hard error.
+ */
+export interface CheckoutOutcome {
+  updated: boolean;
+  commit: string | null;
+  error: string | null;
+  reason: string | null;
+}
+
 export interface CanaryDeployment {
   status: CanaryDeploymentStatus;
   hook: string | null;
   /** Where the promoted definition tree was staged (null when it could not be copied). */
   stagedPath: string | null;
   error: string | null;
+  /** Whether the local factory checkout was rewritten and committed. */
+  checkout: CheckoutOutcome;
+}
+
+function gitTopLevel(dir: string): string | null {
+  try {
+    const root = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      cwd: dir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    return root || null;
+  } catch {
+    return null;
+  }
+}
+
+function gitPorcelain(cwd: string, pathspec: string): string {
+  return execFileSync('git', ['status', '--porcelain', '--', pathspec], {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  }).trim();
+}
+
+/**
+ * Replaces the contents of `target` with the contents of `source`, keeping a `.git`
+ * directory that happens to live inside `target` (factory dirs are plain definition
+ * trees, but a nested checkout must never be destroyed by the copy).
+ */
+function replaceTree(source: string, target: string): void {
+  mkdirSync(target, { recursive: true });
+  for (const entry of readdirSync(target)) {
+    if (entry === '.git') continue;
+    rmSync(join(target, entry), { recursive: true, force: true });
+  }
+  for (const entry of readdirSync(source)) {
+    if (entry === '.git') continue;
+    cpSync(join(source, entry), join(target, entry), { recursive: true });
+  }
+}
+
+/**
+ * Rewrites the local factory tree from the materialised candidate tree and commits it on
+ * the definition repo. Refuses (without touching the tree) when the factory path is dirty
+ * or the factory root is not a git worktree, so uncommitted operator work is never lost.
+ */
+export function rewriteLocalCheckout(
+  rollout: CanaryRolloutRecord,
+  config: OrchestrationConfig = loadConfig(),
+): CheckoutOutcome {
+  const factoryPath = join(config.factoryRoot, rollout.factory);
+  const candidateRoot = rollout.candidateRoot;
+
+  if (!candidateRoot || !existsSync(candidateRoot)) {
+    return {
+      updated: false,
+      commit: null,
+      error: null,
+      reason: 'candidate tree is missing',
+    };
+  }
+  if (!existsSync(factoryPath)) {
+    return {
+      updated: false,
+      commit: null,
+      error: null,
+      reason: 'factory path is missing',
+    };
+  }
+
+  const repoRoot = gitTopLevel(config.factoryRoot);
+  if (!repoRoot) {
+    return {
+      updated: false,
+      commit: null,
+      error: null,
+      reason: 'factory root is not a git worktree',
+    };
+  }
+
+  // macOS temp dirs resolve through /private: compare real paths so the pathspec matches.
+  let factoryReal: string;
+  let repoReal: string;
+  try {
+    factoryReal = realpathSync(factoryPath);
+    repoReal = realpathSync(repoRoot);
+  } catch {
+    return {
+      updated: false,
+      commit: null,
+      error: null,
+      reason: 'factory path cannot be resolved',
+    };
+  }
+
+  const factoryRelative = relative(repoReal, factoryReal);
+  if (!factoryRelative || factoryRelative.startsWith('..')) {
+    return {
+      updated: false,
+      commit: null,
+      error: null,
+      reason: 'factory path is outside the git worktree',
+    };
+  }
+
+  try {
+    if (gitPorcelain(repoReal, factoryRelative)) {
+      return {
+        updated: false,
+        commit: null,
+        error: null,
+        reason: `factory path "${factoryRelative}" has uncommitted changes`,
+      };
+    }
+
+    replaceTree(candidateRoot, factoryReal);
+    execFileSync('git', ['add', '--', factoryRelative], {
+      cwd: repoReal,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    if (!gitPorcelain(repoReal, factoryRelative)) {
+      // The candidate is identical to the checkout: nothing to commit, but the tree is
+      // authoritative for the next local run.
+      return { updated: true, commit: null, error: null, reason: null };
+    }
+
+    execFileSync(
+      'git',
+      [
+        '-c',
+        'user.name=Factory',
+        '-c',
+        'user.email=factory@localhost',
+        'commit',
+        '-m',
+        `factory: promote canary ${rollout.id}`,
+        '--',
+        factoryRelative,
+      ],
+      {
+        cwd: repoReal,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    const commit = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: repoReal,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    return { updated: true, commit: commit || null, error: null, reason: null };
+  } catch (error) {
+    return {
+      updated: false,
+      commit: null,
+      error: message(error),
+      reason: 'local checkout rewrite failed',
+    };
+  }
 }
 
 /** Writes the promoted definition to a staging path the deploy hook can install from. */
-export function stagePromotedDefinition(rollout: CanaryRolloutRecord): string | null {
-  const config = loadConfig();
+export function stagePromotedDefinition(
+  rollout: CanaryRolloutRecord,
+  config: OrchestrationConfig = loadConfig(),
+): string | null {
   const staged = join(config.runsDir, 'deploy', rollout.factory, rollout.id, 'definition');
   if (!rollout.candidateRoot || !existsSync(rollout.candidateRoot)) return null;
   try {
@@ -546,13 +721,20 @@ export function stagePromotedDefinition(rollout: CanaryRolloutRecord): string | 
 }
 
 /**
- * Applies the promoted candidate to the local checkout via the declared `deployHook`
- * (task 5.3). No hook means the checkout was NOT updated, so the rollout records
- * `promotion_pending_deploy` instead of pretending; a failing hook records
- * `promoted_pending_deploy` with the error (the merge already happened).
+ * Applies the promoted candidate to the local checkout: first rewrite the factory tree
+ * from the candidate and commit it, then run the declared `deployHook` (task 5.3/4.1).
+ * Status semantics:
+ *  - clean rewrite + no hook => `deployed`
+ *  - clean rewrite + hook success => `deployed`
+ *  - clean rewrite + hook failure => `promoted_pending_deploy` with the hook error
+ *  - dirty/not-git rewrite + no hook => `promotion_pending_deploy` with the reason
+ *  - dirty/not-git rewrite + hook success => `deployed`
+ *  - dirty/not-git rewrite + hook failure => `promoted_pending_deploy`
  */
-export function deployPromotion(rollout: CanaryRolloutRecord): CanaryDeployment {
-  const config = loadConfig();
+export function deployPromotion(
+  rollout: CanaryRolloutRecord,
+  config: OrchestrationConfig = loadConfig(),
+): CanaryDeployment {
   const definitionRoot =
     rollout.candidateRoot && existsSync(rollout.candidateRoot)
       ? rollout.candidateRoot
@@ -561,10 +743,17 @@ export function deployPromotion(rollout: CanaryRolloutRecord): CanaryDeployment 
   const hook = definition
     ? resolveImprovement(definition.manifest.improvement).deployHook
     : null;
-  const stagedPath = stagePromotedDefinition(rollout);
+  const stagedPath = stagePromotedDefinition(rollout, config);
+  const checkout = rewriteLocalCheckout(rollout, config);
 
   if (!hook) {
-    return { status: 'promotion_pending_deploy', hook: null, stagedPath, error: null };
+    return {
+      status: checkout.updated ? 'deployed' : 'promotion_pending_deploy',
+      hook: null,
+      stagedPath,
+      error: null,
+      checkout,
+    };
   }
 
   try {
@@ -578,15 +767,17 @@ export function deployPromotion(rollout: CanaryRolloutRecord): CanaryDeployment 
         CANARY_ROLLOUT_ID: rollout.id,
         CANARY_CANDIDATE_COMMIT: rollout.candidateCommit ?? '',
         FACTORY_DEPLOY_STAGE: stagedPath ?? '',
+        FACTORY_CHECKOUT_COMMIT: checkout.commit ?? '',
       },
     });
-    return { status: 'deployed', hook, stagedPath, error: null };
+    return { status: 'deployed', hook, stagedPath, error: null, checkout };
   } catch (error) {
     return {
       status: 'promoted_pending_deploy',
       hook,
       stagedPath,
       error: message(error),
+      checkout,
     };
   }
 }
@@ -704,6 +895,7 @@ export async function promoteCanaryRollout(
         hook: deployment.hook,
         stagedPath: deployment.stagedPath,
         error: deployment.error,
+        checkout: deployment.checkout,
       },
       prUrl: rollout.prUrl,
       prNumber: rollout.prNumber,

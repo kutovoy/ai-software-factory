@@ -100,6 +100,16 @@ export interface ApiConfig {
   /** Timeout for the optional promotion deploy hook. */
   canaryDeployTimeoutMs: number;
   /**
+   * Retention policy (change `add-retention-quotas-promotion`): terminal runs older than
+   * `retentionDays`, beyond the newest `retentionKeepRuns` per factory, are collected by the
+   * worker sweep and the manual `POST /factories/{id}/runs/gc` route.
+   */
+  retentionEnabled: boolean;
+  retentionDays: number;
+  retentionKeepRuns: number;
+  retentionSweepIntervalMs: number;
+  retentionDryRun: boolean;
+  /**
    * Webhooks (ADR-023): hard cap on a delivery body. Anything larger is rejected with
    * `payload_too_large` before parsing.
    */
@@ -216,6 +226,11 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     mergeIdleCycles: intFromEnv(env.MERGE_IDLE_CYCLES, 2),
     canaryKeepTrees: intFromEnv(env.CANARY_KEEP_TREES, 3),
     canaryDeployTimeoutMs: intFromEnv(env.CANARY_DEPLOY_TIMEOUT_MS, 60_000),
+    retentionEnabled: boolFromEnv(env.RETENTION_ENABLED, true),
+    retentionDays: intFromEnv(env.RETENTION_DAYS, 30),
+    retentionKeepRuns: intFromEnv(env.RETENTION_KEEP_RUNS, 100),
+    retentionSweepIntervalMs: intFromEnv(env.RETENTION_SWEEP_INTERVAL_MS, 6 * 60 * 60 * 1000),
+    retentionDryRun: boolFromEnv(env.RETENTION_DRY_RUN, false),
     webhookMaxBytes: intFromEnv(env.WEBHOOK_MAX_BYTES, 1_000_000),
     webhookSecretRef: env.GITHUB_WEBHOOK_SECRET_REF ?? 'GITHUB_WEBHOOK_SECRET',
     githubBaseUrl: env.GITHUB_API_BASE_URL ?? 'https://api.github.com',
@@ -296,5 +311,10 @@ export function toOrchestrationConfig(config: ApiConfig): OrchestrationConfig {
     runnerReaperDryRun: process.env.RUNNER_REAPER_DRY_RUN === '1',
     runnerReaperMaxAgeMs: intFromEnv(process.env.RUNNER_REAPER_MAX_AGE_MS, 6 * 60 * 60 * 1000),
     runnerReaperGraceMs: intFromEnv(process.env.RUNNER_REAPER_GRACE_MS, 5 * 60 * 1000),
+    retentionEnabled: config.retentionEnabled,
+    retentionDays: config.retentionDays,
+    retentionKeepRuns: config.retentionKeepRuns,
+    retentionSweepIntervalMs: config.retentionSweepIntervalMs,
+    retentionDryRun: config.retentionDryRun,
   };
 }

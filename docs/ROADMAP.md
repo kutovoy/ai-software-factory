@@ -52,8 +52,8 @@ a PR (or auto-merges in lights-off), and can be rolled back in one click.
 Build: auth/users/roles, remote runners (UI-enrolled outbound-mTLS host agents, central Temporal
 scheduling, no Temporal/Postgres on remote hosts, Linux first, then Windows native/Windows containers,
 then macOS native/Tart), runner host CPU/RAM/disk metrics and alerts, **Temporal Cloud** (namespaces +
-search attributes; retire the local dev server), managed Postgres, cost/quota controls,
-Teams/Jira/GitLab integrations, multi-tenant namespaces.
+search attributes; retire the local dev server), managed Postgres, cost/quota controls (daily/monthly
+spend + concurrent-run admission), Teams/Jira/GitLab integrations, multi-tenant namespaces.
 **Exit:** a second user and a remote Linux runner operate the same factory with per-tenant isolation,
 and the console shows each runner's CPU/RAM/disk health with firing/resolved alerts.
 
@@ -65,6 +65,10 @@ metrics and alerts, and RustFS artifact upload/download. macOS M5 native (`sandb
 Docker agent runs were live-verified end-to-end; Windows live verification, Windows containers, macOS
 Tart VMs, mTLS certificate issuance, service-manager wrappers and a separate remote host remain
 follow-ups.
+
+**Operational follow-ups:** retention/GC, daily/monthly spend and concurrent-run quotas, and canary
+promotion rewriting the local checkout are implemented (OpenSpec
+`2026-11-05-add-retention-quotas-promotion`).
 
 ## Cross-cutting, every phase
 - OpenSpec change per phase; `docs/STATUS.md` updated; ADR added for every irreversible choice.

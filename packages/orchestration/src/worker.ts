@@ -4,6 +4,7 @@ import * as activities from './activities';
 import { loadConfig, type OrchestrationConfig } from './config';
 import { reapRunnerContainers } from './runner-reaper';
 import { sweepRunnerObservability } from './runner-observability';
+import { sweepRetention } from './retention';
 
 /**
  * Worker entrypoint: registers `RunWorkflow` and every activity on one task queue.
@@ -51,6 +52,7 @@ export async function runWorker(config: OrchestrationConfig = loadConfig()): Pro
   startHeartbeat(process.env.WORKER_HEARTBEAT_FILE);
   startRunnerReaper(config);
   startRunnerObservability(config);
+  startRetentionSweep(config);
 
   log('worker_started', {
     address: config.temporalAddress,
@@ -134,6 +136,36 @@ function startRunnerObservability(config: OrchestrationConfig): void {
   const timer = setInterval(() => {
     void tick();
   }, config.remoteAlertIntervalMs);
+  timer.unref?.();
+}
+
+/**
+ * Retention sweep (change `add-retention-quotas-promotion`). Runs on the central worker
+ * only: remote hosts have no Temporal/Postgres access and never execute it.
+ * `RETENTION_ENABLED=0` disables it.
+ */
+function startRetentionSweep(config: OrchestrationConfig): void {
+  if (!config.retentionEnabled) return;
+
+  let inFlight = false;
+  const tick = async (): Promise<void> => {
+    if (inFlight) return;
+    inFlight = true;
+    try {
+      await sweepRetention({ config });
+    } catch (error) {
+      logError('retention_sweep_failed', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      inFlight = false;
+    }
+  };
+
+  void tick();
+  const timer = setInterval(() => {
+    void tick();
+  }, config.retentionSweepIntervalMs);
   timer.unref?.();
 }
 

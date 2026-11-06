@@ -36,6 +36,11 @@ This project is that factory, built to be **self-hosted, inspectable and yours**
 
 Short, dated highlights of user-visible changes. Full detail lives in `docs/STATUS.md`.
 
+- **2026-11-05 — Retention, quotas and promotion checkout.** The worker now sweeps terminal runs,
+  run directories, artifact blobs and terminal canary trees on a configurable age/keep policy; the Runs
+  page adds a manual GC with dry-run. Factories can cap daily/monthly spend and concurrent runs, shown
+  on the dashboard and enforced at admission. Canary promotion now rewrites and commits the local
+  definition checkout when it is clean, instead of leaving the next run on stale code.
 - **2026-11-05 — Live runner verification + hardening.** macOS M5 native and Linux Docker remote
   runners completed real opencode jobs end-to-end. The tests fixed remote repo specs, native opencode
   config, sandbox ports/HOME, remote run directories, terminal-status fallback, agent shutdown reaping
@@ -123,7 +128,9 @@ The factory is measurable, verifiable and explainable, not just autonomous:
 - **Trace scoring.** Deterministic trace checks (`redundant_tests`, `verbosity`, `scope`, `review_usefulness`)
   read the event log and review verdict; run detail shows the metrics and failures feed self-improvement.
 - **Routing + spend caps.** `routing.yaml` can opt into a deterministic cheap/standard/deep classifier, and
-  `factory.yaml` can cap spend per run, stage and factory; crossing a cap stops the run with `budget_exhausted`.
+  `factory.yaml` can cap spend per run, stage, day, month and lifetime plus concurrent runs; crossing a cap
+  stops the run with `budget_exhausted` or refuses admission with `factory_budget_exhausted` /
+  `factory_quota_exhausted`.
 - **Intake from anywhere.** Generic, Sentry, PostHog, Slack, Linear and Jira intake endpoints verify signatures,
   dedupe deliveries, frame untrusted payloads and create normal work items.
 - **Progressive context.** `mcp.discovery` selects the relevant MCP servers for a task prompt, records discovered

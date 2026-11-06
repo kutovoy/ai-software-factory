@@ -290,7 +290,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
         tone: 'info',
         title: 'Read-only by design',
         text:
-          'Every definition-backed page carries a "Definitions are edited in git" banner. The console and API never write the worktree (ADR-012): proposals, canary promotion and authority changes open PRs, and the on-disk definition updates on the next checkout or deploy.',
+          'Every definition-backed page carries a "Definitions are edited in git" banner. The console and API never edit definitions directly (ADR-012): proposals, canary promotion and authority changes open PRs. After a canary merge, promotion rewrites the local checkout when the worktree is clean and commits it (ADR-049); otherwise it records `promotion_pending_deploy` and the on-disk definition updates on the next checkout/deploy.',
       },
       {
         kind: 'code',
@@ -920,6 +920,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
           'Detail: events, steps, artifacts (`runs/<runId>/artifacts/`, or RustFS-backed download links for remote runs), permissions, scores and cost.',
           'Score detail: label, value, rationale, evidence links, provenance (`rubricHash`, judge model/version), calibration state.',
           'Cancel is offered only while the run is `pending`, `running` or `cancelling`; a terminal run shows its end state instead of a dead button.',
+          'Manual GC: the Runs header control removes terminal runs older than `days` and beyond the newest `keep` per factory, with their rows, run directories, artifact blobs and terminal canary trees. `dryRun` reports the plan without deleting anything; active runs are always protected.',
           'A chat run that failed or was cancelled can be retried as a new run. A factory stage run cannot: the page links to the work item, where retry re-dispatches the current stage under a new attempt.',
         ],
       },
@@ -1159,7 +1160,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'prose',
         text:
-          'The dashboard answers "what is this factory doing and what did it produce", not only "how are the numbers". It shows the autonomy state in force (enabled/paused, the declaration and any override), the canary rollout (active or last), the newest recorded activity, the newest work items with their stage/status, the newest runs with harness/model/cost, and the deliverables: pull request links, the count of items that reached `done`, and the latest captured artifact. Metric cards are computed from runs, scores and forge events over a selectable window; missing data is `null` with a reason (`no_runs_in_bucket`, `no_scores_in_bucket`) rather than a fabricated zero.',
+          'The dashboard answers "what is this factory doing and what did it produce", not only "how are the numbers". It shows the autonomy state in force (enabled/paused, the declaration and any override), the canary rollout (active or last), the newest recorded activity, the newest work items with their stage/status, the newest runs with harness/model/cost, and the deliverables: pull request links, the count of items that reached `done`, and the latest captured artifact. Metric cards are computed from runs, scores and forge events over a selectable window; missing data is `null` with a reason (`no_runs_in_bucket`, `no_scores_in_bucket`) rather than a fabricated zero. Budget and quotas: the budget panel shows lifetime, day and month spend against `budget.maxCostUsdPerFactory`, `maxCostUsdPerDay` and `maxCostUsdPerMonth`, plus pending/running runs against `maxConcurrentRuns`. An unconfigured cap says "no cap" instead of pretending it is zero; an exhausted cap is marked. Admission refuses new work with `factory_budget_exhausted` or `factory_quota_exhausted`.',
       },
       {
         kind: 'list',
@@ -1600,7 +1601,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
         tone: 'warning',
         title: 'Deletion is a git change, not a button',
         text:
-          'The console never writes the worktree (ADR-012), so there is no delete button. Removing `factories/<name>/` deletes the definition; the script below also pauses automations and clears the read-model rows so old runs and items do not linger in lists. Git history keeps the definition if you need it back.',
+          'The console has no delete button and does not edit definitions (ADR-012); a canary promotion is the one write-back, after a successful merge (ADR-049). Removing `factories/<name>/` deletes the definition; the script below also pauses automations and clears the read-model rows so old runs and items do not linger in lists. Git history keeps the definition if you need it back.',
       },
       {
         kind: 'steps',
@@ -1655,7 +1656,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
         tone: 'info',
         title: 'The console does not create factories',
         text:
-          'Factories are files in git. This page is a how-to, not a form: the `+` next to Factories opens it. Scaffolding happens in your editor and CLI, and the change becomes visible after it is committed — the console never writes the worktree (ADR-012).',
+          'Factories are files in git. This page is a how-to, not a form: the `+` next to Factories opens it. Scaffolding happens in your editor and CLI, and the change becomes visible after it is committed — the console does not edit definitions (ADR-012), except the local-checkout write-back after a canary promotion (ADR-049).',
       },
       {
         kind: 'steps',
@@ -2093,7 +2094,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
           'Automatic rollback — pass rate dropped or the incident/failure rate rose beyond `rollbackThreshold` over the window. The Self-improvement canary panel shows candidate vs stable deltas and the evidence.',
           '`insufficientData` — too few scored runs in the window; the rollout is not promoted on noise. Wait for more items or widen the window.',
           'A manual rollback — audited with actor + reason; the candidate PR is left open with an audit comment.',
-          'Promotion did not change the local checkout — promotion merges the candidate PR but does not rewrite the worktree (ADR-012). The on-disk definition updates on the next checkout/deploy; a deploy hook result is recorded as deployed / promoted_pending_deploy / promotion_pending_deploy.',
+          'Promotion did not change the local checkout — promotion merges the candidate PR and then rewrites the local factory tree only when the worktree is clean (ADR-049). A dirty checkout or a non-git mount records `promotion_pending_deploy` with the reason; a deploy hook result is recorded as deployed / promoted_pending_deploy / promotion_pending_deploy.',
           'A second start is refused — `canary_active`: one rollout per factory may be in flight. Promote, roll back, or wait for the window.',
           'Candidate trees — terminal rollouts keep the newest `CANARY_KEEP_TREES` (default 3); older trees are pruned with `canary.gc`. An in-flight tree is never removed.',
         ],

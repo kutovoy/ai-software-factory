@@ -1232,8 +1232,9 @@ function manifestWithImprovement(
 
 /**
  * An authority change is a definition change: the API computes the diff, refuses without
- * `confirm: true`, and then opens a PR against the definition repo. It never writes the
- * worktree (ADR-012).
+ * `confirm: true`, and then opens a PR against the definition repo. It does not edit the
+ * definition tree directly (ADR-012); canary promotion is the separate write-back path
+ * (ADR-049).
  */
 export async function changeAuthorityForApi(
   config: ApiConfig,

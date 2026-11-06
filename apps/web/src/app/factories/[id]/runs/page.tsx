@@ -7,6 +7,7 @@ import { safeGet } from '@/lib/api';
 import { factoryNameOf, loadFactory } from '@/lib/factory-page';
 import { formatCost, shortCommit, statusTone } from '@/lib/format';
 import { ElapsedTime, TimeAgo } from '@/components/ui/TimeAgo';
+import { RunsGcButton } from '@/components/runs/RunsGcButton';
 import type { RunSummary } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -45,13 +46,16 @@ export default async function RunsPage({
             Every run pins a <span className="font-mono">definitionCommit</span>; newest first.
           </p>
         </div>
-        <Link
-          href="/chat"
-          data-testid="runs-new-chat"
-          className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
-        >
-          New Chat
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <RunsGcButton factoryId={factoryId} />
+          <Link
+            href="/chat"
+            data-testid="runs-new-chat"
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
+          >
+            New Chat
+          </Link>
+        </div>
       </header>
 
       <form

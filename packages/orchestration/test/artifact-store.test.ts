@@ -156,6 +156,45 @@ describe('S3ArtifactStore', () => {
       /disabled/,
     );
   });
+
+  test('presigns a DELETE against the internal endpoint', () => {
+    const store = new S3ArtifactStore(
+      resolveArtifactStoreConfig({ ...configured, S3_INTERNAL_ENDPOINT: 'http://rustfs:9000' }),
+      () => FIXED_NOW,
+    );
+    const url = store.presignDelete({ key: 'tenants/default/runs/run_1/patch.diff' });
+    expect(url.startsWith('http://rustfs:9000/factory-artifacts/tenants/default/runs/run_1/patch.diff?')).toBe(true);
+    expect(url).toContain('X-Amz-Signature=');
+  });
+
+  test('deleteStoredObject sends a signed DELETE and treats 404 as already gone', async () => {
+    const calls: { url: string; method: string }[] = [];
+    const fetchImpl = (async (url: string, init: RequestInit) => {
+      calls.push({ url, method: String(init.method) });
+      return new Response(null, { status: 204 });
+    }) as unknown as typeof fetch;
+
+    const deleted = await store.deleteStoredObject('tenants/default/runs/run_1/a.log', fetchImpl);
+    expect(deleted).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.method).toBe('DELETE');
+    expect(calls[0]?.url).toContain('/factory-artifacts/tenants/default/runs/run_1/a.log?');
+    expect(calls[0]?.url).toContain('X-Amz-Signature=');
+
+    const gone = (async () => new Response(null, { status: 404 })) as unknown as typeof fetch;
+    expect(await store.deleteStoredObject('tenants/default/runs/run_1/a.log', gone)).toBe(true);
+  });
+
+  test('deleteStoredObject reports a failure without throwing', async () => {
+    const failing = (async () => new Response(null, { status: 403 })) as unknown as typeof fetch;
+    expect(await store.deleteStoredObject('tenants/default/runs/run_1/a.log', failing)).toBe(false);
+
+    const offline = (async () => {
+      throw new Error('connection refused');
+    }) as unknown as typeof fetch;
+    expect(await store.deleteStoredObject('tenants/default/runs/run_1/a.log', offline)).toBe(false);
+    expect(await store.deleteStoredObject('', offline)).toBe(false);
+  });
 });
 
 describe('artifact metadata verification', () => {

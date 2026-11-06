@@ -3,6 +3,7 @@ import {
   DEFAULT_S3_REGION,
   MAX_PRESIGN_EXPIRY_SECONDS,
   MIN_PRESIGN_EXPIRY_SECONDS,
+  presignS3Delete,
   presignS3Get,
   presignS3Put,
 } from './s3-presign';
@@ -318,6 +319,42 @@ export class S3ArtifactStore {
       return Number.isFinite(bytes) ? { ...(bytes === undefined ? {} : { bytes }) } : {};
     } catch {
       return null;
+    }
+  }
+
+  /** Short-lived signed DELETE for one stored object (server-side endpoint by default). */
+  presignDelete(input: { key: string; endpoint?: string }): string {
+    return presignS3Delete({
+      endpoint:
+        input.endpoint ?? this.config.internalEndpoint ?? (this.config.endpoint as string),
+      bucket: this.bucket,
+      key: input.key,
+      accessKey: this.config.accessKey as string,
+      secretKey: this.config.secretKey as string,
+      region: this.config.region,
+      forcePathStyle: this.config.forcePathStyle,
+      expiresInSeconds: this.config.presignExpirySeconds,
+      now: this.clock(),
+    }).url;
+  }
+
+  /**
+   * Best-effort object deletion for retention (spec `retention`, artifact deletion scenario).
+   * Returns `true` when the object is gone (2xx or `404` — already deleted), `false` on a
+   * transport/authorization failure. Callers must not roll back metadata on `false`: the
+   * next sweep retries and the bucket lifecycle rules are the backstop.
+   */
+  async deleteStoredObject(key: string, fetchImpl: typeof fetch = fetch): Promise<boolean> {
+    if (typeof key !== 'string' || key.trim() === '') return false;
+    const url = this.presignDelete({ key });
+    try {
+      const response = await fetchImpl(url, {
+        method: 'DELETE',
+        signal: AbortSignal.timeout(5_000),
+      });
+      return response.ok || response.status === 404;
+    } catch {
+      return false;
     }
   }
 }

@@ -8,6 +8,8 @@ import { formatCost, formatTokens, shortCommit, statusTone } from '@/lib/format'
 import { TimeAgo } from '@/components/ui/TimeAgo';
 import type {
   AutonomyReadWire,
+  BudgetResponseWire,
+  BudgetWire,
   CanaryOverviewWire,
   FactoryDetail,
   FactoryMetricsResponse,
@@ -260,6 +262,82 @@ function readinessTone(status: ReadinessReportWire['status']): 'success' | 'warn
   if (status === 'ready') return 'success';
   if (status === 'warn') return 'warning';
   return 'danger';
+}
+
+/** `$x of $y` when a cap is configured; `$x · no cap` when the definition omits it. */
+function spendLine(state: { cap?: number; spentUsd: number }): string {
+  if (state.cap === undefined) return `${formatCost(state.spentUsd)} · no cap`;
+  return `${formatCost(state.spentUsd)} of ${formatCost(state.cap)}`;
+}
+
+/**
+ * Budget/quota panel (spec `quotas` › Budget reporting). Every number comes from the API;
+ * an unconfigured cap is rendered as "no cap" — never as `$0.00`, which would claim a cap
+ * that does not exist.
+ */
+function BudgetCard({ budget }: { budget: BudgetWire | null }) {
+  return (
+    <Card testId="budget-panel">
+      <CardHeader
+        title="Budget & quotas"
+        hint="Lifetime spend, the daily/monthly windows and the concurrent-run quota. Admission refuses work at any configured cap."
+      />
+      <CardBody className="space-y-3">
+        {budget ? (
+          <>
+            <div className="grid gap-3 md:grid-cols-4">
+              <div data-testid="budget-lifetime">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Lifetime</p>
+                <p className="mt-1 text-sm font-medium text-slate-900" data-testid="budget-lifetime-value">
+                  {spendLine({ ...(budget.maxCostUsdPerFactory === undefined ? {} : { cap: budget.maxCostUsdPerFactory }), spentUsd: budget.spentUsd })}
+                </p>
+              </div>
+              <div data-testid="budget-day" data-cap={budget.day.cap ?? 'none'} data-exhausted={budget.day.exhausted ? 'true' : 'false'}>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Today</p>
+                <p className="mt-1 text-sm font-medium text-slate-900" data-testid="budget-day-value">
+                  {spendLine(budget.day)}
+                </p>
+              </div>
+              <div data-testid="budget-month" data-cap={budget.month.cap ?? 'none'} data-exhausted={budget.month.exhausted ? 'true' : 'false'}>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">This month</p>
+                <p className="mt-1 text-sm font-medium text-slate-900" data-testid="budget-month-value">
+                  {spendLine(budget.month)}
+                </p>
+              </div>
+              <div
+                data-testid="budget-concurrency"
+                data-cap={budget.concurrency.cap ?? 'none'}
+                data-exhausted={budget.concurrency.exhausted ? 'true' : 'false'}
+              >
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Active runs</p>
+                <p className="mt-1 text-sm font-medium text-slate-900" data-testid="budget-concurrency-value">
+                  {budget.concurrency.cap === undefined
+                    ? `${budget.concurrency.active} · no cap`
+                    : `${budget.concurrency.active} of ${budget.concurrency.cap}`}
+                </p>
+              </div>
+            </div>
+            <div data-testid="budget-exhausted" data-exhausted={budget.anyExhausted ? 'true' : 'false'}>
+              {budget.anyExhausted ? (
+                <Badge tone="danger" testId="budget-exhausted-badge">
+                  quota exhausted · new work is refused
+                </Badge>
+              ) : (
+                <Badge tone="success" testId="budget-exhausted-badge">
+                  within every configured quota
+                </Badge>
+              )}
+            </div>
+          </>
+        ) : (
+          <p data-testid="budget-unavailable" className="text-xs text-slate-500">
+            Budget unavailable: the API did not return the budget projection. No caps or spend are
+            fabricated.
+          </p>
+        )}
+      </CardBody>
+    </Card>
+  );
 }
 
 function ReadinessCard({
@@ -591,7 +669,7 @@ export default async function DashboardPage({
     ? (window as string)
     : '30d';
 
-  const [factory, runs, metrics, readiness, workItems, autonomy, canary] = await Promise.all([
+  const [factory, runs, metrics, readiness, workItems, autonomy, canary, budget] = await Promise.all([
     loadFactory(factoryId),
     safeGet<{ runs: RunSummary[] }>(`/factories/${encoded}/runs?limit=100`, { runs: [] }),
     safeGet<FactoryMetricsResponse | null>(
@@ -604,6 +682,7 @@ export default async function DashboardPage({
     }),
     safeGet<{ autonomy: AutonomyReadWire } | null>(`/factories/${encoded}/autonomy`, null),
     safeGet<CanaryOverviewWire | null>(`/factories/${encoded}/canary`, null),
+    safeGet<BudgetResponseWire | null>(`/factories/${encoded}/budget`, null),
   ]);
   const factoryName = factoryNameOf(factory, factoryId);
 
@@ -696,6 +775,8 @@ export default async function DashboardPage({
       <StateCard autonomy={autonomy?.autonomy ?? null} canary={canary} activity={activity} encoded={encoded} />
 
       <ReadinessCard readiness={readiness} encoded={encoded} />
+
+      <BudgetCard budget={budget?.budget ?? null} />
 
       {rows.length === 0 ? (
         <EmptyState

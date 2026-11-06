@@ -131,12 +131,20 @@ export const factorySchema = z
      * Spend caps (roadmap item 7). `maxCostUsdPerRun` applies to every stage run,
      * `maxCostUsdPerStage` narrows it for a specific stage, and `maxCostUsdPerFactory`
      * refuses new work once the factory's recorded spend reaches the cap.
+     *
+     * Quotas (change `add-retention-quotas-promotion`): `maxCostUsdPerDay` and
+     * `maxCostUsdPerMonth` cap spend inside the current calendar day/month window, and
+     * `maxConcurrentRuns` bounds pending/running runs for the factory. Every cap is
+     * optional; an absent cap is reported as absent, never as zero.
      */
     budget: z
       .object({
         maxCostUsdPerRun: z.number().min(0).max(10_000).optional(),
         maxCostUsdPerStage: z.number().min(0).max(10_000).optional(),
         maxCostUsdPerFactory: z.number().min(0).max(1_000_000).optional(),
+        maxCostUsdPerDay: z.number().min(0).max(100_000).optional(),
+        maxCostUsdPerMonth: z.number().min(0).max(1_000_000).optional(),
+        maxConcurrentRuns: z.number().int().min(1).max(100).optional(),
       })
       .strict()
       .optional(),

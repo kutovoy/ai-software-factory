@@ -947,8 +947,8 @@ export async function decideImprovementActivity(args: {
 /* ----------------------------------------------------------------- lessons */
 
 function experienceDir(factory: string): string {
-  // The definition tree is mounted read-only in compose; the experience library is a
-  // projection written next to run artifacts, per factory.
+  // The experience library is a projection written next to run artifacts, per factory;
+  // it is separate from the git-backed definition tree.
   return join(loadConfig().runsDir, 'experience', factory);
 }
 

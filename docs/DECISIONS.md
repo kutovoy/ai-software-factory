@@ -1036,3 +1036,23 @@ hosts/users or VMs for untrusted code. Native agents receive the runner `opencod
 per-run writable HOME/XDG tree so opencode can keep its session DB and cache inside the jail. Windows
 containers, macOS Tart VMs, launchd/Windows service wrappers and live Windows-host verification remain
 follow-ups. The protocol and provider-key boundary stay unchanged.
+
+## ADR-049 — Retention, quotas and promotion rewrite the local checkout
+
+**Status:** accepted (2026-11-05, implemented in `2026-11-05-add-retention-quotas-promotion`).
+**Context:** run directories, event rows, artifact blobs and canary trees had no lifecycle; spend caps
+were lifetime-only with no concurrency bound; and a promoted canary merged the forge repo while the
+local checkout stayed on the old definition, so the next run executed stale code.
+**Decision:** (1) Retention is conservative and worker-owned: only terminal runs older than
+`RETENTION_DAYS`, beyond the newest `RETENTION_KEEP_RUNS` per factory, are removed; pending/running runs
+are protected; DB rows are deleted before files/blobs, artifact deletion is best-effort, and the same
+core runs from the manual `POST /factories/{id}/runs/gc` route with `dryRun`. (2) `budget` gains
+`maxCostUsdPerDay`, `maxCostUsdPerMonth` and `maxConcurrentRuns`; spend windows are calendar windows in
+Postgres and admission refuses with `factory_budget_exhausted` or `factory_quota_exhausted`. (3) After a
+successful canary merge, promotion rewrites the local factory tree from the candidate and commits it on
+the definition repo when the worktree is clean; a dirty/non-git checkout is never overwritten and records
+`promotion_pending_deploy`. The optional `deployHook` still runs afterwards.
+**Consequences:** evidence has a bounded lifetime and operators get an auditable manual path; quotas are
+admission guards, not distributed locks, so concurrent creates can still race (the worker bounds actual
+execution); local promotion now depends on a clean git worktree and leaves a local commit, which makes
+`definitionDirty` false for the next run. Temporal history retention remains Temporal's responsibility.

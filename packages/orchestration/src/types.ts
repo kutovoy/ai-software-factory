@@ -327,11 +327,17 @@ export interface FactoryWorkflowInput {
   harnessOverride?: HarnessId;
   defaultModel?: string;
   defaultRunner: RunnerKindName;
-  /** Spend caps copied from the definition (roadmap item 7). */
+  /** Spend caps + quotas copied from the definition (roadmap item 7, quotas change). */
   budget?: {
     maxCostUsdPerRun?: number;
     maxCostUsdPerStage?: number;
     maxCostUsdPerFactory?: number;
+    /** Calendar-day spend window cap (admission only; enforced by the API). */
+    maxCostUsdPerDay?: number;
+    /** Calendar-month spend window cap (admission only; enforced by the API). */
+    maxCostUsdPerMonth?: number;
+    /** Pending/running runs allowed for the factory at admission time. */
+    maxConcurrentRuns?: number;
   };
   governance?: GovernanceConfig;
   autoAllowPermissions: boolean;
@@ -791,7 +797,7 @@ export type CanaryOutcomeStatus = 'promoted' | 'rolled_back' | 'unavailable';
 export interface CanaryWorkflowInput {
   rolloutId: string;
   factory: string;
-  /** Stable definition tree on the worker host (read-only mount). */
+  /** Stable definition tree on the worker host (git-backed mount; writable for promotion). */
   factoryRoot: string;
   proposalId: string;
   /** Definition repo (`owner/name`) that receives the candidate branch + PR. */

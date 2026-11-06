@@ -146,14 +146,15 @@ import {
 } from './secrets';
 import {
   assertRunAccess,
+  budgetStateForFactory,
   createRun,
-  factorySpendUsd,
   retryRun,
   getRunDetail,
   listRuns,
   summarize,
   type CreateRunBody,
 } from './runs';
+import { gcRunsForApi, runGcBodySchema } from './retention';
 import {
   contentDispositionForArtifact,
   planArtifactDownload,
@@ -555,13 +556,10 @@ export function createApp(config: ApiConfig): Hono {
     const record = await factoryOf(c);
     const definition = loadFactoryDefinition(resolveFactoryDir(config, record.key), record.key);
     const budget = definition.manifest.budget ?? {};
-    const spentUsd = await factorySpendUsd(record.key);
-    const cap = budget.maxCostUsdPerFactory;
     return c.json({
       budget: {
         ...budget,
-        spentUsd,
-        exhausted: cap !== undefined && spentUsd >= cap,
+        ...(await budgetStateForFactory(record.key, definition.manifest)),
       },
     });
   });
@@ -815,6 +813,18 @@ export function createApp(config: ApiConfig): Hono {
       createdBy: ownerFilter(viewerOf(config, c.get('user'))),
     });
     return c.json({ runs });
+  });
+
+  /**
+   * Manual run GC (change `add-retention-quotas-promotion`, spec `retention` › Manual run GC).
+   * Applies the same conservative rules as the worker sweep: terminal runs older than
+   * `days` and beyond the newest `keep` are removed with their rows, run directory and stored
+   * artifact blobs. `dryRun` reports the plan without deleting anything.
+   */
+  api.post('/factories/:factoryId/runs/gc', async (c) => {
+    const record = await factoryOf(c);
+    const body = await json(c, runGcBodySchema);
+    return c.json(await gcRunsForApi(config, record.key, body));
   });
 
   api.get('/factories/:factoryId/runs/:id', async (c) => {

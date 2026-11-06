@@ -1719,7 +1719,7 @@
         "tags": [
           "factories"
         ],
-        "summary": "Spend caps and current factory spend",
+        "summary": "Spend caps, quotas and current factory usage",
         "parameters": [
           {
             "name": "factoryId",
@@ -1746,6 +1746,105 @@
           },
           "404": {
             "description": "not_found — the resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/factories/{factoryId}/runs/gc": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Run manual retention GC for a factory",
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "actor",
+                  "reason"
+                ],
+                "properties": {
+                  "actor": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "days": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 3650
+                  },
+                  "keep": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100000
+                  },
+                  "dryRun": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request — malformed body, query or path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found — the resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error — unexpected server failure.",
             "content": {
               "application/json": {
                 "schema": {

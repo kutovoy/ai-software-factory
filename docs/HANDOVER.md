@@ -10,8 +10,15 @@ chat runs completed on both backends: macOS with `RUNNER_BACKEND=local` + `RUNNE
 artifact upload/download, no provider key on the agent and no leaked sandbox. The live tests fixed remote
 repo specs, native opencode config, sandbox port/HOME, remote run directories, terminal-status fallback,
 agent shutdown reaping and the upload/download endpoint split. `bun run ci` 799 pass / 172 skip; Runners
-Playwright 3/3; `openspec validate --all` 32/32. OpenSpec
+Playwright 3/3; `openspec validate --all` 34/34. OpenSpec
 `2026-11-05-harden-live-runner-platforms` archived.
+
+**Also (2026-11-05):** retention/GC, cost quotas and promotion checkout. The worker sweeps terminal
+runs/artifacts/canary trees; the Runs page has a manual GC with dry-run. `budget` now supports daily and
+monthly spend caps plus `maxConcurrentRuns`, enforced at admission and shown on the dashboard. Canary
+promotion rewrites and commits the local definition checkout when clean, and records
+`promotion_pending_deploy` instead of overwriting a dirty worktree. OpenSpec
+`2026-11-05-add-retention-quotas-promotion`.
 
 ## What exists
 
@@ -106,12 +113,14 @@ lets you validate wiring without touching a repo. GitHub delivers to
    presigned grants. macOS M5 native (`sandbox-exec`) and Linux Docker runs were live-verified; remote hosts
    never get Temporal/Postgres, provider credentials or long-lived object-store credentials. Follow-ups:
    live Windows verification, Windows containers, macOS Tart, mTLS certificate issuance/rotation,
-   launchd/Windows service wrappers, retention/GC automation and a separate remote-host E2E. See
+   launchd/Windows service wrappers and a separate remote-host E2E. See
    `docs/REMOTE_RUNNERS_PLAN.md`.
 2. **Live GitHub path**: implemented and contract-tested, not exercised against a real repo.
 3. **Forge proxy mode**: SSH ships by default; the Caddy overlay is live-validated for session auth and HTTP,
    but a websocket upgrade has not been exercised end to end.
-4. **Promotion** merges the definition repo but does not rewrite the local checkout; `runs/canary/` GC is manual.
+4. **Promotion and GC** are implemented: promotion rewrites the local checkout when clean (and records
+   pending deploy otherwise), the worker sweeps terminal runs/artifacts/canary trees, and the Runs page
+   has a manual GC. `runs/canary/` is still kept to the configured count, not unbounded.
 5. **Factory engineering foundation + roadmap 6–11** are implemented: validation contract + QA pyramid, agent
    readiness, outcome metrics, guard hooks, Factory Stack help, trace-driven self-improvement, classifier
    routing + spend caps, work intake, progressive context, governance/autonomy levels and CLI/CI surfaces.
@@ -219,11 +228,13 @@ Then open http://localhost:3000, pick a factory, and create a work item. `hello-
    console.
 4. **Replay scope**: a replay is a recording of *our* canonical events + patch, not an arbitrary harness
    tool-response trace.
-5. **Promotion** merges the definition repo but does not rewrite the local checkout; `runs/canary/` GC is manual.
+5. **Promotion and GC** are implemented: promotion rewrites the local checkout when clean (and records
+   pending deploy otherwise), the worker sweeps terminal runs/artifacts/canary trees, and the Runs page
+   has a manual GC.
 
 ## Specs
 
-32 living capabilities in `openspec/specs/` (`openspec list --specs`): factory-definition, run-lifecycle,
+34 living capabilities in `openspec/specs/` (`openspec list --specs`): factory-definition, run-lifecycle,
 harness-adapter, runner-protocol, runner-sandbox, remote-runners, runner-observability, artifact-store,
-event-stream, web-console, factory-loop, measurement, benchmarks, self-improvement, code-forge, merge-queue,
-automations and the remaining API/help/governance capabilities.
+retention, quotas, event-stream, web-console, factory-loop, measurement, benchmarks, self-improvement,
+code-forge, merge-queue, automations and the remaining API/help/governance capabilities.

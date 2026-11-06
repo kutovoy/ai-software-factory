@@ -31,6 +31,7 @@ export * from './runner-observability';
 export * from './remote-runner';
 export * from './s3-presign';
 export * from './artifact-store';
+export * from './retention';
 export * from './sessions';
 export * from './scoring/context';
 export * from './models/judgement';

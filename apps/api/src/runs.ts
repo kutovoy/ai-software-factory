@@ -35,6 +35,7 @@ import {
   ApiError,
   definitionInvalid,
   factoryBudgetExhausted,
+  factoryQuotaExhausted,
   invalidRequest,
   modelNotAllowed,
   modelUnresolved,
@@ -167,7 +168,7 @@ export function resolveRunDefaults(
   return { harness, model, runner };
 }
 
-/** Recorded spend for a factory, used by the factory-wide cap. */
+/** Recorded lifetime spend for a factory, used by the factory-wide cap. */
 export async function factorySpendUsd(factory: string): Promise<number> {
   const rows = (await getSql()`
     select coalesce(sum(cost_usd), 0)::float8 as spent from runs where factory = ${factory}
@@ -175,18 +176,169 @@ export async function factorySpendUsd(factory: string): Promise<number> {
   return Number(rows[0]?.spent ?? 0);
 }
 
+/** Spend windows for the quota caps. Both are calendar windows in the database's zone. */
+export type SpendWindow = 'day' | 'month';
+
 /**
- * Refuses new work when the factory's recorded spend has reached its cap. The per-run and
- * per-stage caps are enforced by the runner pump; this is the coarse factory guard.
+ * Recorded spend inside the current window. `date_trunc` runs in Postgres so the window
+ * follows the database clock (and its timezone) instead of the API host's clock.
+ */
+export async function factoryWindowSpendUsd(
+  factory: string,
+  window: SpendWindow,
+): Promise<number> {
+  const sql = getSql();
+  const rows = (window === 'day'
+    ? await sql`
+        select coalesce(sum(cost_usd), 0)::float8 as spent
+        from runs
+        where factory = ${factory}
+          and started_at >= date_trunc('day', now())
+      `
+    : await sql`
+        select coalesce(sum(cost_usd), 0)::float8 as spent
+        from runs
+        where factory = ${factory}
+          and started_at >= date_trunc('month', now())
+      `) as { spent: number }[];
+  return Number(rows[0]?.spent ?? 0);
+}
+
+/** Pending/running runs for a factory; the concurrency quota's live usage. */
+export async function factoryActiveRunCount(factory: string): Promise<number> {
+  const rows = (await getSql()`
+    select count(*)::int as active
+    from runs
+    where factory = ${factory}
+      and status in ('pending', 'running')
+  `) as { active: number }[];
+  return Number(rows[0]?.active ?? 0);
+}
+
+/**
+ * Refuses new work when the factory's recorded spend has reached its lifetime, daily or
+ * monthly cap. The per-run and per-stage caps are enforced by the runner pump; this is the
+ * coarse factory guard, shared by run and work-item creation.
  */
 export async function assertFactoryBudget(
   factory: string,
   manifest: FactoryManifest,
 ): Promise<void> {
-  const cap = manifest.budget?.maxCostUsdPerFactory;
+  const lifetimeCap = manifest.budget?.maxCostUsdPerFactory;
+  if (lifetimeCap !== undefined) {
+    const spent = await factorySpendUsd(factory);
+    if (spent >= lifetimeCap) throw factoryBudgetExhausted(factory, lifetimeCap, spent);
+  }
+
+  const dayCap = manifest.budget?.maxCostUsdPerDay;
+  if (dayCap !== undefined) {
+    const spent = await factoryWindowSpendUsd(factory, 'day');
+    if (spent >= dayCap) throw factoryBudgetExhausted(factory, dayCap, spent, 'day');
+  }
+
+  const monthCap = manifest.budget?.maxCostUsdPerMonth;
+  if (monthCap !== undefined) {
+    const spent = await factoryWindowSpendUsd(factory, 'month');
+    if (spent >= monthCap) throw factoryBudgetExhausted(factory, monthCap, spent, 'month');
+  }
+}
+
+/**
+ * Admission guard for a new run: refuses when pending/running runs reach
+ * `maxConcurrentRuns` (spec `quotas` › Concurrency reached). Not applied to work items —
+ * an item starts runs one at a time and the run itself is guarded by `createRun`.
+ */
+export async function assertRunConcurrency(
+  factory: string,
+  manifest: FactoryManifest,
+): Promise<void> {
+  const cap = manifest.budget?.maxConcurrentRuns;
   if (cap === undefined) return;
-  const spent = await factorySpendUsd(factory);
-  if (spent >= cap) throw factoryBudgetExhausted(factory, cap, spent);
+  const active = await factoryActiveRunCount(factory);
+  if (active >= cap) throw factoryQuotaExhausted(factory, 'concurrency', cap, active);
+}
+
+export interface BudgetWindowState {
+  /** Absent when the definition declares no cap — never reported as zero. */
+  cap?: number;
+  spentUsd: number;
+  exhausted: boolean;
+}
+
+export interface BudgetConcurrencyState {
+  /** Absent when the definition declares no cap — never reported as zero. */
+  cap?: number;
+  active: number;
+  exhausted: boolean;
+}
+
+export interface FactoryBudgetState {
+  /** Lifetime spend and its cap (`maxCostUsdPerFactory`). */
+  spentUsd: number;
+  exhausted: boolean;
+  day: BudgetWindowState;
+  month: BudgetWindowState;
+  concurrency: BudgetConcurrencyState;
+  /** True when any configured cap (lifetime, day, month or concurrency) is reached. */
+  anyExhausted: boolean;
+}
+
+/** Pure window state: a cap of `undefined` is omitted, so clients can tell absent from zero. */
+export function budgetWindowState(
+  cap: number | undefined,
+  spentUsd: number,
+): BudgetWindowState {
+  return {
+    ...(cap === undefined ? {} : { cap }),
+    spentUsd,
+    exhausted: cap !== undefined && spentUsd >= cap,
+  };
+}
+
+/** Pure concurrency state; same absent-cap rule as `budgetWindowState`. */
+export function budgetConcurrencyState(
+  cap: number | undefined,
+  active: number,
+): BudgetConcurrencyState {
+  return {
+    ...(cap === undefined ? {} : { cap }),
+    active,
+    exhausted: cap !== undefined && active >= cap,
+  };
+}
+
+/**
+ * Full budget/quota projection for the budget endpoint (spec `quotas` › Budget reporting).
+ * One read of every counter so the response is internally consistent.
+ */
+export async function budgetStateForFactory(
+  factory: string,
+  manifest: FactoryManifest,
+): Promise<FactoryBudgetState> {
+  const [lifetime, day, month, active] = await Promise.all([
+    factorySpendUsd(factory),
+    factoryWindowSpendUsd(factory, 'day'),
+    factoryWindowSpendUsd(factory, 'month'),
+    factoryActiveRunCount(factory),
+  ]);
+
+  const lifetimeCap = manifest.budget?.maxCostUsdPerFactory;
+  const dayState = budgetWindowState(manifest.budget?.maxCostUsdPerDay, day);
+  const monthState = budgetWindowState(manifest.budget?.maxCostUsdPerMonth, month);
+  const concurrencyState = budgetConcurrencyState(manifest.budget?.maxConcurrentRuns, active);
+
+  return {
+    spentUsd: lifetime,
+    exhausted: lifetimeCap !== undefined && lifetime >= lifetimeCap,
+    day: dayState,
+    month: monthState,
+    concurrency: concurrencyState,
+    anyExhausted:
+      (lifetimeCap !== undefined && lifetime >= lifetimeCap) ||
+      dayState.exhausted ||
+      monthState.exhausted ||
+      concurrencyState.exhausted,
+  };
 }
 
 export function newRunId(): string {
@@ -207,6 +359,9 @@ export async function createRun(
 
   const manifest = definition.manifest;
   await assertFactoryBudget(factory, manifest);
+  // Concurrency is a run-only quota: it counts live runs, so it is checked right before
+  // the insert. Work-item creation keeps the spend guard but may queue several stages.
+  await assertRunConcurrency(factory, manifest);
   const routing = (definition.resources.find((resource) => resource.kind === 'routing')?.doc ??
     null) as RoutingDef | null;
   const defaults = resolveRunDefaults(manifest, body, process.env, {

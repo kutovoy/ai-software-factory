@@ -51,7 +51,7 @@ presigned PUT uploads keep blobs off the command channel, object metadata travel
 and an authenticated download route serves a presigned GET or the local file. A Runners Playwright
 E2E covers enrollment, simulated heartbeat, host detail, alert firing/ack and deletion. Remaining
 follow-ups: live Windows verification, Windows containers, macOS Tart VMs, mTLS issuance/rotation,
-launchd/Windows service wrappers, retention/GC automation and a separate remote-host end-to-end run.
+launchd/Windows service wrappers and a separate remote-host end-to-end run.
 
 **Live runner verification — macOS M5 + Linux Docker (2026-11-05).** Both platforms ran real
 `opencode` jobs through the remote command queue on this machine:
@@ -84,6 +84,19 @@ Fixes forced by the live tests (merged from `feat/live-runner-platform-tests`; O
 
 Remaining: a truly separate remote host, live Windows verification, Windows containers, macOS Tart,
 mTLS issuance/rotation and launchd/Windows service wrappers.
+
+**Retention, quotas and promotion checkout — implemented** (2026-11-05, OpenSpec
+`2026-11-05-add-retention-quotas-promotion`). The worker now sweeps terminal runs older than
+`RETENTION_DAYS` beyond the newest `RETENTION_KEEP_RUNS` per factory, deleting their DB rows (including
+`run_secrets` and `score_runs`), `runs/<id>/` directory and RustFS artifact blobs, then pruning terminal
+canary trees; pending/running runs are protected and `RETENTION_DRY_RUN=1` reports without deleting. The
+Runs page adds a manual GC control (actor/reason, optional days/keep, dry-run) backed by
+`POST /api/v1/factories/{factoryId}/runs/gc`. `factory.yaml` `budget` gains `maxCostUsdPerDay`,
+`maxCostUsdPerMonth` and `maxConcurrentRuns`; admission refuses with `factory_budget_exhausted` or
+`factory_quota_exhausted`, and the dashboard shows lifetime/day/month spend and active runs. Canary
+promotion now rewrites and commits the local definition checkout when the worktree is clean; a dirty or
+non-git checkout is never overwritten and records `promotion_pending_deploy` instead. Migration 023 adds
+the retention/quota read-path indexes.
 
 ### Readiness and public-release prep (2026-11-01)
 
@@ -1004,9 +1017,10 @@ panel also has a manual prune control (`POST /factories/:name/canary/prune`). Me
 series per version (pass rate, runs, error rate) derived from `scores`/`runs`; empty buckets are `null` with
 `no_runs_in_bucket` (or `no_scores_in_bucket`) and are drawn as gaps, not 0%. Promotion runs the optional
 `improvement.deployHook` against a staged copy of the promoted definition: success records `deployed`, a
-failing hook records `promoted_pending_deploy` with the error, and no hook records
-`promotion_pending_deploy` (the local checkout was not updated). The rollout status stays `promoted` so
-routing/readers are unchanged.
+failing hook records `promoted_pending_deploy` with the error, and no hook recorded
+`promotion_pending_deploy` (the local checkout was not updated at the time). **Superseded 2026-11-05:**
+promotion rewrites the local checkout when clean (ADR-049), and no hook records `deployed` after that
+rewrite. The rollout status stays `promoted` so routing/readers are unchanged.
 
 Local runner sandbox (`packages/runners/src/sandbox.ts`, ADR-025): `RUNNER_SANDBOX=exec` runs the harness
 under a generated SBPL profile — `(deny default)`, reads of system paths + workspace, writes only to the
@@ -1210,10 +1224,11 @@ cd apps/web && bunx playwright test → 20 passed (19 existing + canary: panel �
                                  manual rollback → gates state → stable routing)
 ```
 
-Caveats: promotion merges the candidate PR in the definition repo but does not rewrite the local
-checkout (ADR-012: the console/API never write the worktree), so the on-disk definition updates on the
-next checkout/deploy. Candidate trees live under `runs/canary/` (not garbage-collected yet). The
-compose stack uses the fake forge, so a "candidate commit" is a content-hash SHA, not a git commit.
+Caveats: at the time of Phase 5b, promotion merged the candidate PR in the definition repo but did not
+rewrite the local checkout (ADR-012: the console/API never write the worktree), so the on-disk definition
+updated on the next checkout/deploy. **Superseded 2026-11-05:** promotion now rewrites and commits the
+local checkout when it is clean (ADR-049); candidate trees are also swept by retention. The compose stack
+uses the fake forge, so a "candidate commit" is a content-hash SHA, not a git commit.
 
 ### Phase 5a — self-improvement (ADR-020/ADR-021, 2026-10-29)
 
@@ -1739,9 +1754,9 @@ artifact upload/download. macOS M5 native and Linux Docker runs were live-verifi
 `docs/REMOTE_RUNNERS_PLAN.md`.
 
 Next follow-ups: live Windows verification, Windows containers, macOS Tart VMs, mTLS certificate
-issuance/rotation, launchd/Windows service wrappers, retention/GC automation and a separate remote-host
-end-to-end run. Phase 6c OIDC/IdP, Temporal Cloud and multi-tenant isolation remain blocked on external
-infrastructure/IdP decisions. The live GitHub forge path still needs a PAT, repo and webhook secret.
+issuance/rotation, launchd/Windows service wrappers and a separate remote-host end-to-end run. Phase 6c
+OIDC/IdP, Temporal Cloud and multi-tenant isolation remain blocked on external infrastructure/IdP
+decisions. The live GitHub forge path still needs a PAT, repo and webhook secret.
 
 ## Open questions
 
