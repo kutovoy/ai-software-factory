@@ -1,7 +1,7 @@
 # Architecture
 
-Status: draft v0.1 (2026-10-28). Grounded in `research/warp-factories.md`, `research/ecosystem.md`,
-`research/videos/x-PK3yx_MJg/ANALYSIS.md`.
+Status: draft v0.1 (2026-10-28; remote-runner live verification 2026-11-05). Grounded in
+`research/warp-factories.md`, `research/ecosystem.md`, `research/videos/x-PK3yx_MJg/ANALYSIS.md`.
 
 ## 1. Shape
 
@@ -132,10 +132,13 @@ kill(runnerId)                                 # idempotent
 - `remote-runner` (Linux/Windows/macOS): a UI-enrolled host agent polls an outbound command queue, runs
   the sandbox and harness adapter locally and streams canonical events back to the central worker. Central
   Temporal schedules; the host gets no Temporal/Postgres credentials. Host CPU/RAM/disk metrics and
-  alerts are stored centrally. Artifacts upload directly to RustFS via short-lived presigned grants.
-  The agent uses a bearer agent token behind TLS; mTLS fingerprinting, Windows containers, macOS Tart
-  and service-manager wrappers are follow-ups. See `docs/REMOTE_RUNNERS_PLAN.md`,
-  `openspec/specs/remote-runners/spec.md`, `openspec/specs/artifact-store/spec.md` and
+  alerts are stored centrally. Artifacts upload directly to RustFS via short-lived presigned grants;
+  `S3_ENDPOINT` is the agent upload URL and `S3_PUBLIC_ENDPOINT` is the browser download URL.
+  macOS M5 native (`sandbox-exec`) and Linux Docker agents were live-verified on 2026-11-05. The agent
+  uses a bearer agent token behind TLS; mTLS fingerprinting, Windows live verification, Windows
+  containers, macOS Tart and service-manager wrappers are follow-ups. See
+  `docs/REMOTE_RUNNERS_PLAN.md`, `openspec/specs/remote-runners/spec.md`,
+  `openspec/specs/artifact-store/spec.md` and
   `openspec/changes/archive/2026-11-04-add-remote-runners`.
 
 Secrets are resolved **outside** the sandbox and injected as env only for the tools that need them;

@@ -1,11 +1,12 @@
 # Remote runners and worker observability — plan
 
-**Status:** Linux, Windows and macOS native agents + observability + RustFS artifacts implemented on
-`main`; OpenSpec changes archived.
+**Status:** Linux, Windows and macOS native agents + observability + RustFS artifacts implemented and
+merged to `main`; macOS M5 native and Linux Docker runs live-verified.
 **Last updated:** 2026-11-05.
-**Merged to:** `main`.
-**OpenSpec changes:** `2026-11-04-add-remote-runners` (control plane, observability) and
-`2026-11-05-add-runner-platforms-and-artifacts` (Windows/macOS native agents, RustFS artifacts, Runners E2E).
+**Merged to:** `main` (`feat/live-runner-platform-tests` fast-forwarded after live verification).
+**OpenSpec changes:** `2026-11-04-add-remote-runners` (control plane, observability),
+`2026-11-05-add-runner-platforms-and-artifacts` (Windows/macOS native agents, RustFS artifacts, Runners
+E2E) and `2026-11-05-harden-live-runner-platforms` (fixes forced by live macOS/Linux runs).
 
 This document is the handoff/compaction anchor for the next workstream. It records the
 GPUSTACK review, the chosen direction, the metrics/alerts scope, and the phase boundaries.
@@ -316,6 +317,9 @@ existing `/api/v1/factories/:factoryId/...` convention.
 - Temporal remote activities; lease TTL + reaper.
 - **Exit:** one remote Linux host runs `hello-nextjs` lights-off end-to-end; kill the
   central worker mid-run; resume; no leaked container; PR merged; no provider key on host.
+- **Verified (2026-11-05):** a Linux Docker agent container on Docker Desktop ran a real opencode
+  chat job end-to-end (`run_mw3u0k5g_a1024e73`), with artifact upload/download and no leaked sandbox
+  container or provider key. A separate physical/VM Linux host remains a follow-up.
 
 ### R1b — runner observability
 
@@ -337,6 +341,10 @@ existing `/api/v1/factories/:factoryId/...` convention.
 - launchd agent + preflight/install.
 - Native Xcode backend; optional Tart VM backend.
 - **Exit:** a macOS sample builds/tests on `os=macos`; signing/keychain path works.
+- **Verified (2026-11-05):** macOS M5 native agent with `RUNNER_BACKEND=local` and
+  `RUNNER_SANDBOX=exec` ran a real opencode job (`run_mw3t7g4i_265452a4`) with sandbox-exec active,
+  proxy access, artifact upload/download and no provider key on the host. launchd and Tart remain
+  follow-ups.
 
 ### R4 — hardening and multi-tenant
 
@@ -370,9 +378,12 @@ existing `/api/v1/factories/:factoryId/...` convention.
 - Linux first, then Windows native/Windows containers, then macOS native/Tart.
 - Host metrics: CPU, RAM, disk/inodes, load, leases, heartbeat; alerts with configurable
   thresholds, dedupe, acknowledge/silence, console inbox + webhook.
-- Implementation branches: `feat/remote-runners` and `feat/runner-platforms-artifacts` (merged to `main`).
-- OpenSpec changes: `add-remote-runners` (archived as `2026-11-04-add-remote-runners`) and
-  `2026-11-05-add-runner-platforms-and-artifacts`; `add-runner-observability` was folded into the first.
+- Implementation branches: `feat/remote-runners`, `feat/runner-platforms-artifacts` and
+  `feat/live-runner-platform-tests` (all merged to `main`).
+- OpenSpec changes: `add-remote-runners` (archived as `2026-11-04-add-remote-runners`),
+  `2026-11-05-add-runner-platforms-and-artifacts` and
+  `2026-11-05-harden-live-runner-platforms` (archived after live verification);
+  `add-runner-observability` was folded into the first.
 - **Implementation note (MVP):** the first slice runs the harness adapter *on the agent*
   and streams canonical events back to the central worker, which stays the single event
   writer. This avoids a reverse harness tunnel while keeping Temporal/Postgres off the

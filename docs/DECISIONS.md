@@ -1020,7 +1020,7 @@ presigned downloads after a run-access check.
 ## ADR-048 — Native Windows and macOS runner backends
 
 **Status:** accepted (2026-11-05, implemented in `2026-11-05-add-runner-platforms-and-artifacts`;
-macOS live verification 2026-11-05).
+macOS and Linux live verification 2026-11-05).
 **Context:** the remote-runner MVP was Linux-only even though the host registry and wire protocol
 already carry a `platform` field. Windows and macOS hosts need to execute runs without Docker, and
 the agent must keep the same lease/exec/events/artifacts/kill contract.

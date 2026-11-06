@@ -50,8 +50,8 @@ The Runners wizard enables both platforms. RustFS is the default S3-compatible a
 presigned PUT uploads keep blobs off the command channel, object metadata travels with the run,
 and an authenticated download route serves a presigned GET or the local file. A Runners Playwright
 E2E covers enrollment, simulated heartbeat, host detail, alert firing/ack and deletion. Remaining
-follow-ups: Windows containers, macOS Tart VMs, mTLS issuance/rotation, launchd/Windows service
-wrappers, retention/GC automation and a real remote-host end-to-end run.
+follow-ups: live Windows verification, Windows containers, macOS Tart VMs, mTLS issuance/rotation,
+launchd/Windows service wrappers, retention/GC automation and a separate remote-host end-to-end run.
 
 **Live runner verification — macOS M5 + Linux Docker (2026-11-05).** Both platforms ran real
 `opencode` jobs through the remote command queue on this machine:
@@ -65,7 +65,8 @@ wrappers, retention/GC automation and a real remote-host end-to-end run.
   agent uploaded through `host.docker.internal:9000`, and the browser-facing download used
   `localhost:9000` via `S3_PUBLIC_ENDPOINT`.
 
-Fixes forced by the live tests (on `feat/live-runner-platform-tests`):
+Fixes forced by the live tests (merged from `feat/live-runner-platform-tests`; OpenSpec
+`2026-11-05-harden-live-runner-platforms` archived):
 
 - Remote leases sent both the central checkout path and the clone URL; the repo spec now sends only
   `url` for remote runs (and falls back to `RUNNER_REPO_URL` for work-item stages).
@@ -349,8 +350,8 @@ What is left:
 
 1. **Phase 6c** — external OIDC/IdP and group→org mappings (Keycloak/Authentik/Zitadel), Temporal Cloud,
    multi-tenant credential isolation. Remote runners now ship Linux/Windows/macOS native agents with
-   RustFS artifact upload/download; mTLS certificate issuance, Windows containers, macOS Tart and a real
-   remote-host E2E remain.
+   RustFS artifact upload/download; macOS M5 native and Linux Docker were live-verified. mTLS certificate
+   issuance, live Windows verification, Windows containers, macOS Tart and a separate remote-host E2E remain.
 2. **Live GitHub path** — implemented and contract-tested, not exercised against a real repository (needs a PAT).
 3. **Forge proxy mode** — SSH ships on the default stack; the Caddy mode is live-validated for session auth and
    HTTP reverse-proxying (on a test port), but a websocket upgrade has not been exercised end to end.
@@ -1730,15 +1731,16 @@ both accepted; `benchmarkGateRequired` is true exactly when `fullyAutonomous`; k
 Roadmap items 1–11 are implemented (see the sections above and `research/software-factory-ideas.md`).
 The remaining roadmap candidate is long-running missions (item 12).
 
-The **remote runner + observability** work is implemented and archived (OpenSpec
-`2026-11-04-add-remote-runners` plus `2026-11-05-add-runner-platforms-and-artifacts`): enrollment, outbound
-command queue, central scheduling, Linux Docker / Windows native / macOS native agents, host
-CPU/RAM/disk metrics and alerts, and RustFS artifact upload/download. See
+The **remote runner + observability** work is implemented, merged and archived (OpenSpec
+`2026-11-04-add-remote-runners`, `2026-11-05-add-runner-platforms-and-artifacts` and
+`2026-11-05-harden-live-runner-platforms`): enrollment, outbound command queue, central scheduling,
+Linux Docker / Windows native / macOS native agents, host CPU/RAM/disk metrics and alerts, and RustFS
+artifact upload/download. macOS M5 native and Linux Docker runs were live-verified end-to-end. See
 `docs/REMOTE_RUNNERS_PLAN.md`.
 
-Next follow-ups: Windows containers, macOS Tart VMs, mTLS certificate issuance/rotation,
-launchd/Windows service wrappers, retention/GC automation and a real remote-host end-to-end run.
-Phase 6c OIDC/IdP, Temporal Cloud and multi-tenant isolation remain blocked on external
+Next follow-ups: live Windows verification, Windows containers, macOS Tart VMs, mTLS certificate
+issuance/rotation, launchd/Windows service wrappers, retention/GC automation and a separate remote-host
+end-to-end run. Phase 6c OIDC/IdP, Temporal Cloud and multi-tenant isolation remain blocked on external
 infrastructure/IdP decisions. The live GitHub forge path still needs a PAT, repo and webhook secret.
 
 ## Open questions

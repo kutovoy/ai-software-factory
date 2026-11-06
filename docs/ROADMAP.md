@@ -58,10 +58,12 @@ Teams/Jira/GitLab integrations, multi-tenant namespaces.
 and the console shows each runner's CPU/RAM/disk health with firing/resolved alerts.
 
 **Remote-runner plan:** `docs/REMOTE_RUNNERS_PLAN.md`. Linux Docker, Windows native and macOS native
-agents are implemented on `main` (archived OpenSpec `2026-11-04-add-remote-runners` plus
-`2026-11-05-add-runner-platforms-and-artifacts`): enrollment, outbound command queue, central scheduling,
-agent-side sandbox/harness, host CPU/RAM/disk metrics and alerts, and RustFS artifact upload/download.
-Windows containers, macOS Tart VMs, mTLS certificate issuance and service-manager wrappers are
+agents are implemented and merged to `main` (archived OpenSpec `2026-11-04-add-remote-runners`,
+`2026-11-05-add-runner-platforms-and-artifacts` and `2026-11-05-harden-live-runner-platforms`):
+enrollment, outbound command queue, central scheduling, agent-side sandbox/harness, host CPU/RAM/disk
+metrics and alerts, and RustFS artifact upload/download. macOS M5 native (`sandbox-exec`) and Linux
+Docker agent runs were live-verified end-to-end; Windows live verification, Windows containers, macOS
+Tart VMs, mTLS certificate issuance, service-manager wrappers and a separate remote host remain
 follow-ups.
 
 ## Cross-cutting, every phase

@@ -90,12 +90,20 @@ nohup bun packages/runners/src/agent.ts >>"$HOME/.factory-runner/agent.log" 2>&1
 Swap comes from `sysctl -n vm.swapusage`, process count from `ps -e`; a missing `sysctl`/`df`
 value degrades without failing the heartbeat. A launchd plist is documented as a follow-up.
 
+Native macOS runs receive the runner `opencode.json` through `OPENCODE_CONFIG_CONTENT`; a
+`sandbox-exec` lease also gets a per-run writable HOME/XDG tree for opencode state/cache.
+
+**Live verification (2026-11-05):** macOS M5 native (`RUNNER_BACKEND=local`, `RUNNER_SANDBOX=exec`)
+and Linux Docker agents on Docker Desktop both completed real opencode chat runs with RustFS artifact
+upload/download and no provider key on the agent. See `docs/STATUS.md` for run IDs and fixes.
+
 ### Limitations
 
 - Windows/macOS native runners are weaker isolation than a Linux container per run: use a
   dedicated VM or user for untrusted code (see `docs/REMOTE_RUNNERS_PLAN.md` §8).
 - `patch.diff` is still returned inline; other artifact blobs are uploaded to the object store
-  when it is configured (ADR-047) and otherwise stay on the runner host.
+  when it is configured (ADR-047) and otherwise stay on the runner host. `S3_ENDPOINT` is the
+  agent-facing upload URL; `S3_PUBLIC_ENDPOINT` is the browser-facing download URL and defaults to it.
 - The agent token is bearer-authenticated (deploy behind TLS; mTLS certificate fingerprinting is
   reserved, not built).
 
