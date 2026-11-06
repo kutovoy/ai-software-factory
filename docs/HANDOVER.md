@@ -1,9 +1,10 @@
 # Handover
 
-State as of 2026-11-06. `main` contains the runner/platform, RustFS and live-verification work. The
-`feat/retention-quotas-promotion` branch contains retention/GC, quotas, promotion checkout and the fresh
-`hello-nextjs` verification commits; it is not merged or pushed. Public-release prep: `README.md`, `LICENSE`
-(MIT, © Nick Kutovyy), `NOTICE` (attribution request), `SECURITY.md`, `CONTRIBUTING.md`.
+State as of 2026-11-06. `main` contains the runner/platform, RustFS, live-verification, retention/GC,
+quota, promotion-checkout and remote factory-cycle work. `feat/retention-quotas-promotion` was
+fast-forwarded into `main` at `0bee9d8`; `main` is ahead of `origin/main` and not pushed. Public-release
+prep: `README.md`, `LICENSE` (MIT, © Nick Kutovyy), `NOTICE` (attribution request), `SECURITY.md`,
+`CONTRIBUTING.md`.
 
 **Latest (2026-11-05):** live macOS M5 native and Linux Docker remote-runner verification. Real opencode
 chat runs completed on both backends: macOS with `RUNNER_BACKEND=local` + `RUNNER_SANDBOX=exec`

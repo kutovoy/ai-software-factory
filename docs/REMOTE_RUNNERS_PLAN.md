@@ -3,7 +3,8 @@
 **Status:** Linux, Windows and macOS native agents + observability + RustFS artifacts implemented and
 merged to `main`; macOS M5 native and Linux Docker runs live-verified.
 **Last updated:** 2026-11-06.
-**Merged to:** `main` (`feat/live-runner-platform-tests` fast-forwarded after live verification).
+**Merged to:** `main` (`feat/live-runner-platform-tests` and `feat/retention-quotas-promotion`
+fast-forwarded after live verification).
 **OpenSpec changes:** `2026-11-04-add-remote-runners` (control plane, observability),
 `2026-11-05-add-runner-platforms-and-artifacts` (Windows/macOS native agents, RustFS artifacts, Runners
 E2E) and `2026-11-05-harden-live-runner-platforms` (fixes forced by live macOS/Linux runs).
@@ -381,9 +382,8 @@ existing `/api/v1/factories/:factoryId/...` convention.
 - Linux first, then Windows native/Windows containers, then macOS native/Tart.
 - Host metrics: CPU, RAM, disk/inodes, load, leases, heartbeat; alerts with configurable
   thresholds, dedupe, acknowledge/silence, console inbox + webhook.
-- Implementation branches: `feat/remote-runners`, `feat/runner-platforms-artifacts` and
-  `feat/live-runner-platform-tests` (merged to `main`); `feat/retention-quotas-promotion` carries the
-  operational follow-ups and is not merged yet.
+- Implementation branches: `feat/remote-runners`, `feat/runner-platforms-artifacts`,
+  `feat/live-runner-platform-tests` and `feat/retention-quotas-promotion` (all merged to `main`).
 - OpenSpec changes: `add-remote-runners` (archived as `2026-11-04-add-remote-runners`),
   `2026-11-05-add-runner-platforms-and-artifacts`,
   `2026-11-05-harden-live-runner-platforms` (archived after live verification) and
