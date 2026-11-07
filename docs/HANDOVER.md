@@ -2,9 +2,10 @@
 
 State as of 2026-11-07. `main` contains the runner/platform, RustFS, live-verification, retention/GC,
 quota, promotion-checkout, remote factory-cycle and long-running mission work. `feat/retention-quotas-promotion`
-was fast-forwarded into `main` at `0bee9d8`; `main` is ahead of `origin/main` and not pushed. The mission work
-is on `feat/long-running-missions` pending merge. Public-release prep: `README.md`, `LICENSE` (MIT,
-© Nick Kutovyy), `NOTICE` (attribution request), `SECURITY.md`, `CONTRIBUTING.md`.
+was fast-forwarded into `main` at `0bee9d8`; the long-running mission work is merged at `54eb194`. `main` is
+ahead of `origin/main` and not pushed (GitHub SSH currently fails with `Permission denied (publickey)`).
+Public-release prep: `README.md`, `LICENSE` (MIT, © Nick Kutovyy), `NOTICE` (attribution request),
+`SECURITY.md`, `CONTRIBUTING.md`.
 
 **Latest (2026-11-05):** live macOS M5 native and Linux Docker remote-runner verification. Real opencode
 chat runs completed on both backends: macOS with `RUNNER_BACKEND=local` + `RUNNER_SANDBOX=exec`
