@@ -1,8 +1,8 @@
 # Architecture
 
 Status: draft v0.1 (2026-10-28; remote-runner live verification 2026-11-05; retention/quotas/promotion
-2026-11-06). Grounded in `research/warp-factories.md`, `research/ecosystem.md`,
-`research/videos/x-PK3yx_MJg/ANALYSIS.md`.
+2026-11-06; long-running missions 2026-11-07). Grounded in `research/warp-factories.md`,
+`research/ecosystem.md`, `research/videos/x-PK3yx_MJg/ANALYSIS.md`.
 
 ## 1. Shape
 
@@ -15,7 +15,8 @@ Status: draft v0.1 (2026-10-28; remote-runner live verification 2026-11-05; rete
                 │ REST + SSE (FactoryEvent stream)          │ tRPC/REST
 ┌───────────────┴──────────── apps/api ────────────────────┴─────────────────┐
 │ Sessions · Runs · WorkItems · Gates · Approvals · Definitions · Benchmarks  │
-│ Orchestrator (workflow per work item) ──▶ durable waits, timers, retries    │
+│ Orchestrator: MissionWorkflow ──▶ work items ──▶ stage workflows            │
+│ durable waits, timers, retries, plan gates, milestone validators            │
 └───────┬───────────────────────┬───────────────────────┬────────────────────┘
         │                       │                       │
   packages/core           packages/adapters        packages/evals
@@ -149,6 +150,8 @@ inference credentials never enter the runner (Warp's four-boundary model).
 
 **Temporal from day one** (ADR-001). `temporal server start-dev` locally + one Bun worker.
 
+- `MissionWorkflow` — one per long-running mission (Phase 3.5); plan gate, milestones, feature child
+  `FactoryWorkflow`s, fresh milestone validators, checkpoints and `continueAsNew` (ADR-050).
 - `RunWorkflow` — one per chat message / ad-hoc run (Phase 2).
 - `FactoryWorkflow` — one per work item (Phase 3); child workflows per stage.
 - Activities wrap runner RPC and model calls; all Activities idempotent, retried with backoff.
@@ -173,6 +176,19 @@ refuses new work with `factory_budget_exhausted` or `factory_quota_exhausted`, a
 usage. A promoted canary merges the forge PR, rewrites the local definition checkout when the git worktree is
 clean, and commits it; a dirty or non-git checkout records `promotion_pending_deploy` instead of overwriting
 operator work. See ADR-049 and `openspec/specs/{retention,quotas,self-improvement}`.
+
+## 5b. Long-running missions
+
+A mission is a durable goal above work items (ADR-050). The planner writes a mission validation contract
+before features exist; a human approves the plan by default; features run sequentially as work items that
+start at `implement`; and each milestone boundary runs fresh scrutiny and user-testing validators. Findings
+become targeted fix features, capped by validation rounds. Small JSON checkpoints plus an append-only event
+log hold the shared state outside the model, and `continueAsNew` bounds Temporal history at milestone
+boundaries. Mission budget caps are admission guards on top of factory quotas. Validation runs clone the
+integrated forge repository (not the central factory checkout), and local runs honour an explicit
+`repo.url` so the validator sees the merged tree. The MVP is sequential; parallel features/worktrees,
+mission templates, cross-repo missions and mission-level canaries are follow-ups. See
+`openspec/specs/missions/spec.md`, ADR-050 and `docs/STATUS.md`.
 
 ## 6. Measurement and self-improvement
 
@@ -219,7 +235,7 @@ Plus: per-agent tool allow/deny lists (Warp lacks this), untrusted-content frami
 
 Top level: `New Chat · Inbox · Runs · MCPs and apps · Secrets · Users`
 Per factory: `Dashboard · Agents · Automations · Scorers · Self-improvement · Benchmarks ·
-Definition · Gates · Settings`
+Missions · Definition · Gates · Settings`
 
 Deliberate improvements over the reference:
 - **Definition** promoted to first-class: diff, history, clone, compare-versions, "what changed this week".

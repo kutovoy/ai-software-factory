@@ -829,18 +829,19 @@ export const HELP_ENTRIES: HelpEntry[] = [
     section: 'menu',
     status: 'Shipped — Phase 2b / 3c',
     summary:
-      'Everything waiting on a human: gate approvals, pending permissions and failed runs.',
+      'Everything waiting on a human: mission plan approvals, blocked missions, gate approvals, pending permissions and failed runs.',
     pageHref: '/inbox',
     blocks: [
       {
         kind: 'prose',
         text:
-          'The inbox is the queue of durable waits. A gate approval shows the stage, the gate and the SLA countdown; approving continues the work item, requesting changes requires feedback and routes the item back. Pending permissions are agent-level requests that block a run until decided. Failed runs resolve automatically when a retry succeeds.',
+          'The inbox is the queue of durable waits. A mission plan approval shows the goal, milestones and validation contract; approving starts feature dispatch, rejecting stops the mission and requesting changes re-plans with your feedback. Blocked missions appear here too, with the blocker and a link to the mission. A stage gate approval shows the stage, the gate and the SLA countdown; approving continues the work item, requesting changes requires feedback and routes the item back. Pending permissions are agent-level requests that block a run until decided. Failed runs resolve automatically when a retry succeeds.',
       },
       {
         kind: 'list',
         items: [
           'Gate approvals — approve or request changes with a reason; the decision is attributed to the actor.',
+          'Mission waits — approve, reject or request plan changes; open a blocked mission to retry a feature, resume, or cancel.',
           'Pending permissions — allow or deny; denial ends the run with the feedback attached.',
           'Failed runs — deep links to the run; a successful retry removes the row.',
         ],
@@ -1110,7 +1111,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'prose',
         text:
-          'Every public resource lives under `/api/v1` — factories, the batch `/inbox`, scoring, benchmarks, self-improvement, secrets, integrations and webhooks. Every factory-scoped resource is nested and addressed by the factory id: `/api/v1/factories/<factoryId>/work-items`, `/runs`, `/gates`, `/autonomy`, `/governance`, `/budget`, `/mcp`, `/capabilities`, `/intake`, `/scores`, `/calibration`, `/scoring`, `/benchmarks`, `/canary`, `/improvement`, `/proposals`, `/lessons`, `/merge-queue` and `/automations`. `GET /api/v1/inbox` is the one cross-factory read: it returns pending gates, permissions and failed runs in one owner-scoped projection. There is no global `/work-items`, `/runs`, `/scores` or `/proposals` route, and factory-scoped requests carry the factory in the path — never `?factory=`. `GET /health` stays unversioned for probes, and `GET /api/v1/health` serves the same check to versioned clients. The document below is `GET /api/v1/openapi.json`; the API contract test fails when a served route is missing from it (or the document lists a route that is not served), so this page lists exactly what is live.',
+          'Every public resource lives under `/api/v1` — factories, the batch `/inbox`, scoring, benchmarks, self-improvement, secrets, integrations and webhooks. Every factory-scoped resource is nested and addressed by the factory id: `/api/v1/factories/<factoryId>/work-items`, `/runs`, `/gates`, `/autonomy`, `/governance`, `/budget`, `/mcp`, `/capabilities`, `/intake`, `/scores`, `/calibration`, `/scoring`, `/benchmarks`, `/canary`, `/improvement`, `/proposals`, `/lessons`, `/merge-queue`, `/automations` and `/missions`. `GET /api/v1/inbox` is the one cross-factory read: it returns pending gates, permissions, failed runs and mission waits in one owner-scoped projection. There is no global `/work-items`, `/runs`, `/scores` or `/proposals` route, and factory-scoped requests carry the factory in the path — never `?factory=`. `GET /health` stays unversioned for probes, and `GET /api/v1/health` serves the same check to versioned clients. The document below is `GET /api/v1/openapi.json`; the API contract test fails when a served route is missing from it (or the document lists a route that is not served), so this page lists exactly what is live.',
       },
       {
         kind: 'callout',
@@ -1196,6 +1197,66 @@ export const HELP_ENTRIES: HelpEntry[] = [
       { label: 'Open the local forge', href: '/extras/forgejo/' },
       { label: 'Scoring and calibration', href: '/help/concepts/scoring-and-calibration' },
       { label: 'Runs', href: '/help/runs' },
+    ],
+  },
+  {
+    slug: 'factories/missions',
+    title: 'Missions',
+    section: 'menu',
+    status: 'Shipped — archived change `2026-11-07-add-long-running-missions` (sequential feature MVP)',
+    summary:
+      'Mission Control: create a goal, review the plan and validation contract, approve it, follow milestones and features, read validation evidence and spend, and pause, resume, cancel or retry.',
+    pageHref: factoryPageHref('missions'),
+    pageHrefLabel: 'Open Missions (example factory)',
+    blocks: [
+      {
+        kind: 'prose',
+        text:
+          'A mission is a durable goal above work items. You give it a title and a goal; the planner pins the current `definitionCommit`, writes a mission-level validation contract (behavioral assertions, the tool and the evidence each one requires) and decomposes the goal into milestones and features with dependencies. By default a human approves the plan before anything runs; the mission then dispatches one feature at a time as a work item that starts at `implement` (the plan already carries its spec and acceptance assertions), and fresh validators check each milestone boundary. The mission list lives at `/factories/<id>/missions` and each mission has its own detail page.',
+      },
+      {
+        kind: 'list',
+        items: [
+          'List: title, status, feature progress (done/total, failed), current milestone, milestone progress, spend against the mission cap, and last-updated time. Status chips narrow the list; the factory is the one whose page you are on.',
+          'Create: title, goal and optional caps — `maxCostUsd`, `maxRuns`, `maxWallClockHours`. An empty field means "no mission cap", not zero; factory budget and quotas still apply.',
+          'Plan and contract: the goal, plan version, contract version/source/enforce flag and every assertion with its tier, required flag, tool and expected evidence, plus the planner\'s risks and assumptions.',
+          'Milestones and features: status per milestone (including `validating`), validation round, and per feature its status, order, dependencies, claimed assertion ids, the work item that executes it and whether it is a fix feature from a finding.',
+          'Timeline and checkpoints: the append-only mission event log (plan, feature, validation, control events) and the small durable state snapshots written at checkpoints.',
+          'Validation rounds: scrutiny, user-testing and contract validators with their status, verdict, findings, evidence and a link to the fresh validator run.',
+          'Linked work items: the items created for features, with stage, status, PR link and last update.',
+          'Budget: spend, runs and wall-clock against the mission caps; an exhausted cap is marked, and admission refuses new runs with `mission_budget_exhausted` while the mission becomes `blocked`.',
+        ],
+      },
+      {
+        kind: 'list',
+        items: [
+          'Plan approval: Approve dispatches features, Reject ends the mission without dispatching anything, and Request changes requires feedback — the planner replans from it. The decision is audited with the actor and is delivered to the durable workflow wait.',
+          'Pause/resume: Pause stops new feature and validation dispatch; Resume restarts the scheduler from the recorded checkpoint. Both take an actor and an optional reason.',
+          'Cancel: terminal, requires an actor and a reason, and is the only action that cannot be undone.',
+          'Retry feature: a failed feature can be retried with an actor and an optional reason. If the mission is `blocked` (its workflow returned), the retry starts a fresh mission attempt at that feature\'s milestone; otherwise the running/paused scheduler picks the pending feature up. Dependencies are re-checked before dispatch.',
+          'Inbox: pending mission plan gates and blocked missions are listed alongside stage gates, so a plan waiting on a human is not hidden behind a mission page. The Inbox decision writes the same mission gate row.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Sequential MVP',
+        text:
+          'Features run one at a time in dependency order; parallel features and git worktrees are a later phase. The plan gate is human in the MVP; auto-approval for `autonomyLevel: full` with a passing benchmark attestation is a follow-up. Validators only surface findings — they never implement fixes. The orchestrator turns actionable findings into fix features, and validation rounds are capped so a flaky milestone blocks for a human instead of looping forever.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'State lives outside the model',
+        text:
+          'Mission rows, checkpoints and the event log are the durable record; a feature prompt is rebuilt from the goal, its assertions, dependencies and shared state, never from the full mission history. That is why a mission survives worker restarts and a multi-day wait costs no activity slot.',
+      },
+    ],
+    related: [
+      { label: 'Inbox', href: '/help/inbox' },
+      { label: 'Work items', href: '/help/work-items' },
+      { label: 'Work-item lifecycle', href: '/help/concepts/work-item-lifecycle' },
+      { label: 'Gates and autonomy', href: '/help/concepts/gates-and-autonomy' },
     ],
   },
   {

@@ -22,6 +22,7 @@ export const WORK_ITEM_SOURCES = [
   'linear',
   'jira',
   'api',
+  'mission',
 ] as const;
 export type WorkItemSource = (typeof WORK_ITEM_SOURCES)[number];
 
@@ -119,6 +120,9 @@ export const workItemSchema = z
     cancelRequestedAt: z.string().nullable().default(null),
     cancelActor: z.string().nullable().default(null),
     cancelReason: z.string().nullable().default(null),
+    /** Mission linkage (roadmap item 12): the parent mission and feature, when applicable. */
+    missionId: z.string().nullable().default(null),
+    missionFeatureId: z.string().nullable().default(null),
     /**
      * Owner (change `add-console-auth`): the `users.id` that created the item, or null for
      * rows written before auth / by automations. Members only see their own items; admins

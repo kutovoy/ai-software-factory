@@ -13,6 +13,7 @@ import {
 } from '../db';
 import { loadConfig } from '../config';
 import { heartbeat } from '../heartbeat';
+import { sanitizeJsonValue, sanitizeText } from '../json';
 import { ensureRunDir, eventsPath } from '../run-dir';
 import type {
   AppendTerminalInput,
@@ -74,14 +75,15 @@ export async function persistStep(step: StepRecord): Promise<void> {
 export async function appendEvent(
   args: PersistEventInput,
 ): Promise<{ appended: boolean; seq: number | null }> {
-  const event = parseFactoryEvent(args.event);
-  if (!event) {
+  const parsed = parseFactoryEvent(args.event);
+  if (!parsed) {
     throw ApplicationFailure.create({
       type: 'invalid_event',
       nonRetryable: true,
       message: `run ${args.runId} step ${args.stepId}: adapter produced a non-canonical event`,
     });
   }
+  const event = sanitizeJsonValue(parsed);
 
   const result = await getSql().begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtext(${args.runId}))`;
@@ -133,13 +135,13 @@ export async function appendTerminalEvent(
     `) as { seq: number | string }[];
     const seq = Number(next[0]?.seq ?? 1);
 
-    const event: FactoryEvent = {
+    const event: FactoryEvent = sanitizeJsonValue({
       type: 'run.completed',
       seq,
       at: Date.now(),
       status: args.status,
       ...(args.summary ? { summary: args.summary } : {}),
-    };
+    });
 
     await tx`
       insert into events (run_id, seq, type, ts, payload, step_id)
@@ -165,14 +167,23 @@ export async function finishRunActivity(args: {
   outputTokens?: number | null;
   artifacts?: unknown;
 }): Promise<void> {
-  await finishRun(args);
+  await finishRun({
+    ...args,
+    ...(args.summary !== undefined
+      ? { summary: args.summary === null ? null : sanitizeText(args.summary) }
+      : {}),
+    ...(args.error !== undefined
+      ? { error: args.error === null ? null : sanitizeText(args.error) }
+      : {}),
+    ...(args.artifacts !== undefined ? { artifacts: sanitizeJsonValue(args.artifacts) } : {}),
+  });
   await upsertStep({
     runId: args.runId,
     stepId: 'finish-run',
     kind: 'persist',
     status: args.status === 'ok' ? 'ok' : args.status === 'cancelled' ? 'cancelled' : 'error',
-    detail: { status: args.status, summary: args.summary ?? null },
-    error: args.error ?? null,
+    detail: sanitizeJsonValue({ status: args.status, summary: args.summary ?? null }),
+    error: args.error === null || args.error === undefined ? null : sanitizeText(args.error),
   });
 }
 

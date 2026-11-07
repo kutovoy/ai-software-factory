@@ -5,7 +5,7 @@
 
 import type { AgentVerdict, AgentVerdictPolicy } from '@factory/core/gates/verdict';
 import type { GovernanceConfig } from '@factory/core/governance/policy';
-import type { ValidationContract } from '@factory/core/validation/types';
+import type { ValidationContract, ValidationTier } from '@factory/core/validation/types';
 
 export type RunStatus = 'pending' | 'running' | 'ok' | 'error' | 'cancelled';
 export type TerminalStatus = 'ok' | 'error' | 'cancelled';
@@ -88,6 +88,8 @@ export interface RunInput {
    * (spec `benchmark-replay`).
    */
   replayFrom?: string;
+  /** Mission attribution for feature and validation runs (roadmap item 12). */
+  missionId?: string;
 }
 
 export interface LeaseInfo {
@@ -296,6 +298,8 @@ export interface FactoryWorkflowResume {
 
 export interface FactoryWorkflowInput {
   workItemId: string;
+  /** Mission attribution when this item is a mission feature (roadmap item 12). */
+  missionId?: string;
   /** Internal factory key: `<name>` (legacy) or `<owner>/<name>`. */
   factory: string;
   /** Stable `fac_<ulid>` identity; carried into every stage run row. */
@@ -307,7 +311,7 @@ export interface FactoryWorkflowInput {
   /** Seed prompt for every stage run (work item title + source context). */
   prompt: string;
   sourceRef: Record<string, unknown>;
-  repo?: { path?: string };
+  repo?: { path?: string; url?: string };
   stageGraph: StageGraphSummary;
   /** Resolved gate per loop stage (after the kill switch was applied). */
   gates: Record<string, string>;
@@ -382,6 +386,153 @@ export interface FactoryWorkflowOutcome {
   reason?: string;
 }
 
+/* ==================================================================== */
+/* Long-running missions (roadmap item 12)                              */
+/*                                                                      */
+/* Workflow-safe duplicates of the core mission plan types. Keep this    */
+/* file free of Node APIs and zod; the workflow sandbox imports it.      */
+/* ==================================================================== */
+
+export type MissionStatus =
+  | 'planning'
+  | 'awaiting_plan_approval'
+  | 'running'
+  | 'paused'
+  | 'blocked'
+  | 'done'
+  | 'failed'
+  | 'cancelled';
+
+export type MissionFeatureStatus = 'pending' | 'ready' | 'running' | 'done' | 'failed' | 'skipped';
+export type MissionMilestoneStatus = 'pending' | 'running' | 'validating' | 'done' | 'failed' | 'blocked';
+export type MissionValidationKind = 'scrutiny' | 'user-testing' | 'contract';
+export type MissionValidationStatus = 'pending' | 'running' | 'passed' | 'failed' | 'error';
+
+export interface MissionBudgetData {
+  maxCostUsd?: number;
+  maxRuns?: number;
+  maxWallClockHours?: number;
+}
+
+export interface MissionValidationAssertionData {
+  id: string;
+  title: string;
+  assertion: string;
+  tier: ValidationTier;
+  required: boolean;
+  tool: string;
+  evidence: string;
+  command?: string;
+  expected?: string;
+}
+
+export interface MissionValidationContractData {
+  version: 'v1alpha1';
+  missionId: string;
+  factory: string;
+  definitionCommit: string;
+  createdAt: string;
+  enforce: boolean;
+  assertions: MissionValidationAssertionData[];
+  risks: string[];
+  source: 'orchestrator' | 'human' | 'factory';
+}
+
+export interface MissionFeaturePlanData {
+  id: string;
+  title: string;
+  description: string;
+  order: number;
+  dependsOn: string[];
+  acceptanceCheckIds: string[];
+  workItemType?: 'task' | 'bug' | 'incident' | 'pr_review';
+}
+
+export interface MissionMilestonePlanData {
+  id: string;
+  title: string;
+  description: string;
+  order: number;
+  features: MissionFeaturePlanData[];
+}
+
+export interface MissionPlanData {
+  version: 'v1alpha1';
+  missionId: string;
+  factory: string;
+  definitionCommit: string;
+  title: string;
+  goal: string;
+  createdAt: string;
+  validationContract: MissionValidationContractData;
+  milestones: MissionMilestonePlanData[];
+  risks: string[];
+  assumptions: string[];
+}
+
+export interface MissionWorkflowResume {
+  planVersion: number;
+  milestoneIndex: number;
+  featureIndex: number;
+  validationRound: number;
+}
+
+export interface MissionWorkflowInput {
+  missionId: string;
+  factory: string;
+  factoryId?: string;
+  factoryRoot: string;
+  definitionCommit: string;
+  definitionDirty: boolean;
+  title: string;
+  goal: string;
+  plan?: MissionPlanData;
+  planVersion?: number;
+  budget?: MissionBudgetData;
+  /** 1-based attempt; replan/cancel retries may start a fresh workflow id. */
+  attempt?: number;
+  resume?: MissionWorkflowResume;
+}
+
+export type MissionOutcomeStatus = 'done' | 'blocked' | 'failed' | 'cancelled';
+
+export interface MissionWorkflowOutcome {
+  missionId: string;
+  status: MissionOutcomeStatus;
+  milestoneId: string | null;
+  featureId: string | null;
+  reason?: string;
+}
+
+/** Payload of the plan-decision Update / Signal. */
+export interface MissionPlanDecisionInput {
+  decision: 'approve' | 'reject' | 'request_changes';
+  actor: string;
+  reason?: string;
+  feedback?: string;
+  attempt?: number;
+}
+
+export interface MissionPlanDecisionAck {
+  accepted: boolean;
+  decision: MissionPlanDecisionInput['decision'];
+}
+
+export interface MissionPauseSignal {
+  actor: string;
+  reason?: string;
+}
+
+export interface MissionResumeSignal {
+  actor: string;
+  reason?: string;
+}
+
+export interface MissionCancelSignal {
+  actor: string;
+  reason: string;
+}
+
 /** Payload of the `submitGateDecision` Update / `gateDecision` Signal. */
 export interface GateDecisionInput {
   stage: LoopStageName;
@@ -415,6 +566,8 @@ export type StagePhase = 'run' | 'review' | 'gate';
 
 export interface StageWorkflowInput {
   workItemId: string;
+  /** Mission attribution carried into the stage run row. */
+  missionId?: string;
   factory: string;
   /** Stable `fac_<ulid>` identity; carried into the stage run row. */
   factoryId?: string;
@@ -439,7 +592,7 @@ export interface StageWorkflowInput {
   autoApproveAllowed: boolean;
   title: string;
   prompt: string;
-  repo?: { path?: string };
+  repo?: { path?: string; url?: string };
   /** Upstream run whose patch is applied to this stage's workspace (review/verify). */
   patchRunId?: string;
   permissionTimeoutMs?: number;
@@ -544,6 +697,21 @@ export function stageWorkflowId(
 /** One child workflow per run. */
 export function runWorkflowIdFor(runId: string): string {
   return `run-${runId}`;
+}
+
+/** One workflow per mission attempt. */
+export function missionWorkflowId(missionId: string, attempt = 1): string {
+  return attempt <= 1 ? `mission-${missionId}` : `mission-${missionId}-a${attempt}`;
+}
+
+/** Deterministic run id for a mission validation attempt. */
+export function missionValidationRunId(
+  missionId: string,
+  milestoneId: string,
+  round: number,
+  kind: MissionValidationKind,
+): string {
+  return `run_${missionId.slice(4)}_${milestoneId.slice(4)}_val_${round}_${kind.replace('-', '_')}`;
 }
 
 /** Run id for a stage (reviewers get their own independent run). */

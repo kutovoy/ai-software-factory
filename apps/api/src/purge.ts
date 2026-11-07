@@ -40,6 +40,14 @@ import { log } from './logger';
 const ACTIVE_WORK_ITEM_STATUSES = ['active', 'blocked', 'escalated'] as const;
 /** Run statuses that still represent live work (refused without `force`). */
 const ACTIVE_RUN_STATUSES = ['pending', 'running'] as const;
+/** Missions that still represent live work (refused without `force`). */
+const ACTIVE_MISSION_STATUSES = [
+  'planning',
+  'awaiting_plan_approval',
+  'running',
+  'paused',
+  'blocked',
+] as const;
 
 /** Child tables without a `factory` column, verified through their parent ids. */
 const RUN_CHILD_TABLES = [
@@ -51,6 +59,14 @@ const RUN_CHILD_TABLES = [
   'run_secrets',
 ] as const;
 const WORK_ITEM_CHILD_TABLES = ['work_item_events', 'gate_decisions'] as const;
+const MISSION_CHILD_TABLES = [
+  'mission_milestones',
+  'mission_features',
+  'mission_checkpoints',
+  'mission_events',
+  'mission_gates',
+  'mission_validations',
+] as const;
 
 export interface PurgeOptions {
   /** Delete even when the factory still has active work items or running runs. */
@@ -76,7 +92,7 @@ export interface FactoryPurgeReport {
   workflows: string[];
   runDirs: string[];
   failures: PurgeFailure[];
-  activeWork: { workItems: number; runs: number };
+  activeWork: { workItems: number; runs: number; missions: number };
   /** True when active work exists and `force` was not set (a dry run only reports it). */
   forceRequired: boolean;
   kept: { gitHistory: true; forge: true };
@@ -99,6 +115,12 @@ interface WorkItemRow {
 interface RunRow {
   id: string;
   status: string;
+}
+
+interface MissionRow {
+  id: string;
+  status: string;
+  workflow_id: string | null;
 }
 
 function messageOf(error: unknown): string {
@@ -203,6 +225,7 @@ async function verifyPurged(
   factoryId: string,
   runIds: string[],
   workItemIds: string[],
+  missionIds: string[],
 ): Promise<void> {
   for (const table of tables) {
     const remaining = await countRows(tx, table, key);
@@ -244,6 +267,19 @@ async function verifyPurged(
       }
     }
   }
+
+  if (missionIds.length > 0) {
+    const csv = missionIds.join(',');
+    for (const table of MISSION_CHILD_TABLES) {
+      const rows = (await tx.unsafe(
+        `select count(*)::int as count from ${quoteIdentifier(table)} where mission_id = any(string_to_array($1, ','))`,
+        [csv],
+      )) as { count: number | string }[];
+      if (Number(rows[0]?.count ?? 0) !== 0) {
+        throw new Error(`purge verification failed: "${table}" still references a deleted mission`);
+      }
+    }
+  }
 }
 
 /**
@@ -280,6 +316,9 @@ export async function purgeFactoryForApi(
   const runs = (await sql`
     select id, status from runs where factory = ${key}
   `) as RunRow[];
+  const missions = (await sql`
+    select id, status, workflow_id from missions where factory = ${key}
+  `) as MissionRow[];
 
   const activeWorkItems = workItems.filter((item) =>
     (ACTIVE_WORK_ITEM_STATUSES as readonly string[]).includes(item.status),
@@ -287,19 +326,28 @@ export async function purgeFactoryForApi(
   const activeRuns = runs.filter((run) =>
     (ACTIVE_RUN_STATUSES as readonly string[]).includes(run.status),
   );
-  const activeWork = { workItems: activeWorkItems.length, runs: activeRuns.length };
-  const forceRequired = activeWork.workItems > 0 || activeWork.runs > 0;
+  const activeMissions = missions.filter((mission) =>
+    (ACTIVE_MISSION_STATUSES as readonly string[]).includes(mission.status),
+  );
+  const activeWork = {
+    workItems: activeWorkItems.length,
+    runs: activeRuns.length,
+    missions: activeMissions.length,
+  };
+  const forceRequired =
+    activeWork.workItems > 0 || activeWork.runs > 0 || activeWork.missions > 0;
 
   if (forceRequired && !force && !dryRun) {
     throw new ApiError(
       'factory_has_active_work',
       409,
-      `factory "${key}" still has ${activeWork.workItems} active work item(s) and ${activeWork.runs} running run(s); cancel them or re-run with force`,
+      `factory "${key}" still has ${activeWork.workItems} active work item(s), ${activeWork.runs} running run(s) and ${activeWork.missions} active mission(s); cancel them or re-run with force`,
       {
         factory: key,
         ...activeWork,
         workItems: activeWorkItems.map((item) => item.id),
         runs: activeRuns.map((run) => run.id),
+        missions: activeMissions.map((mission) => mission.id),
       },
     );
   }
@@ -307,6 +355,7 @@ export async function purgeFactoryForApi(
   // Collect everything the purge needs **before** the DB delete.
   const runIds = runs.map((run) => run.id);
   const workItemIds = workItems.map((item) => item.id);
+  const missionIds = missions.map((mission) => mission.id);
 
   const automationRows = (await sql`
     select automation, temporal_schedule_id from automation_schedules where factory = ${key}
@@ -352,6 +401,9 @@ export async function purgeFactoryForApi(
   for (const run of activeRuns) workflowIds.add(workflowIdFor(run.id));
   for (const item of activeWorkItems) {
     workflowIds.add(item.workflow_id ?? workItemWorkflowId(item.id));
+  }
+  for (const mission of activeMissions) {
+    if (mission.workflow_id) workflowIds.add(mission.workflow_id);
   }
 
   const runDirs = runIds
@@ -450,7 +502,7 @@ export async function purgeFactoryForApi(
       )) as unknown[];
       counts.factories = registry.length;
 
-      await verifyPurged(tx, tables, key, factoryId, runIds, workItemIds);
+      await verifyPurged(tx, tables, key, factoryId, runIds, workItemIds, missionIds);
 
       return {
         tables: counts,

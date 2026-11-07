@@ -1056,3 +1056,26 @@ the definition repo when the worktree is clean; a dirty/non-git checkout is neve
 admission guards, not distributed locks, so concurrent creates can still race (the worker bounds actual
 execution); local promotion now depends on a clean git worktree and leaves a local commit, which makes
 `definitionDirty` false for the next run. Temporal history retention remains Temporal's responsibility.
+
+## ADR-050 — Missions are a durable parent workflow over work items
+
+**Status:** accepted (2026-11-07, implemented in `add-long-running-missions`; live `hello-nextjs` mission verified).
+**Context:** the factory loop is durable and well-suited to one bounded work item, but a multi-feature goal still
+requires a human to decompose it, create work items, sequence them and decide when the project is done. External
+missions implementations converge on a three-role architecture (orchestrator, workers, validators), a validation
+contract written before code, fresh context per feature, and durable state outside the model.
+**Decision:** add a mission layer above work items. A mission has a goal, a pinned definition version, a plan with
+milestones/features/dependencies, a mission-level validation contract, checkpoints, events, gates, validations and
+an optional budget. `MissionWorkflow` is the durable parent: it plans or accepts a plan, waits for plan approval,
+runs one feature at a time through the existing `FactoryWorkflow`, validates each milestone with fresh scrutiny and
+user-testing validators, creates fix features from actionable findings, and checkpoints after each meaningful state
+change. Features are work items that start at `implement`; the plan supplies the spec and acceptance assertions.
+Fresh context is rebuilt from the goal, relevant assertions, feature spec and checkpointed shared state, never from
+the full mission history. Temporal history is bounded with `continueAsNew` at milestone boundaries and only ids and
+indices are carried across. The MVP is sequential; parallel features/worktrees are a later phase.
+**Consequences:** missions reuse work items, stage gates, review/verify, forge/merge, scoring, budgets and remote
+runners instead of building a second stage engine. Mission data is owner-scoped and factory-purged. The planner is a
+boundary (deterministic for tests, OpenAI-compatible when configured); validators are separate agents and never edit
+code. Mission validation runs against the integrated forge repository, not the central factory checkout. Mission
+spend/run/duration caps are admission guards, not distributed locks. Parallel feature execution, cross-repo missions,
+mission templates, mission-level canaries/benchmarks and multi-tenant isolation remain follow-ups.

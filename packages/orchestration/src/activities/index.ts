@@ -12,3 +12,4 @@ export * from './canary';
 export * from './merge';
 export * from './automation';
 export * from './mcp';
+export * from './mission';

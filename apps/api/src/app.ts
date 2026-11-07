@@ -197,7 +197,22 @@ import {
   type CreateWorkItemBody,
   type RetryWorkItemBody,
 } from './work-items';
-import { modelSchema, type GateDecisionRequest } from '@factory/core';
+import { modelSchema, missionControlBodySchema, missionPlanDecisionBodySchema, missionRetryFeatureBodySchema, type GateDecisionRequest } from '@factory/core';
+import {
+  cancelMissionForApi,
+  createMissionBodySchema,
+  createMissionForApi,
+  decideMissionPlanGateForApi,
+  getMissionDetailForApi,
+  listMissionsForApi,
+  pauseMissionForApi,
+  resumeMissionForApi,
+  retryMissionFeatureForApi,
+  type CreateMissionBody,
+  type MissionControlBody,
+  type MissionPlanDecisionBody,
+  type MissionRetryFeatureBody,
+} from './missions';
 
 const TERMINAL = new Set(['ok', 'error', 'cancelled']);
 
@@ -1154,6 +1169,119 @@ export function createApp(config: ApiConfig): Hono {
       record.id,
     );
     return c.json(result);
+  });
+
+  /* -------------------------------------------------------------- missions */
+
+  /**
+   * Mission control (change `add-long-running-missions`, spec `http-api` › Mission API).
+   * Factory-scoped like work items: `factoryOf` applies owner/admin scope, and every
+   * mission read is additionally owner-scoped by `created_by`.
+   */
+  api.post('/factories/:factoryId/missions', async (c) => {
+    const body = await json<CreateMissionBody>(c, createMissionBodySchema);
+    const record = await factoryOf(c);
+    const created = await createMissionForApi(
+      config,
+      record,
+      body,
+      sessionUserId(config, c.get('user')),
+    );
+    return c.json(created, 201);
+  });
+
+  api.get('/factories/:factoryId/missions', async (c) => {
+    const limit = Number(c.req.query('limit') ?? '50');
+    const offset = Number(c.req.query('offset') ?? '0');
+    const record = await factoryOf(c);
+    const missions = await listMissionsForApi(
+      record.key,
+      {
+        ...(c.req.query('status') ? { status: c.req.query('status') as string } : {}),
+        limit: Number.isFinite(limit) ? limit : 50,
+        offset: Number.isFinite(offset) ? offset : 0,
+      },
+      viewerOf(config, c.get('user')),
+    );
+    return c.json({ missions });
+  });
+
+  api.get('/factories/:factoryId/missions/:id', async (c) => {
+    const record = await factoryOf(c);
+    return c.json(
+      await getMissionDetailForApi(record, c.req.param('id'), viewerOf(config, c.get('user'))),
+    );
+  });
+
+  api.post('/factories/:factoryId/missions/:id/gates/plan', async (c) => {
+    const body = await json<MissionPlanDecisionBody>(c, missionPlanDecisionBodySchema);
+    const record = await factoryOf(c);
+    return c.json(
+      await decideMissionPlanGateForApi(
+        config,
+        record,
+        c.req.param('id'),
+        body,
+        viewerOf(config, c.get('user')),
+      ),
+    );
+  });
+
+  api.post('/factories/:factoryId/missions/:id/pause', async (c) => {
+    const body = await json<MissionControlBody>(c, missionControlBodySchema);
+    const record = await factoryOf(c);
+    return c.json(
+      await pauseMissionForApi(
+        config,
+        record,
+        c.req.param('id'),
+        body,
+        viewerOf(config, c.get('user')),
+      ),
+    );
+  });
+
+  api.post('/factories/:factoryId/missions/:id/resume', async (c) => {
+    const body = await json<MissionControlBody>(c, missionControlBodySchema);
+    const record = await factoryOf(c);
+    return c.json(
+      await resumeMissionForApi(
+        config,
+        record,
+        c.req.param('id'),
+        body,
+        viewerOf(config, c.get('user')),
+      ),
+    );
+  });
+
+  api.post('/factories/:factoryId/missions/:id/cancel', async (c) => {
+    const body = await json<MissionControlBody>(c, missionControlBodySchema);
+    const record = await factoryOf(c);
+    return c.json(
+      await cancelMissionForApi(
+        config,
+        record,
+        c.req.param('id'),
+        body,
+        viewerOf(config, c.get('user')),
+      ),
+    );
+  });
+
+  api.post('/factories/:factoryId/missions/:id/features/:featureId/retry', async (c) => {
+    const body = await json<MissionRetryFeatureBody>(c, missionRetryFeatureBodySchema);
+    const record = await factoryOf(c);
+    return c.json(
+      await retryMissionFeatureForApi(
+        config,
+        record,
+        c.req.param('id'),
+        c.req.param('featureId'),
+        body,
+        viewerOf(config, c.get('user')),
+      ),
+    );
   });
 
   /* ------------------------------------------------------------- autonomy */

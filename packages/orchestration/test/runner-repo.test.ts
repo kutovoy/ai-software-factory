@@ -77,4 +77,16 @@ describe('repoSpecForRun', () => {
       commit: 'abc123',
     });
   });
+
+  test('local runs honour an explicit URL for integrated mission validation', () => {
+    const repo = repoSpecForRun(
+      input({
+        runner: 'local-docker',
+        repo: { url: 'http://forgejo:3000/acme/hello-nextjs.git' },
+      }),
+    );
+    expect(repo).toEqual({ url: 'http://forgejo:3000/acme/hello-nextjs.git' });
+    expect(repo).not.toHaveProperty('path');
+    expect(repo).not.toHaveProperty('commit');
+  });
 });

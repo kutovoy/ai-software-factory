@@ -2,11 +2,13 @@ import Link from 'next/link';
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { MissionPlanDecisionActions } from '@/components/missions/MissionPlanDecisionActions';
 import { GateDecisionActions } from '@/components/work-items/GateDecisionActions';
 import { GateVerdictBadge } from '@/components/work-items/GateVerdictBadge';
 import { SlaCountdown } from '@/components/work-items/SlaCountdown';
 import { safeGet } from '@/lib/api';
 import { shortCommit } from '@/lib/format';
+import { missionStatusTone, shortMissionId } from '@/lib/missions';
 import { TimeAgo } from '@/components/ui/TimeAgo';
 import type { InboxProjectionWire } from '@/lib/types';
 import { slaState } from '@/lib/work-items';
@@ -18,36 +20,117 @@ const EMPTY_INBOX: InboxProjectionWire = {
   permissions: [],
   failures: [],
   counts: { gates: 0, permissions: 0, failures: 0 },
+  missions: [],
 };
 
 /**
  * Inbox = only what needs *this* user right now. It is one batch projection
- * (`GET /api/v1/inbox`): pending gates, pending permissions and failed runs, owner-scoped
- * in SQL. The old page made one list call per factory plus a detail call per item (~112
- * API calls); this one makes one call.
+ * (`GET /api/v1/inbox`): pending gates, pending permissions, failed runs and mission-level
+ * waits (a plan gate or a blocked mission), owner-scoped in SQL. The old page made one list
+ * call per factory plus a detail call per item (~112 API calls); this one makes one call.
  */
 export default async function InboxPage() {
   const inbox = await safeGet<InboxProjectionWire>('/inbox', EMPTY_INBOX);
   const { gates, permissions: pendingPermissions, failures } = inbox;
+  // Entries without a mission summary are ignored rather than rendered half-empty; the
+  // projection is additive, so an older API simply has no `missions` field.
+  const missionWaits = Array.isArray(inbox.missions) ? inbox.missions : [];
+  const missionItems = missionWaits.filter((item) => item.mission);
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 px-6 py-6">
       <header>
         <h1 className="text-lg font-semibold text-slate-900">Inbox</h1>
         <p className="text-sm text-slate-500">
-          Items that need you: stage gate approvals, unanswered permission requests and failed runs.
-          Everything else is visible under Runs and the work-items board.
+          Items that need you: mission plan approvals and blocked missions, stage gate approvals,
+          unanswered permission requests and failed runs. Everything else is visible under Runs,
+          Missions and the work-items board.
         </p>
       </header>
 
-      {gates.length === 0 && pendingPermissions.length === 0 && failures.length === 0 ? (
+      {gates.length === 0 &&
+      pendingPermissions.length === 0 &&
+      failures.length === 0 &&
+      missionItems.length === 0 ? (
         <EmptyState
           testId="inbox-empty"
           title="Nothing needs your attention"
-          description="No pending gates, no pending permissions and no failed runs. New items appear here as soon as an agent asks for a decision."
+          description="No mission plan gates, no pending stage gates, no pending permissions and no failed runs. New items appear here as soon as an agent asks for a decision."
         />
       ) : (
         <>
+          {missionItems.length > 0 ? (
+            <Card testId="inbox-missions">
+              <CardHeader
+                title={`Mission approvals (${missionItems.length})`}
+                hint="A mission plan gate or a blocked mission is waiting on a human. Approving the plan dispatches features."
+              />
+              <ul data-testid="inbox-missions-list" className="divide-y divide-slate-100">
+                {missionItems.map((item) => {
+                  const mission = item.mission as NonNullable<typeof item.mission>;
+                  const factoryId = item.factoryId ?? mission.factoryId ?? mission.factory;
+                  const encoded = encodeURIComponent(factoryId);
+                  return (
+                    <li
+                      key={mission.id}
+                      data-testid="inbox-mission"
+                      data-kind="mission"
+                      data-mission-id={mission.id}
+                      data-status={mission.status}
+                      data-gate={item.gate?.gate ?? ''}
+                      className="space-y-2 px-5 py-3"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge tone={missionStatusTone(mission.status)} testId="inbox-mission-status">
+                          {mission.status.replace(/_/g, ' ')}
+                        </Badge>
+                        {item.gate ? (
+                          <Badge tone="warning" mono testId="inbox-mission-gate">
+                            {item.gate.gate} gate · #{item.gate.attempt}
+                          </Badge>
+                        ) : null}
+                        <Link
+                          href={`/factories/${encoded}/missions/${encodeURIComponent(mission.id)}`}
+                          data-testid="inbox-mission-link"
+                          className="text-sm font-medium text-slate-900 underline decoration-slate-300 underline-offset-2"
+                        >
+                          {mission.title}
+                        </Link>
+                        <span className="font-mono text-[11px] text-slate-400">{mission.id}</span>
+                        <span className="font-mono text-[11px] text-slate-400">
+                          {(item.factoryName ?? mission.factory)}@{shortCommit(mission.definitionCommit)}
+                        </span>
+                        <span
+                          className="ml-auto text-xs text-slate-500"
+                          data-testid="inbox-mission-age"
+                          data-requested-at={item.gate?.requestedAt ?? ''}
+                        >
+                          waiting{' '}
+                          <TimeAgo value={item.gate?.requestedAt ?? mission.updatedAt} />
+                        </span>
+                        {item.gate?.slaAt ? (
+                          <span className="font-mono text-[11px] text-slate-500">
+                            SLA {item.gate.slaAt}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="text-xs text-slate-600" data-testid="inbox-mission-reason">
+                        {mission.currentMilestoneId
+                          ? `milestone ${shortMissionId(mission.currentMilestoneId)} · `
+                          : ''}
+                        {mission.featureDone}/{mission.featureTotal} features ·{' '}
+                        {item.reason ?? mission.error ?? 'waiting for a decision'}
+                      </p>
+                      {item.gate ? (
+                        <MissionPlanDecisionActions factoryId={factoryId} missionId={mission.id} />
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
+          ) : null}
+
           <Card testId="inbox-gates">
             <CardHeader
               title={`Gate approvals (${gates.length})`}

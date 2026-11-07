@@ -36,6 +36,12 @@ This project is that factory, built to be **self-hosted, inspectable and yours**
 
 Short, dated highlights of user-visible changes. Full detail lives in `docs/STATUS.md`.
 
+- **2026-11-07 — Long-running missions.** A factory can now take a durable multi-feature goal: a planner
+  writes a validation contract and milestones, a human approves the plan, features run sequentially through
+  the existing factory loop, and fresh scrutiny + user-testing validators check each milestone. Findings
+  become targeted fix features; checkpoints, events, budget and Mission Control (plan approval, timeline,
+  pause/resume/cancel) keep the mission legible. Live `hello-nextjs` mission `mis_01M6TNENACN5KB7XEWY0R0NASJ`
+  reached `done` after PR #22 and passing milestone validation.
 - **2026-11-06 — Remote-runner factory cycles.** Full `runner: remote` work items passed on macOS
   native and Linux Docker, including every stage, concurrent review, artifacts and ship (PRs #13 and #14).
   Work-item runner overrides now win over stage defaults, remote pumps heartbeat while queued, and the
@@ -63,13 +69,6 @@ Short, dated highlights of user-visible changes. Full detail lives in `docs/STAT
   credentials.
 - **2026-11-04 — Runner cleanup hardening.** Long artifact collection now heartbeats instead of timing
   out, and the reaper tolerates concurrent `docker rm` races.
-- **2026-11-03 — Factory engineering foundation + roadmap 6–11.** Validation contracts and the QA
-  pyramid, agent readiness, guard hooks, trace scoring, routing + spend caps, external intake, MCP
-  discovery, governance/autonomy levels and the CLI surface.
-- **2026-11-02 — Factory identity + complete purge.** Committed `fac_<ulid>` ids, owner-scoped paths
-  and nested URLs; deletion is a verified hard purge of DB rows, schedules, workflows and run
-  directories.
-
 See `docs/STATUS.md` for the complete history and `docs/DECISIONS.md` for the architecture decisions.
 
 ## Features
@@ -169,17 +168,25 @@ OIDC group→org mappings are reserved for Phase 6c. Git also works over SSH on 
 in the `forgejo-data` volume), and an optional Caddy mode serves the forge on `:3001` with websocket upgrades.
 
 ### Console
-One event renderer for chat and factory runs, runs and work items with live SSE, an inbox for gates and
-permissions, factory dashboards (state, work, deliverables), scorers, MCPs and benchmarks, a live Swagger UI at
-`/help/api`, and an in-product help centre. Every factory page is nested under `/factories/<factory-id>/…`
-(dashboard, readiness, agents, automations, scorers, MCPs, self-improvement, benchmarks, gates, merge queue,
-settings, work items, runs and score detail); only chat, inbox, secrets, users and help are global. The inbox
-is one batch projection (`GET /api/v1/inbox`) and the work-items board uses a single `view=board` read, so a
-page render does not fan out into per-item detail calls.
+One event renderer for chat and factory runs, runs and work items with live SSE, an inbox for gates,
+permissions and mission waits, factory dashboards (state, work, deliverables), scorers, MCPs and benchmarks,
+Mission Control (plan approval, milestones/features, checkpoints, validation evidence, budget, pause/resume/
+cancel), a live Swagger UI at `/help/api`, and an in-product help centre. Every factory page is nested under
+`/factories/<factory-id>/…` (dashboard, readiness, agents, automations, scorers, MCPs, self-improvement,
+benchmarks, gates, merge queue, missions, settings, work items, runs and score detail); only chat, inbox,
+secrets, users and help are global. The inbox is one batch projection (`GET /api/v1/inbox`) and the
+work-items board uses a single `view=board` read, so a page render does not fan out into per-item detail
+calls.
 
 ## Architecture
 
 ```
+mission ──► MissionWorkflow (Temporal, one per mission)
+              │  plan + validation contract ──► human plan gate
+              │  milestones ──► features (sequential MVP)
+              │  milestone validators: fresh scrutiny + user-testing
+              │  findings ──► fix features; checkpoints + continueAsNew
+              └─► feature = work item
 work item ──► FactoryWorkflow (Temporal, one per item)
                  │  deterministic foreman dispatch
                  ├─► StageWorkflow: run → gate → transition

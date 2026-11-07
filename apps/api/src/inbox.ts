@@ -1,8 +1,12 @@
 import {
   mapGate,
+  mapMission,
   mapWorkItem,
   type GateDecisionRecord,
   type GateDecisionRow,
+  type MissionGate,
+  type MissionRow,
+  type MissionSummary,
   type WorkItemRow,
 } from '@factory/core';
 import { getSql, type RunRow } from '@factory/orchestration';
@@ -49,14 +53,26 @@ export interface InboxFailure {
   error: string;
 }
 
+export interface InboxMission {
+  mission: MissionSummary;
+  factoryId: string;
+  factoryName: string;
+  /** Pending plan gate, when the mission is awaiting plan approval. */
+  gate: MissionGate | null;
+  /** Why a blocked mission is listed when no gate waits. */
+  reason: string | null;
+}
+
 export interface InboxProjection {
   gates: InboxGate[];
   permissions: InboxPermission[];
   failures: InboxFailure[];
+  missions: InboxMission[];
   counts: {
     gates: number;
     permissions: number;
     failures: number;
+    missions: number;
   };
 }
 
@@ -100,6 +116,29 @@ interface FailureInboxRow extends RunRow {
   total_count: number | string;
 }
 
+interface MissionInboxRow extends MissionRow {
+  g_gate: string | null;
+  g_attempt: number | string | null;
+  g_workflow_id: string | null;
+  g_decision: string | null;
+  g_actor: string | null;
+  g_reason: string | null;
+  g_feedback: string | null;
+  g_requested_at: unknown;
+  g_sla_at: unknown;
+  g_decided_at: unknown;
+  factory_identity: string | null;
+  factory_name: string | null;
+  factory_alias: string | null;
+  feature_total: number | string;
+  feature_done: number | string;
+  feature_failed: number | string;
+  milestone_total: number | string;
+  milestone_done: number | string;
+  spend_usd: number | string;
+  total_count: number | string;
+}
+
 function factoryIdOf(row: {
   factory_id?: string | null;
   factory_identity: string | null;
@@ -134,7 +173,7 @@ export async function getInboxForApi(
   const owner = ownerFilter(viewer);
   const limit = Math.min(Math.max(options.limit ?? 50, 1), 100);
 
-  const [gateRows, permissionRows, failureRows] = await Promise.all([
+  const [gateRows, permissionRows, failureRows, missionRows] = await Promise.all([
     sql`
       select
         w.*,
@@ -215,7 +254,59 @@ export async function getInboxForApi(
       order by coalesce(r.ended_at, r.started_at) desc
       limit ${limit}
     `,
-  ]) as [GateInboxRow[], PermissionInboxRow[], FailureInboxRow[]];
+    sql`
+      select
+        m.*,
+        mg.gate as g_gate,
+        mg.attempt as g_attempt,
+        mg.workflow_id as g_workflow_id,
+        mg.decision as g_decision,
+        mg.actor as g_actor,
+        mg.reason as g_reason,
+        mg.feedback as g_feedback,
+        mg.requested_at as g_requested_at,
+        mg.sla_at as g_sla_at,
+        mg.decided_at as g_decided_at,
+        f.id as factory_identity,
+        f.name as factory_name,
+        f.alias as factory_alias,
+        coalesce(feature_counts.total, 0)::int as feature_total,
+        coalesce(feature_counts.done, 0)::int as feature_done,
+        coalesce(feature_counts.failed, 0)::int as feature_failed,
+        coalesce(milestone_counts.total, 0)::int as milestone_total,
+        coalesce(milestone_counts.done, 0)::int as milestone_done,
+        coalesce(spend.spend, 0)::numeric as spend_usd,
+        count(*) over() as total_count
+      from missions m
+      left join lateral (
+        select g.* from mission_gates g
+        where g.mission_id = m.id and g.decision is null
+        order by g.requested_at desc limit 1
+      ) mg on true
+      left join factories f on f.key = m.factory
+      left join lateral (
+        select
+          count(*)::int as total,
+          count(*) filter (where status = 'done')::int as done,
+          count(*) filter (where status = 'failed')::int as failed
+        from mission_features mf where mf.mission_id = m.id
+      ) feature_counts on true
+      left join lateral (
+        select
+          count(*)::int as total,
+          count(*) filter (where status = 'done')::int as done
+        from mission_milestones mm where mm.mission_id = m.id
+      ) milestone_counts on true
+      left join lateral (
+        select coalesce(sum(r.cost_usd), 0)::numeric as spend
+        from runs r where r.mission_id = m.id
+      ) spend on true
+      where (m.status = 'awaiting_plan_approval' or m.status = 'blocked')
+        and (${owner}::uuid is null or m.created_by = ${owner}::uuid)
+      order by coalesce(mg.requested_at, m.updated_at) desc
+      limit ${limit}
+    `,
+  ]) as [GateInboxRow[], PermissionInboxRow[], FailureInboxRow[], MissionInboxRow[]];
 
   const gates: InboxGate[] = gateRows.map((row) => ({
     workItem: summarizeWorkItem(mapWorkItem(row)),
@@ -261,14 +352,52 @@ export async function getInboxForApi(
     error: row.error ?? 'the run ended with status error',
   }));
 
+  const missions: InboxMission[] = missionRows.map((row) => {
+    const mission = mapMission(row);
+    const gate =
+      row.g_gate !== null
+        ? {
+            missionId: mission.id,
+            gate: row.g_gate,
+            attempt: Number(row.g_attempt ?? 1),
+            workflowId: row.g_workflow_id,
+            decision: (row.g_decision as MissionGate['decision']) ?? null,
+            actor: row.g_actor,
+            reason: row.g_reason,
+            feedback: row.g_feedback,
+            requestedAt: iso(row.g_requested_at) || null,
+            slaAt: iso(row.g_sla_at) || null,
+            decidedAt: iso(row.g_decided_at) || null,
+          }
+        : null;
+
+    return {
+      mission: {
+        ...mission,
+        featureTotal: Number(row.feature_total ?? 0),
+        featureDone: Number(row.feature_done ?? 0),
+        featureFailed: Number(row.feature_failed ?? 0),
+        milestoneTotal: Number(row.milestone_total ?? 0),
+        milestoneDone: Number(row.milestone_done ?? 0),
+        spendUsd: Number(row.spend_usd ?? 0),
+      },
+      factoryId: factoryIdOf(row),
+      factoryName: factoryLabel(row),
+      gate,
+      reason: mission.error,
+    };
+  });
+
   return {
     gates,
     permissions,
     failures,
+    missions,
     counts: {
       gates: Number(gateRows[0]?.total_count ?? gates.length),
       permissions: Number(permissionRows[0]?.total_count ?? permissions.length),
       failures: Number(failureRows[0]?.total_count ?? failures.length),
+      missions: Number(missionRows[0]?.total_count ?? missions.length),
     },
   };
 }

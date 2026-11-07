@@ -233,6 +233,34 @@ export const noActiveCanary = (factory: string, statuses: string[]): ApiError =>
 export const lessonNotFound = (lessonId: string): ApiError =>
   new ApiError('lesson_not_found', 404, `lesson "${lessonId}" does not exist`, { lessonId });
 
+/* --------------------------------------------------------------- missions */
+
+export const missionNotFound = (missionId: string): ApiError =>
+  new ApiError('mission_not_found', 404, `mission "${missionId}" does not exist`, { missionId });
+
+export const missionGateNotFound = (missionId: string, gate: string): ApiError =>
+  new ApiError(
+    'gate_not_found',
+    404,
+    `mission "${missionId}" has no pending gate "${gate}"`,
+    { missionId, gate },
+  );
+
+export const missionFeatureNotFound = (missionId: string, featureId: string): ApiError =>
+  new ApiError(
+    'mission_feature_not_found',
+    404,
+    `mission "${missionId}" has no feature "${featureId}"`,
+    { missionId, featureId },
+  );
+
+/** A supplied mission plan fails schema validation or referential integrity. */
+export const invalidMissionPlan = (factory: string, errors: string[]): ApiError =>
+  new ApiError('invalid_mission_plan', 422, `mission plan for factory "${factory}" is invalid`, {
+    factory,
+    errors,
+  });
+
 /** A verify gate cannot approve while enforced validation evidence is missing (item 1). */
 export const validationIncomplete = (workItemId: string, missing: string[]): ApiError =>
   new ApiError(

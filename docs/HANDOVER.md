@@ -1,10 +1,10 @@
 # Handover
 
-State as of 2026-11-06. `main` contains the runner/platform, RustFS, live-verification, retention/GC,
-quota, promotion-checkout and remote factory-cycle work. `feat/retention-quotas-promotion` was
-fast-forwarded into `main` at `0bee9d8`; `main` is ahead of `origin/main` and not pushed. Public-release
-prep: `README.md`, `LICENSE` (MIT, © Nick Kutovyy), `NOTICE` (attribution request), `SECURITY.md`,
-`CONTRIBUTING.md`.
+State as of 2026-11-07. `main` contains the runner/platform, RustFS, live-verification, retention/GC,
+quota, promotion-checkout, remote factory-cycle and long-running mission work. `feat/retention-quotas-promotion`
+was fast-forwarded into `main` at `0bee9d8`; `main` is ahead of `origin/main` and not pushed. The mission work
+is on `feat/long-running-missions` pending merge. Public-release prep: `README.md`, `LICENSE` (MIT,
+© Nick Kutovyy), `NOTICE` (attribution request), `SECURITY.md`, `CONTRIBUTING.md`.
 
 **Latest (2026-11-05):** live macOS M5 native and Linux Docker remote-runner verification. Real opencode
 chat runs completed on both backends: macOS with `RUNNER_BACKEND=local` + `RUNNER_SANDBOX=exec`
@@ -35,6 +35,16 @@ Linux agent joining `factory-runners` so it can probe sandbox IPs. OpenSpec
 `site/app/page.tsx` containing `<h1>Hello, world!</h1>`. No managed runner containers remained. The
 rebuilt stack also passed a budget read and a manual run GC dry-run.
 
+**Long-running missions (2026-11-07):** OpenSpec `add-long-running-missions` adds a durable mission above
+work items: plan + validation contract, human plan gate, sequential feature work items starting at
+`implement`, fresh scrutiny + user-testing milestone validators, fix features, checkpoints/events, mission
+budget and Mission Control (list/detail, plan approval, pause/resume/cancel, inbox waits). Live mission
+`mis_01M6TNENACN5KB7XEWY0R0NASJ` reached `done` after a feature work item, PR #22 and passing milestone
+validation. A two-feature mission exercised sequential features and the fix-feature loop; it exposed and
+fixed validator-kind filtering, integrated-forge-repo validation and NUL-byte sanitisation before JSONB event
+writes. `bun run ci` is 864 pass / 189 skip; `openspec validate --all` is 35/35; Playwright mission smoke covers
+list/detail/cancel; `scripts/smoke.sh` passes including the rebuild dry run.
+
 ## What exists
 
 | Layer | Location | Notes |
@@ -42,12 +52,12 @@ rebuilt stack also passed a budget read and a manual run GC dry-run.
 | Definition schema + CLI | `packages/core`, `packages/cli` | `factory validate/export/import/diff/fmt/version`, canonical YAML, semantic diff, git version pinning |
 | Harness adapters | `packages/adapters` | canonical `FactoryEvent`, `FakeAdapter`, opencode adapter (installed v2 API, v1-tolerant) |
 | Runners | `packages/runners` | Docker + local backends, remote Linux/Windows/macOS agents; macOS/Linux live-verified; harness runs *inside* the sandbox; RustFS artifact upload/download; secret boundary |
-| Orchestration | `packages/orchestration` | Temporal: `RunWorkflow`, `FactoryWorkflow`, `StageWorkflow`, `ScoringWorkflow`, `BenchmarkWorkflow`, `ImprovementWorkflow`, `CanaryWorkflow`, `MergeQueueWorkflow` |
+| Orchestration | `packages/orchestration` | Temporal: `MissionWorkflow`, `RunWorkflow`, `FactoryWorkflow`, `StageWorkflow`, `ScoringWorkflow`, `BenchmarkWorkflow`, `ImprovementWorkflow`, `CanaryWorkflow`, `MergeQueueWorkflow` |
 | Code forges | `packages/forge` | `CodeForge` contract, fake + GitHub (token by ref, dry-run, offline contract tests) |
 | Merge queue | `packages/merge` | serialized merge train, bisect on red, single-commit revert, manual revert |
 | Evals | `packages/evals` | scorers (deterministic + judge), calibration, benchmarks, Pareto, self-improvement, lessons |
-| API | `apps/api` | path-versioned under `/api/v1` (ADR-030); OpenAPI 3.1 at `GET /api/v1/openapi.json`; every factory-scoped resource nested under `/api/v1/factories/<factoryId>/…` (runs/SSE, permissions, chat, work items, gates, autonomy, governance, budget, readiness, guard hooks, scores, calibration, scoring, benchmarks, improvement, proposals, lessons, canary, MCPs, capabilities, intake, merge queue, automations); global factories/auth/secrets/integrations/webhooks |
-| Web console | `apps/web` | full nav parity; global chat/inbox/secrets/users/help; factory pages nested under `/factories/<id>/…` including readiness, score detail and MCPs; work-item validation contract panel; Factory Stack help |
+| API | `apps/api` | path-versioned under `/api/v1` (ADR-030); OpenAPI 3.1 at `GET /api/v1/openapi.json`; every factory-scoped resource nested under `/api/v1/factories/<factoryId>/…` (runs/SSE, permissions, chat, work items, gates, autonomy, governance, budget, readiness, guard hooks, scores, calibration, scoring, benchmarks, improvement, proposals, lessons, canary, MCPs, capabilities, intake, merge queue, automations, missions); global factories/auth/secrets/integrations/webhooks |
+| Web console | `apps/web` | full nav parity; global chat/inbox/secrets/users/help; factory pages nested under `/factories/<id>/…` including readiness, score detail, MCPs and Mission Control; work-item validation contract panel; Factory Stack help |
 | Examples | `factories/example`, `factories/example-lights-off`, `factories/hello-nextjs` | lights-on (spec/plan/PR human) vs canary authority; `hello-nextjs` is the lights-off verification factory |
 
 ## Run it
@@ -121,17 +131,16 @@ lets you validate wiring without touching a repo. GitHub delivers to
 
 The full numbered list is in `docs/ROADMAP.md` §What's left. Highest-priority remaining:
 
-1. **Roadmap item 12 — long-running missions.** Unblocked: design and build the durable mission model.
-2. **Runner metric retention + rollups.** Unblocked: raw 1-minute samples for 7 days, 5-minute rollups for
+1. **Runner metric retention + rollups.** Unblocked: raw 1-minute samples for 7 days, 5-minute rollups for
    30 days.
-3. **launchd + Windows service wrappers.** Unblocked.
-4. **mTLS certificate issuance/rotation.** Unblocked to prototype; production blocked on a PKI decision.
-5. **Windows live verification, Windows containers and macOS Tart.** Blocked on a Windows host/container
+2. **launchd + Windows service wrappers.** Unblocked.
+3. **mTLS certificate issuance/rotation.** Unblocked to prototype; production blocked on a PKI decision.
+4. **Windows live verification, Windows containers and macOS Tart.** Blocked on a Windows host/container
    runtime and Tart/macOS VM infrastructure.
-6. **Separate remote-host E2E.** Blocked on a second physical or VM host.
-7. **Forge proxy websocket upgrade and benchmark replay scope.** Unblocked.
-8. **Live GitHub path.** Blocked on a PAT, real repository and webhook secret.
-9. **Phase 6c OIDC/IdP, Temporal Cloud, managed Postgres and multi-tenant isolation.** Blocked on
+5. **Separate remote-host E2E.** Blocked on a second physical or VM host.
+6. **Forge proxy websocket upgrade and benchmark replay scope.** Unblocked.
+7. **Live GitHub path.** Blocked on a PAT, real repository and webhook secret.
+8. **Phase 6c OIDC/IdP, Temporal Cloud, managed Postgres and multi-tenant isolation.** Blocked on
    IdP/infrastructure and cloud-account decisions.
 10. **Teams/Jira/GitLab deep integrations.** Unblocked but lower priority.
 
@@ -243,13 +252,12 @@ Then open http://localhost:3000, pick a factory, and create a work item. `hello-
 
 The full numbered remaining roadmap is in `docs/ROADMAP.md` §What's left. In short:
 
-1. Roadmap item 12 — long-running missions (unblocked).
-2. Runner metric retention/rollups, service wrappers and mTLS prototype (unblocked).
-3. Windows live verification, Windows containers, macOS Tart and a separate remote host (blocked on hosts).
-4. Forge proxy websocket upgrade and benchmark replay scope (unblocked).
-5. Live GitHub path (blocked on PAT/repository/webhook secret).
-6. Phase 6c OIDC/IdP, Temporal Cloud, managed Postgres and multi-tenant isolation (blocked on infrastructure).
-7. Teams/Jira/GitLab deep integrations (unblocked, lower priority).
+1. Runner metric retention/rollups, service wrappers and mTLS prototype (unblocked).
+2. Windows live verification, Windows containers, macOS Tart and a separate remote host (blocked on hosts).
+3. Forge proxy websocket upgrade and benchmark replay scope (unblocked).
+4. Live GitHub path (blocked on PAT/repository/webhook secret).
+5. Phase 6c OIDC/IdP, Temporal Cloud, managed Postgres and multi-tenant isolation (blocked on infrastructure).
+6. Teams/Jira/GitLab deep integrations (unblocked, lower priority).
 
 ## Specs
 

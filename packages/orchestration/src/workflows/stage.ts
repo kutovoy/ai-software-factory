@@ -145,6 +145,7 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
 
     const runInput: RunInput = {
       runId,
+      ...(input.missionId ? { missionId: input.missionId } : {}),
       factory: input.factory,
       ...(input.factoryId ? { factoryId: input.factoryId } : {}),
       factoryRoot: input.factoryRoot,

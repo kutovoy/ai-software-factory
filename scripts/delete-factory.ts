@@ -64,7 +64,7 @@ interface PurgeReport {
   workflows?: string[];
   runDirs?: string[];
   failures?: Array<{ step: string; id: string; error: string }>;
-  activeWork?: { workItems: number; runs: number };
+  activeWork?: { workItems: number; runs: number; missions?: number };
   forceRequired?: boolean;
   plan?: {
     tables: Record<string, number>;
@@ -202,7 +202,7 @@ function printReport(report: PurgeReport): void {
     console.log(`  run dirs:   ${plan.runDirs.length}`);
     if (report.forceRequired) {
       console.log(
-        `\n  active work: ${report.activeWork?.workItems ?? 0} item(s), ${report.activeWork?.runs ?? 0} run(s) — a real purge needs --force.`,
+        `\n  active work: ${report.activeWork?.workItems ?? 0} item(s), ${report.activeWork?.runs ?? 0} run(s), ${report.activeWork?.missions ?? 0} mission(s) — a real purge needs --force.`,
       );
     }
     return;

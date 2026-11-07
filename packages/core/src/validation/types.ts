@@ -129,6 +129,9 @@ export function parseValidationEvidence(text: string): ValidationEvidence[] {
   while ((match = FENCED_JSON_RE.exec(text)) !== null) {
     blocks.push(match[1]);
   }
+  // Some harnesses return the evidence object as the whole summary (no fenced block).
+  // Accept that shape too; a non-JSON summary still falls through to no evidence.
+  if (blocks.length === 0 && text.trim().startsWith('{')) blocks.push(text);
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     let parsed: unknown;
     try {

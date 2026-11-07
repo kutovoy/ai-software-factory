@@ -1,5 +1,6 @@
 import { SQL } from 'bun';
 import { createHash, randomBytes } from 'node:crypto';
+import { sanitizeJsonValue, sanitizeText } from './json';
 import type { RunInput, RunStatus, TerminalStatus } from './types';
 
 /**
@@ -73,6 +74,8 @@ export interface RunRow {
   input_tokens: string | number | null;
   output_tokens: string | number | null;
   artifacts: unknown;
+  /** Mission attribution for feature and validation runs (roadmap item 12). */
+  mission_id?: string | null;
   /** Owner (`users.id`) of a chat run; stage runs inherit their work item's owner. */
   created_by?: string | null;
 }
@@ -92,6 +95,8 @@ export interface CreateRunRow {
   input: RunInput;
   workflowId: string;
   temporalRunId?: string | null;
+  /** Mission attribution for feature and validation runs (roadmap item 12). */
+  missionId?: string | null;
   /** Owner (`users.id`) when the run is created by a signed-in user (chat runs). */
   createdBy?: string | null;
 }
@@ -101,12 +106,13 @@ export async function insertRun(row: CreateRunRow): Promise<void> {
   await sql`
     insert into runs (
       id, factory, factory_id, definition_commit, definition_dirty, harness, model, runner, kind,
-      title, input, status, workflow_id, temporal_run_id, started_at, created_by
+      title, input, status, workflow_id, temporal_run_id, started_at, mission_id, created_by
     ) values (
       ${row.runId}, ${row.factory}, ${row.factoryId ?? null}, ${row.definitionCommit}, ${row.definitionDirty},
-      ${row.harness}, ${row.model ?? null}, ${row.runner}, ${row.kind}, ${row.title ?? null},
-      ${row.input}::jsonb, 'pending', ${row.workflowId},
-      ${row.temporalRunId ?? null}, now(), ${row.createdBy ?? null}
+      ${row.harness}, ${row.model ?? null}, ${row.runner}, ${row.kind},
+      ${row.title === null || row.title === undefined ? null : sanitizeText(row.title)},
+      ${sanitizeJsonValue(row.input)}::jsonb, 'pending', ${row.workflowId},
+      ${row.temporalRunId ?? null}, now(), ${row.missionId ?? null}, ${row.createdBy ?? null}
     )
     on conflict (id) do nothing
   `;
@@ -120,11 +126,13 @@ export async function markRunRunning(input: RunInput, workflowId: string): Promi
   await sql`
     insert into runs (
       id, factory, factory_id, definition_commit, definition_dirty, harness, model, runner, kind,
-      title, input, status, workflow_id, started_at
+      title, input, status, workflow_id, started_at, mission_id
     ) values (
       ${input.runId}, ${input.factory}, ${input.factoryId ?? null}, ${input.definitionCommit}, ${input.definitionDirty},
       ${input.harness}, ${input.model ?? null}, ${input.runner}, ${input.kind},
-      ${input.title ?? null}, ${input}::jsonb, 'running', ${workflowId}, now()
+      ${input.title === null || input.title === undefined ? null : sanitizeText(input.title)},
+      ${sanitizeJsonValue(input)}::jsonb, 'running', ${workflowId}, now(),
+      ${input.missionId ?? null}
     )
     on conflict (id) do update set
       status = case when runs.status in ('ok','error','cancelled') then runs.status else 'running' end,
@@ -133,7 +141,8 @@ export async function markRunRunning(input: RunInput, workflowId: string): Promi
       model = excluded.model,
       runner = excluded.runner,
       definition_commit = excluded.definition_commit,
-      definition_dirty = excluded.definition_dirty
+      definition_dirty = excluded.definition_dirty,
+      mission_id = coalesce(excluded.mission_id, runs.mission_id)
   `;
 }
 
@@ -168,13 +177,13 @@ export async function finishRun(params: {
   await sql`
     update runs set
       status = ${params.status},
-      summary = ${params.summary ?? null},
-      error = ${params.error ?? null},
+      summary = ${params.summary === null || params.summary === undefined ? null : sanitizeText(params.summary)},
+      error = ${params.error === null || params.error === undefined ? null : sanitizeText(params.error)},
       ended_at = coalesce(ended_at, now()),
       cost_usd = coalesce(${params.costUsd ?? null}, cost_usd),
       input_tokens = coalesce(${params.inputTokens ?? null}, input_tokens),
       output_tokens = coalesce(${params.outputTokens ?? null}, output_tokens),
-      artifacts = coalesce(${params.artifacts ?? null}::jsonb, artifacts)
+      artifacts = coalesce(${params.artifacts === undefined ? null : sanitizeJsonValue(params.artifacts)}::jsonb, artifacts)
     where id = ${params.runId}
   `;
 }
@@ -194,8 +203,9 @@ export async function upsertStep(params: {
     insert into run_steps (run_id, step_id, kind, status, detail, error, started_at, ended_at)
     values (
       ${params.runId}, ${params.stepId}, ${params.kind}, ${params.status},
-      ${params.detail === undefined ? null : params.detail}::jsonb,
-      ${params.error ?? null}, now(),
+      ${params.detail === undefined ? null : sanitizeJsonValue(params.detail)}::jsonb,
+      ${params.error === null || params.error === undefined ? null : sanitizeText(params.error)},
+      now(),
       ${params.status === 'running' ? null : new Date()}
     )
     on conflict (run_id, step_id) do update set
@@ -301,7 +311,7 @@ export async function upsertPermissionRequest(params: {
   await sql`
     insert into run_permissions (run_id, request_id, action, detail, decision, requested_at)
     values (${params.runId}, ${params.requestId}, ${params.action},
-            ${params.detail}::jsonb, null, now())
+            ${sanitizeJsonValue(params.detail)}::jsonb, null, now())
     on conflict (run_id, request_id) do update set
       action = excluded.action,
       detail = excluded.detail

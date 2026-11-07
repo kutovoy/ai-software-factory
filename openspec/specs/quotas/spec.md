@@ -51,3 +51,13 @@ The budget endpoint SHALL report lifetime, daily, monthly and concurrency usage 
 - **THEN** the response contains `spentUsd`, day/month spend with caps and exhaustion flags, and
   active runs against the concurrency cap
 - **AND** an unconfigured cap is reported as absent, not as zero
+
+### Requirement: Mission quotas
+
+A mission SHALL enforce optional spend, run-count and wall-clock caps in addition to factory quotas.
+
+#### Scenario: Admission
+- **WHEN** a feature or validation run would exceed a mission cap
+- **THEN** admission refuses with `mission_budget_exhausted`
+- **AND** the mission becomes `blocked`
+- **AND** factory budget/quota errors keep their existing codes

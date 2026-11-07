@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-11-06
+Last updated: 2026-11-07
 
 ## Phase
 
@@ -26,7 +26,25 @@ multi-tenant isolation. Remote runners, retention/GC, cost quotas and promotion 
 also pending: the live GitHub path. Roadmap items 1–11 are implemented: validation contract + QA pyramid,
 agent readiness, outcome metrics, guard hooks, Factory Stack, trace-driven self-improvement, classifier
 routing + spend caps, work intake, progressive context, governance/autonomy levels and the surface-agnostic
-CLI. The remaining roadmap item is long-running missions (item 12) in `research/software-factory-ideas.md`.
+CLI. **Long-running missions (roadmap item 12) are implemented** (2026-11-07, OpenSpec
+`add-long-running-missions`): a mission is a durable goal above work items, with a plan, milestones, features,
+a mission-level validation contract, checkpoints, events, gates, validations and optional budget. See the
+mission section below.
+
+**Long-running missions — implemented** (2026-11-07, OpenSpec `add-long-running-missions`). A mission is a durable
+goal above work items: the planner writes a mission validation contract before features exist, a human approves the
+plan, features run sequentially through the existing `FactoryWorkflow` (starting at `implement`), and fresh scrutiny
+and user-testing validators run at milestone boundaries. Findings become targeted fix features; checkpoints and an
+append-only mission event log preserve decisions, failed approaches, test results, blockers and budget outside the
+model. The workflow pauses/resumes/cancels durably and uses `continueAsNew` at milestone boundaries. The console adds
+a factory-scoped Missions page, mission detail, plan approval, lifecycle controls and an Inbox mission section. Live
+verification: mission `mis_01M6TNENACN5KB7XEWY0R0NASJ` reached `done` after a plan gate, a feature work item, PR #22
+and passing scrutiny + user-testing validation. A two-feature mission exercised sequential features and the
+fix-feature loop; it also exposed and fixed three integration issues (validator-kind filtering, validating the
+integrated forge repository rather than the central checkout, and sanitising NUL bytes before JSONB event writes
+so an agent reading a binary file cannot corrupt the audit log). A blocked mission's feature retry starts a fresh
+`MissionWorkflow` attempt at that milestone; pause/resume/cancel remain durable controls. `bun run ci` is 864 pass /
+189 skip; `openspec validate --all` is 35/35 with one pre-existing warning. See `docs/ROADMAP.md` §What's left.
 
 **Remote runners + host observability — Linux, Windows and macOS native agents implemented** (2026-11-04/05, merged to
 `main`, archived OpenSpec `2026-11-04-add-remote-runners`; platform/artifact work in `2026-11-05-add-runner-platforms-and-artifacts`). A remote host enrolls from the console with a
@@ -408,7 +426,6 @@ What is left:
 4. **Benchmark replay scope** — replays our canonical events + patch, not arbitrary harness tool-response traces.
 5. **Runner follow-ups** — live Windows verification, Windows containers, macOS Tart, mTLS issuance/rotation,
    launchd/Windows service wrappers, runner metric retention/rollups and a separate remote-host E2E.
-6. **Long-running missions** — roadmap item 12.
 
 The full numbered list with blocked/unblocked status is in `docs/ROADMAP.md` §What's left.
 

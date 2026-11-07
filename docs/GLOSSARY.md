@@ -8,6 +8,12 @@ Terms used across specs, code and UI. Keep this aligned with `packages/core` typ
 | **Factory definition** | The git-tracked, declarative description of a factory (`factory.yaml` + `agents/`, `automations/`, `scorers/`, `benchmarks/`, `skills/`, `runners/`). The source of truth. |
 | **Factory version** | An immutable snapshot identified by a git commit SHA of the definition repo. Every run pins one. Two versions can be benchmarked against each other. |
 | **Work item** | One unit of requested work (issue, Slack thread, PR, scheduled job) tracked from intake to handoff, retaining its source context. |
+| **Mission** | A durable goal above work items: plan, milestones, features, validation contract, checkpoints, events, gates, validations and optional budget. Runs under `MissionWorkflow`. |
+| **Milestone** | A group of mission features that must all finish before a fresh validation round (scrutiny + user-testing) checks the mission contract. |
+| **Mission feature** | One unit of mission work; persisted as a work item that starts at `implement` because the mission plan supplies its spec and acceptance assertions. |
+| **Validation contract** | Behavioral assertions written before features run, with tier, required flag, tool and expected evidence; mission-level contracts drive milestone validators. |
+| **Checkpoint** | A small JSON snapshot of mission state (completed work, decisions, failed approaches, tests, blockers, budget) that lets the next feature start with fresh context. |
+| **Mission Control** | The factory-scoped console view of missions: plan approval, milestones/features, checkpoints, validation evidence, budget and pause/resume/cancel controls. |
 | **Stage** | A step in the SDLC loop: `triage`, `spec`, `plan`, `implement`, `review`, `verify`, `ship`, `monitor`. |
 | **Gate** | A checkpoint on a stage that requires a human decision (`human`) or is auto-approved by an agent/policy (`agent`). Gates are configurable globally and per automation. |
 | **Foreman** | The coordinating agent that owns a factory's work item: it decides stages, dispatches subagents, picks model/harness per step, talks to humans, and escalates. |

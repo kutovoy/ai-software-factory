@@ -71,37 +71,45 @@ follow-ups.
 promotion rewriting the local checkout are implemented (OpenSpec
 `2026-11-05-add-retention-quotas-promotion`).
 
-## What's left (2026-11-06)
+**Long-running missions (roadmap item 12):** implemented (OpenSpec `add-long-running-missions`, ADR-050).
+`MissionWorkflow` plans or accepts a plan, gates it on human approval, runs sequential feature work items
+through `FactoryWorkflow`, validates each milestone with fresh scrutiny + user-testing runs, creates fix
+features from findings, checkpoints state outside the model, enforces mission budget caps and uses
+`continueAsNew` at milestone boundaries. Mission Control adds list/detail, plan approval, timeline,
+validation evidence, budget and pause/resume/cancel; the Inbox shows plan gates and blocked missions. A
+live `hello-nextjs` mission reached `done` after PR #22 and passing milestone validation.
 
-Done: Phases 0–5, roadmap items 1–11, remote runners on Linux/macOS (live-verified) and Windows native
+## What's left (2026-11-07)
+
+Done: Phases 0–5, roadmap items 1–12, remote runners on Linux/macOS (live-verified) and Windows native
 (implemented, not live-verified), retention/GC, cost quotas, promotion checkout, a fresh `hello-nextjs`
-lights-off cycle with zero human decisions, and full `runner: remote` factory cycles on macOS native and
-Linux Docker (PRs #13 and #14).
+lights-off cycle with zero human decisions, full `runner: remote` factory cycles on macOS native and
+Linux Docker (PRs #13 and #14), and long-running missions with plan approval, milestones, validation,
+checkpoints, fix features, budget and Mission Control (OpenSpec `add-long-running-missions`).
 
 Remaining, in rough priority order:
 
-1. **Roadmap item 12 — long-running missions.** Unblocked: design and build the durable mission model.
-2. **Runner metric retention + rollups.** Unblocked: raw 1-minute samples for 7 days, 5-minute
+1. **Runner metric retention + rollups.** Unblocked: raw 1-minute samples for 7 days, 5-minute
    rollups for 30 days.
-3. **launchd + Windows service wrappers.** Unblocked: turn the generated agent start commands into
+2. **launchd + Windows service wrappers.** Unblocked: turn the generated agent start commands into
    managed services.
-4. **mTLS certificate issuance/rotation.** Unblocked to prototype; production is blocked on a PKI
+3. **mTLS certificate issuance/rotation.** Unblocked to prototype; production is blocked on a PKI
    decision.
-5. **Live Windows native runner verification.** Blocked on a Windows host.
-6. **Windows containers backend.** Blocked on a Windows host with a container runtime.
-7. **macOS Tart VM backend.** Blocked on Tart/macOS VM infrastructure.
-8. **Separate remote-host E2E.** Blocked on a second physical or VM host.
-9. **Forge proxy websocket upgrade E2E.** Unblocked: exercise the Caddy upgrade path end to end.
-10. **Benchmark replay beyond canonical events + patch.** Unblocked: replay arbitrary harness
-    tool-response traces.
-11. **Live GitHub forge path.** Blocked on a PAT, a real repository and a webhook secret.
-12. **Teams/Jira/GitLab deep integrations.** Unblocked but lower priority; webhook + token clone
+4. **Live Windows native runner verification.** Blocked on a Windows host.
+5. **Windows containers backend.** Blocked on a Windows host with a container runtime.
+6. **macOS Tart VM backend.** Blocked on Tart/macOS VM infrastructure.
+7. **Separate remote-host E2E.** Blocked on a second physical or VM host.
+8. **Forge proxy websocket upgrade E2E.** Unblocked: exercise the Caddy upgrade path end to end.
+9. **Benchmark replay beyond canonical events + patch.** Unblocked: replay arbitrary harness
+   tool-response traces.
+10. **Live GitHub forge path.** Blocked on a PAT, a real repository and a webhook secret.
+11. **Teams/Jira/GitLab deep integrations.** Unblocked but lower priority; webhook + token clone
     already covers the basic path.
-13. **Phase 6c — external OIDC/IdP group→org mappings.** Blocked on an IdP/infrastructure decision
+12. **Phase 6c — external OIDC/IdP group→org mappings.** Blocked on an IdP/infrastructure decision
     (Keycloak/Authentik/Zitadel).
-14. **Temporal Cloud.** Blocked on cloud account, namespace and cost decisions.
-15. **Managed Postgres.** Blocked on provider/infrastructure decisions.
-16. **Multi-tenant isolation + Phase 6 exit.** Blocked on items 13–15 and a real remote Linux host.
+13. **Temporal Cloud.** Blocked on cloud account, namespace and cost decisions.
+14. **Managed Postgres.** Blocked on provider/infrastructure decisions.
+15. **Multi-tenant isolation + Phase 6 exit.** Blocked on items 12–14 and a real remote Linux host.
 
 ## Cross-cutting, every phase
 - OpenSpec change per phase; `docs/STATUS.md` updated; ADR added for every irreversible choice.

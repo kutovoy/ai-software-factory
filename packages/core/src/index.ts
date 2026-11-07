@@ -35,6 +35,7 @@ export * from './benchmarks/index';
 export * from './improvement/index';
 export * from './metrics/index';
 export * from './validation/index';
+export * from './missions/index';
 export * from './readiness/index';
 export * from './guard/index';
 export * from './diff/diff';

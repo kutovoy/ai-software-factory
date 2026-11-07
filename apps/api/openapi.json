@@ -96,6 +96,10 @@
     {
       "name": "runners",
       "description": "Remote runner hosts: one-time enrollment, health metrics, leases, alerts and alert rules. The console routes use the session cookie and owner/admin scope; the agent routes (`/runner-agent/*`, `/runner-enrollments/*/preflight`) are authenticated by a per-host bearer token."
+    },
+    {
+      "name": "missions",
+      "description": "Long-running missions: plan approval, milestones/features, pause/resume/cancel, feature retry, budget and audit."
     }
   ],
   "paths": {
@@ -7556,6 +7560,903 @@
           }
         ]
       }
+    },
+    "/api/v1/factories/{factoryId}/missions": {
+      "get": {
+        "tags": [
+          "missions"
+        ],
+        "summary": "List missions",
+        "description": "Owner-scoped and factory-scoped. Each row carries status, progress counts, current milestone/feature and mission spend. Members see only missions they created (`created_by`); admins see all; auth off returns everything.",
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "planning",
+                "awaiting_plan_approval",
+                "running",
+                "paused",
+                "blocked",
+                "done",
+                "failed",
+                "cancelled"
+              ]
+            },
+            "description": "Filter by mission status."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            },
+            "description": "Page size (default 50)."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Page offset (default 0)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Missions visible to the viewer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "missions"
+                  ],
+                  "properties": {
+                    "missions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MissionSummary"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request — malformed body, query or path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "mission_not_found — unknown, foreign or other-factory mission.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error — unexpected server failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "missions"
+        ],
+        "summary": "Create a mission",
+        "description": "Pins the definition commit, creates the mission in `planning`, persists a supplied plan and starts `MissionWorkflow`. When Temporal is unreachable the mission is left `blocked` and the response is `503 orchestrator_unavailable`.",
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "title",
+                  "goal"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "goal": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 20000
+                  },
+                  "budget": {
+                    "$ref": "#/components/schemas/MissionBudget"
+                  },
+                  "plan": {
+                    "description": "Optional full plan. Validated with `validateMissionPlan` (schema, dependencies, assertion references, cycles). The API pins `missionId`, `factory` and `definitionCommit`; a plan that fails validation is `422 invalid_mission_plan`.",
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Mission created and workflow started.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "mission",
+                    "workflow"
+                  ],
+                  "properties": {
+                    "mission": {
+                      "$ref": "#/components/schemas/MissionSummary"
+                    },
+                    "workflow": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "workflowId",
+                            "temporalRunId"
+                          ],
+                          "properties": {
+                            "workflowId": {
+                              "type": "string"
+                            },
+                            "temporalRunId": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request — malformed body, query or path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "factory_not_found — unknown or foreign factory id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "invalid_mission_plan — the supplied plan fails validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error — unexpected server failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "orchestrator_unavailable — Temporal could not start the mission workflow.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/factories/{factoryId}/missions/{id}": {
+      "get": {
+        "tags": [
+          "missions"
+        ],
+        "summary": "Get mission detail",
+        "description": "One response with the mission, milestones, features, checkpoints, events, validations, gates, the pending gate, linked work items and budget usage. Owner- and factory-scoped.",
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^mis_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Mission id (`mis_<ulid>`)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Mission detail.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissionDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request — malformed body, query or path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "mission_not_found — unknown, foreign or other-factory mission.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error — unexpected server failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/factories/{factoryId}/missions/{id}/gates/plan": {
+      "post": {
+        "tags": [
+          "missions"
+        ],
+        "summary": "Decide the mission plan gate",
+        "description": "Records the decision on the mission gate row, appends the audit event (`mission.plan.approved` / `rejected` / `changes_requested`), then delivers it to the workflow by Temporal Update (Signal fallback). The read model is written first, so the response is stable when Temporal is unreachable (`delivery: failed`).",
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^mis_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Mission id (`mis_<ulid>`)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "decision",
+                  "actor"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "approve",
+                      "reject",
+                      "request_changes"
+                    ]
+                  },
+                  "actor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "feedback": {
+                    "type": "string",
+                    "maxLength": 8000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Decision recorded and delivered.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissionPlanDecisionResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request — malformed body, query or path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "mission_not_found / gate_not_found — no pending plan gate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "invalid_state — the plan gate was already decided.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error — unexpected server failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/factories/{factoryId}/missions/{id}/pause": {
+      "post": {
+        "tags": [
+          "missions"
+        ],
+        "summary": "Pause a mission",
+        "description": "Records `paused` and a `mission.paused` event, then Signals `missionPause`. Idempotent: a paused mission returns `alreadyPaused: true` and no second event. A terminal mission is `409 invalid_state`.",
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^mis_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Mission id (`mis_<ulid>`)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "actor"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "actor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pause recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissionControlResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request — malformed body, query or path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "mission_not_found — unknown, foreign or other-factory mission.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "invalid_state — the mission is terminal or not in a controllable state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error — unexpected server failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/factories/{factoryId}/missions/{id}/resume": {
+      "post": {
+        "tags": [
+          "missions"
+        ],
+        "summary": "Resume a mission",
+        "description": "Records the next status and a `mission.resumed` event, then Signals `missionResume`. A paused mission with an undecided plan gate resumes into `awaiting_plan_approval`; otherwise `running`. A non-paused mission is `409 invalid_state` (a running mission returns `alreadyRunning: true`).",
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^mis_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Mission id (`mis_<ulid>`)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "actor"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "actor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resume recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissionControlResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request — malformed body, query or path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "mission_not_found — unknown, foreign or other-factory mission.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "invalid_state — the mission is terminal or not in a controllable state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error — unexpected server failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/factories/{factoryId}/missions/{id}/cancel": {
+      "post": {
+        "tags": [
+          "missions"
+        ],
+        "summary": "Cancel a mission",
+        "description": "Cooperative and idempotent: records the cancellation request once, appends exactly one `mission.cancelled` event, sets `cancelled`, then Signals `missionCancel`. A terminal mission is `409 invalid_state`.",
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^mis_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Mission id (`mis_<ulid>`)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "actor"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "actor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Cancel recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissionCancelResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request — malformed body, query or path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "mission_not_found — unknown, foreign or other-factory mission.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "invalid_state — the mission is terminal or not in a controllable state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error — unexpected server failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/factories/{factoryId}/missions/{id}/features/{featureId}/retry": {
+      "post": {
+        "tags": [
+          "missions"
+        ],
+        "summary": "Retry a mission feature",
+        "description": "Resets a failed, skipped, pending or ready feature to `pending` (attempt incremented) and appends a `mission.feature.retried` event. MVP does not Signal the workflow: the scheduler picks the pending feature up on its next pass. Running and done features are `409 invalid_state`.",
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^fac_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Stable factory id (`fac_<ulid>`). A member resolves only factories they own; any other id is 404."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^mis_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Mission id (`mis_<ulid>`)."
+          },
+          {
+            "name": "featureId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^mft_[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "description": "Mission feature id (`mft_<ulid>`)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "actor"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "actor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Feature reset to pending.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissionFeatureRetryResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request — malformed body, query or path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "mission_not_found / mission_feature_not_found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "invalid_state — the feature is running or done.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error — unexpected server failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -7791,6 +8692,962 @@
               "null"
             ],
             "format": "date-time"
+          }
+        }
+      },
+      "MissionBudget": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "maxCostUsd": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000000
+          },
+          "maxRuns": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          },
+          "maxWallClockHours": {
+            "type": "number",
+            "minimum": 0.1
+          }
+        }
+      },
+      "MissionPlan": {
+        "type": "object",
+        "description": "A mission plan (`v1alpha1`): validation contract with behavioral assertions plus milestones and features. Validated by `validateMissionPlan`.",
+        "required": [
+          "version",
+          "missionId",
+          "factory",
+          "definitionCommit",
+          "title",
+          "goal",
+          "createdAt",
+          "validationContract",
+          "milestones"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "version": {
+            "type": "string",
+            "enum": [
+              "v1alpha1"
+            ]
+          },
+          "missionId": {
+            "type": "string",
+            "pattern": "^mis_[0-9A-HJKMNP-TV-Z]{26}$"
+          },
+          "factory": {
+            "type": "string"
+          },
+          "definitionCommit": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "goal": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "validationContract": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "milestones": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "risks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "assumptions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Mission": {
+        "type": "object",
+        "description": "A durable mission above work items: goal, pinned definition version, plan, status, budget and cancellation request.",
+        "required": [
+          "id",
+          "factory",
+          "title",
+          "goal",
+          "status",
+          "definitionCommit"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^mis_[0-9A-HJKMNP-TV-Z]{26}$"
+          },
+          "factory": {
+            "type": "string",
+            "description": "Internal factory key."
+          },
+          "factoryId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Stable `fac_<ulid>` identity."
+          },
+          "title": {
+            "type": "string"
+          },
+          "goal": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planning",
+              "awaiting_plan_approval",
+              "running",
+              "paused",
+              "blocked",
+              "done",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "definitionCommit": {
+            "type": "string"
+          },
+          "definitionDirty": {
+            "type": "boolean"
+          },
+          "factoryRoot": {
+            "type": "string"
+          },
+          "definitionVersion": {
+            "type": "string",
+            "enum": [
+              "stable",
+              "candidate"
+            ]
+          },
+          "canaryRolloutId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MissionPlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "planVersion": {
+            "type": "integer"
+          },
+          "currentMilestoneId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "currentFeatureId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workflowId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "attempt": {
+            "type": "integer"
+          },
+          "budget": {
+            "$ref": "#/components/schemas/MissionBudget"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cancelRequestedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cancelActor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cancelReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdBy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "MissionSummary": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Mission"
+          },
+          {
+            "type": "object",
+            "required": [
+              "featureTotal",
+              "featureDone",
+              "featureFailed",
+              "milestoneTotal",
+              "milestoneDone",
+              "spendUsd"
+            ],
+            "properties": {
+              "featureTotal": {
+                "type": "integer"
+              },
+              "featureDone": {
+                "type": "integer"
+              },
+              "featureFailed": {
+                "type": "integer"
+              },
+              "milestoneTotal": {
+                "type": "integer"
+              },
+              "milestoneDone": {
+                "type": "integer"
+              },
+              "spendUsd": {
+                "type": "number"
+              }
+            }
+          }
+        ],
+        "description": "A mission row plus the progress counts and attributed spend used by the list projection."
+      },
+      "MissionMilestone": {
+        "type": "object",
+        "required": [
+          "id",
+          "missionId",
+          "ordinal",
+          "title",
+          "status"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^mst_[0-9A-HJKMNP-TV-Z]{26}$"
+          },
+          "missionId": {
+            "type": "string"
+          },
+          "ordinal": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "validating",
+              "done",
+              "failed",
+              "blocked"
+            ]
+          },
+          "validationRound": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "MissionFeature": {
+        "type": "object",
+        "required": [
+          "id",
+          "missionId",
+          "milestoneId",
+          "ordinal",
+          "title",
+          "status"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^mft_[0-9A-HJKMNP-TV-Z]{26}$"
+          },
+          "missionId": {
+            "type": "string"
+          },
+          "milestoneId": {
+            "type": "string"
+          },
+          "ordinal": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "ready",
+              "running",
+              "done",
+              "failed",
+              "skipped"
+            ]
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "acceptanceCheckIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "workItemId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fixForFeatureId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "attempt": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "MissionCheckpoint": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "missionId": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "milestoneId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "featureId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dedupeKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "MissionEvent": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "missionId": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "description": "Mission audit event type, e.g. `mission.created`, `mission.plan.approved`, `mission.paused`, `mission.feature.retried`."
+          },
+          "milestoneId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "featureId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "actor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "MissionGate": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "missionId": {
+            "type": "string"
+          },
+          "gate": {
+            "type": "string"
+          },
+          "attempt": {
+            "type": "integer"
+          },
+          "workflowId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "decision": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "approve",
+              "reject",
+              "request_changes",
+              null
+            ]
+          },
+          "actor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "feedback": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slaAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "decidedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "MissionValidation": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^mval_[0-9A-HJKMNP-TV-Z]{26}$"
+          },
+          "missionId": {
+            "type": "string"
+          },
+          "milestoneId": {
+            "type": "string"
+          },
+          "round": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "scrutiny",
+              "user-testing",
+              "contract"
+            ]
+          },
+          "runId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "passed",
+              "failed",
+              "error"
+            ]
+          },
+          "verdict": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "approve",
+              "reject",
+              "needs_human",
+              null
+            ]
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "MissionBudgetUsage": {
+        "type": "object",
+        "required": [
+          "costUsd",
+          "runs",
+          "startedAt"
+        ],
+        "properties": {
+          "costUsd": {
+            "type": "number",
+            "description": "Attributed run spend."
+          },
+          "runs": {
+            "type": "integer",
+            "description": "Runs attributed to the mission."
+          },
+          "startedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "MissionBudgetUsageView": {
+        "type": "object",
+        "required": [
+          "budget",
+          "spendUsd",
+          "runs",
+          "startedAt",
+          "remainingUsd",
+          "remainingRuns",
+          "wallClockHours",
+          "costExhausted",
+          "runsExhausted",
+          "wallClockExhausted",
+          "exhausted"
+        ],
+        "properties": {
+          "budget": {
+            "$ref": "#/components/schemas/MissionBudget"
+          },
+          "spendUsd": {
+            "type": "number"
+          },
+          "runs": {
+            "type": "integer"
+          },
+          "startedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remainingUsd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "remainingRuns": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "wallClockHours": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "costExhausted": {
+            "type": "boolean"
+          },
+          "runsExhausted": {
+            "type": "boolean"
+          },
+          "wallClockExhausted": {
+            "type": "boolean"
+          },
+          "exhausted": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MissionDetail": {
+        "type": "object",
+        "required": [
+          "mission",
+          "milestones",
+          "features",
+          "checkpoints",
+          "events",
+          "validations",
+          "gates",
+          "pendingGate",
+          "workItems",
+          "budget",
+          "budgetUsage"
+        ],
+        "properties": {
+          "mission": {
+            "$ref": "#/components/schemas/MissionSummary"
+          },
+          "milestones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MissionMilestone"
+            }
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MissionFeature"
+            }
+          },
+          "checkpoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MissionCheckpoint"
+            }
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MissionEvent"
+            }
+          },
+          "validations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MissionValidation"
+            }
+          },
+          "gates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MissionGate"
+            }
+          },
+          "pendingGate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MissionGate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workItems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "budget": {
+            "type": "object",
+            "required": [
+              "budget",
+              "usage",
+              "exceeded"
+            ],
+            "properties": {
+              "budget": {
+                "$ref": "#/components/schemas/MissionBudget"
+              },
+              "usage": {
+                "$ref": "#/components/schemas/MissionBudgetUsage"
+              },
+              "exceeded": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Stable reason when a mission cap is reached, else null."
+              }
+            }
+          },
+          "budgetUsage": {
+            "$ref": "#/components/schemas/MissionBudgetUsageView"
+          }
+        }
+      },
+      "MissionPlanDecisionResult": {
+        "type": "object",
+        "required": [
+          "missionId",
+          "gate",
+          "decision",
+          "actor",
+          "attempt",
+          "delivery",
+          "accepted"
+        ],
+        "properties": {
+          "missionId": {
+            "type": "string"
+          },
+          "gate": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "reject",
+              "request_changes"
+            ]
+          },
+          "actor": {
+            "type": "string"
+          },
+          "attempt": {
+            "type": "integer"
+          },
+          "delivery": {
+            "type": "string",
+            "enum": [
+              "update",
+              "signal",
+              "failed",
+              "none"
+            ]
+          },
+          "accepted": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MissionControlResult": {
+        "type": "object",
+        "required": [
+          "mission",
+          "delivery"
+        ],
+        "properties": {
+          "mission": {
+            "$ref": "#/components/schemas/MissionSummary"
+          },
+          "delivery": {
+            "type": "string",
+            "enum": [
+              "signal",
+              "none"
+            ]
+          },
+          "alreadyPaused": {
+            "type": "boolean"
+          },
+          "alreadyRunning": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MissionCancelResult": {
+        "type": "object",
+        "required": [
+          "mission",
+          "delivery",
+          "cancelled",
+          "alreadyCancelled",
+          "cancelRequestedAt"
+        ],
+        "properties": {
+          "mission": {
+            "$ref": "#/components/schemas/MissionSummary"
+          },
+          "delivery": {
+            "type": "string",
+            "enum": [
+              "signal",
+              "none"
+            ]
+          },
+          "cancelled": {
+            "type": "boolean"
+          },
+          "alreadyCancelled": {
+            "type": "boolean"
+          },
+          "cancelRequestedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "MissionFeatureRetryResult": {
+        "type": "object",
+        "required": [
+          "feature"
+        ],
+        "properties": {
+          "feature": {
+            "$ref": "#/components/schemas/MissionFeature"
           }
         }
       }

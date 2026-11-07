@@ -47,6 +47,8 @@ export interface WorkItemRow {
   cancel_requested_at: unknown;
   cancel_actor: string | null;
   cancel_reason: string | null;
+  mission_id?: string | null;
+  mission_feature_id?: string | null;
   input?: unknown;
   /** Owner (`users.id`); null for pre-auth rows and automation-created items. */
   created_by?: string | null;
@@ -181,6 +183,8 @@ export function mapWorkItem(row: WorkItemRow): WorkItem {
     cancelRequestedAt: iso(row.cancel_requested_at),
     cancelActor: row.cancel_actor ?? null,
     cancelReason: row.cancel_reason ?? null,
+    missionId: row.mission_id ?? null,
+    missionFeatureId: row.mission_feature_id ?? null,
     createdBy: row.created_by ?? null,
     ...(iso(row.created_at) ? { createdAt: iso(row.created_at) as string } : {}),
     ...(iso(row.updated_at) ? { updatedAt: iso(row.updated_at) as string } : {}),
@@ -253,6 +257,9 @@ export interface CreateWorkItemArgs {
   definitionVersion?: WorkItemVersion;
   workflowId?: string | null;
   input?: Record<string, unknown>;
+  /** Mission linkage (roadmap item 12). */
+  missionId?: string | null;
+  missionFeatureId?: string | null;
   /** Owner (`users.id`); null when auth is off or an automation created the item. */
   createdBy?: string | null;
 }
@@ -263,13 +270,14 @@ export async function createWorkItem(sql: SQL, args: CreateWorkItemArgs): Promis
       insert into work_items (
         id, factory, factory_id, type, source, source_ref, title, stage, status, parent_id,
         definition_commit, definition_dirty, canary_rollout_id, definition_version,
-        workflow_id, input, created_by
+        workflow_id, input, mission_id, mission_feature_id, created_by
       ) values (
         ${args.id}, ${args.factory}, ${args.factoryId ?? null}, ${args.type}, ${args.source},
         ${(args.sourceRef ?? {})}::jsonb, ${args.title}, ${args.stage}, 'active',
         ${args.parentId ?? null}, ${args.definitionCommit}, ${args.definitionDirty ?? false},
         ${args.canaryRolloutId ?? null}, ${args.definitionVersion ?? 'stable'},
-        ${args.workflowId ?? null}, ${(args.input ?? {})}::jsonb, ${args.createdBy ?? null}
+        ${args.workflowId ?? null}, ${(args.input ?? {})}::jsonb,
+        ${args.missionId ?? null}, ${args.missionFeatureId ?? null}, ${args.createdBy ?? null}
       )
       returning *
     `) as WorkItemRow[];
@@ -325,13 +333,14 @@ export async function createWorkItemIdempotent(
       insert into work_items (
         id, factory, factory_id, type, source, source_ref, title, stage, status, parent_id,
         definition_commit, definition_dirty, canary_rollout_id, definition_version,
-        workflow_id, input, created_by
+        workflow_id, input, mission_id, mission_feature_id, created_by
       ) values (
         ${args.id}, ${args.factory}, ${args.factoryId ?? null}, ${args.type}, ${args.source},
         ${(args.sourceRef ?? {})}::jsonb, ${args.title}, ${args.stage}, 'active',
         ${args.parentId ?? null}, ${args.definitionCommit}, ${args.definitionDirty ?? false},
         ${args.canaryRolloutId ?? null}, ${args.definitionVersion ?? 'stable'},
-        ${args.workflowId ?? null}, ${(args.input ?? {})}::jsonb, ${args.createdBy ?? null}
+        ${args.workflowId ?? null}, ${(args.input ?? {})}::jsonb,
+        ${args.missionId ?? null}, ${args.missionFeatureId ?? null}, ${args.createdBy ?? null}
       )
       on conflict (id) do nothing
       returning *

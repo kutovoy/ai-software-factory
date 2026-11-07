@@ -161,11 +161,24 @@ export function repoSpecForRun(
   fallbackRemoteUrl?: string,
 ): RepoSpec {
   const remote = isRemoteRun(input);
-  const url = input.repo?.url ?? fallbackRemoteUrl;
+  // An explicit `repo.url` is honoured for local runs too. Mission validation uses it to
+  // clone the integrated forge repository instead of the central factory checkout; when no
+  // commit is supplied it clones the default branch (the merged mission state).
+  const url = input.repo?.url ?? (remote ? fallbackRemoteUrl : undefined);
+  if (url) {
+    const commit = input.repo?.commit ?? (remote ? input.definitionCommit : undefined);
+    return {
+      url,
+      ...(commit ? { commit } : {}),
+      ...(patchFile && !remote ? { patch: patchFile } : {}),
+      ...(patchContent !== undefined ? { patchContent } : {}),
+    };
+  }
+
   return {
-    ...(remote ? { url } : { path: input.repo?.path ?? input.factoryRoot }),
+    path: input.repo?.path ?? input.factoryRoot,
     commit: input.repo?.commit ?? input.definitionCommit,
-    ...(patchFile && !remote ? { patch: patchFile } : {}),
+    ...(patchFile ? { patch: patchFile } : {}),
     ...(patchContent !== undefined ? { patchContent } : {}),
   };
 }

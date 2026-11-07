@@ -395,7 +395,24 @@ export interface InboxProjectionWire {
   gates: InboxGateWire[];
   permissions: InboxPermissionWire[];
   failures: InboxFailureWire[];
-  counts: { gates: number; permissions: number; failures: number };
+  counts: { gates: number; permissions: number; failures: number; missions?: number };
+  /**
+   * Mission-level waits (change `add-long-running-missions`): a pending plan gate or a
+   * blocked mission. Optional so an older API projection still renders.
+   */
+  missions?: InboxMissionWire[];
+}
+
+/** One mission that needs a human: a plan gate, or a blocked mission without a gate. */
+export interface InboxMissionWire {
+  /** Full summary when the projection carries it; entries without one are skipped. */
+  mission?: MissionSummary;
+  factoryId?: string;
+  factoryName?: string;
+  /** The waiting plan gate, when one is open. */
+  gate?: MissionGate | null;
+  /** Why a blocked mission is listed when no gate waits. */
+  reason?: string | null;
 }
 
 /* ------------------------------------------------------- validation contract */
@@ -1775,4 +1792,269 @@ export interface RunnerAlertRulesResponseWire {
 
 export interface RunnerAlertResponseWire {
   alert: RunnerAlertWire;
+}
+
+/* ---------------------------------------- long-running missions (change `add-long-running-missions`) */
+
+/**
+ * Mission lifecycle, mirrored from `MISSION_STATUSES` in `@factory/core`. A mission is the
+ * durable goal above work items: the plan gate parks it in `awaiting_plan_approval`, budget
+ * exhaustion parks it in `blocked`, and only a human pause/resume/cancel changes it while it
+ * runs.
+ */
+export type MissionStatusWire =
+  | 'planning'
+  | 'awaiting_plan_approval'
+  | 'running'
+  | 'paused'
+  | 'blocked'
+  | 'done'
+  | 'failed'
+  | 'cancelled';
+
+export type MissionFeatureStatusWire =
+  | 'pending'
+  | 'ready'
+  | 'running'
+  | 'done'
+  | 'failed'
+  | 'skipped';
+
+export type MissionMilestoneStatusWire =
+  | 'pending'
+  | 'running'
+  | 'validating'
+  | 'done'
+  | 'failed'
+  | 'blocked';
+
+export type MissionValidationKindWire = 'scrutiny' | 'user-testing' | 'contract';
+
+export type MissionValidationStatusWire = 'pending' | 'running' | 'passed' | 'failed' | 'error';
+
+/** Optional mission caps; the factory budget/quotas still apply on top. */
+export interface MissionBudgetWire {
+  maxCostUsd?: number;
+  maxRuns?: number;
+  maxWallClockHours?: number;
+}
+
+/** One behavioral assertion in the mission-level validation contract. */
+export interface MissionValidationAssertionWire {
+  id: string;
+  title: string;
+  /** The observable behaviour the validator must exercise or inspect. */
+  assertion: string;
+  tier: 'unit' | 'component' | 'integration' | 'e2e' | 'manual';
+  required: boolean;
+  /** `agent-browser`, `playwright`, `command`, `manual`, … */
+  tool: string;
+  /** Expected evidence, e.g. `screenshot`, `network`, `exit code 0`, `artifact`. */
+  evidence: string;
+  command?: string;
+  expected?: string;
+}
+
+export interface MissionValidationContractWire {
+  version: string;
+  missionId: string;
+  factory: string;
+  definitionCommit: string;
+  createdAt: string;
+  enforce: boolean;
+  assertions: MissionValidationAssertionWire[];
+  risks: string[];
+  source: 'orchestrator' | 'human' | 'factory';
+}
+
+export interface MissionPlanFeatureWire {
+  id: string;
+  title: string;
+  description: string;
+  order: number;
+  dependsOn: string[];
+  acceptanceCheckIds: string[];
+  workItemType?: string;
+}
+
+export interface MissionPlanMilestoneWire {
+  id: string;
+  title: string;
+  description: string;
+  order: number;
+  features: MissionPlanFeatureWire[];
+}
+
+/** The planner's persisted plan (`missions.plan`), approved before features run. */
+export interface MissionPlanWire {
+  version: string;
+  missionId: string;
+  factory: string;
+  definitionCommit: string;
+  title: string;
+  goal: string;
+  createdAt: string;
+  validationContract: MissionValidationContractWire;
+  milestones: MissionPlanMilestoneWire[];
+  risks: string[];
+  assumptions: string[];
+}
+
+/** A mission row plus the list projection counters. */
+export interface MissionSummary {
+  id: string;
+  /** Internal factory key. */
+  factory: string;
+  /** Stable factory id; the segment every console link uses. */
+  factoryId?: string | null;
+  title: string;
+  goal: string;
+  status: MissionStatusWire;
+  definitionCommit: string;
+  planVersion: number;
+  currentMilestoneId: string | null;
+  currentFeatureId: string | null;
+  workflowId: string | null;
+  budget: MissionBudgetWire;
+  error: string | null;
+  /** Persisted plan; `null` while planning or when the planner has not proposed one. */
+  plan?: MissionPlanWire | null;
+  featureTotal: number;
+  featureDone: number;
+  featureFailed: number;
+  milestoneTotal: number;
+  milestoneDone: number;
+  spendUsd: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface MissionMilestone {
+  id: string;
+  missionId: string;
+  ordinal: number;
+  title: string;
+  description: string;
+  status: MissionMilestoneStatusWire;
+  validationRound: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface MissionFeature {
+  id: string;
+  missionId: string;
+  milestoneId: string;
+  ordinal: number;
+  title: string;
+  description: string;
+  status: MissionFeatureStatusWire;
+  /** Feature ids that must be `done` before this feature can start. */
+  dependsOn: string[];
+  /** Validation assertion ids this feature claims to fulfill. */
+  acceptanceCheckIds: string[];
+  /** The work item executing this feature; `null` until it is created. */
+  workItemId: string | null;
+  /** Set when the feature was created from a validator finding. */
+  fixForFeatureId: string | null;
+  attempt: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface MissionCheckpoint {
+  id: number;
+  missionId: string;
+  seq: number;
+  kind: string;
+  milestoneId: string | null;
+  featureId: string | null;
+  dedupeKey: string | null;
+  /** Small durable state snapshot; large artifacts stay in the artifact store. */
+  state: Record<string, unknown>;
+  createdAt: string | null;
+}
+
+export interface MissionEvent {
+  id: number;
+  missionId: string;
+  type: string;
+  milestoneId: string | null;
+  featureId: string | null;
+  actor: string | null;
+  payload: Record<string, unknown>;
+  createdAt: string | null;
+}
+
+/** A mission-level gate (today: the plan gate). */
+export interface MissionGate {
+  missionId: string;
+  gate: string;
+  attempt: number;
+  workflowId: string | null;
+  decision: 'approve' | 'reject' | 'request_changes' | null;
+  actor: string | null;
+  reason: string | null;
+  feedback: string | null;
+  requestedAt: string | null;
+  slaAt: string | null;
+  decidedAt: string | null;
+}
+
+export interface MissionValidation {
+  id: string;
+  missionId: string;
+  milestoneId: string;
+  round: number;
+  kind: MissionValidationKindWire;
+  /** The fresh validator run that produced the verdict. */
+  runId: string | null;
+  status: MissionValidationStatusWire;
+  verdict: 'approve' | 'reject' | 'needs_human' | null;
+  findings: Record<string, unknown>[];
+  evidence: Record<string, unknown>[];
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+/**
+ * Spend/run/duration accounting for one mission. Caps come from `missions.budget`; the
+ * counters are derived from the runs attributed to the mission. Absent caps mean "not
+ * configured", never zero.
+ */
+export interface MissionBudgetUsage {
+  budget?: MissionBudgetWire;
+  spendUsd?: number;
+  runs?: number;
+  startedAt?: string | null;
+  remainingUsd?: number | null;
+  remainingRuns?: number | null;
+  wallClockHours?: number | null;
+  costExhausted?: boolean;
+  runsExhausted?: boolean;
+  wallClockExhausted?: boolean;
+  exhausted?: boolean;
+}
+
+/** `GET /factories/:factoryId/missions/:id` — everything the detail page renders. */
+export interface MissionDetail {
+  mission: MissionSummary;
+  milestones: MissionMilestone[];
+  features: MissionFeature[];
+  checkpoints: MissionCheckpoint[];
+  events: MissionEvent[];
+  validations: MissionValidation[];
+  gates: MissionGate[];
+  pendingGate: MissionGate | null;
+  workItems: WorkItemSummary[];
+  budgetUsage: MissionBudgetUsage | null;
+}
+
+export interface MissionListResponseWire {
+  missions: MissionSummary[];
+}
+
+export interface CreatedMission {
+  mission: MissionSummary;
+  workflow: { workflowId: string; temporalRunId?: string | null } | null;
 }
