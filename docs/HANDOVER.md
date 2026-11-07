@@ -2,8 +2,10 @@
 
 State as of 2026-11-07. `main` contains the runner/platform, RustFS, live-verification, retention/GC,
 quota, promotion-checkout, remote factory-cycle and long-running mission work. `feat/retention-quotas-promotion`
-was fast-forwarded into `main` at `0bee9d8`; the long-running mission work is merged at `54eb194`. `main` is
-ahead of `origin/main` and not pushed (GitHub SSH currently fails with `Permission denied (publickey)`).
+was fast-forwarded into `main` at `0bee9d8`; the long-running mission work is merged at `54eb194`, with the
+full-autonomy/lifecycle hardening at `5f43652`. `main` is ahead of `origin/main` and not pushed (GitHub SSH
+currently fails with `Permission denied (publickey)`). The fresh lights-off factory is
+`fac_01M6VFJKR9N08X65GT5NNQQ548`.
 Public-release prep: `README.md`, `LICENSE` (MIT, © Nick Kutovyy), `NOTICE` (attribution request),
 `SECURITY.md`, `CONTRIBUTING.md`.
 
