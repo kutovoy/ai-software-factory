@@ -6,6 +6,7 @@ import {
   createMissionFeature,
   createMissionGate,
   createMissionValidation,
+  decideMissionGate,
   createWorkItem,
   foremanAgentName,
   getAutonomyState,
@@ -47,6 +48,7 @@ import {
   type MissionMilestone,
   type MissionMilestoneStatus,
   type MissionPlan,
+  type GateDecisionValue,
   type MissionValidationKind,
   type RoutingDef,
   type WorkItemType,
@@ -179,6 +181,21 @@ function compileMissionLoop(
     stageGraph: { order: [...graph.order], fanOut: { ...graph.fanOut }, nodes },
     gates,
   };
+}
+
+/**
+ * Mission features run implement → review → ship. QA belongs to the milestone validation
+ * boundary (fresh scrutiny + user-testing after every feature is merged), so a partial
+ * feature such as "add package.json" is not failed by the factory's whole-app verify gate
+ * before the rest of the milestone exists. The milestone validators still use the verify
+ * agent and the mission contract.
+ */
+function missionFeatureStageGraph(graph: StageGraphSummary): StageGraphSummary {
+  const order = graph.order.filter((stage) => stage !== 'verify');
+  const nodes = graph.nodes
+    .filter((node) => node.name !== 'verify')
+    .map((node) => ({ ...node, needs: node.needs.filter((need) => need !== 'verify') }));
+  return { order, fanOut: { ...graph.fanOut }, nodes };
 }
 
 function harnessOverride(): HarnessId | undefined {
@@ -437,6 +454,80 @@ export async function createMissionPlanGateActivity(args: {
   });
 }
 
+export interface MissionPlanAutoApprovalResult {
+  autoApprove: boolean;
+  actor: string;
+  reason: string;
+  autonomyLevel: string;
+  benchmarkGateRequired: boolean;
+  benchmarkGateSatisfied: boolean;
+}
+
+/**
+ * Full autonomy may approve a mission plan without a human wait. This reuses the same
+ * policy as the factory loop: autonomy enabled and unpaused, `autonomyLevel: full`, and
+ * the benchmark gate satisfied by an attestation or an audited override. Everything else
+ * stays on the human plan gate.
+ */
+export async function missionPlanAutoApprovalActivity(args: {
+  missionId: string;
+}): Promise<MissionPlanAutoApprovalResult> {
+  const sql = getSql();
+  const mission = await getMission(sql, args.missionId);
+  if (!mission) throw missionNotFound(args.missionId);
+
+  const loaded = loadDefinition(mission.factoryRoot);
+  if (!loaded.definition) {
+    return {
+      autoApprove: false,
+      actor: 'autonomy',
+      reason: 'definition unavailable; human plan approval is required',
+      autonomyLevel: 'unknown',
+      benchmarkGateRequired: false,
+      benchmarkGateSatisfied: false,
+    };
+  }
+
+  const autonomy = await getAutonomyState(sql, mission.factory);
+  const resolution = resolveAllGates(loaded.definition.manifest);
+  const benchmarkGateSatisfied =
+    !resolution.benchmarkGateRequired ||
+    Boolean(autonomy?.overrideActor && autonomy?.overrideReason);
+  const autonomyLevel = loaded.definition.manifest.governance?.autonomyLevel ?? 'auto';
+  const enabled = Boolean(autonomy?.enabled && !autonomy.paused);
+  const autoApprove = enabled && autonomyLevel === 'full' && benchmarkGateSatisfied;
+
+  return {
+    autoApprove,
+    actor: 'autonomy',
+    reason: autoApprove
+      ? `autonomyLevel full and benchmark gate satisfied (${autonomy?.overrideActor ? 'audited override' : 'benchmark attestation'}); automatic plan approval`
+      : `autonomy=${enabled ? 'enabled' : 'disabled/paused'}, level=${autonomyLevel}, benchmarkGateSatisfied=${benchmarkGateSatisfied}; human plan approval is required`,
+    autonomyLevel,
+    benchmarkGateRequired: resolution.benchmarkGateRequired,
+    benchmarkGateSatisfied,
+  };
+}
+
+export async function decideMissionPlanGateActivity(args: {
+  missionId: string;
+  attempt: number;
+  decision: GateDecisionValue;
+  actor: string;
+  reason?: string;
+  feedback?: string;
+}): Promise<MissionGate | null> {
+  return await decideMissionGate(getSql(), {
+    missionId: args.missionId,
+    gate: 'plan',
+    attempt: args.attempt,
+    decision: args.decision,
+    actor: args.actor,
+    reason: args.reason ?? null,
+    feedback: args.feedback ?? null,
+  });
+}
+
 /* --------------------------------------------------------------- features */
 
 export interface CreatedMissionFeatureWorkItem {
@@ -481,14 +572,15 @@ export async function createMissionFeatureWorkItemActivity(args: {
   const checkpoints = await listMissionCheckpoints(sql, args.missionId);
   const prompt = featurePrompt({ mission, plan, milestone, feature, checkpoints });
   const loop = compileMissionLoop(mission, prompt);
+  const featureStageGraph = missionFeatureStageGraph(loop.stageGraph);
 
-  const implementIndex = loop.stageGraph.order.indexOf('implement');
+  const implementIndex = featureStageGraph.order.indexOf('implement');
   if (implementIndex < 0) {
     throw ApplicationFailure.create({
       type: 'mission_stage_missing',
       nonRetryable: true,
       message: `factory "${mission.factory}" has no implement stage`,
-      details: [{ factory: mission.factory, order: loop.stageGraph.order }],
+      details: [{ factory: mission.factory, order: featureStageGraph.order }],
     });
   }
 
@@ -545,7 +637,8 @@ export async function createMissionFeatureWorkItemActivity(args: {
     // patch applies to the same tree the PR targets. The central factory checkout is only
     // the definition source.
     repo: validationRepo(loop.definition, runner),
-    stageGraph: loop.stageGraph,
+    allowEmptyPatch: true,
+    stageGraph: featureStageGraph,
     gates: loop.gates,
     agentVerdict: loop.definition.manifest.agentVerdict,
     mergePolicy: loop.definition.manifest.mergePolicy,

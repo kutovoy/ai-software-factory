@@ -495,7 +495,29 @@ export async function FactoryWorkflow(
             `Work item ${input.workItemId}\n\n` +
             `Implements the approved scope. Definition commit: ${input.definitionCommit}.`,
           runId: result.runId,
+          ...(input.allowEmptyPatch ? { allowEmptyPatch: true } : {}),
         });
+        if (opened.skipped) {
+          // A mission feature can be satisfied by code already on the integrated branch.
+          // There is nothing to review or merge; the milestone validators still check it.
+          await workItems.recordWorkItemEvent({
+            workItemId: input.workItemId,
+            type: 'work_item.no_changes',
+            stage,
+            actor: 'forge',
+            payload: {
+              reason: 'implement produced an empty patch; feature already satisfied',
+              runId: result.runId,
+            },
+          });
+          await workItems.setWorkItemStatusActivity({
+            workItemId: input.workItemId,
+            status: 'done',
+            actor: 'foreman',
+            reason: 'feature already satisfied by the integrated branch',
+          });
+          return finish('done', stage);
+        }
         prUrl = opened.prUrl;
         prNumber = opened.prNumber;
         await workItems.attachWorkItemPullRequest({

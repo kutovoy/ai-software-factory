@@ -104,3 +104,40 @@ A mission SHALL enforce optional spend, run-count and wall-clock caps without by
 - **WHEN** a feature or validation would exceed the mission cap
 - **THEN** admission refuses with `mission_budget_exhausted`
 - **AND** the mission becomes `blocked`
+
+### Requirement: Mission plan auto-approval
+
+A mission plan SHALL be approved automatically when the factory is fully autonomous and the benchmark gate
+is satisfied; otherwise it SHALL remain on the human plan gate.
+
+#### Scenario: Full autonomy
+- **WHEN** autonomy is enabled and not paused
+- **AND** the factory declares `autonomyLevel: full`
+- **AND** the benchmark gate is not required or is satisfied by a passing attestation or an audited override
+- **THEN** the plan gate is decided `approve` without a human wait
+- **AND** the `mission.plan.approved` event records an automatic actor and reason
+
+#### Scenario: Any other factory
+- **WHEN** autonomy is disabled/paused, the level is not `full`, or the benchmark gate is unsatisfied
+- **THEN** the mission remains in `awaiting_plan_approval` until a human decides
+
+### Requirement: Mission feature lifecycle
+
+Mission feature work items SHALL run `implement`, `review` and `ship`, while `verify` SHALL be
+performed at the milestone validation boundary.
+
+#### Scenario: Partial feature
+- **WHEN** a feature only adds part of a milestone (for example package metadata)
+- **THEN** it is reviewed and shipped without the factory's whole-app verify gate
+- **AND** the milestone's fresh scrutiny + user-testing validators check the integrated result
+
+#### Scenario: Already satisfied feature
+- **WHEN** a mission feature's implement run captures an empty patch because the integrated
+  branch already satisfies it
+- **THEN** the work item is marked done with a `work_item.no_changes` event and no PR
+- **AND** regular work items still fail with `patch_missing` for an empty patch
+
+#### Scenario: Runnable goal contract
+- **WHEN** a goal asks for runnable software
+- **THEN** the planner's validation contract includes an install/build assertion and an e2e
+  assertion, not only static file checks

@@ -204,6 +204,8 @@ export const WORK_ITEM_EVENT_TYPES = [
   'work_item.cancelled',
   /** A terminal item was re-opened and its current stage dispatched under a new attempt. */
   'work_item.retried',
+  /** A mission feature produced no patch because the integrated branch already satisfies it. */
+  'work_item.no_changes',
   'runner.sandbox_unavailable',
   'work_item.status',
   'work_item.spawned',

@@ -72,12 +72,15 @@ promotion rewriting the local checkout are implemented (OpenSpec
 `2026-11-05-add-retention-quotas-promotion`).
 
 **Long-running missions (roadmap item 12):** implemented (OpenSpec `add-long-running-missions`, ADR-050).
-`MissionWorkflow` plans or accepts a plan, gates it on human approval, runs sequential feature work items
-through `FactoryWorkflow`, validates each milestone with fresh scrutiny + user-testing runs, creates fix
-features from findings, checkpoints state outside the model, enforces mission budget caps and uses
-`continueAsNew` at milestone boundaries. Mission Control adds list/detail, plan approval, timeline,
-validation evidence, budget and pause/resume/cancel; the Inbox shows plan gates and blocked missions. A
-live `hello-nextjs` mission reached `done` after PR #22 and passing milestone validation.
+`MissionWorkflow` plans or accepts a plan, gates it on human approval (auto-approved for full autonomy with a
+satisfied benchmark gate), runs sequential feature work items through `FactoryWorkflow`, validates each
+milestone with fresh scrutiny + user-testing runs, creates fix features from findings, checkpoints state
+outside the model, enforces mission budget caps and uses `continueAsNew` at milestone boundaries. Feature
+work items run implement → review → ship; verify is the milestone boundary, and an already-satisfied feature
+can complete without a PR. Mission Control adds list/detail, plan approval, timeline, validation evidence,
+budget and pause/resume/cancel; the Inbox shows plan gates and blocked missions. A live fully-unattended
+`hello-nextjs` mission (`mis_01M6VSNQ3ZR06P3HBTEV9W40A1`) reached `done` with four features, passing build and
+Playwright evidence, and PRs #27–#29.
 
 ## What's left (2026-11-07)
 

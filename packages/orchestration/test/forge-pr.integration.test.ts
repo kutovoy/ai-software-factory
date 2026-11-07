@@ -155,6 +155,23 @@ describe('forgeOpenPullRequest commits the applied change', () => {
     });
   });
 
+  test('allowEmptyPatch returns a skipped result for an already-satisfied mission feature', async () => {
+    forge = seededForge();
+    await writeRunPatch('run_implement_empty_ok', '');
+    const opened = await forgeOpenPullRequest({
+      workItemId: 'wi_test_empty_ok',
+      factory: 'example',
+      factoryRoot: FACTORY_ROOT,
+      title: 'Already satisfied feature',
+      body: 'Work item wi_test_empty_ok',
+      runId: 'run_implement_empty_ok',
+      allowEmptyPatch: true,
+    });
+    expect(opened.skipped).toBe(true);
+    expect(opened.prUrl).toBe('');
+    expect(opened.prNumber).toBe(0);
+  });
+
 
   test('a patch containing a known secret is rejected before commit', async () => {
     forge = seededForge();

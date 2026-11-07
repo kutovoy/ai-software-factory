@@ -37,11 +37,14 @@ This project is that factory, built to be **self-hosted, inspectable and yours**
 Short, dated highlights of user-visible changes. Full detail lives in `docs/STATUS.md`.
 
 - **2026-11-07 — Long-running missions.** A factory can now take a durable multi-feature goal: a planner
-  writes a validation contract and milestones, a human approves the plan, features run sequentially through
-  the existing factory loop, and fresh scrutiny + user-testing validators check each milestone. Findings
-  become targeted fix features; checkpoints, events, budget and Mission Control (plan approval, timeline,
-  pause/resume/cancel) keep the mission legible. Live `hello-nextjs` mission `mis_01M6TNENACN5KB7XEWY0R0NASJ`
-  reached `done` after PR #22 and passing milestone validation.
+  writes a validation contract and milestones, the plan is human-approved by default (auto-approved for
+  full autonomy with a satisfied benchmark gate), features run sequentially as work items, and fresh
+  scrutiny + user-testing validators check each milestone. Findings become targeted fix features;
+  checkpoints, events, budget and Mission Control keep the mission legible. Feature work items skip the
+  factory's whole-app verify gate (milestone validation owns QA) and an already-satisfied feature can
+  complete without a PR. Live `hello-nextjs` mission `mis_01M6VSNQ3ZR06P3HBTEV9W40A1` reached `done`
+  fully unattended with four features, passing `npm run build` evidence and passing Playwright evidence
+  (PRs #27–#29).
 - **2026-11-06 — Remote-runner factory cycles.** Full `runner: remote` work items passed on macOS
   native and Linux Docker, including every stage, concurrent review, artifacts and ship (PRs #13 and #14).
   Work-item runner overrides now win over stage defaults, remote pumps heartbeat while queued, and the

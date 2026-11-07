@@ -312,6 +312,8 @@ export interface FactoryWorkflowInput {
   prompt: string;
   sourceRef: Record<string, unknown>;
   repo?: { path?: string; url?: string };
+  /** Mission features may be satisfied already; an empty implement patch is not a failure. */
+  allowEmptyPatch?: boolean;
   stageGraph: StageGraphSummary;
   /** Resolved gate per loop stage (after the kill switch was applied). */
   gates: Record<string, string>;

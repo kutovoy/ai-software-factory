@@ -1079,3 +1079,25 @@ boundary (deterministic for tests, OpenAI-compatible when configured); validator
 code. Mission validation runs against the integrated forge repository, not the central factory checkout. Mission
 spend/run/duration caps are admission guards, not distributed locks. Parallel feature execution, cross-repo missions,
 mission templates, mission-level canaries/benchmarks and multi-tenant isolation remain follow-ups.
+
+## ADR-051 — Mission feature lifecycle and full-autonomy plan approval
+
+**Status:** accepted (2026-11-07, implemented in `add-mission-plan-auto-approval` and
+`fix-mission-feature-lifecycle`; live `hello-nextjs` mission verified).
+**Context:** live missions exposed that a partial feature (for example, "add package.json") could not pass
+the factory's whole-app verify gate before the rest of the milestone existed, and that a feature already
+satisfied by the integrated forge repo captured an empty patch and failed at PR opening. The planner could
+also emit a static-only validation contract for a runnable-site goal, letting a mission pass while the app
+build was broken.
+**Decision:** mission feature work items run `implement → review → ship`; `verify` belongs to the milestone
+validation boundary, where fresh scrutiny and user-testing validators run after all features merge. Mission
+features may produce an empty implement patch when the integrated branch already satisfies them: the forge
+returns `skipped`, `FactoryWorkflow` records `work_item.no_changes`, and the item is marked done without a
+PR. Normal work items still fail `patch_missing` on an empty patch. For runnable-software goals the planner
+must include an install/build assertion and an e2e assertion. A mission plan is auto-approved only when
+autonomy is enabled and unpaused, the factory declares `autonomyLevel: full`, and the benchmark gate is
+satisfied by an attestation or an audited override; every other factory keeps the human plan gate.
+**Consequences:** partial features can ship without false QA failures; milestone validation remains the
+quality gate. Empty mission features have no PR/review, so milestone validators are the backstop. The live
+`hello-nextjs` mission `mis_01M6VSNQ3ZR06P3HBTEV9W40A1` completed with four features, an automatic plan
+approval, passing scrutiny build evidence and passing Playwright user-testing evidence (PRs #27–#29).

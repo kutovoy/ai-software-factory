@@ -316,14 +316,23 @@ export async function MissionWorkflow(
       }
 
       planAttempt += 1;
-      const proposed = await planner.planMissionActivity({
-        missionId: input.missionId,
-        factory: input.factory,
-        definitionCommit: input.definitionCommit,
-        title: input.title,
-        goal: input.goal,
-        ...(feedback ? { feedback } : {}),
-      });
+      let proposed: MissionPlanData;
+      try {
+        proposed = await planner.planMissionActivity({
+          missionId: input.missionId,
+          factory: input.factory,
+          definitionCommit: input.definitionCommit,
+          title: input.title,
+          goal: input.goal,
+          ...(feedback ? { feedback } : {}),
+        });
+      } catch (error) {
+        // Do not let a planner timeout leave the mission stuck in `planning` with a failed
+        // workflow and no visible reason. Temporal already retried the activity; block the
+        // mission with the concrete failure so a human can inspect and retry.
+        const reason = error instanceof Error ? error.message : String(error);
+        return await blockMission(`mission planner failed: ${reason}`, null, null);
+      }
       plan = proposed;
       planVersion = planAttempt;
       // Clear before the gate row exists so a decision posted immediately after the
@@ -360,15 +369,34 @@ export async function MissionWorkflow(
         dedupeKey: `plan.proposed:${planVersion}`,
       });
 
-      while (true) {
-        await condition(() => planDecision !== null || paused || cancelled);
-        if (cancelled) return await cancelMission(cancelActor, cancelReason ?? 'cancelled');
-        if (paused) {
-          await pauseMission('awaiting_plan_approval');
+      const auto = await mission.missionPlanAutoApprovalActivity({
+        missionId: input.missionId,
+      });
+      if (auto.autoApprove) {
+        await mission.decideMissionPlanGateActivity({
+          missionId: input.missionId,
+          attempt: planVersion,
+          decision: 'approve',
+          actor: auto.actor,
+          reason: auto.reason,
+        });
+        planDecision = {
+          decision: 'approve',
+          actor: auto.actor,
+          reason: auto.reason,
+          attempt: planVersion,
+        };
+      } else {
+        while (true) {
+          await condition(() => planDecision !== null || paused || cancelled);
           if (cancelled) return await cancelMission(cancelActor, cancelReason ?? 'cancelled');
-          continue;
+          if (paused) {
+            await pauseMission('awaiting_plan_approval');
+            if (cancelled) return await cancelMission(cancelActor, cancelReason ?? 'cancelled');
+            continue;
+          }
+          break;
         }
-        break;
       }
 
       // `planDecision` is assigned by a Signal/Update handler, so the compiler cannot

@@ -10,7 +10,7 @@ Terms used across specs, code and UI. Keep this aligned with `packages/core` typ
 | **Work item** | One unit of requested work (issue, Slack thread, PR, scheduled job) tracked from intake to handoff, retaining its source context. |
 | **Mission** | A durable goal above work items: plan, milestones, features, validation contract, checkpoints, events, gates, validations and optional budget. Runs under `MissionWorkflow`. |
 | **Milestone** | A group of mission features that must all finish before a fresh validation round (scrutiny + user-testing) checks the mission contract. |
-| **Mission feature** | One unit of mission work; persisted as a work item that starts at `implement` because the mission plan supplies its spec and acceptance assertions. |
+| **Mission feature** | One unit of mission work; persisted as a work item that runs `implement → review → ship`. Whole-app `verify` belongs to the milestone boundary, so partial features can merge before the full milestone exists; an already-satisfied feature completes without a PR. |
 | **Validation contract** | Behavioral assertions written before features run, with tier, required flag, tool and expected evidence; mission-level contracts drive milestone validators. |
 | **Checkpoint** | A small JSON snapshot of mission state (completed work, decisions, failed approaches, tests, blockers, budget) that lets the next feature start with fresh context. |
 | **Mission Control** | The factory-scoped console view of missions: plan approval, milestones/features, checkpoints, validation evidence, budget and pause/resume/cancel controls. |

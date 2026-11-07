@@ -37,14 +37,17 @@ Linux agent joining `factory-runners` so it can probe sandbox IPs. OpenSpec
 rebuilt stack also passed a budget read and a manual run GC dry-run.
 
 **Long-running missions (2026-11-07):** OpenSpec `add-long-running-missions` adds a durable mission above
-work items: plan + validation contract, human plan gate, sequential feature work items starting at
-`implement`, fresh scrutiny + user-testing milestone validators, fix features, checkpoints/events, mission
-budget and Mission Control (list/detail, plan approval, pause/resume/cancel, inbox waits). Live mission
-`mis_01M6TNENACN5KB7XEWY0R0NASJ` reached `done` after a feature work item, PR #22 and passing milestone
-validation. A two-feature mission exercised sequential features and the fix-feature loop; it exposed and
-fixed validator-kind filtering, integrated-forge-repo validation and NUL-byte sanitisation before JSONB event
-writes. `bun run ci` is 864 pass / 189 skip; `openspec validate --all` is 35/35; Playwright mission smoke covers
-list/detail/cancel; `scripts/smoke.sh` passes including the rebuild dry run.
+work items: plan + validation contract, human plan gate with full-autonomy auto-approval, sequential feature
+work items, fresh scrutiny + user-testing milestone validators, fix features, checkpoints/events, mission
+budget and Mission Control (list/detail, plan approval, pause/resume/cancel, inbox waits). Features run
+implement → review → ship; verify is owned by the milestone boundary, and an already-satisfied feature can
+complete without a PR. After deleting and recreating `hello-nextjs` fully lights-off, live mission
+`mis_01M6VSNQ3ZR06P3HBTEV9W40A1` reached `done` with no human decisions, four features, passing `npm install`
++ `npm run build` scrutiny evidence and passing Playwright user-testing evidence (8 tests; HTTP 200 with
+`<h1>Hello, world!</h1>`), with PRs #27–#29 merged. Earlier runs exposed and fixed planner timeouts/blocking,
+validator-kind filtering, integrated-forge-repo validation, NUL-byte JSONB sanitisation, a progress watchdog,
+partial-feature verify ownership and empty mission-feature patches. `bun run ci` and `openspec validate` pass;
+Playwright mission smoke covers list/detail/cancel; `scripts/smoke.sh` passes including the rebuild dry run.
 
 ## What exists
 

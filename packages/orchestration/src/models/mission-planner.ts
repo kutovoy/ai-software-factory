@@ -151,6 +151,9 @@ const PLAN_SYSTEM_PROMPT = [
   '"description":string,"dependsOn":number[],"acceptanceCheckIds":string[]}]}]}',
   'Write the validation contract before the features. Every feature must claim at least',
   'one assertion id. `dependsOn` lists feature indexes inside the same milestone.',
+  'If the goal asks for runnable software, include at least one integration assertion that',
+  'runs the install/build and one e2e assertion that exercises the app in a browser; do not',
+  'approve a plan whose only evidence is static file checks.',
   'Prefer 1-8 features and one milestone unless the goal clearly needs more.',
 ].join('\n');
 
@@ -297,7 +300,11 @@ export function createOpenAIMissionPlanner(options: OpenAIMissionPlannerOptions)
     id: `openai:${options.model}`,
     async plan(input: MissionPlannerInput): Promise<MissionPlanData> {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 120_000);
+      const configuredTimeout = Number(process.env.MISSION_PLANNER_TIMEOUT_MS ?? '600000');
+      const timeoutMs =
+        options.timeoutMs ??
+        (Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 600_000);
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
       let response: Response;
       try {
         response = await fetchImpl(`${baseUrl}/chat/completions`, {
@@ -387,7 +394,13 @@ export function configuredMissionPlanner(
   const apiKey = env.OPENAI_API_KEY;
   const model = env.OPENAI_MODEL ?? env.FACTORY_MODEL;
   if (!baseUrl || !apiKey || !model) return null;
-  return createOpenAIMissionPlanner({ baseUrl, apiKey, model });
+  const configuredTimeout = Number(env.MISSION_PLANNER_TIMEOUT_MS ?? '600000');
+  return createOpenAIMissionPlanner({
+    baseUrl,
+    apiKey,
+    model,
+    timeoutMs: Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 600_000,
+  });
 }
 
 let current: MissionPlanner | null = null;

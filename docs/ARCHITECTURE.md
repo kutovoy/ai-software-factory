@@ -179,16 +179,20 @@ operator work. See ADR-049 and `openspec/specs/{retention,quotas,self-improvemen
 
 ## 5b. Long-running missions
 
-A mission is a durable goal above work items (ADR-050). The planner writes a mission validation contract
-before features exist; a human approves the plan by default; features run sequentially as work items that
-start at `implement`; and each milestone boundary runs fresh scrutiny and user-testing validators. Findings
-become targeted fix features, capped by validation rounds. Small JSON checkpoints plus an append-only event
-log hold the shared state outside the model, and `continueAsNew` bounds Temporal history at milestone
-boundaries. Mission budget caps are admission guards on top of factory quotas. Validation runs clone the
-integrated forge repository (not the central factory checkout), and local runs honour an explicit
-`repo.url` so the validator sees the merged tree. The MVP is sequential; parallel features/worktrees,
-mission templates, cross-repo missions and mission-level canaries are follow-ups. See
-`openspec/specs/missions/spec.md`, ADR-050 and `docs/STATUS.md`.
+A mission is a durable goal above work items (ADR-050/051). The planner writes a mission validation contract
+before features exist; a human approves the plan by default, while full autonomy with a satisfied benchmark
+gate auto-approves it. Features run sequentially as work items that start at `implement`, then `review` and
+`ship`; the factory's whole-app `verify` gate is owned by the milestone boundary, where fresh scrutiny and
+user-testing validators run after all features merge. A mission feature already satisfied by the integrated
+branch may complete with an empty patch and no PR (`work_item.no_changes`); normal work items still fail
+`patch_missing`. For runnable goals the planner must include build and e2e assertions. Findings become targeted
+fix features, capped by validation rounds. Small JSON checkpoints plus an append-only event log hold the shared
+state outside the model, and `continueAsNew` bounds Temporal history at milestone boundaries. Mission budget
+caps are admission guards on top of factory quotas. Validation runs clone the integrated forge repository (not
+the central factory checkout), and local runs honour an explicit `repo.url` so the validator sees the merged
+tree. The MVP is sequential; parallel features/worktrees, mission templates, cross-repo missions and
+mission-level canaries are follow-ups. See `openspec/specs/missions/spec.md`, ADR-050/051 and
+`docs/STATUS.md`.
 
 ## 6. Measurement and self-improvement
 

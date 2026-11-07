@@ -27,24 +27,30 @@ also pending: the live GitHub path. Roadmap items 1–11 are implemented: valida
 agent readiness, outcome metrics, guard hooks, Factory Stack, trace-driven self-improvement, classifier
 routing + spend caps, work intake, progressive context, governance/autonomy levels and the surface-agnostic
 CLI. **Long-running missions (roadmap item 12) are implemented** (2026-11-07, OpenSpec
-`add-long-running-missions`): a mission is a durable goal above work items, with a plan, milestones, features,
-a mission-level validation contract, checkpoints, events, gates, validations and optional budget. See the
-mission section below.
+`add-long-running-missions`, `add-mission-plan-auto-approval` and `fix-mission-feature-lifecycle`): a mission
+is a durable goal above work items, with a plan, milestones, features, a mission-level validation contract,
+checkpoints, events, gates, validations and optional budget. See the mission section below.
 
-**Long-running missions — implemented** (2026-11-07, OpenSpec `add-long-running-missions`). A mission is a durable
-goal above work items: the planner writes a mission validation contract before features exist, a human approves the
-plan, features run sequentially through the existing `FactoryWorkflow` (starting at `implement`), and fresh scrutiny
-and user-testing validators run at milestone boundaries. Findings become targeted fix features; checkpoints and an
-append-only mission event log preserve decisions, failed approaches, test results, blockers and budget outside the
-model. The workflow pauses/resumes/cancels durably and uses `continueAsNew` at milestone boundaries. The console adds
-a factory-scoped Missions page, mission detail, plan approval, lifecycle controls and an Inbox mission section. Live
-verification: mission `mis_01M6TNENACN5KB7XEWY0R0NASJ` reached `done` after a plan gate, a feature work item, PR #22
-and passing scrutiny + user-testing validation. A two-feature mission exercised sequential features and the
-fix-feature loop; it also exposed and fixed three integration issues (validator-kind filtering, validating the
-integrated forge repository rather than the central checkout, and sanitising NUL bytes before JSONB event writes
-so an agent reading a binary file cannot corrupt the audit log). A blocked mission's feature retry starts a fresh
-`MissionWorkflow` attempt at that milestone; pause/resume/cancel remain durable controls. `bun run ci` is 864 pass /
-189 skip; `openspec validate --all` is 35/35 with one pre-existing warning. See `docs/ROADMAP.md` §What's left.
+**Long-running missions — implemented and live-verified** (2026-11-07, OpenSpec `add-long-running-missions`,
+`add-mission-plan-auto-approval` and `fix-mission-feature-lifecycle`). A mission is a durable goal above work items:
+the planner writes a mission validation contract before features exist, the plan is human-approved by default and
+auto-approved when autonomy is enabled/unpaused, the factory is `autonomyLevel: full`, and the benchmark gate is
+satisfied by an attestation or audited override. Features run sequentially as work items; a feature runs
+`implement → review → ship` and `verify` belongs to the milestone validation boundary (fresh scrutiny +
+user-testing after all features merge). Findings become targeted fix features; checkpoints and an append-only
+mission event log preserve decisions, failed approaches, test results, blockers and budget outside the model. The
+workflow pauses/resumes/cancels durably and uses `continueAsNew` at milestone boundaries. The console adds a
+factory-scoped Missions page, mission detail, plan approval, lifecycle controls and an Inbox mission section.
+
+Live verification after deleting and recreating `hello-nextjs` (`fac_01M6VFJKR9N08X65GT5NNQQ548`) fully lights-off:
+mission `mis_01M6VSNQ3ZR06P3HBTEV9W40A1` reached `done` with no human decisions, four features, an automatic plan
+approval, passing scrutiny evidence (`npm install` + `npm run build`) and passing user-testing evidence (8 Playwright
+tests, production server HTTP 200 with `<h1>Hello, world!</h1>`), with PRs #27–#29 merged. Earlier runs exposed and
+fixed: validator-kind filtering, integrated-forge-repo validation, NUL-byte JSONB sanitisation, planner timeout and
+blocked-on-failure handling, a progress watchdog, partial-feature verify ownership, empty mission-feature patches,
+and planner guidance to require build/e2e assertions for runnable goals. A blocked mission's feature retry starts a
+fresh `MissionWorkflow` attempt at that milestone; pause/resume/cancel remain durable controls. `bun run ci` is 865
+pass / 190 skip; `openspec validate --all` is 35/35 with one pre-existing warning. See `docs/ROADMAP.md` §What's left.
 
 **Remote runners + host observability — Linux, Windows and macOS native agents implemented** (2026-11-04/05, merged to
 `main`, archived OpenSpec `2026-11-04-add-remote-runners`; platform/artifact work in `2026-11-05-add-runner-platforms-and-artifacts`). A remote host enrolls from the console with a

@@ -6,12 +6,14 @@ import {
   getMission,
   listMissionFeatures,
   newMissionId,
+  setAutonomyState,
   type Mission,
 } from '@factory/core';
 import {
   completeMissionValidationActivity,
   createMissionFeatureWorkItemActivity,
   loadMissionStateActivity,
+  missionPlanAutoApprovalActivity,
   planFixFeaturesActivity,
   planMissionActivity,
   persistMissionPlanActivity,
@@ -39,6 +41,7 @@ const suite = enabled ? describe : describe.skip;
 
 const REPO_ROOT = join(import.meta.dir, '..', '..', '..');
 const FACTORY_ROOT = join(REPO_ROOT, 'factories', 'example');
+const HELLO_ROOT = join(REPO_ROOT, 'factories', 'hello-nextjs');
 const MIGRATIONS = join(REPO_ROOT, 'packages', 'core', 'migrations');
 
 async function migrate(databaseUrl: string): Promise<void> {
@@ -131,6 +134,7 @@ suite('mission activities', () => {
     expect(created.input.stageGraph.order.indexOf('implement')).toBe(
       created.input.resume?.stageIndex as number,
     );
+    expect(created.input.stageGraph.order).not.toContain('verify');
     expect(created.input.factoryRoot).toBe(FACTORY_ROOT);
     expect(created.input.harnessOverride).toBe('fake');
 
@@ -253,6 +257,50 @@ suite('mission activities', () => {
       ).rejects.toThrow(/belongs to another mission/);
     } finally {
       await getSql()`delete from missions where id = ${second.id}`;
+    }
+  });
+
+  test('auto-approves a plan only for full autonomy with a satisfied gate', async () => {
+    const sql = getSql();
+    const mission = await createMission(sql, {
+      id: newMissionId(),
+      factory: 'itest-autonomy',
+      title: 'Autonomy plan',
+      goal: 'Check the auto-approval policy',
+      definitionCommit: 'itest123',
+      factoryRoot: HELLO_ROOT,
+    });
+
+    try {
+      await setAutonomyState(sql, {
+        factory: 'itest-autonomy',
+        enabled: true,
+        paused: false,
+        actor: 'itest',
+        reason: 'auto-approval integration test',
+        overrideActor: 'itest',
+        overrideReason: 'audited override',
+      });
+
+      const auto = await missionPlanAutoApprovalActivity({ missionId: mission.id });
+      expect(auto.autoApprove).toBe(true);
+      expect(auto.autonomyLevel).toBe('full');
+      expect(auto.benchmarkGateSatisfied).toBe(true);
+
+      await setAutonomyState(sql, {
+        factory: 'itest-autonomy',
+        enabled: true,
+        paused: true,
+        actor: 'itest',
+        reason: 'paused auto-approval integration test',
+        overrideActor: 'itest',
+        overrideReason: 'audited override',
+      });
+      const paused = await missionPlanAutoApprovalActivity({ missionId: mission.id });
+      expect(paused.autoApprove).toBe(false);
+    } finally {
+      await sql`delete from missions where id = ${mission.id}`;
+      await sql`delete from autonomy_state where factory = 'itest-autonomy'`;
     }
   });
 

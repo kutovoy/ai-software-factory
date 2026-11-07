@@ -174,6 +174,12 @@ export interface OpenPullRequestArgs {
   /** Run whose `patch.diff` is committed (the implement stage run). */
   runId: string;
   base?: string;
+  /**
+   * Mission features may already be satisfied by the integrated repo. In that case the
+   * implement run captures an empty patch; allow it to complete without a PR instead of
+   * failing the feature. Regular work items keep the strict `patch_missing` behavior.
+   */
+  allowEmptyPatch?: boolean;
 }
 
 export interface OpenPullRequestResult {
@@ -182,6 +188,8 @@ export interface OpenPullRequestResult {
   branch: string;
   commit: string;
   repo: string;
+  /** True when the implement run was empty and the caller should mark the item done. */
+  skipped?: boolean;
 }
 
 /**
@@ -225,7 +233,17 @@ export async function forgeOpenPullRequest(
     // The PR must contain the code, not the diff text: apply the captured patch to the
     // branch snapshot and commit the resulting files.
     const base = await forge.checkout({ repo, ref: branch });
-    const patch = await readPatch(args.runId);
+    const patch = await readPatch(args.runId, args.allowEmptyPatch === true);
+    if (patch.trim().length === 0) {
+      return {
+        prUrl: '',
+        prNumber: 0,
+        branch: '',
+        commit: '',
+        repo: repo.name,
+        skipped: true,
+      };
+    }
     const files = await applyPatch(base.files, patch).catch(asPatchFailure);
 
     // A rerun can capture a patch that is already on the base branch. The apply path then
@@ -353,7 +371,7 @@ export async function forgeComment(args: {
  * Reads the run's captured patch. A missing or empty diff is a hard failure: the forge
  * must never open a PR that pretends to contain a change it does not have.
  */
-async function readPatch(runId: string): Promise<string> {
+async function readPatch(runId: string, allowEmpty = false): Promise<string> {
   const { runsDir } = loadConfig();
   let patch: string;
   try {
@@ -366,7 +384,7 @@ async function readPatch(runId: string): Promise<string> {
       details: [{ runId }],
     });
   }
-  if (patch.trim().length === 0) {
+  if (patch.trim().length === 0 && !allowEmpty) {
     throw ApplicationFailure.create({
       type: 'patch_missing',
       nonRetryable: true,

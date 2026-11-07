@@ -1203,7 +1203,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     slug: 'factories/missions',
     title: 'Missions',
     section: 'menu',
-    status: 'Shipped — archived change `2026-11-07-add-long-running-missions` (sequential feature MVP)',
+    status: 'Shipped — archived changes `2026-11-07-add-long-running-missions`, `2026-11-07-add-mission-plan-auto-approval` and `2026-11-07-fix-mission-feature-lifecycle`',
     summary:
       'Mission Control: create a goal, review the plan and validation contract, approve it, follow milestones and features, read validation evidence and spend, and pause, resume, cancel or retry.',
     pageHref: factoryPageHref('missions'),
@@ -1212,7 +1212,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'prose',
         text:
-          'A mission is a durable goal above work items. You give it a title and a goal; the planner pins the current `definitionCommit`, writes a mission-level validation contract (behavioral assertions, the tool and the evidence each one requires) and decomposes the goal into milestones and features with dependencies. By default a human approves the plan before anything runs; the mission then dispatches one feature at a time as a work item that starts at `implement` (the plan already carries its spec and acceptance assertions), and fresh validators check each milestone boundary. The mission list lives at `/factories/<id>/missions` and each mission has its own detail page.',
+          'A mission is a durable goal above work items. You give it a title and a goal; the planner pins the current `definitionCommit`, writes a mission-level validation contract (behavioral assertions, the tool and the evidence each one requires) and decomposes the goal into milestones and features with dependencies. By default a human approves the plan before anything runs; under full autonomy with a satisfied benchmark gate the plan is approved automatically. The mission then dispatches one feature at a time as a work item that starts at `implement`, runs `review` and `ship`, and leaves whole-app `verify` to the milestone boundary, where fresh scrutiny and user-testing validators check the integrated result. The mission list lives at `/factories/<id>/missions` and each mission has its own detail page.',
       },
       {
         kind: 'list',
@@ -1220,7 +1220,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
           'List: title, status, feature progress (done/total, failed), current milestone, milestone progress, spend against the mission cap, and last-updated time. Status chips narrow the list; the factory is the one whose page you are on.',
           'Create: title, goal and optional caps — `maxCostUsd`, `maxRuns`, `maxWallClockHours`. An empty field means "no mission cap", not zero; factory budget and quotas still apply.',
           'Plan and contract: the goal, plan version, contract version/source/enforce flag and every assertion with its tier, required flag, tool and expected evidence, plus the planner\'s risks and assumptions.',
-          'Milestones and features: status per milestone (including `validating`), validation round, and per feature its status, order, dependencies, claimed assertion ids, the work item that executes it and whether it is a fix feature from a finding.',
+          'Milestones and features: status per milestone (including `validating`), validation round, and per feature its status, order, dependencies, claimed assertion ids, the work item that executes it and whether it is a fix feature from a finding. A feature already satisfied by the integrated branch completes without a PR and records `work_item.no_changes`.',
           'Timeline and checkpoints: the append-only mission event log (plan, feature, validation, control events) and the small durable state snapshots written at checkpoints.',
           'Validation rounds: scrutiny, user-testing and contract validators with their status, verdict, findings, evidence and a link to the fresh validator run.',
           'Linked work items: the items created for features, with stage, status, PR link and last update.',
@@ -1230,7 +1230,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'list',
         items: [
-          'Plan approval: Approve dispatches features, Reject ends the mission without dispatching anything, and Request changes requires feedback — the planner replans from it. The decision is audited with the actor and is delivered to the durable workflow wait.',
+          'Plan approval: Approve dispatches features, Reject ends the mission without dispatching anything, and Request changes requires feedback — the planner replans from it. Under full autonomy the approval may be automatic; either way the decision is audited with the actor and reason.',
           'Pause/resume: Pause stops new feature and validation dispatch; Resume restarts the scheduler from the recorded checkpoint. Both take an actor and an optional reason.',
           'Cancel: terminal, requires an actor and a reason, and is the only action that cannot be undone.',
           'Retry feature: a failed feature can be retried with an actor and an optional reason. If the mission is `blocked` (its workflow returned), the retry starts a fresh mission attempt at that feature\'s milestone; otherwise the running/paused scheduler picks the pending feature up. Dependencies are re-checked before dispatch.',
@@ -1242,7 +1242,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
         tone: 'warning',
         title: 'Sequential MVP',
         text:
-          'Features run one at a time in dependency order; parallel features and git worktrees are a later phase. The plan gate is human in the MVP; auto-approval for `autonomyLevel: full` with a passing benchmark attestation is a follow-up. Validators only surface findings — they never implement fixes. The orchestrator turns actionable findings into fix features, and validation rounds are capped so a flaky milestone blocks for a human instead of looping forever.',
+          'Features run one at a time in dependency order; parallel features and git worktrees are a later phase. The plan gate is human by default; when autonomy is enabled and unpaused, the factory is `autonomyLevel: full`, and the benchmark gate is satisfied by an attestation or an audited override, the plan is approved automatically and the event records the automatic actor/reason. Feature work items run implement → review → ship; whole-app verify is the milestone boundary, so a partial feature is not failed before the rest of its milestone exists. Validators only surface findings — they never implement fixes. The orchestrator turns actionable findings into fix features, and validation rounds are capped so a flaky milestone blocks for a human instead of looping forever.',
       },
       {
         kind: 'callout',
