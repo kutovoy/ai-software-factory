@@ -22,6 +22,30 @@ export function isPublicPage(pathname: string): boolean {
   return (PUBLIC_PAGES as readonly string[]).includes(pathname);
 }
 
+export interface AuthGateInput {
+  authRequired: boolean;
+  pathname: string;
+  /** The user resolved by `/auth/me`, or `null` when the API said there is no session. */
+  user: unknown | null;
+  /** The `/auth/me` failure, or `null` when the API answered. */
+  error: { status: number } | null;
+}
+
+/**
+ * Decide whether a page request must be redirected to sign-in.
+ *
+ * A failed `/auth/me` is not the same as a signed-out user: when the API is restarting or
+ * unreachable the console must keep rendering its shell (with a connection banner) instead
+ * of bouncing to `/login`. Only an answered `401/403` or an answered “no user” response
+ * redirects; network/5xx failures degrade the page.
+ */
+export function authGateDecision(input: AuthGateInput): 'render' | 'redirect' {
+  if (!input.authRequired || isPublicPage(input.pathname) || input.user) return 'render';
+  if (!input.error) return 'redirect';
+  if (input.error.status === 401 || input.error.status === 403) return 'redirect';
+  return 'render';
+}
+
 /**
  * Only same-origin absolute paths are valid `next` targets. Rejects `//host` and
  * `https://…` so a crafted link cannot turn sign-in into an open redirect.

@@ -88,7 +88,8 @@ Done: Phases 0–5, roadmap items 1–12, remote runners on Linux/macOS (live-ve
 (implemented, not live-verified), retention/GC, cost quotas, promotion checkout, a fresh `hello-nextjs`
 lights-off cycle with zero human decisions, full `runner: remote` factory cycles on macOS native and
 Linux Docker (PRs #13 and #14), and long-running missions with plan approval, milestones, validation,
-checkpoints, fix features, budget and Mission Control (OpenSpec `add-long-running-missions`).
+checkpoints, fix features, budget and Mission Control (OpenSpec `add-long-running-missions`), plus console
+connection recovery for API/web restarts (OpenSpec `harden-console-connectivity`).
 
 Remaining, in rough priority order:
 

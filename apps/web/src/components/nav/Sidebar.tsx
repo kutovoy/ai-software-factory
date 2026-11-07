@@ -35,6 +35,7 @@ export function Sidebar({
   forgejoEnabled = false,
   user = null,
   authRequired = false,
+  sessionUnavailable = false,
 }: {
   factories: FactoryListItem[];
   /** Value of the `factory` cookie (a factory id), resolved by the root layout. */
@@ -45,6 +46,8 @@ export function Sidebar({
   user?: UserWire | null;
   /** `AUTH_REQUIRED=1`: show the account/sign-out block instead of the local-user label. */
   authRequired?: boolean;
+  /** The API was unreachable while resolving the session; do not imply the user signed out. */
+  sessionUnavailable?: boolean;
 }) {
   const pathname = usePathname() ?? '/';
   const router = useRouter();
@@ -367,9 +370,9 @@ export function Sidebar({
             ) : (
               <div className={`space-y-1 ${collapsed ? 'text-center' : ''}`}>
                 <p data-testid="nav-user-name" className="font-medium text-slate-200">
-                  {collapsed ? '?' : 'Not signed in'}
+                  {collapsed ? '?' : sessionUnavailable ? 'Session unavailable' : 'Not signed in'}
                 </p>
-                {!collapsed ? (
+                {!collapsed && !sessionUnavailable ? (
                   <Link
                     href={`/login?next=${encodeURIComponent(pathname)}`}
                     data-testid="nav-signin"
@@ -377,6 +380,9 @@ export function Sidebar({
                   >
                     Sign in
                   </Link>
+                ) : null}
+                {!collapsed && sessionUnavailable ? (
+                  <p className="text-xs text-slate-500">Waiting for the API…</p>
                 ) : null}
               </div>
             )

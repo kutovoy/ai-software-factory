@@ -33,6 +33,16 @@ export function apiBaseUrl(): string {
  */
 export const API_PREFIX = '/api/v1';
 
+/**
+ * Server-side reads must not hang forever when the API is restarting. A timed-out request
+ * becomes a normal degraded read (`safeGet` fallback or a page-level error boundary), so
+ * the console shell can render and offer a retry instead of waiting on a dead socket.
+ */
+const API_TIMEOUT_MS = (() => {
+  const configured = Number(process.env.API_TIMEOUT_MS ?? '10000');
+  return Number.isFinite(configured) && configured > 0 ? configured : 10_000;
+})();
+
 /** Absolute backend URL for a resource path such as `/factories/<id>/runs`. */
 export function apiUrl(path: string): string {
   const versioned = path.startsWith(API_PREFIX)
@@ -87,6 +97,7 @@ export async function apiGet<T>(path: string): Promise<T> {
   const response = await fetch(apiUrl(path), {
     cache: 'no-store',
     headers: { accept: 'application/json', ...(await sessionCookie()) },
+    signal: AbortSignal.timeout(API_TIMEOUT_MS),
   });
   if (!response.ok) throw await parseError(response);
   return (await response.json()) as T;
@@ -102,6 +113,7 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
       ...(body === undefined ? {} : { 'content-type': 'application/json' }),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(API_TIMEOUT_MS),
   });
   if (!response.ok) throw await parseError(response);
   return (await response.json()) as T;

@@ -1139,7 +1139,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
         tone: 'warning',
         title: 'When the API is down',
         text:
-          'The explorer and the reference are both fetched at page load. If the API is unreachable the explorer says so with the error and a retry control instead of rendering an empty shell, and the static reference below stays readable (or explains why it cannot be read); `/health` tells you whether the API and Temporal are up.',
+          'The explorer and the reference are both fetched at page load. If the API is unreachable the explorer says so with the error and a retry control instead of rendering an empty shell, and the static reference below stays readable (or explains why it cannot be read); `/health` tells you whether the API and Temporal are up. The rest of the console keeps its current page mounted and shows a server-connection banner with automatic retry every 5s; it does not redirect to sign-in just because `/auth/me` could not be reached. A failed route render shows a retry panel, and a root-layout failure shows the same connection message instead of a blank page.',
       },
     ],
     related: [

@@ -198,6 +198,9 @@ quotas are implemented in `2026-11-05-add-retention-quotas-promotion`.
   `AUTH_REQUIRED=1` in compose, bootstrap admin, `/login`, real Users page (create, role, disable, delete with
   self/last-admin guards), admin/member roles, per-user work-item/run scope. The Forgejo proxy asserts the
   signed-in username; each user gets org `u-<username>`.
+- **Console connection recovery**: an API/web restart no longer redirects to `/login` or leaves a white page.
+  The auth gate treats network/5xx `/auth/me` failures as degraded, a `/api/v1/health` banner retries every 5s,
+  auto-refresh pauses offline, and route/root error boundaries offer retry/reload. Server reads time out at 10s.
 - **Runner hardening**: Linux `bwrap` sandbox (ro-root, rw workspace, optional network unshare), explicit
   `runner.sandbox_unavailable` when missing; recorded replay for benchmark trials (`replayFrom: run_…`); hydration
   mismatch fixed via `TimeAgo`.

@@ -8,9 +8,10 @@ import './globals.css';
 import 'swagger-ui-react/swagger-ui.css';
 import { ContextHelp } from '@/components/help/ContextHelp';
 import { Sidebar } from '@/components/nav/Sidebar';
-import { safeGet } from '@/lib/api';
+import { ServerConnectionProvider } from '@/components/nav/ServerConnection';
+import { getOrError, safeGet } from '@/lib/api';
 import { getFactoryList } from '@/lib/factories';
-import { authRequired, isPublicPage } from '@/lib/auth';
+import { authGateDecision, authRequired } from '@/lib/auth';
 import type { UserWire } from '@/lib/types';
 
 export const metadata: Metadata = {
@@ -31,11 +32,22 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const requestHeaders = await headers();
   const pathname = requestHeaders.get('x-pathname') ?? '/';
   const authOn = authRequired();
-  const session = authOn
-    ? await safeGet<{ user: UserWire | null }>('/auth/me', { user: null })
-    : { user: null };
+  const auth = authOn
+    ? await getOrError<{ user: UserWire | null }>('/auth/me')
+    : { data: { user: null }, error: null };
+  const session = auth.data ?? { user: null };
+  const sessionUnavailable = Boolean(
+    auth.error && auth.error.status !== 401 && auth.error.status !== 403,
+  );
 
-  if (authOn && !session.user && !isPublicPage(pathname)) {
+  if (
+    authGateDecision({
+      authRequired: authOn,
+      pathname,
+      user: session.user,
+      error: auth.error,
+    }) === 'redirect'
+  ) {
     redirect(`/login?next=${encodeURIComponent(pathname)}`);
   }
 
@@ -43,7 +55,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   if (pathname === '/login') {
     return (
       <html lang="en">
-        <body className="min-h-screen bg-slate-50 text-slate-900">{children}</body>
+        <body className="min-h-screen bg-slate-50 text-slate-900">
+          <ServerConnectionProvider>{children}</ServerConnectionProvider>
+        </body>
       </html>
     );
   }
@@ -72,19 +86,22 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   return (
     <html lang="en">
       <body className="min-h-screen bg-slate-50 text-slate-900">
-        <div className="flex min-h-screen">
-          <Sidebar
-            factories={factories.factories}
-            initialFactory={initialFactory}
-            forgejoEnabled={forgejoEnabled}
-            user={session.user}
-            authRequired={authOn}
-          />
-          <div className="flex min-w-0 flex-1 flex-col">
-            <ContextHelp />
-            <main className="min-w-0 flex-1">{children}</main>
+        <ServerConnectionProvider>
+          <div className="flex min-h-screen">
+            <Sidebar
+              factories={factories.factories}
+              initialFactory={initialFactory}
+              forgejoEnabled={forgejoEnabled}
+              user={session.user}
+              authRequired={authOn}
+              sessionUnavailable={sessionUnavailable}
+            />
+            <div className="flex min-w-0 flex-1 flex-col">
+              <ContextHelp />
+              <main className="min-w-0 flex-1">{children}</main>
+            </div>
           </div>
-        </div>
+        </ServerConnectionProvider>
       </body>
     </html>
   );

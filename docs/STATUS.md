@@ -49,8 +49,16 @@ tests, production server HTTP 200 with `<h1>Hello, world!</h1>`), with PRs #27�
 fixed: validator-kind filtering, integrated-forge-repo validation, NUL-byte JSONB sanitisation, planner timeout and
 blocked-on-failure handling, a progress watchdog, partial-feature verify ownership, empty mission-feature patches,
 and planner guidance to require build/e2e assertions for runnable goals. A blocked mission's feature retry starts a
-fresh `MissionWorkflow` attempt at that milestone; pause/resume/cancel remain durable controls. `bun run ci` is 865
+fresh `MissionWorkflow` attempt at that milestone; pause/resume/cancel remain durable controls. `bun run ci` is 871
 pass / 190 skip; `openspec validate --all` is 35/35 with one pre-existing warning. See `docs/ROADMAP.md` §What's left.
+
+**Console connection recovery — implemented** (2026-11-07, OpenSpec `harden-console-connectivity`). The root layout
+now treats an unreachable `/auth/me` as a degraded session instead of “signed out”, so an API restart no longer
+redirects every page to `/login` or feeds the repeated RSC/navigation loop. A client-side health banner polls the
+same-origin `/api/v1/health` proxy, retries every 5s, pauses auto-refresh while offline and refreshes server
+components once the backend returns. Route-level `error.tsx` and root `global-error.tsx` show retry/reload panels
+instead of a white page; server reads time out after 10s (`API_TIMEOUT_MS`). Covered by auth-gate unit tests and a
+Playwright banner/retry spec.
 
 **Remote runners + host observability — Linux, Windows and macOS native agents implemented** (2026-11-04/05, merged to
 `main`, archived OpenSpec `2026-11-04-add-remote-runners`; platform/artifact work in `2026-11-05-add-runner-platforms-and-artifacts`). A remote host enrolls from the console with a

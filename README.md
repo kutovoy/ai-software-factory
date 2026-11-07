@@ -36,6 +36,11 @@ This project is that factory, built to be **self-hosted, inspectable and yours**
 
 Short, dated highlights of user-visible changes. Full detail lives in `docs/STATUS.md`.
 
+- **2026-11-07 — Console connection recovery.** A backend or web restart no longer leaves a white page or
+  bounces to sign-in. The console distinguishes an unreachable API from a signed-out session, keeps the
+  current route mounted, shows a “Server connection issue” banner with automatic 5s retry, pauses
+  auto-refresh while offline, and provides route/root error boundaries with retry/reload. Server-side API
+  reads are bounded by a timeout; a recovered backend refreshes the shell automatically.
 - **2026-11-07 — Long-running missions.** A factory can now take a durable multi-feature goal: a planner
   writes a validation contract and milestones, the plan is human-approved by default (auto-approved for
   full autonomy with a satisfied benchmark gate), features run sequentially as work items, and fresh

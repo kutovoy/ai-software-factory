@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import { useServerConnection } from '@/components/nav/ServerConnection';
 import { formatRelative } from '@/lib/format';
 
 /**
@@ -46,6 +47,7 @@ function updatedLabel(at: number): string {
 export function AutoRefresh() {
   const pathname = usePathname() ?? '/';
   const router = useRouter();
+  const { online } = useServerConnection();
   const docs = isDocsRoute(pathname);
 
   const [intervalSeconds, setIntervalSeconds] = useState<number>(DEFAULT_SECONDS);
@@ -60,7 +62,7 @@ export function AutoRefresh() {
   // The refresh timer: skipped while the tab is hidden, and resumes (one immediate refresh)
   // when it becomes visible again.
   useEffect(() => {
-    if (docs || intervalSeconds <= 0) return;
+    if (docs || intervalSeconds <= 0 || !online) return;
 
     const refresh = () => {
       if (document.visibilityState !== 'visible') return;
@@ -79,7 +81,7 @@ export function AutoRefresh() {
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [docs, intervalSeconds, router]);
+  }, [docs, intervalSeconds, online, router]);
 
   // Keep "updated <relative>" honest without refreshing.
   useEffect(() => {
