@@ -1,0 +1,24 @@
+{
+  "source_url": "https://www.youtube.com/watch?v=Ib5GBkD555M",
+  "video_id": "Ib5GBkD555M",
+  "title": "Why Software Factories Fail",
+  "channel": "AI Engineer",
+  "duration_s": 1157.0,
+  "duration_hms": "0:19:17",
+  "resolution": "1920x1080",
+  "fps": 60,
+  "caption_source": "whisper:small.en",
+  "caption_lang": "en",
+  "transcript_segments": 517,
+  "video_file": null,
+  "video_file_probe": null,
+  "video_bytes": null,
+  "frame_count": 0,
+  "asr_model": "small.en",
+  "updated_at": "2026-11-07T16:04:35",
+  "tool_versions": {
+    "yt-dlp": "2026.08.19",
+    "ffmpeg": "9.0.1",
+    "python": "3.9.6"
+  }
+}

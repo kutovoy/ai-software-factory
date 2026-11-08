@@ -11,7 +11,11 @@ Terms used across specs, code and UI. Keep this aligned with `packages/core` typ
 | **Mission** | A durable goal above work items: plan, milestones, features, validation contract, checkpoints, events, gates, validations and optional budget. Runs under `MissionWorkflow`. |
 | **Milestone** | A group of mission features that must all finish before a fresh validation round (scrutiny + user-testing) checks the mission contract. |
 | **Mission feature** | One unit of mission work; persisted as a work item that runs `implement → review → ship`. Whole-app `verify` belongs to the milestone boundary, so partial features can merge before the full milestone exists; an already-satisfied feature completes without a PR. |
-| **Validation contract** | Behavioral assertions written before features run, with tier, required flag, tool and expected evidence; mission-level contracts drive milestone validators. |
+| **Validation contract** | Behavioral assertions written before features run, with tier, required flag, tool and expected evidence; mission-level contracts drive milestone validators. Architecture and maintainability are first-class tiers in the planned quality workstream. |
+| **Risk tier** | A per-plan/feature classification (`low`, `medium`, `high`) that decides plan approval, review and merge policy. Autonomy is bounded by blast radius and verification capacity, not a factory-wide switch. |
+| **Vertical slice** | A feature that delivers an end-to-end, testable behavior. An *enabler* is scaffolding that must state which later slice verifies it. |
+| **Review packet** | A compact deterministic summary of intent, plan, diff stats, validation evidence, architecture impact and open questions; high-risk work items use it as the human review surface. |
+| **Comprehension debt** | The gap between code shipped and code humans understand. It grows when review/reading is removed; planned as a metric and autonomy gate. |
 | **Checkpoint** | A small JSON snapshot of mission state (completed work, decisions, failed approaches, tests, blockers, budget) that lets the next feature start with fresh context. |
 | **Mission Control** | The factory-scoped console view of missions: plan approval, milestones/features, checkpoints, validation evidence, budget and pause/resume/cancel controls. |
 | **Stage** | A step in the SDLC loop: `triage`, `spec`, `plan`, `implement`, `review`, `verify`, `ship`, `monitor`. |

@@ -82,6 +82,31 @@ budget and pause/resume/cancel; the Inbox shows plan gates and blocked missions.
 `hello-nextjs` mission (`mis_01M6VSNQ3ZR06P3HBTEV9W40A1`) reached `done` with four features, passing build and
 Playwright evidence, and PRs #27–#29.
 
+## Software-factory quality & risk workstream (planned, 2026-11-07)
+
+Research and live-mission evidence point to the same gap: generation is cheap, but verification and human
+comprehension are scarce; test-pass evidence alone does not protect maintainability. The detailed analysis,
+evidence and implementation plan are in [`docs/SOFTWARE_FACTORY_WEAKNESSES.md`](SOFTWARE_FACTORY_WEAKNESSES.md).
+The prepared OpenSpec change is `harden-factory-quality`.
+
+**P0 — implement next after compaction:**
+
+1. **Risk-tiered autonomy.** Low/medium/high risk tiers with per-tier plan approval, review and merge policy;
+   high-risk paths always require human plan/review/merge, even under `autonomyLevel: full`.
+2. **Architecture + maintainability assertions.** Add `architecture`/`maintainability` validation tiers,
+   deterministic checks where available, thresholds and evidence; medium/high-risk runnable goals must include
+   them.
+3. **Planning artifacts.** Mission plans gain product review, system architecture, program design and
+   vertical-slice planning before features are dispatched.
+4. **Vertical slices.** Features declare the end-to-end behavior they deliver (or justify an enabler); plans
+   must contain at least one slice.
+5. **Review packet + human review.** A compact deterministic review packet on work-item detail/Inbox; high-risk
+   work items require a human review gate before ship.
+
+**P1/P2:** context pack per feature, longitudinal brownfield benchmark, comprehension-debt metric, quality
+stop conditions, safe dark maintenance loops, model/harness routing, and “risk-tiered autonomy” language.
+See the weaknesses doc for the full backlog and acceptance criteria.
+
 ## What's left (2026-11-07)
 
 Done: Phases 0–5, roadmap items 1–12, remote runners on Linux/macOS (live-verified) and Windows native

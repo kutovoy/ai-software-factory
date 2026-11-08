@@ -1,0 +1,2590 @@
+{
+  "language": "en",
+  "segments": [
+    {
+      "start": 29.3,
+      "end": 36.11,
+      "text": "Guys, give it up for all the great speakers today so far."
+    },
+    {
+      "start": 36.11,
+      "end": 39.07,
+      "text": "All right, this is harness engineering is not enough,"
+    },
+    {
+      "start": 39.07,
+      "end": 42.19,
+      "text": "and why software factories fail."
+    },
+    {
+      "start": 42.19,
+      "end": 47.62,
+      "text": "And we're going to click maybe."
+    },
+    {
+      "start": 47.62,
+      "end": 49.02,
+      "text": "Oh, that's way too many slides."
+    },
+    {
+      "start": 49.02,
+      "end": 50.22,
+      "text": "Hold on, guys."
+    },
+    {
+      "start": 50.22,
+      "end": 52.18,
+      "text": "OK."
+    },
+    {
+      "start": 52.18,
+      "end": 56.05,
+      "text": "So we're all racing to put AI coding into production."
+    },
+    {
+      "start": 56.05,
+      "end": 59.09,
+      "text": "And there's been lots been said about loop engineering."
+    },
+    {
+      "start": 59.09,
+      "end": 61.65,
+      "text": "And we should probably write more loops."
+    },
+    {
+      "start": 61.65,
+      "end": 66.86,
+      "text": "And yeah, I guess we're doing loops now."
+    },
+    {
+      "start": 66.86,
+      "end": 69.02,
+      "text": "Strong DM, built a lights off software factory"
+    },
+    {
+      "start": 69.02,
+      "end": 70.62,
+      "text": "where nobody even reads the code."
+    },
+    {
+      "start": 70.62,
+      "end": 74.38,
+      "text": "And the prevailing narrative is we should just"
+    },
+    {
+      "start": 74.38,
+      "end": 75.86,
+      "text": "spend more tokens."
+    },
+    {
+      "start": 75.86,
+      "end": 77.7,
+      "text": "You are the bottleneck."
+    },
+    {
+      "start": 77.7,
+      "end": 78.82,
+      "text": "The models are good enough."
+    },
+    {
+      "start": 78.82,
+      "end": 80.1,
+      "text": "Code is free."
+    },
+    {
+      "start": 80.1,
+      "end": 82.3,
+      "text": "Just ship more stuff."
+    },
+    {
+      "start": 82.3,
+      "end": 86.14,
+      "text": "But at the same time, we are starting to see the cracks."
+    },
+    {
+      "start": 86.14,
+      "end": 88.42,
+      "text": "Our friend Mario at AI Engineer Europe"
+    },
+    {
+      "start": 88.42,
+      "end": 91.7,
+      "text": "begged us to slow down because companies that should not"
+    },
+    {
+      "start": 91.7,
+      "end": 93.58,
+      "text": "be having outages because of coding agents"
+    },
+    {
+      "start": 93.58,
+      "end": 97.33,
+      "text": "are having outages due to coding agent mishaps."
+    },
+    {
+      "start": 97.33,
+      "end": 100.01,
+      "text": "Code bases are falling apart faster than they ever"
+    },
+    {
+      "start": 100.01,
+      "end": 101.17,
+      "text": "have before."
+    },
+    {
+      "start": 101.17,
+      "end": 103.21,
+      "text": "And our friends at Faros AI actually even"
+    },
+    {
+      "start": 103.21,
+      "end": 106.09,
+      "text": "did a report since we all picked up all these AI coding"
+    },
+    {
+      "start": 106.09,
+      "end": 109.69,
+      "text": "tools in January, maybe February."
+    },
+    {
+      "start": 109.69,
+      "end": 111.89,
+      "text": "Pull request, code review quality is way down."
+    },
+    {
+      "start": 111.89,
+      "end": 113.93,
+      "text": "We're having more comments, longer comments,"
+    },
+    {
+      "start": 113.93,
+      "end": 117.6,
+      "text": "and tons of PRs being merged without any review at all."
+    },
+    {
+      "start": 117.6,
+      "end": 118.76,
+      "text": "Incidents are way up."
+    },
+    {
+      "start": 118.76,
+      "end": 121.0,
+      "text": "Bugs per developer are way up."
+    },
+    {
+      "start": 121.04,
+      "end": 124.2,
+      "text": "And many people will tell you that you're holding it wrong."
+    },
+    {
+      "start": 124.2,
+      "end": 125.72,
+      "text": "That's the only reason."
+    },
+    {
+      "start": 125.72,
+      "end": 127.95,
+      "text": "You're not."
+    },
+    {
+      "start": 127.95,
+      "end": 129.27,
+      "text": "Well, maybe you are."
+    },
+    {
+      "start": 129.27,
+      "end": 132.03,
+      "text": "But that's not the point."
+    },
+    {
+      "start": 132.03,
+      "end": 134.11,
+      "text": "I've spoken a lot about how to hold it better when"
+    },
+    {
+      "start": 134.11,
+      "end": 137.27,
+      "text": "it comes to working with AI, probably a million views"
+    },
+    {
+      "start": 137.27,
+      "end": 140.07,
+      "text": "on YouTube at this point across a bunch of different talks."
+    },
+    {
+      "start": 140.07,
+      "end": 141.79,
+      "text": "And the basic thing is, as engineers,"
+    },
+    {
+      "start": 141.79,
+      "end": 145.27,
+      "text": "we've been told that if token maxing isn't working,"
+    },
+    {
+      "start": 145.27,
+      "end": 147.03,
+      "text": "then it's a skill issue."
+    },
+    {
+      "start": 147.03,
+      "end": 149.23,
+      "text": "You just need to spend more tokens."
+    },
+    {
+      "start": 149.23,
+      "end": 151.27,
+      "text": "Let go of reading the code."
+    },
+    {
+      "start": 151.27,
+      "end": 153.23,
+      "text": "That with enough harness engineering,"
+    },
+    {
+      "start": 153.23,
+      "end": 155.63,
+      "text": "if we maybe sprinkle some magic words,"
+    },
+    {
+      "start": 155.63,
+      "end": 159.71,
+      "text": "adversarial review on enough of our PR bots,"
+    },
+    {
+      "start": 159.71,
+      "end": 162.3,
+      "text": "that we can get the best of both worlds."
+    },
+    {
+      "start": 162.3,
+      "end": 165.82,
+      "text": "10 to 100x faster, high quality, and nobody"
+    },
+    {
+      "start": 165.82,
+      "end": 169.25,
+      "text": "has to do that thing we all hate called code review."
+    },
+    {
+      "start": 169.25,
+      "end": 171.93,
+      "text": "I'm here to convince you today that this is in fact not"
+    },
+    {
+      "start": 171.93,
+      "end": 175.13,
+      "text": "a skill issue, that no amount of harness engineering"
+    },
+    {
+      "start": 175.13,
+      "end": 178.21,
+      "text": "or loops maxing can solve what is fundamentally"
+    },
+    {
+      "start": 178.21,
+      "end": 180.36,
+      "text": "a model training issue."
+    },
+    {
+      "start": 180.36,
+      "end": 183.24,
+      "text": "That's why we say the harness is not enough."
+    },
+    {
+      "start": 183.24,
+      "end": 186.08,
+      "text": "And to understand this, we kind of have to grapple and dig"
+    },
+    {
+      "start": 186.08,
+      "end": 188.28,
+      "text": "into how coding models are trained."
+    },
+    {
+      "start": 188.28,
+      "end": 189.84,
+      "text": "I'm going to talk about what I think"
+    },
+    {
+      "start": 189.84,
+      "end": 192.0,
+      "text": "the shortcomings are with some of the current benchmarks"
+    },
+    {
+      "start": 192.0,
+      "end": 193.84,
+      "text": "and what better ones might look like."
+    },
+    {
+      "start": 193.84,
+      "end": 196.2,
+      "text": "And we'll talk about how to move faster safely"
+    },
+    {
+      "start": 196.2,
+      "end": 197.88,
+      "text": "in the meantime."
+    },
+    {
+      "start": 197.88,
+      "end": 200.36,
+      "text": "It's going to sound like a rant, but there is hope here."
+    },
+    {
+      "start": 200.36,
+      "end": 201.36,
+      "text": "I'm going to talk about our journey"
+    },
+    {
+      "start": 201.36,
+      "end": 203.12,
+      "text": "and a bunch of the landmines we've hit building"
+    },
+    {
+      "start": 203.12,
+      "end": 205.24,
+      "text": "in this world, a bunch of exciting new techniques"
+    },
+    {
+      "start": 205.24,
+      "end": 207.28,
+      "text": "that we've been working with a lot of our users"
+    },
+    {
+      "start": 207.28,
+      "end": 208.88,
+      "text": "and customers to develop."
+    },
+    {
+      "start": 208.88,
+      "end": 210.8,
+      "text": "And I think how we all as a community"
+    },
+    {
+      "start": 210.8,
+      "end": 213.64,
+      "text": "get to the next chapter of agentic engineering"
+    },
+    {
+      "start": 213.64,
+      "end": 216.06,
+      "text": "after whatever this thing that we're in."
+    },
+    {
+      "start": 216.06,
+      "end": 217.48,
+      "text": "So we use a lot of words here."
+    },
+    {
+      "start": 217.48,
+      "end": 218.36,
+      "text": "I'm going to zoom out a little bit."
+    },
+    {
+      "start": 218.36,
+      "end": 220.32,
+      "text": "I want to give you kind of like a brief history"
+    },
+    {
+      "start": 220.32,
+      "end": 222.08,
+      "text": "of the software factory."
+    },
+    {
+      "start": 222.08,
+      "end": 224.84,
+      "text": "And actually, I just learned this last week."
+    },
+    {
+      "start": 224.84,
+      "end": 227.6,
+      "text": "The term software factory was defined at a NATO conference"
+    },
+    {
+      "start": 227.6,
+      "end": 229.8,
+      "text": "in 1968."
+    },
+    {
+      "start": 229.8,
+      "end": 231.92,
+      "text": "We're going to start around 2022, right before AI"
+    },
+    {
+      "start": 231.92,
+      "end": 233.72,
+      "text": "started coming around."
+    },
+    {
+      "start": 233.72,
+      "end": 238.0,
+      "text": "And basically, in a typical 2022 software factory,"
+    },
+    {
+      "start": 238.0,
+      "end": 239.68,
+      "text": "you will have some people building stuff."
+    },
+    {
+      "start": 239.68,
+      "end": 240.6,
+      "text": "You'll have engineers."
+    },
+    {
+      "start": 240.6,
+      "end": 241.5,
+      "text": "You'll have PMs."
+    },
+    {
+      "start": 241.5,
+      "end": 243.12,
+      "text": "Maybe you have some sort of leadership team"
+    },
+    {
+      "start": 243.12,
+      "end": 245.0,
+      "text": "that is driving the vision here."
+    },
+    {
+      "start": 245.0,
+      "end": 247.32,
+      "text": "And they all decide that stuff needs to get done."
+    },
+    {
+      "start": 247.32,
+      "end": 250.82,
+      "text": "And so you put it in a tracker, a linear, a JIRA, a Beads,"
+    },
+    {
+      "start": 250.82,
+      "end": 253.8,
+      "text": "some sort of state machine that tracks what needs to be done."
+    },
+    {
+      "start": 253.8,
+      "end": 256.14,
+      "text": "And then someone goes and grabs something off of there,"
+    },
+    {
+      "start": 256.14,
+      "end": 257.28,
+      "text": "and they build the thing."
+    },
+    {
+      "start": 257.28,
+      "end": 259.48,
+      "text": "And there may be some automated testing in that process,"
+    },
+    {
+      "start": 259.48,
+      "end": 261.88,
+      "text": "maybe some manual testing in that process."
+    },
+    {
+      "start": 261.88,
+      "end": 264.2,
+      "text": "At a certain point, we make this pull request thing."
+    },
+    {
+      "start": 264.2,
+      "end": 265.28,
+      "text": "It says, OK, cool."
+    },
+    {
+      "start": 265.28,
+      "end": 267.32,
+      "text": "We've got to run a bunch of checks, automated stuff."
+    },
+    {
+      "start": 267.32,
+      "end": 269.92,
+      "text": "A human's going to review the change and review the code."
+    },
+    {
+      "start": 269.92,
+      "end": 272.56,
+      "text": "And perhaps we might even have a human pull it down"
+    },
+    {
+      "start": 272.56,
+      "end": 274.12,
+      "text": "and test it somehow."
+    },
+    {
+      "start": 274.12,
+      "end": 276.08,
+      "text": "And if anything goes wrong here, we loop back"
+    },
+    {
+      "start": 276.08,
+      "end": 278.04,
+      "text": "to someone builds the thing."
+    },
+    {
+      "start": 278.04,
+      "end": 279.68,
+      "text": "And eventually, we're ready for prod."
+    },
+    {
+      "start": 279.68,
+      "end": 281.28,
+      "text": "And so we ship it to production."
+    },
+    {
+      "start": 281.28,
+      "end": 285.28,
+      "text": "And once it's in prod, it makes contact with our users."
+    },
+    {
+      "start": 285.28,
+      "end": 288.6,
+      "text": "And users do a thing that we all love."
+    },
+    {
+      "start": 288.6,
+      "end": 291.1,
+      "text": "Users love to complain."
+    },
+    {
+      "start": 291.1,
+      "end": 292.14,
+      "text": "I love our users."
+    },
+    {
+      "start": 292.14,
+      "end": 293.6,
+      "text": "But yeah, they're going to ask for things."
+    },
+    {
+      "start": 293.6,
+      "end": 294.6,
+      "text": "They're going to find bugs."
+    },
+    {
+      "start": 294.6,
+      "end": 296.52,
+      "text": "They're going to file feature requests."
+    },
+    {
+      "start": 296.52,
+      "end": 298.04,
+      "text": "And that goes back to your team."
+    },
+    {
+      "start": 298.04,
+      "end": 300.12,
+      "text": "You might also add monitoring."
+    },
+    {
+      "start": 300.12,
+      "end": 303.28,
+      "text": "And so what do we want more than anything else?"
+    },
+    {
+      "start": 303.28,
+      "end": 305.28,
+      "text": "We want to wake up engineers at 3 in the morning"
+    },
+    {
+      "start": 305.28,
+      "end": 306.44,
+      "text": "when something breaks."
+    },
+    {
+      "start": 306.44,
+      "end": 309.08,
+      "text": "So they can get dragged out of bud to try to go fix it."
+    },
+    {
+      "start": 309.08,
+      "end": 311.52,
+      "text": "And we go on and on in this loop."
+    },
+    {
+      "start": 311.52,
+      "end": 313.64,
+      "text": "And we ship a bunch of code."
+    },
+    {
+      "start": 313.64,
+      "end": 315.3,
+      "text": "And one thing that we noticed here"
+    },
+    {
+      "start": 315.3,
+      "end": 318.32,
+      "text": "is that teams figured this out decades ago,"
+    },
+    {
+      "start": 318.32,
+      "end": 321.32,
+      "text": "is that this someone builds the thing step"
+    },
+    {
+      "start": 321.32,
+      "end": 324.92,
+      "text": "is usually going to take hours or days in most cases."
+    },
+    {
+      "start": 324.92,
+      "end": 327.68,
+      "text": "And the review part will also take hours or days"
+    },
+    {
+      "start": 327.68,
+      "end": 328.56,
+      "text": "for large things."
+    },
+    {
+      "start": 328.56,
+      "end": 331.02,
+      "text": "And so teams started doing these upfront planning, architecture"
+    },
+    {
+      "start": 331.02,
+      "end": 332.6,
+      "text": "proposals, sprint planning."
+    },
+    {
+      "start": 332.6,
+      "end": 336.32,
+      "text": "And it would collaborate on these things as a team"
+    },
+    {
+      "start": 336.32,
+      "end": 338.8,
+      "text": "with the hopes that we might decrease the percent chance"
+    },
+    {
+      "start": 338.8,
+      "end": 340.64,
+      "text": "that something would need to be reworked."
+    },
+    {
+      "start": 340.64,
+      "end": 343.0,
+      "text": "That we would be able to reduce the time spent"
+    },
+    {
+      "start": 343.0,
+      "end": 344.62,
+      "text": "in reviewing every line of code"
+    },
+    {
+      "start": 344.62,
+      "end": 347.53,
+      "text": "because we aligned on everything ahead of time."
+    },
+    {
+      "start": 347.53,
+      "end": 351.13,
+      "text": "This brings us to the agentic software factory."
+    },
+    {
+      "start": 351.13,
+      "end": 353.63,
+      "text": "Every company and their mother is talking"
+    },
+    {
+      "start": 353.63,
+      "end": 356.39,
+      "text": "about how they built a coding agent factory that"
+    },
+    {
+      "start": 356.39,
+      "end": 359.31,
+      "text": "shifts 75% of their code now."
+    },
+    {
+      "start": 359.31,
+      "end": 361.43,
+      "text": "Literally everybody."
+    },
+    {
+      "start": 361.43,
+      "end": 364.27,
+      "text": "And so we look at a software factory from 2022."
+    },
+    {
+      "start": 364.27,
+      "end": 366.51,
+      "text": "We just replaced someone builds the thing"
+    },
+    {
+      "start": 366.51,
+      "end": 367.95,
+      "text": "with an agent builds the thing."
+    },
+    {
+      "start": 367.95,
+      "end": 369.79,
+      "text": "And we have an orchestration, and a harness, and a sandbox,"
+    },
+    {
+      "start": 369.79,
+      "end": 371.07,
+      "text": "and a model, and computer use."
+    },
+    {
+      "start": 371.07,
+      "end": 372.95,
+      "text": "And I'm not going to get into the details of that."
+    },
+    {
+      "start": 372.95,
+      "end": 375.79,
+      "text": "You can watch 100 talks about that this week, I'm sure."
+    },
+    {
+      "start": 375.79,
+      "end": 378.23,
+      "text": "But now the building part takes minutes or hours."
+    },
+    {
+      "start": 378.23,
+      "end": 380.37,
+      "text": "But this human part still takes hours or days"
+    },
+    {
+      "start": 380.37,
+      "end": 381.67,
+      "text": "if you're going to review the code"
+    },
+    {
+      "start": 381.67,
+      "end": 383.51,
+      "text": "and you're going to test the changes."
+    },
+    {
+      "start": 384.03,
+      "end": 385.07,
+      "text": "So we bring an agentic code review."
+    },
+    {
+      "start": 385.07,
+      "end": 387.71,
+      "text": "We bring in agentic regression testing."
+    },
+    {
+      "start": 387.71,
+      "end": 389.23,
+      "text": "And it makes this part faster."
+    },
+    {
+      "start": 389.23,
+      "end": 391.67,
+      "text": "But it's probably still the bottleneck."
+    },
+    {
+      "start": 391.67,
+      "end": 392.79,
+      "text": "But we can do more loops here."
+    },
+    {
+      "start": 392.79,
+      "end": 393.63,
+      "text": "Why not?"
+    },
+    {
+      "start": 393.63,
+      "end": 394.47,
+      "text": "Let's do some more loops."
+    },
+    {
+      "start": 394.47,
+      "end": 396.57,
+      "text": "So we can route all incidents straight into the factory."
+    },
+    {
+      "start": 396.57,
+      "end": 398.39,
+      "text": "Why does someone need to get woken up"
+    },
+    {
+      "start": 398.39,
+      "end": 399.91,
+      "text": "and try to fix it when they could just"
+    },
+    {
+      "start": 399.91,
+      "end": 401.31,
+      "text": "wake up to a pull request?"
+    },
+    {
+      "start": 401.31,
+      "end": 403.65,
+      "text": "And maybe that fixes the issue for you."
+    },
+    {
+      "start": 403.65,
+      "end": 405.19,
+      "text": "You can take all the user feedback"
+    },
+    {
+      "start": 405.19,
+      "end": 407.23,
+      "text": "and just stick it straight into the factory"
+    },
+    {
+      "start": 407.23,
+      "end": 409.99,
+      "text": "so that people ask for stuff and it gets built."
+    },
+    {
+      "start": 409.99,
+      "end": 412.53,
+      "text": "And now your only job is how much things"
+    },
+    {
+      "start": 412.53,
+      "end": 415.09,
+      "text": "can you stuff into the queue of stuff to do"
+    },
+    {
+      "start": 415.09,
+      "end": 417.93,
+      "text": "and how fast can you review and test the changes?"
+    },
+    {
+      "start": 417.93,
+      "end": 419.77,
+      "text": "Which brings us, of course, to I'm sure you know"
+    },
+    {
+      "start": 419.77,
+      "end": 421.53,
+      "text": "the lights off software factory."
+    },
+    {
+      "start": 421.53,
+      "end": 423.81,
+      "text": "Where basically Dan Shapiro coined this is"
+    },
+    {
+      "start": 423.81,
+      "end": 425.25,
+      "text": "we no longer read the code."
+    },
+    {
+      "start": 425.25,
+      "end": 427.37,
+      "text": "We say, you know what, this is going great."
+    },
+    {
+      "start": 427.37,
+      "end": 429.57,
+      "text": "That code review thing, no thanks."
+    },
+    {
+      "start": 429.57,
+      "end": 431.89,
+      "text": "We're just not going to do that anymore."
+    },
+    {
+      "start": 431.89,
+      "end": 434.53,
+      "text": "And we invest into all these other parts of the system."
+    },
+    {
+      "start": 434.53,
+      "end": 435.97,
+      "text": "You're testing, you're monitoring,"
+    },
+    {
+      "start": 435.97,
+      "end": 437.17,
+      "text": "you roll out everything else."
+    },
+    {
+      "start": 437.17,
+      "end": 439.85,
+      "text": "We just write more code and build those systems better."
+    },
+    {
+      "start": 439.85,
+      "end": 442.25,
+      "text": "And now our job really is just how much stuff"
+    },
+    {
+      "start": 442.27,
+      "end": 445.42,
+      "text": "can we ask the agent to build?"
+    },
+    {
+      "start": 445.42,
+      "end": 448.86,
+      "text": "I am going to posit that this does not work."
+    },
+    {
+      "start": 448.86,
+      "end": 451.38,
+      "text": "And this is why software factories fail."
+    },
+    {
+      "start": 451.38,
+      "end": 452.96,
+      "text": "As I decide, what I'm going to say"
+    },
+    {
+      "start": 452.96,
+      "end": 454.54,
+      "text": "has nothing to do with vibe coding."
+    },
+    {
+      "start": 454.54,
+      "end": 456.54,
+      "text": "So Addy had this great post."
+    },
+    {
+      "start": 456.54,
+      "end": 458.58,
+      "text": "I'm gonna just go literally take his quote verbatim."
+    },
+    {
+      "start": 458.58,
+      "end": 460.78,
+      "text": "A developer vibe coding a side project"
+    },
+    {
+      "start": 460.78,
+      "end": 463.05,
+      "text": "a dozen people will ever run"
+    },
+    {
+      "start": 463.05,
+      "end": 466.13,
+      "text": "and a team keeping a 10 year old enterprise system alive"
+    },
+    {
+      "start": 466.13,
+      "end": 468.93,
+      "text": "for another quarter share almost no constraints"
+    },
+    {
+      "start": 468.93,
+      "end": 469.93,
+      "text": "worth naming."
+    },
+    {
+      "start": 469.93,
+      "end": 471.61,
+      "text": "And most of what you hear on the internet"
+    },
+    {
+      "start": 471.65,
+      "end": 473.09,
+      "text": "is one of these groups of people"
+    },
+    {
+      "start": 473.09,
+      "end": 476.47,
+      "text": "telling the other group of people how to live their lives."
+    },
+    {
+      "start": 476.47,
+      "end": 479.95,
+      "text": "So if you love vibe coding, please go on."
+    },
+    {
+      "start": 479.95,
+      "end": 481.11,
+      "text": "At Human Layer what we care about"
+    },
+    {
+      "start": 481.11,
+      "end": 483.31,
+      "text": "is how do we help people solve hard problems"
+    },
+    {
+      "start": 483.31,
+      "end": 485.55,
+      "text": "in complex code bases."
+    },
+    {
+      "start": 485.55,
+      "end": 487.07,
+      "text": "We use the word brownfield a lot"
+    },
+    {
+      "start": 487.07,
+      "end": 489.07,
+      "text": "which historically has meant like"
+    },
+    {
+      "start": 489.07,
+      "end": 490.79,
+      "text": "some 10 year old Java thing."
+    },
+    {
+      "start": 490.79,
+      "end": 492.71,
+      "text": "I actually think agents really start to struggle"
+    },
+    {
+      "start": 492.71,
+      "end": 494.43,
+      "text": "after maybe three to six months"
+    },
+    {
+      "start": 494.43,
+      "end": 497.27,
+      "text": "especially with the pace at which we can ship now."
+    },
+    {
+      "start": 497.27,
+      "end": 498.43,
+      "text": "You can ask me how I know this"
+    },
+    {
+      "start": 498.43,
+      "end": 501.35,
+      "text": "and I will tell you that it is because in July 2025"
+    },
+    {
+      "start": 501.35,
+      "end": 503.55,
+      "text": "we tried this, we went full lights off"
+    },
+    {
+      "start": 503.55,
+      "end": 507.43,
+      "text": "and if you have tried this seriously for a number of months"
+    },
+    {
+      "start": 507.43,
+      "end": 509.83,
+      "text": "you probably found at least one issue"
+    },
+    {
+      "start": 509.83,
+      "end": 511.59,
+      "text": "that the agent couldn't solve."
+    },
+    {
+      "start": 511.59,
+      "end": 513.55,
+      "text": "Even with your most advanced prompting"
+    },
+    {
+      "start": 513.55,
+      "end": 515.59,
+      "text": "you do research, you do reproductions,"
+    },
+    {
+      "start": 515.59,
+      "end": 518.83,
+      "text": "you just, you have to go and dig into that code base"
+    },
+    {
+      "start": 518.83,
+      "end": 520.83,
+      "text": "that you stopped reading three months ago"
+    },
+    {
+      "start": 520.83,
+      "end": 522.63,
+      "text": "to try to figure out what's broken."
+    },
+    {
+      "start": 522.63,
+      "end": 524.99,
+      "text": "And in the meantime your site was down,"
+    },
+    {
+      "start": 524.99,
+      "end": 526.39,
+      "text": "your users were pissed"
+    },
+    {
+      "start": 526.39,
+      "end": 528.15,
+      "text": "and if you were like me you were probably miserable"
+    },
+    {
+      "start": 528.15,
+      "end": 530.43,
+      "text": "reading all this slop code that you let slip"
+    },
+    {
+      "start": 530.43,
+      "end": 531.9,
+      "text": "into your system."
+    },
+    {
+      "start": 531.9,
+      "end": 534.1,
+      "text": "And what I want to get to is basically"
+    },
+    {
+      "start": 534.1,
+      "end": 536.02,
+      "text": "models have a shortcoming."
+    },
+    {
+      "start": 536.02,
+      "end": 538.94,
+      "text": "They can't maintain and improve code base quality over time"
+    },
+    {
+      "start": 538.94,
+      "end": 541.58,
+      "text": "not without a decent amount of human steering."
+    },
+    {
+      "start": 541.58,
+      "end": 542.94,
+      "text": "And when I say maintainability"
+    },
+    {
+      "start": 542.94,
+      "end": 544.7,
+      "text": "I'm basically talking about issues like"
+    },
+    {
+      "start": 544.7,
+      "end": 546.66,
+      "text": "it becomes really really hard to make a change"
+    },
+    {
+      "start": 546.66,
+      "end": 548.66,
+      "text": "in one part of the code base"
+    },
+    {
+      "start": 548.66,
+      "end": 550.26,
+      "text": "without breaking other parts of the code base."
+    },
+    {
+      "start": 550.26,
+      "end": 553.66,
+      "text": "This is Martin Fowler shotgun surgery textbook code smell."
+    },
+    {
+      "start": 553.66,
+      "end": 555.42,
+      "text": "I'm not gonna say much more about maintainability"
+    },
+    {
+      "start": 555.42,
+      "end": 556.98,
+      "text": "there's a bunch of books that you can go read about it"
+    },
+    {
+      "start": 556.98,
+      "end": 559.42,
+      "text": "in fact John Osterhut is actually here speaking this week"
+    },
+    {
+      "start": 559.42,
+      "end": 560.7,
+      "text": "so you can go ask him in person"
+    },
+    {
+      "start": 560.7,
+      "end": 564.18,
+      "text": "about the philosophy of software design if you want to."
+    },
+    {
+      "start": 564.18,
+      "end": 565.26,
+      "text": "But it brings us to this question of like"
+    },
+    {
+      "start": 565.26,
+      "end": 568.3,
+      "text": "why can't models do software maintainability?"
+    },
+    {
+      "start": 568.3,
+      "end": 569.7,
+      "text": "And you may also be saying"
+    },
+    {
+      "start": 569.7,
+      "end": 573.42,
+      "text": "but surely the models have gotten much better since then."
+    },
+    {
+      "start": 573.42,
+      "end": 575.02,
+      "text": "They've gotten better in some ways"
+    },
+    {
+      "start": 575.02,
+      "end": 577.26,
+      "text": "but they're still about the same in others."
+    },
+    {
+      "start": 577.26,
+      "end": 578.88,
+      "text": "If you want to solve one off problems"
+    },
+    {
+      "start": 578.88,
+      "end": 580.78,
+      "text": "or vibe code a new marketing site"
+    },
+    {
+      "start": 580.78,
+      "end": 584.34,
+      "text": "yes they got way better since 2025 and 2024."
+    },
+    {
+      "start": 584.34,
+      "end": 586.7,
+      "text": "But as far as improving code base quality"
+    },
+    {
+      "start": 586.78,
+      "end": 589.34,
+      "text": "I think they have not gotten much better."
+    },
+    {
+      "start": 589.34,
+      "end": 591.22,
+      "text": "Now I cannot prove this"
+    },
+    {
+      "start": 591.22,
+      "end": 593.12,
+      "text": "because there are no good benchmarks"
+    },
+    {
+      "start": 593.12,
+      "end": 595.9,
+      "text": "for a model's ability to maintain code base quality"
+    },
+    {
+      "start": 595.9,
+      "end": 598.5,
+      "text": "and I'll get into like where we're going with that."
+    },
+    {
+      "start": 598.5,
+      "end": 600.34,
+      "text": "But if you've worked with coding agents for a while"
+    },
+    {
+      "start": 600.34,
+      "end": 601.58,
+      "text": "a lot of people are posting about this"
+    },
+    {
+      "start": 601.58,
+      "end": 603.78,
+      "text": "it's just like you probably have this vibe"
+    },
+    {
+      "start": 603.78,
+      "end": 606.06,
+      "text": "that they generally make things worse over time"
+    },
+    {
+      "start": 606.06,
+      "end": 608.46,
+      "text": "and make the code base harder to work in."
+    },
+    {
+      "start": 608.46,
+      "end": 609.94,
+      "text": "And to figure out why this happens"
+    },
+    {
+      "start": 609.94,
+      "end": 613.16,
+      "text": "I'm gonna zoom out to the first great coding agent."
+    },
+    {
+      "start": 613.16,
+      "end": 616.8,
+      "text": "Why did Cloud Code go from nothing to four billion"
+    },
+    {
+      "start": 616.8,
+      "end": 619.56,
+      "text": "and I think now they're at nine billion in revenue"
+    },
+    {
+      "start": 619.56,
+      "end": 621.8,
+      "text": "in under a year?"
+    },
+    {
+      "start": 621.8,
+      "end": 623.98,
+      "text": "Because they were great CLI agents before Cloud Code."
+    },
+    {
+      "start": 623.98,
+      "end": 625.26,
+      "text": "You had Adir, you had CodeBuff,"
+    },
+    {
+      "start": 625.26,
+      "end": 627.22,
+      "text": "there was a bunch of tools in this category."
+    },
+    {
+      "start": 627.22,
+      "end": 628.54,
+      "text": "They had all the same tools,"
+    },
+    {
+      "start": 628.54,
+      "end": 630.9,
+      "text": "read, write, edit, grab, bash."
+    },
+    {
+      "start": 630.9,
+      "end": 631.9,
+      "text": "So what was the difference?"
+    },
+    {
+      "start": 631.9,
+      "end": 635.18,
+      "text": "The difference was that this was the first time"
+    },
+    {
+      "start": 635.18,
+      "end": 638.42,
+      "text": "that a model lab trained a model against the harness"
+    },
+    {
+      "start": 638.42,
+      "end": 640.82,
+      "text": "that they were gonna distribute it to users in."
+    },
+    {
+      "start": 640.82,
+      "end": 642.34,
+      "text": "And it got really, really good"
+    },
+    {
+      "start": 642.34,
+      "end": 643.3,
+      "text": "and this is just some of the tools"
+    },
+    {
+      "start": 643.94,
+      "end": 644.78,
+      "text": "but it got really, really good"
+    },
+    {
+      "start": 644.78,
+      "end": 647.82,
+      "text": "at calling these sorts of tools in an agentic loop."
+    },
+    {
+      "start": 647.82,
+      "end": 651.06,
+      "text": "In fact, the OpenAI team did a talk in November"
+    },
+    {
+      "start": 651.06,
+      "end": 655.92,
+      "text": "about basically if you are a harness builder"
+    },
+    {
+      "start": 655.92,
+      "end": 657.16,
+      "text": "and you don't own the model weights"
+    },
+    {
+      "start": 657.16,
+      "end": 659.5,
+      "text": "and you can't RL the model in your harness"
+    },
+    {
+      "start": 659.5,
+      "end": 661.32,
+      "text": "you will always be at a disadvantage"
+    },
+    {
+      "start": 661.32,
+      "end": 663.2,
+      "text": "compared to somebody who owns"
+    },
+    {
+      "start": 663.2,
+      "end": 665.28,
+      "text": "both the model and the harness."
+    },
+    {
+      "start": 665.28,
+      "end": 666.98,
+      "text": "And I'm gonna cite a couple slides"
+    },
+    {
+      "start": 666.98,
+      "end": 668.36,
+      "text": "from my buddy Calvin French-Owen"
+    },
+    {
+      "start": 668.36,
+      "end": 671.8,
+      "text": "who was a MTS on codecs during the initial launch."
+    },
+    {
+      "start": 671.8,
+      "end": 674.04,
+      "text": "But LMs are just next token predictors."
+    },
+    {
+      "start": 674.04,
+      "end": 675.48,
+      "text": "This is a slide from over a year ago"
+    },
+    {
+      "start": 675.48,
+      "end": 677.36,
+      "text": "where basically as you're doing your agentic loop"
+    },
+    {
+      "start": 677.36,
+      "end": 680.26,
+      "text": "context window goes in, next step comes out."
+    },
+    {
+      "start": 680.26,
+      "end": 681.46,
+      "text": "And we're gonna try to do this,"
+    },
+    {
+      "start": 681.46,
+      "end": 682.3,
+      "text": "I haven't actually timed this,"
+    },
+    {
+      "start": 682.3,
+      "end": 683.58,
+      "text": "but we're gonna see if we can do coding agent"
+    },
+    {
+      "start": 683.58,
+      "end": 686.42,
+      "text": "reinforcement learning in 60 seconds."
+    },
+    {
+      "start": 686.42,
+      "end": 687.9,
+      "text": "So what we're gonna do if we wanna train a model"
+    },
+    {
+      "start": 687.9,
+      "end": 689.08,
+      "text": "to get better at tool calling,"
+    },
+    {
+      "start": 689.08,
+      "end": 690.94,
+      "text": "better at solving software problems,"
+    },
+    {
+      "start": 690.94,
+      "end": 691.78,
+      "text": "we're gonna generate a bunch of,"
+    },
+    {
+      "start": 691.78,
+      "end": 692.62,
+      "text": "we're gonna give it a problem"
+    },
+    {
+      "start": 692.62,
+      "end": 694.46,
+      "text": "and we're gonna generate a bunch of traces."
+    },
+    {
+      "start": 694.46,
+      "end": 696.34,
+      "text": "Try to solve the problem a bunch of different times."
+    },
+    {
+      "start": 696.34,
+      "end": 698.06,
+      "text": "We're gonna score them all on correctness"
+    },
+    {
+      "start": 698.06,
+      "end": 700.22,
+      "text": "and did the test pass and all this stuff."
+    },
+    {
+      "start": 700.22,
+      "end": 701.38,
+      "text": "And then we're gonna reinforce."
+    },
+    {
+      "start": 701.38,
+      "end": 703.5,
+      "text": "We're gonna make the bad behavior less likely"
+    },
+    {
+      "start": 703.5,
+      "end": 704.78,
+      "text": "and we're gonna update the weights"
+    },
+    {
+      "start": 704.78,
+      "end": 707.73,
+      "text": "to make the good behavior more likely."
+    },
+    {
+      "start": 707.73,
+      "end": 709.17,
+      "text": "This is one of the classic ones here"
+    },
+    {
+      "start": 709.17,
+      "end": 710.91,
+      "text": "is suite bench multilingual."
+    },
+    {
+      "start": 710.91,
+      "end": 712.17,
+      "text": "They're about 15 minute tasks."
+    },
+    {
+      "start": 712.17,
+      "end": 714.03,
+      "text": "They're from open source repos like Redis,"
+    },
+    {
+      "start": 714.03,
+      "end": 715.89,
+      "text": "JQ and Django and all this stuff."
+    },
+    {
+      "start": 715.89,
+      "end": 717.93,
+      "text": "And they have binary one or zero rewards"
+    },
+    {
+      "start": 717.93,
+      "end": 720.53,
+      "text": "on did you fix the problem you were trying to fix"
+    },
+    {
+      "start": 720.53,
+      "end": 723.01,
+      "text": "and did you do it without breaking anything else?"
+    },
+    {
+      "start": 723.01,
+      "end": 724.45,
+      "text": "And we look at actually a real problem"
+    },
+    {
+      "start": 724.45,
+      "end": 725.33,
+      "text": "from one of these benchmarks."
+    },
+    {
+      "start": 725.33,
+      "end": 727.97,
+      "text": "This is Fastlane which is a Ruby project."
+    },
+    {
+      "start": 727.97,
+      "end": 729.03,
+      "text": "Basically there was some issue"
+    },
+    {
+      "start": 729.03,
+      "end": 730.29,
+      "text": "where we weren't checking for nil"
+    },
+    {
+      "start": 730.29,
+      "end": 731.61,
+      "text": "and we have a stack trace blow up"
+    },
+    {
+      "start": 732.43,
+      "end": 733.47,
+      "text": "because you have a null pointer exception."
+    },
+    {
+      "start": 733.47,
+      "end": 736.69,
+      "text": "And in this benchmark you have a base commit"
+    },
+    {
+      "start": 736.69,
+      "end": 738.21,
+      "text": "that we're gonna check out before the issue"
+    },
+    {
+      "start": 738.21,
+      "end": 740.97,
+      "text": "was solved by a human in the past."
+    },
+    {
+      "start": 740.97,
+      "end": 742.69,
+      "text": "We're gonna give it a test patch"
+    },
+    {
+      "start": 742.69,
+      "end": 745.53,
+      "text": "that says here's what the behavior should be afterwards."
+    },
+    {
+      "start": 745.53,
+      "end": 746.57,
+      "text": "We have a golden patch."
+    },
+    {
+      "start": 746.57,
+      "end": 748.61,
+      "text": "Both of these are hidden from the model."
+    },
+    {
+      "start": 748.61,
+      "end": 750.93,
+      "text": "And so we have the agent go try to solve the problem."
+    },
+    {
+      "start": 750.93,
+      "end": 752.21,
+      "text": "We store its patch."
+    },
+    {
+      "start": 752.21,
+      "end": 754.69,
+      "text": "We undo all the changes it made to any test files"
+    },
+    {
+      "start": 754.69,
+      "end": 756.89,
+      "text": "because I'm sure you've seen models comment out tests"
+    },
+    {
+      "start": 756.89,
+      "end": 758.61,
+      "text": "just to get things working."
+    },
+    {
+      "start": 758.61,
+      "end": 761.97,
+      "text": "And then we're going to apply our golden test patch"
+    },
+    {
+      "start": 761.97,
+      "end": 763.25,
+      "text": "and then we're gonna run the test."
+    },
+    {
+      "start": 763.25,
+      "end": 765.03,
+      "text": "Old test and did the new test pass."
+    },
+    {
+      "start": 765.03,
+      "end": 767.93,
+      "text": "And if they both pass then we get the reward"
+    },
+    {
+      "start": 767.93,
+      "end": 769.29,
+      "text": "otherwise we don't."
+    },
+    {
+      "start": 769.29,
+      "end": 771.61,
+      "text": "And so models are trying to get the test to pass."
+    },
+    {
+      "start": 771.61,
+      "end": 772.77,
+      "text": "There's no way in this system"
+    },
+    {
+      "start": 772.77,
+      "end": 774.93,
+      "text": "that we can penalize it for poor program design"
+    },
+    {
+      "start": 774.93,
+      "end": 777.63,
+      "text": "or for eroding the maintainability of our systems."
+    },
+    {
+      "start": 777.63,
+      "end": 779.37,
+      "text": "That's why we get things like this."
+    },
+    {
+      "start": 779.37,
+      "end": 781.25,
+      "text": "Try catches around things that probably"
+    },
+    {
+      "start": 781.25,
+      "end": 782.89,
+      "text": "don't need a try catch."
+    },
+    {
+      "start": 782.89,
+      "end": 784.05,
+      "text": "Or things like this."
+    },
+    {
+      "start": 784.05,
+      "end": 785.89,
+      "text": "I think Bibob gave us this example earlier"
+    },
+    {
+      "start": 785.89,
+      "end": 787.37,
+      "text": "of casting things to other things"
+    },
+    {
+      "start": 787.37,
+      "end": 791.09,
+      "text": "just so the model can, it just wants to get the test to pass."
+    },
+    {
+      "start": 791.09,
+      "end": 794.45,
+      "text": "And so if you can't verify the maintainability of the code"
+    },
+    {
+      "start": 794.45,
+      "end": 797.21,
+      "text": "it gets way harder to train on this stuff."
+    },
+    {
+      "start": 797.21,
+      "end": 798.69,
+      "text": "So you remember this picture."
+    },
+    {
+      "start": 798.69,
+      "end": 800.53,
+      "text": "Verifying code quality and maintainability"
+    },
+    {
+      "start": 800.53,
+      "end": 802.29,
+      "text": "is orders of magnitude harder"
+    },
+    {
+      "start": 802.29,
+      "end": 804.41,
+      "text": "than the code runs and the test pass."
+    },
+    {
+      "start": 804.41,
+      "end": 806.89,
+      "text": "Because the cost function of bad architecture"
+    },
+    {
+      "start": 806.89,
+      "end": 809.05,
+      "text": "is measured in months and years"
+    },
+    {
+      "start": 809.05,
+      "end": 810.81,
+      "text": "if you have a coding episode"
+    },
+    {
+      "start": 810.81,
+      "end": 812.69,
+      "text": "and then you only find out months later"
+    },
+    {
+      "start": 812.69,
+      "end": 815.41,
+      "text": "that like ooh, somebody vibed this a little bit too hard."
+    },
+    {
+      "start": 815.41,
+      "end": 817.61,
+      "text": "It's really hard to propagate that reward signal"
+    },
+    {
+      "start": 817.61,
+      "end": 819.29,
+      "text": "back across the gap."
+    },
+    {
+      "start": 819.29,
+      "end": 821.73,
+      "text": "And now the frontier is getting better, slowly."
+    },
+    {
+      "start": 821.73,
+      "end": 822.57,
+      "text": "And since I know someone's gonna be"
+    },
+    {
+      "start": 822.57,
+      "end": 824.13,
+      "text": "in the YouTube comments about this,"
+    },
+    {
+      "start": 824.13,
+      "end": 826.19,
+      "text": "yes I know benchmarks and verifiers are different"
+    },
+    {
+      "start": 826.19,
+      "end": 828.25,
+      "text": "and they actually have to be separate data sets"
+    },
+    {
+      "start": 828.25,
+      "end": 829.57,
+      "text": "but they're shaped the same"
+    },
+    {
+      "start": 829.57,
+      "end": 831.25,
+      "text": "and the structure of these benchmarks"
+    },
+    {
+      "start": 831.25,
+      "end": 832.17,
+      "text": "is directionally correct."
+    },
+    {
+      "start": 832.17,
+      "end": 833.43,
+      "text": "So we're gonna look at these as like"
+    },
+    {
+      "start": 833.43,
+      "end": 836.81,
+      "text": "what is the future of evaluating code maintainability?"
+    },
+    {
+      "start": 836.81,
+      "end": 838.37,
+      "text": "There's a really cool one called Sweet Marathon"
+    },
+    {
+      "start": 838.37,
+      "end": 840.89,
+      "text": "from Abundant AI where they do like 400 hour tasks"
+    },
+    {
+      "start": 840.89,
+      "end": 842.89,
+      "text": "of like clone all of Microsoft Excel"
+    },
+    {
+      "start": 842.89,
+      "end": 844.41,
+      "text": "every single feature."
+    },
+    {
+      "start": 844.41,
+      "end": 847.29,
+      "text": "And they have some sophisticated reward channel stuff."
+    },
+    {
+      "start": 847.29,
+      "end": 850.49,
+      "text": "DeepSwee from DataCurve is also like large tasks"
+    },
+    {
+      "start": 850.49,
+      "end": 853.73,
+      "text": "on OSS repos that are not actually in the training set"
+    },
+    {
+      "start": 853.73,
+      "end": 856.41,
+      "text": "because they were never actually built in the real world."
+    },
+    {
+      "start": 856.41,
+      "end": 858.65,
+      "text": "And then you have Frontier Code from Cognition"
+    },
+    {
+      "start": 858.65,
+      "end": 860.37,
+      "text": "which is multi-PR tasks."
+    },
+    {
+      "start": 860.37,
+      "end": 861.57,
+      "text": "They do interesting things like hey,"
+    },
+    {
+      "start": 861.57,
+      "end": 863.21,
+      "text": "if the model writes tests that don't fail"
+    },
+    {
+      "start": 863.21,
+      "end": 865.97,
+      "text": "on the pre-patch code then it gets penalized."
+    },
+    {
+      "start": 865.97,
+      "end": 868.21,
+      "text": "And then we have a judge model that says okay,"
+    },
+    {
+      "start": 868.21,
+      "end": 871.05,
+      "text": "did this follow all of our code quality rules?"
+    },
+    {
+      "start": 871.05,
+      "end": 872.25,
+      "text": "So we're getting better but I think models"
+    },
+    {
+      "start": 872.25,
+      "end": 874.33,
+      "text": "judging quality can only go so far."
+    },
+    {
+      "start": 875.21,
+      "end": 877.77,
+      "text": "If the model knew what good code looks like,"
+    },
+    {
+      "start": 877.77,
+      "end": 880.49,
+      "text": "it would probably write it in the first place."
+    },
+    {
+      "start": 880.49,
+      "end": 883.35,
+      "text": "And review agents and throwing more tokens at the problem,"
+    },
+    {
+      "start": 883.35,
+      "end": 886.61,
+      "text": "it can raise the floor but we're still constrained"
+    },
+    {
+      "start": 886.61,
+      "end": 888.77,
+      "text": "by what we can teach during RL."
+    },
+    {
+      "start": 888.77,
+      "end": 890.85,
+      "text": "And so I will posit that for now"
+    },
+    {
+      "start": 890.85,
+      "end": 892.87,
+      "text": "we're stuck reading the code."
+    },
+    {
+      "start": 892.87,
+      "end": 894.41,
+      "text": "But we can still move pretty fast."
+    },
+    {
+      "start": 894.41,
+      "end": 895.41,
+      "text": "And of course there's a world"
+    },
+    {
+      "start": 895.41,
+      "end": 897.49,
+      "text": "where this is solved in the future"
+    },
+    {
+      "start": 897.49,
+      "end": 898.93,
+      "text": "and if you wanna just keep yoloing prompts"
+    },
+    {
+      "start": 898.93,
+      "end": 900.17,
+      "text": "until you get to GPT-70"
+    },
+    {
+      "start": 900.17,
+      "end": 903.37,
+      "text": "you don't have to think about this by all means, please."
+    },
+    {
+      "start": 903.37,
+      "end": 904.41,
+      "text": "But bit or less can be damned,"
+    },
+    {
+      "start": 904.41,
+      "end": 905.61,
+      "text": "we've got some problems to solve"
+    },
+    {
+      "start": 905.61,
+      "end": 907.77,
+      "text": "so let's engineer our way out of this."
+    },
+    {
+      "start": 908.85,
+      "end": 910.01,
+      "text": "So turning the lights back on,"
+    },
+    {
+      "start": 910.01,
+      "end": 912.13,
+      "text": "we're gonna put the code review back."
+    },
+    {
+      "start": 912.13,
+      "end": 913.53,
+      "text": "We're gonna embrace this approach"
+    },
+    {
+      "start": 913.53,
+      "end": 916.17,
+      "text": "of how do we plan up front to reduce the chance"
+    },
+    {
+      "start": 916.17,
+      "end": 918.93,
+      "text": "that we have a long or difficult review process."
+    },
+    {
+      "start": 918.93,
+      "end": 919.77,
+      "text": "We're gonna find leverage,"
+    },
+    {
+      "start": 919.77,
+      "end": 922.05,
+      "text": "we're gonna use AI to help with this."
+    },
+    {
+      "start": 922.05,
+      "end": 922.89,
+      "text": "The first thing we're gonna do"
+    },
+    {
+      "start": 922.89,
+      "end": 924.69,
+      "text": "is we're gonna do some sort of product review,"
+    },
+    {
+      "start": 924.69,
+      "end": 926.45,
+      "text": "understanding what problem we're solving,"
+    },
+    {
+      "start": 926.45,
+      "end": 927.61,
+      "text": "what's the desired behavior,"
+    },
+    {
+      "start": 927.61,
+      "end": 928.85,
+      "text": "maybe looking at mock-ups."
+    },
+    {
+      "start": 928.85,
+      "end": 930.69,
+      "text": "Here's a product review I was working on yesterday"
+    },
+    {
+      "start": 930.69,
+      "end": 933.01,
+      "text": "with a mock-up of a new feature."
+    },
+    {
+      "start": 933.01,
+      "end": 934.21,
+      "text": "Once we have our product review,"
+    },
+    {
+      "start": 934.21,
+      "end": 935.65,
+      "text": "we're gonna, by the way,"
+    },
+    {
+      "start": 935.65,
+      "end": 938.29,
+      "text": "small stuff still just goes straight to the agent."
+    },
+    {
+      "start": 938.29,
+      "end": 939.33,
+      "text": "But once we have the product review"
+    },
+    {
+      "start": 939.33,
+      "end": 941.21,
+      "text": "we're gonna also do architecture, system architecture."
+    },
+    {
+      "start": 941.21,
+      "end": 942.53,
+      "text": "A lot of people have been doing this for a while,"
+    },
+    {
+      "start": 942.53,
+      "end": 946.29,
+      "text": "component contracts, data models, constraints."
+    },
+    {
+      "start": 946.29,
+      "end": 948.21,
+      "text": "This is an example of a dock that we build"
+    },
+    {
+      "start": 948.21,
+      "end": 950.53,
+      "text": "to understand how these systems are gonna fit together"
+    },
+    {
+      "start": 950.53,
+      "end": 952.85,
+      "text": "and what's like the high-level picture of it."
+    },
+    {
+      "start": 952.85,
+      "end": 954.11,
+      "text": "From there we do something"
+    },
+    {
+      "start": 954.11,
+      "end": 956.37,
+      "text": "that I think is really under-emphasized"
+    },
+    {
+      "start": 956.37,
+      "end": 957.89,
+      "text": "in agent decoding these days,"
+    },
+    {
+      "start": 957.89,
+      "end": 959.33,
+      "text": "which is program design."
+    },
+    {
+      "start": 959.33,
+      "end": 960.21,
+      "text": "I think people assume"
+    },
+    {
+      "start": 960.21,
+      "end": 961.65,
+      "text": "that once you get the architecture right"
+    },
+    {
+      "start": 961.65,
+      "end": 962.89,
+      "text": "the model can just cook."
+    },
+    {
+      "start": 963.73,
+      "end": 967.29,
+      "text": "But we often look into the types and the method signatures,"
+    },
+    {
+      "start": 967.29,
+      "end": 969.33,
+      "text": "the program layout and the call stacks."
+    },
+    {
+      "start": 969.33,
+      "end": 970.33,
+      "text": "And so here's some examples,"
+    },
+    {
+      "start": 970.33,
+      "end": 971.33,
+      "text": "I don't think you'll be able to read this one,"
+    },
+    {
+      "start": 971.33,
+      "end": 973.29,
+      "text": "but this is like the level of abstraction we're at"
+    },
+    {
+      "start": 973.29,
+      "end": 975.29,
+      "text": "is how are we actually gonna lay this stuff out"
+    },
+    {
+      "start": 975.29,
+      "end": 977.73,
+      "text": "and how are these systems gonna interact?"
+    },
+    {
+      "start": 977.73,
+      "end": 979.05,
+      "text": "Dylan Mulroy from Cloudflare"
+    },
+    {
+      "start": 979.05,
+      "end": 981.77,
+      "text": "talks a lot about how he's using these call graphs"
+    },
+    {
+      "start": 981.77,
+      "end": 983.05,
+      "text": "as part of his planning process."
+    },
+    {
+      "start": 983.05,
+      "end": 985.09,
+      "text": "I think this is exactly right."
+    },
+    {
+      "start": 985.09,
+      "end": 987.09,
+      "text": "And then once we've done the program design"
+    },
+    {
+      "start": 987.09,
+      "end": 989.05,
+      "text": "we can do this thing called vertical slices,"
+    },
+    {
+      "start": 989.05,
+      "end": 991.19,
+      "text": "which is the order of implementation,"
+    },
+    {
+      "start": 991.23,
+      "end": 992.43,
+      "text": "multi-repo coordination."
+    },
+    {
+      "start": 992.43,
+      "end": 994.59,
+      "text": "How are we gonna build this across our entire system"
+    },
+    {
+      "start": 994.59,
+      "end": 996.53,
+      "text": "and how are we gonna check it along the way?"
+    },
+    {
+      "start": 996.53,
+      "end": 997.37,
+      "text": "I've talked a little bit"
+    },
+    {
+      "start": 997.37,
+      "end": 999.39,
+      "text": "about how models have horizontal plans."
+    },
+    {
+      "start": 999.39,
+      "end": 1000.55,
+      "text": "I won't go too deep into it."
+    },
+    {
+      "start": 1000.55,
+      "end": 1002.15,
+      "text": "If you want to learn more about this"
+    },
+    {
+      "start": 1002.15,
+      "end": 1005.35,
+      "text": "you can go watch our talk from AI Engineer Miami."
+    },
+    {
+      "start": 1005.35,
+      "end": 1007.03,
+      "text": "Couple shots of a doc like this"
+    },
+    {
+      "start": 1007.03,
+      "end": 1007.95,
+      "text": "going through the tests"
+    },
+    {
+      "start": 1007.95,
+      "end": 1010.47,
+      "text": "and the steps in between each phase."
+    },
+    {
+      "start": 1010.47,
+      "end": 1013.43,
+      "text": "The main idea here is 30 minutes over here"
+    },
+    {
+      "start": 1013.43,
+      "end": 1015.05,
+      "text": "in pre-planning and alignment"
+    },
+    {
+      "start": 1015.05,
+      "end": 1016.83,
+      "text": "can save you hours in review."
+    },
+    {
+      "start": 1016.83,
+      "end": 1018.59,
+      "text": "And so it's actually feasible"
+    },
+    {
+      "start": 1018.59,
+      "end": 1020.87,
+      "text": "to still read every line of code."
+    },
+    {
+      "start": 1021.99,
+      "end": 1023.27,
+      "text": "We'll skip this part."
+    },
+    {
+      "start": 1023.27,
+      "end": 1025.87,
+      "text": "Basically, the summary here is like"
+    },
+    {
+      "start": 1025.87,
+      "end": 1027.67,
+      "text": "you don't have too many PRs."
+    },
+    {
+      "start": 1027.67,
+      "end": 1029.49,
+      "text": "If you're drowning in PRs"
+    },
+    {
+      "start": 1029.49,
+      "end": 1031.71,
+      "text": "you actually have too many bad PRs."
+    },
+    {
+      "start": 1032.97,
+      "end": 1035.73,
+      "text": "Because a good PR is a joy to review."
+    },
+    {
+      "start": 1035.73,
+      "end": 1036.67,
+      "text": "You're just reading through like,"
+    },
+    {
+      "start": 1036.67,
+      "end": 1038.33,
+      "text": "yep, this is great, this is what we discussed,"
+    },
+    {
+      "start": 1038.33,
+      "end": 1040.21,
+      "text": "this is what we talked about."
+    },
+    {
+      "start": 1040.21,
+      "end": 1042.65,
+      "text": "But even if a PR needs 20% rework,"
+    },
+    {
+      "start": 1042.65,
+      "end": 1045.97,
+      "text": "which is generous for a lot of AI vibe coded slop,"
+    },
+    {
+      "start": 1046.97,
+      "end": 1049.73,
+      "text": "it's an emotional and intellectual burden"
+    },
+    {
+      "start": 1049.73,
+      "end": 1052.49,
+      "text": "on both the reviewer and the submitter."
+    },
+    {
+      "start": 1052.49,
+      "end": 1055.41,
+      "text": "And so if you use model assisted planning and alignment"
+    },
+    {
+      "start": 1055.41,
+      "end": 1056.33,
+      "text": "your alignment is shorter"
+    },
+    {
+      "start": 1056.33,
+      "end": 1059.01,
+      "text": "because you used AI to get all the information at once."
+    },
+    {
+      "start": 1059.01,
+      "end": 1060.81,
+      "text": "Your code review is faster"
+    },
+    {
+      "start": 1060.81,
+      "end": 1062.25,
+      "text": "because you aligned up front"
+    },
+    {
+      "start": 1062.25,
+      "end": 1064.05,
+      "text": "and your coding is faster because AI did it."
+    },
+    {
+      "start": 1064.05,
+      "end": 1066.09,
+      "text": "And so now you're actually really moving faster"
+    },
+    {
+      "start": 1066.09,
+      "end": 1067.21,
+      "text": "but you're still reading everything"
+    },
+    {
+      "start": 1067.21,
+      "end": 1069.01,
+      "text": "and you're still owning the code."
+    },
+    {
+      "start": 1069.01,
+      "end": 1071.61,
+      "text": "So, closing advice."
+    },
+    {
+      "start": 1071.61,
+      "end": 1072.97,
+      "text": "It's easy to hear all this"
+    },
+    {
+      "start": 1072.97,
+      "end": 1074.67,
+      "text": "and be a little bummed out."
+    },
+    {
+      "start": 1074.71,
+      "end": 1077.79,
+      "text": "I really like the world where we just YOLO everything"
+    },
+    {
+      "start": 1077.79,
+      "end": 1080.99,
+      "text": "and we can just like not have to ever read code ever again."
+    },
+    {
+      "start": 1080.99,
+      "end": 1084.15,
+      "text": "But we're engineers and these are just constraints"
+    },
+    {
+      "start": 1084.15,
+      "end": 1085.43,
+      "text": "and models are good at certain things"
+    },
+    {
+      "start": 1085.43,
+      "end": 1086.79,
+      "text": "and they're not good at other things."
+    },
+    {
+      "start": 1086.79,
+      "end": 1089.27,
+      "text": "And so go figure out how to solve problems"
+    },
+    {
+      "start": 1089.27,
+      "end": 1091.35,
+      "text": "given a set of constraints."
+    },
+    {
+      "start": 1091.35,
+      "end": 1092.65,
+      "text": "Use loops, they're great."
+    },
+    {
+      "start": 1092.65,
+      "end": 1095.59,
+      "text": "Go solve hard problems, seek leverage."
+    },
+    {
+      "start": 1095.59,
+      "end": 1097.07,
+      "text": "If you wanna help with this"
+    },
+    {
+      "start": 1097.07,
+      "end": 1097.91,
+      "text": "we're building human layer."
+    },
+    {
+      "start": 1097.91,
+      "end": 1100.97,
+      "text": "Human layer is an AI IDE and collaboration platform."
+    },
+    {
+      "start": 1100.97,
+      "end": 1103.89,
+      "text": "It's building blocks for your software factory"
+    },
+    {
+      "start": 1103.89,
+      "end": 1107.57,
+      "text": "and soon to be better verifiers for software quality."
+    },
+    {
+      "start": 1107.57,
+      "end": 1109.65,
+      "text": "We've got sort of a big mob for cloud code"
+    },
+    {
+      "start": 1109.65,
+      "end": 1111.85,
+      "text": "and codec style collaborative workspace."
+    },
+    {
+      "start": 1111.85,
+      "end": 1113.49,
+      "text": "It walks you through the workflows"
+    },
+    {
+      "start": 1113.49,
+      "end": 1115.81,
+      "text": "for doing this sort of work."
+    },
+    {
+      "start": 1115.81,
+      "end": 1118.57,
+      "text": "And we are talking to design partners."
+    },
+    {
+      "start": 1118.57,
+      "end": 1121.85,
+      "text": "We are hiring founding engineers here in San Francisco"
+    },
+    {
+      "start": 1121.85,
+      "end": 1123.75,
+      "text": "and these slides are live."
+    },
+    {
+      "start": 1123.75,
+      "end": 1125.13,
+      "text": "You can go get them right now."
+    },
+    {
+      "start": 1125.13,
+      "end": 1128.17,
+      "text": "You can try human layer at humanlayer.com."
+    },
+    {
+      "start": 1128.17,
+      "end": 1129.57,
+      "text": "It's free for small teams."
+    },
+    {
+      "start": 1129.57,
+      "end": 1132.49,
+      "text": "Go solve hard problems in complex code bases."
+    },
+    {
+      "start": 1132.49,
+      "end": 1133.89,
+      "text": "Thank you all for your energy."
+    }
+  ]
+}

@@ -9,6 +9,22 @@ currently fails with `Permission denied (publickey)`). The fresh lights-off fact
 Public-release prep: `README.md`, `LICENSE` (MIT, © Nick Kutovyy), `NOTICE` (attribution request),
 `SECURITY.md`, `CONTRIBUTING.md`.
 
+## Compaction handoff (read this first)
+
+The next workstream is the **P0 software-factory quality/risk plan**, not another platform feature:
+
+1. Read `docs/SOFTWARE_FACTORY_WEAKNESSES.md` (evidence, failure modes, P0/P1/P2, acceptance criteria).
+2. Run `openspec show harden-factory-quality` and implement its tasks in order:
+   risk-tiered autonomy → architecture/maintainability assertions → planning artifacts → vertical slices →
+   review packet + high-risk human review.
+3. Keep the current guarantees: runner-only tool execution, model/harness agnosticism, provider-key boundary,
+   no Temporal/Postgres/provider credentials on remote hosts.
+4. Verify with `bun run ci`, `openspec validate --all`, `bash scripts/smoke.sh`, and the Playwright suite.
+5. Update help/README/STATUS/HANDOVER in the same change; archive `harden-factory-quality` only after the
+   live low-risk and high-risk mission checks pass.
+
+Do not treat the successful greenfield `hello-nextjs` mission as brownfield maintainability evidence.
+
 **Latest (2026-11-05):** live macOS M5 native and Linux Docker remote-runner verification. Real opencode
 chat runs completed on both backends: macOS with `RUNNER_BACKEND=local` + `RUNNER_SANDBOX=exec`
 (`run_mw3t7g4i_265452a4`) and Linux Docker on Docker Desktop (`run_mw3u0k5g_a1024e73`), with RustFS
@@ -50,6 +66,13 @@ complete without a PR. After deleting and recreating `hello-nextjs` fully lights
 validator-kind filtering, integrated-forge-repo validation, NUL-byte JSONB sanitisation, a progress watchdog,
 partial-feature verify ownership and empty mission-feature patches. `bun run ci` and `openspec validate` pass;
 Playwright mission smoke covers list/detail/cancel; `scripts/smoke.sh` passes including the rebuild dry run.
+
+**Next after compaction (2026-11-07):** implement the P0 software-factory quality/risk workstream in
+`openspec/changes/harden-factory-quality/`, guided by `docs/SOFTWARE_FACTORY_WEAKNESSES.md`. Order:
+(1) risk-tiered autonomy, (2) architecture/maintainability validation assertions, (3) planning artifacts,
+(4) vertical slices, (5) review packet + high-risk human review. The live `hello-nextjs` mission is a
+greenfield success, not brownfield maintainability evidence. Do not implement P0 in the same session as
+compaction preparation; start from the OpenSpec tasks and run the full CI/E2E/smoke verification.
 
 ## What exists
 
@@ -135,7 +158,11 @@ lets you validate wiring without touching a repo. GitHub delivers to
 
 ## Known gaps / next
 
-The full numbered list is in `docs/ROADMAP.md` §What's left. Highest-priority remaining:
+**P0 quality/risk workstream (next after compaction):** risk-tiered autonomy, architecture/maintainability
+assertions, upstream planning artifacts, vertical slices, and review packet/high-risk human review. See
+`docs/SOFTWARE_FACTORY_WEAKNESSES.md` and `openspec/changes/harden-factory-quality/`.
+
+The full numbered platform list is in `docs/ROADMAP.md` §What's left. Highest-priority remaining:
 
 1. **Runner metric retention + rollups.** Unblocked: raw 1-minute samples for 7 days, 5-minute rollups for
    30 days.
@@ -148,7 +175,7 @@ The full numbered list is in `docs/ROADMAP.md` §What's left. Highest-priority r
 7. **Live GitHub path.** Blocked on a PAT, real repository and webhook secret.
 8. **Phase 6c OIDC/IdP, Temporal Cloud, managed Postgres and multi-tenant isolation.** Blocked on
    IdP/infrastructure and cloud-account decisions.
-10. **Teams/Jira/GitLab deep integrations.** Unblocked but lower priority.
+9. **Teams/Jira/GitLab deep integrations.** Unblocked but lower priority.
 
 Full `runner: remote` factory cycles on macOS native and Linux Docker are done (work items
 `wi_01M6QNBWD32RBR54WJXZ29MN15` and `wi_01M6QSJCFF0BSWWPQTZHKXY0X7`; PRs #13 and #14), including

@@ -50,7 +50,9 @@ fixed: validator-kind filtering, integrated-forge-repo validation, NUL-byte JSON
 blocked-on-failure handling, a progress watchdog, partial-feature verify ownership, empty mission-feature patches,
 and planner guidance to require build/e2e assertions for runnable goals. A blocked mission's feature retry starts a
 fresh `MissionWorkflow` attempt at that milestone; pause/resume/cancel remain durable controls. `bun run ci` is 871
-pass / 190 skip; `openspec validate --all` is 35/35 with one pre-existing warning. See `docs/ROADMAP.md` §What's left.
+pass / 190 skip; `openspec validate --all` is 36/36 with one pre-existing warning (35 specs + the in-flight
+`harden-factory-quality` change). See `docs/ROADMAP.md` §What's left and §Software-factory quality & risk
+workstream.
 
 **Console connection recovery — implemented** (2026-11-07, OpenSpec `harden-console-connectivity`). The root layout
 now treats an unreachable `/auth/me` as a degraded session instead of “signed out”, so an API restart no longer
@@ -59,6 +61,14 @@ same-origin `/api/v1/health` proxy, retries every 5s, pauses auto-refresh while 
 components once the backend returns. Route-level `error.tsx` and root `global-error.tsx` show retry/reload panels
 instead of a white page; server reads time out after 10s (`API_TIMEOUT_MS`). Covered by auth-gate unit tests and a
 Playwright banner/retry spec.
+
+**Next — software-factory quality/risk P0 (planned, 2026-11-07).** The live greenfield mission is not proof of
+brownfield maintainability. The next workstream adds risk-tiered autonomy (low/medium/high; high-risk paths
+require human plan/review/merge even under full autonomy), architecture/maintainability validation assertions
+with thresholds, upstream planning artifacts (product review, architecture, program design, vertical slices),
+vertical-slice mission features, and a compact review packet with human review for high-risk work. Detailed
+findings, evidence and acceptance criteria: [`docs/SOFTWARE_FACTORY_WEAKNESSES.md`](SOFTWARE_FACTORY_WEAKNESSES.md).
+Prepared OpenSpec change: `harden-factory-quality` (P0 after compaction).
 
 **Remote runners + host observability — Linux, Windows and macOS native agents implemented** (2026-11-04/05, merged to
 `main`, archived OpenSpec `2026-11-04-add-remote-runners`; platform/artifact work in `2026-11-05-add-runner-platforms-and-artifacts`). A remote host enrolls from the console with a
