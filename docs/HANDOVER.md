@@ -11,7 +11,8 @@ Public-release prep: `README.md`, `LICENSE` (MIT, © Nick Kutovyy), `NOTICE` (at
 
 ## Compaction handoff (read this first)
 
-The next workstream is the **P0 software-factory quality/risk plan**, not another platform feature:
+The quality/risk plan is committed at `9add12e` (`docs: add software-factory quality risk plan`). The next
+workstream is the **P0 software-factory quality/risk plan**, not another platform feature:
 
 1. Read `docs/SOFTWARE_FACTORY_WEAKNESSES.md` (evidence, failure modes, P0/P1/P2, acceptance criteria).
 2. Run `openspec show harden-factory-quality` and implement its tasks in order:
