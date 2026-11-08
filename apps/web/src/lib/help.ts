@@ -277,12 +277,14 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'list',
         items: [
-          '`factory.yaml` — schemaVersion, agentDefaults, gates, mergePolicy, improvement, mcp.servers.',
+          '`factory.yaml` — schemaVersion, agentDefaults, gates, mergePolicy, improvement, `governance.risk`, validation checks and mcp.servers.',
           '`agents/<name>/agent.md` — role, model (may be `env:NAME`), harness, runner, tools, gates, MCP allow list.',
           '`automations/<name>/automation.md` — cron or webhook trigger plus the work it starts.',
           '`scorers/<name>/scorer.md` — labels, passing score, sampling rate, judge model and rubric.',
           '`benchmarks/<suite>/suite.yaml` + `tasks/*.yaml` — the configuration matrix and pinned tasks.',
           '`skills/<skill>/SKILL.md`, `runners/<name>.yaml`, `routing.yaml` — capability, execution and routing.',
+          '`governance.risk` — `defaultTier`, per-tier `planApproval`/`review`/`merge` policy and `highRiskPaths`. Absent means the conservative low/medium/high defaults.',
+          '`validation.checks` — optional explicit checks; `architecture` and `maintainability` tiers accept named thresholds and are inferred from scripts such as `arch:check` or `jscpd` when present.',
         ],
       },
       {
@@ -390,9 +392,10 @@ export const HELP_ENTRIES: HelpEntry[] = [
     slug: 'concepts/work-item-lifecycle',
     title: 'Work-item lifecycle',
     section: 'concepts',
-    status: 'Shipped — Phase 2b / 3c',
+    status:
+      'Shipped — Phase 2b / 3c; risk tiers, review packet and architecture/maintainability evidence in `2026-11-07-harden-factory-quality`',
     summary:
-      'Intake → triage → spec → plan → implement → review → verify → ship, with durable gates between stages and one terminal state.',
+      'Intake → triage → spec → plan → implement → review → verify → ship, with durable gates between stages, a risk-tiered review path and one terminal state.',
     blocks: [
       {
         kind: 'prose',
@@ -405,6 +408,9 @@ export const HELP_ENTRIES: HelpEntry[] = [
           'Intake: manual, webhook or automation creates the item and pins the `definitionCommit`.',
           'Stages: triage (intake judgement), spec (scope + acceptance criteria), plan, implement (branch + PR), review (two reviewers + advisory judge), verify (forge checks), ship (the only merge point).',
           'Gates: a human gate waits for `{decision, actor, reason}`; an agent gate lets the loop continue; `policy:<name>` delegates to a named policy.',
+          'Risk tier: a mission feature inherits its plan/feature `low`/`medium`/`high` tier. High-risk items force a human review gate and a human ship gate and never auto-merge; medium uses agent review + `auto_on_green`; low may auto-merge when verification is cheap and reliable.',
+          'Review packet: before a review gate the orchestrator records a deterministic `review.packet` event (intent, plan ref, diff stats, assertion evidence, architecture impact, open questions and checklist). It is a decision surface, not model prose; the full diff stays linked on the run.',
+          'Validation evidence: the contract can require `architecture` and `maintainability` checks with named thresholds (dependency cycles, duplication, diff size). Missing required evidence blocks the verify gate.',
           'Terminal states: `done`, `cancelled`, `rejected`, `failed`. Cancel is idempotent, records actor/reason and emits exactly one `work_item.cancelled` event.',
         ],
       },
@@ -424,9 +430,10 @@ export const HELP_ENTRIES: HelpEntry[] = [
     slug: 'concepts/gates-and-autonomy',
     title: 'Gates and autonomy',
     section: 'concepts',
-    status: 'Shipped — Phase 2b / 3c (ADR-013, ADR-018)',
+    status:
+      'Shipped — Phase 2b / 3c (ADR-013, ADR-018); risk-tiered autonomy in `2026-11-07-harden-factory-quality` (ADR-052)',
     summary:
-      'Gates resolve automation → factory → global. "Lights on" keeps a human on every stage; "lights off" makes every stage agent-driven and requires a benchmark attestation.',
+      'Gates resolve automation → factory → global. "Lights on" keeps a human on every stage; "lights off" makes every stage agent-driven and requires a benchmark attestation. Autonomy is then bounded by risk tier, not a single global switch.',
     blocks: [
       {
         kind: 'prose',
@@ -438,6 +445,8 @@ export const HELP_ENTRIES: HelpEntry[] = [
         items: [
           'Lights on (default): the factory is not fully autonomous, so human gates remain and a benchmark attestation is not required to merge.',
           'Lights off: every stage resolves to `agent` and the merge policy is automatic. Enabling it is refused with `benchmark_attestation_missing` unless a passing, calibrated, non-partial attestation matches the current commit + configuration hash — or an explicit `{actor, reason}` override is confirmed.',
+          'Risk tiers: `governance.risk` declares `low`/`medium`/`high` policy (`planApproval`, `review`, `merge`) and `highRiskPaths`. Only a `low`-risk plan may auto-approve; `medium` and `high` always wait for a human plan gate. High-risk paths (auth, billing, migrations, public API, security by default) escalate to `high` even under `autonomyLevel: full`.',
+          'High-risk work: a `high` work item forces a human review gate and a human ship gate and never auto-merges. The review gate shows the deterministic `review.packet`; agent review is triage, not the sole decision.',
           'Kill switch: pausing always works. It pauses new stage dispatch and forces every gate back to `human`; the autonomy read model reports enabled/paused, actor, reason, timestamp and the newest `autonomy.*` event.',
           'Gate decisions are durable: an approval is delivered as a Temporal Update (Signal fallback) and survives a worker restart.',
           'Agent gates decide from a verdict, not from a successful run: the stage prompt asks for a final fenced JSON block `{"verdict":"approve|request_changes|reject","summary":"...","findings":[...]}`, and `VERDICT: PASS` / `VERDICT: FAIL` lines are the textual fallback. A `request_changes` verdict feeds the normal loop and escalation path; `factory.yaml` › `agentVerdict: required` turns a missing verdict into `request_changes` (the default `advisory` approves, preserving older factories). The work-item gate history shows the verdict badge, its source and summary.',
@@ -678,9 +687,10 @@ export const HELP_ENTRIES: HelpEntry[] = [
     slug: 'concepts/merge-queue',
     title: 'Merge queue',
     section: 'concepts',
-    status: 'Shipped — Phase 3b (ADR-022/ADR-023)',
+    status:
+      'Shipped — Phase 3b (ADR-022/ADR-023); high-risk human ship gate in `2026-11-07-harden-factory-quality`',
     summary:
-      'When the integration sets `mergeQueue`, ship enqueues instead of merging; a deterministic merge train gates the merged stack and reverts only the offender.',
+      'When the integration sets `mergeQueue`, ship enqueues instead of merging; a deterministic merge train gates the merged stack and reverts only the offender. High-risk work cannot enqueue until a human approves the ship gate.',
     blocks: [
       {
         kind: 'prose',
@@ -691,6 +701,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
         kind: 'list',
         items: [
           'A stack that never reports within `MERGE_CHECKS_TIMEOUT_MS` fails `checks_timeout` and the whole batch is reverted — nothing merges.',
+          'Risk tier: high-risk work has `mergePolicy: human`, so the ship gate must be decided by a person before the PR can enqueue; low/medium work follows the factory merge policy.',
           'The queue key is the branch (`factory/<workItemId>`), so a reset forge cannot dedupe a fresh PR against a stale row.',
           'A human revert is a one-shot `MergeRevertWorkflow`, audited with actor + reason; it reverts, never force-pushes.',
           'Webhook deliveries are HMAC-verified before parsing, deduped by delivery id, filtered, and framed as untrusted input.',
@@ -1114,7 +1125,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'prose',
         text:
-          'Every public resource lives under `/api/v1` — factories, the batch `/inbox`, scoring, benchmarks, self-improvement, secrets, integrations and webhooks. Every factory-scoped resource is nested and addressed by the factory id: `/api/v1/factories/<factoryId>/work-items`, `/runs`, `/gates`, `/autonomy`, `/governance`, `/budget`, `/mcp`, `/capabilities`, `/intake`, `/scores`, `/calibration`, `/scoring`, `/benchmarks`, `/canary`, `/improvement`, `/proposals`, `/lessons`, `/merge-queue`, `/automations` and `/missions`. `GET /api/v1/inbox` is the one cross-factory read: it returns pending gates, permissions, failed runs and mission waits in one owner-scoped projection. There is no global `/work-items`, `/runs`, `/scores` or `/proposals` route, and factory-scoped requests carry the factory in the path — never `?factory=`. `GET /health` stays unversioned for probes, and `GET /api/v1/health` serves the same check to versioned clients. The document below is `GET /api/v1/openapi.json`; the API contract test fails when a served route is missing from it (or the document lists a route that is not served), so this page lists exactly what is live.',
+          'Every public resource lives under `/api/v1` — factories, the batch `/inbox`, scoring, benchmarks, self-improvement, secrets, integrations and webhooks. Every factory-scoped resource is nested and addressed by the factory id: `/api/v1/factories/<factoryId>/work-items`, `/runs`, `/gates`, `/autonomy`, `/governance`, `/budget`, `/mcp`, `/capabilities`, `/intake`, `/scores`, `/calibration`, `/scoring`, `/benchmarks`, `/canary`, `/improvement`, `/proposals`, `/lessons`, `/merge-queue`, `/automations` and `/missions`. `GET /api/v1/inbox` is the one cross-factory read: it returns pending gates (each with the newest deterministic `reviewPacket` when one exists), permissions, failed runs and mission waits (with the plan risk tier) in one owner-scoped projection. There is no global `/work-items`, `/runs`, `/scores` or `/proposals` route, and factory-scoped requests carry the factory in the path — never `?factory=`. `GET /health` stays unversioned for probes, and `GET /api/v1/health` serves the same check to versioned clients. The document below is `GET /api/v1/openapi.json`; the API contract test fails when a served route is missing from it (or the document lists a route that is not served), so this page lists exactly what is live.',
       },
       {
         kind: 'callout',
@@ -1131,6 +1142,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'list',
         items: [
+          'Risk and review data: mission plans expose `riskTier`/`riskReasons`, planning artifacts and `architecture`/`maintainability` assertions; the inbox gate projection adds `reviewPacket` for the work item. Both are additive `/api/v1` fields.',
           'Filter: the box above the operations narrows the list by path, method or summary as you type — useful with 61 paths on one page.',
           'Tags: groups are alphabetical and each carries a one-line description of the resource it covers, so `runs` and `work-items` are not just labels.',
           'Servers: the selector shows the console origin (`/`), which is where “Try it out” really sends requests. The raw document still advertises the direct API host (`http://localhost:8080`) for Postman and other Swagger UI imports — add `?servers=console` to `/api/openapi.json` to get the console-targeted copy.',
@@ -1225,6 +1237,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
           'Plan and contract: the risk tier badge and its reasons, the goal, plan version, contract version/source/enforce flag and every assertion with its tier (including `architecture` and `maintainability`), required flag, tool, expected evidence and any named thresholds, plus the planner\'s risks and assumptions.',
           'Upstream planning artifacts: product review (problem, desired behaviour, mockups), system architecture (summary, components and contracts, data models, constraints), program design (modules, public API, call graph) and vertical slices (ordered end-to-end behaviour, its features and checks). Each section renders only what the plan contains; for a medium/high-risk plan a missing section is shown as a missing section, never invented.',
           'Milestones and features: status per milestone (including `validating`), validation round, and per feature its status, order, dependencies, claimed assertion ids, risk tier, `slice`/`enabler` kind, the vertical slice it delivers, the work item that executes it and whether it is a fix feature from a finding. An enabler is scaffolding that a later slice verifies; a plan must contain at least one real slice. A feature already satisfied by the integrated branch completes without a PR and records `work_item.no_changes`.',
+          'High-risk features: the feature work item forces a human review gate and a human ship gate. The review gate shows the deterministic `review.packet` (intent, plan ref, diff stats, assertion evidence, architecture impact, open questions, checklist); the raw diff stays linked on the run.',
           'Timeline and checkpoints: the append-only mission event log (plan, feature, validation, control events) and the small durable state snapshots written at checkpoints.',
           'Validation rounds: scrutiny, user-testing and contract validators with their status, verdict, findings, evidence and a link to the fresh validator run.',
           'Linked work items: the items created for features, with stage, status, PR link and last update.',
@@ -1476,9 +1489,9 @@ export const HELP_ENTRIES: HelpEntry[] = [
     slug: 'factories/definition',
     title: 'Definition',
     section: 'menu',
-    status: 'Shipped — Phase 1 / 2b',
+    status: 'Shipped — Phase 1 / 2b; risk policy and quality validation in `2026-11-07-harden-factory-quality`',
     summary:
-      'A read-only projection of the git-backed definition: manifest, resolved config, file list, diff and version history.',
+      'A read-only projection of the git-backed definition: manifest, resolved config (including risk policy and validation checks), file list, diff and version history.',
     pageHref: factoryPageHref('definition'),
     pageHrefLabel: 'Open Definition (example factory)',
     blocks: [
@@ -1491,7 +1504,8 @@ export const HELP_ENTRIES: HelpEntry[] = [
         kind: 'list',
         items: [
           'Manifest: `factory.yaml` fields as declared.',
-          'Resolved config: models with `{ref, value, source}`, gates, merge policy, improvement authority, MCP servers.',
+          'Resolved config: models with `{ref, value, source}`, gates, merge policy, improvement authority, MCP servers, `governance.risk` tiers and high-risk paths.',
+          'Validation: the contract defaults and checks, including `architecture` and `maintainability` tiers with thresholds when declared or inferred.',
           'Files: the canonical export list; long values wrap so the page fits a 1280px viewport.',
         ],
       },
@@ -1505,9 +1519,9 @@ export const HELP_ENTRIES: HelpEntry[] = [
     slug: 'factories/gates',
     title: 'Gates',
     section: 'menu',
-    status: 'Shipped — Phase 2b / 3c / 4b',
+    status: 'Shipped — Phase 2b / 3c / 4b; risk policy in `2026-11-07-harden-factory-quality`',
     summary:
-      'The resolved gate table with its source, the autonomy policy and kill switch, the benchmark-attestation card and the canary state.',
+      'The resolved gate table with its source, the autonomy policy and kill switch, the risk-tier policy, the benchmark-attestation card and the canary state.',
     pageHref: factoryPageHref('gates'),
     pageHrefLabel: 'Open Gates (example factory)',
     blocks: [
@@ -1520,6 +1534,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
         kind: 'list',
         items: [
           'Stage table: gate, resolution source and meaning; merge policy with its note.',
+          'Risk policy: `low`/`medium`/`high` plan approval, review and merge rules plus the configured high-risk path globs. Only low-risk plans auto-approve; high-risk work forces human review and ship.',
           'Automation overrides: which automation raises/lowers which stage.',
           'Attestation card: required/not required, current/missing, suite rows with config hash and pass rate.',
           'Canary card: active/last rollout and a link to the canary panel.',
@@ -1537,9 +1552,9 @@ export const HELP_ENTRIES: HelpEntry[] = [
     slug: 'factories/merge-queue',
     title: 'Merge queue',
     section: 'menu',
-    status: 'Shipped — Phase 3b',
+    status: 'Shipped — Phase 3b; risk-tiered merge rules in `2026-11-07-harden-factory-quality`',
     summary:
-      'Batch size, checks timeout, the in-flight batch, the waiting queue and batch evidence (PRs, checks, bisect) with a manual revert.',
+      'Batch size, checks timeout, the in-flight batch, the waiting queue and batch evidence (PRs, checks, bisect) with a manual revert. High-risk work needs a human ship decision before it can enter the queue.',
     pageHref: factoryPageHref('merge-queue'),
     pageHrefLabel: 'Open Merge queue (example factory)',
     blocks: [
@@ -1552,6 +1567,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
         kind: 'list',
         items: [
           'In-flight batch: PRs merged in order, the merged-stack gate result and the checks timeout.',
+          'High-risk work: the ship gate is human and the merge policy is human, so nothing enters the queue until a person approves. Low/medium work can enqueue on green.',
           'Batches: PR/check/bisect evidence and events; the offender is marked `needs_human` with failing checks.',
           'Revert: one-shot workflow, requires actor + reason.',
         ],
@@ -1566,9 +1582,9 @@ export const HELP_ENTRIES: HelpEntry[] = [
     slug: 'factories/settings',
     title: 'Settings',
     section: 'menu',
-    status: 'Shipped — Phase 3b / 6a',
+    status: 'Shipped — Phase 3b / 6a; risk policy in `2026-11-07-harden-factory-quality`',
     summary:
-      'The manifest summary, repositories, secret references and the GitHub connection form (repos, webhook, dry run, merge ownership).',
+      'The manifest summary, repositories, secret references, risk policy and the GitHub connection form (repos, webhook, dry run, merge ownership).',
     pageHref: factoryPageHref('settings'),
     pageHrefLabel: 'Open Settings (example factory)',
     blocks: [
@@ -1582,6 +1598,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
         items: [
           'GitHub connection: token secret ref, webhook secret ref, webhook URL, filters, dry-run and merge-queue ownership.',
           'Repositories: the code forges the factory works on; no repos means the webhook route ignores every delivery.',
+          'Risk policy: `governance.risk` tiers and high-risk paths are shown from the manifest; they are edited in git, not here.',
           'Secrets / MCP: names only; values never leave the store.',
         ],
       },
@@ -2096,15 +2113,17 @@ export const HELP_ENTRIES: HelpEntry[] = [
     slug: 'troubleshooting/gate-stuck',
     title: 'A gate looks stuck',
     section: 'troubleshooting',
-    status: 'Symptom → check',
+    status: 'Symptom → check (risk-tiered gates in `2026-11-07-harden-factory-quality`)',
     summary:
-      'A gate is a durable wait by design. Check whether it is waiting for you, paused by the kill switch, or blocked by an automation override.',
+      'A gate is a durable wait by design. Check whether it is waiting for you, paused by the kill switch, blocked by an automation override, or a deliberate medium/high-risk plan or high-risk review gate.',
     blocks: [
       {
         kind: 'list',
         items: [
           'Nothing is broken if the item sits at a stage with a `human` gate: the workflow is parked on a durable wait and costs no activity slot. Decide it in Inbox or via `POST /factories/:factoryId/work-items/:id/gates/:stage`.',
           'The gate is not the one you expected: read the Gates page. Automation overrides win over the factory gate (automation → factory → global).',
+          'It is a deliberate risk gate: medium/high-risk mission plans always wait for a human plan gate, and high-risk work items always wait for a human review and ship gate even under full autonomy. Check the plan risk badge/reasons and the review packet before deciding.',
+          'The review packet is missing: packet generation is best-effort and happens before the review gate; the raw diff, run evidence and work-item event log remain the source of truth.',
           'The kill switch is on: pausing autonomy forces every gate back to `human` and pauses new dispatch. The Gates page shows the newest `autonomy.*` event with actor/reason.',
           'A decision did not take effect: decisions are delivered as a Temporal Update (Signal fallback); if Temporal is unreachable the decision is recorded but not delivered. Check `/health` and retry.',
           'A permission prompt, not a gate: the permission SLA (`PERMISSION_TIMEOUT_MS`, default 30 min) auto-denies; approve sooner if the agent should continue.',
