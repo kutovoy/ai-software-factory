@@ -6,6 +6,14 @@
 import type { AgentVerdict, AgentVerdictPolicy } from '@factory/core/gates/verdict';
 import type { GovernanceConfig } from '@factory/core/governance/policy';
 import type { ValidationContract, ValidationTier } from '@factory/core/validation/types';
+import type {
+  MissionArchitecture,
+  MissionProgramDesign,
+  MissionProductReview,
+  MissionVerticalSlice,
+  RiskTier,
+  RiskTierPolicy,
+} from '@factory/core';
 
 export type RunStatus = 'pending' | 'running' | 'ok' | 'error' | 'cancelled';
 export type TerminalStatus = 'ok' | 'error' | 'cancelled';
@@ -370,6 +378,16 @@ export interface FactoryWorkflowInput {
    * so the verify stage can request and evaluate evidence. Workflow-safe: plain data.
    */
   validationContract?: ValidationContract;
+  /** Risk tier derived for this work item (change `harden-factory-quality`). */
+  riskTier?: RiskTier;
+  /** Resolved policy for the tier; gates and merge decisions read it. */
+  riskPolicy?: RiskTierPolicy;
+  /** Plan reference (e.g. `<missionId>#<featureId>`) used by the review packet. */
+  planRef?: string | null;
+  /** Architecture constraints the change must preserve (review packet context). */
+  architectureImpact?: string[];
+  /** Open plan questions a reviewer should confirm (review packet context). */
+  openQuestions?: string[];
 }
 
 export type FactoryOutcomeStatus = 'done' | 'escalated' | 'cancelled' | 'blocked';
@@ -426,6 +444,8 @@ export interface MissionValidationAssertionData {
   evidence: string;
   command?: string;
   expected?: string;
+  /** Named thresholds the evidence must satisfy (e.g. `{ maxDependencyCycles: 0 }`). */
+  thresholds?: Record<string, number>;
 }
 
 export interface MissionValidationContractData {
@@ -448,6 +468,12 @@ export interface MissionFeaturePlanData {
   dependsOn: string[];
   acceptanceCheckIds: string[];
   workItemType?: 'task' | 'bug' | 'incident' | 'pr_review';
+  /** Derived risk tier for this feature; absent means it inherits the plan tier. */
+  riskTier?: RiskTier;
+  /** The end-to-end behavior this feature delivers, or what it unblocks for an enabler. */
+  verticalSlice?: string;
+  /** `slice` ships a behavior; `enabler` is scaffolding a later slice verifies. */
+  kind?: 'slice' | 'enabler';
 }
 
 export interface MissionMilestonePlanData {
@@ -470,6 +496,15 @@ export interface MissionPlanData {
   milestones: MissionMilestonePlanData[];
   risks: string[];
   assumptions: string[];
+  /** Derived plan risk tier; old persisted plans may lack it at runtime. */
+  riskTier: RiskTier;
+  /** Human-readable reasons behind `riskTier`. */
+  riskReasons: string[];
+  /** Optional planning artifacts; old plans remain valid without them. */
+  productReview?: MissionProductReview;
+  architecture?: MissionArchitecture;
+  programDesign?: MissionProgramDesign;
+  verticalSlices?: MissionVerticalSlice[];
 }
 
 export interface MissionWorkflowResume {
@@ -607,6 +642,16 @@ export interface StageWorkflowInput {
   findings?: ReviewFinding[];
   /** Validation contract for the verify stage (roadmap item 1). */
   validationContract?: ValidationContract;
+  /** Risk tier of the work item (change `harden-factory-quality`). */
+  riskTier?: RiskTier;
+  /** Resolved policy for the tier; the review gate honours `review`. */
+  riskPolicy?: RiskTierPolicy;
+  /** Plan reference (e.g. `<missionId>#<featureId>`) for the review packet. */
+  planRef?: string | null;
+  /** Architecture constraints the change must preserve. */
+  architectureImpact?: string[];
+  /** Open plan questions a reviewer should confirm. */
+  openQuestions?: string[];
 }
 
 export interface StageGateOutcome {

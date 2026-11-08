@@ -74,9 +74,9 @@ test.describe('factory engineering', () => {
       ),
     );
 
-    await expect(page.getByTestId('work-item-validation-card')).toBeVisible();
-    await expect(page.getByTestId('validation-enforce')).toBeVisible();
-    await expect(page.getByTestId('validation-complete')).toBeVisible();
+    await expect(page.getByTestId('work-item-validation-card').first()).toBeVisible();
+    await expect(page.getByTestId('validation-enforce').first()).toBeVisible();
+    await expect(page.getByTestId('validation-complete').first()).toBeVisible();
     // The builder always adds an acceptance check, so a fresh contract has at least one row.
     expect(await page.getByTestId('validation-check').count()).toBeGreaterThan(0);
     await expect(page.getByTestId('validation-check-status').first()).toBeVisible();

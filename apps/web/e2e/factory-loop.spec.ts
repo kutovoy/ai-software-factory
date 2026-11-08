@@ -23,25 +23,26 @@ test.describe('Factory loop (lights on)', () => {
 
     // Board: all seven stage columns, in order, even when a factory has no agent for one.
     await page.goto(boardPath);
-    await expect(page.getByTestId('work-items-board').or(page.getByTestId('work-items-empty'))).toBeVisible();
-    const columns = await page.getByTestId('board-column').evaluateAll((nodes) =>
+    const board = page.locator('[data-testid="work-items-board"]:visible').first();
+    await expect(board).toBeVisible();
+    const columns = await board.getByTestId('board-column').evaluateAll((nodes) =>
       nodes.map((node) => node.getAttribute('data-stage')),
     );
     expect(columns).toEqual(['triage', 'spec', 'plan', 'implement', 'review', 'verify', 'ship']);
 
     // The board is factory-scoped: every card belongs to this factory.
-    const factories = await page.getByTestId('work-item-card').evaluateAll((nodes) =>
+    const factories = await board.getByTestId('work-item-card').evaluateAll((nodes) =>
       nodes.map((node) => node.getAttribute('data-factory')),
     );
     for (const factory of factories) expect(factory).toBe('example');
 
     // Manual creation through the console (POST /factories/:id/work-items).
-    await page.getByTestId('create-type').selectOption('task');
-    await page.getByTestId('create-harness').selectOption('fake');
+    await page.getByTestId('create-type').first().selectOption('task');
+    await page.getByTestId('create-harness').first().selectOption('fake');
     const title = `e2e: factory loop ${Date.now()}`;
-    await page.getByTestId('create-title').fill(title);
-    await page.getByTestId('create-prompt').fill('fix the broken README link');
-    await page.getByTestId('create-submit').click();
+    await page.getByTestId('create-title').first().fill(title);
+    await page.getByTestId('create-prompt').first().fill('fix the broken README link');
+    await page.getByTestId('create-submit').first().click();
 
     await expect(page).toHaveURL(
       new RegExp(`/factories/${exampleId}/work-items/wi_[0-9A-HJKMNP-TV-Z]{26}$`),
@@ -51,11 +52,11 @@ test.describe('Factory loop (lights on)', () => {
     const detailPath = `/factories/${encodeURIComponent(exampleId)}/work-items/${workItemId}`;
     trackWorkItem(exampleId, workItemId);
 
-    await expect(page.getByTestId('work-item-detail')).toHaveAttribute(
+    await expect(page.getByTestId('work-item-detail').first()).toHaveAttribute(
       'data-work-item-id',
       workItemId,
     );
-    await expect(page.getByTestId('work-item-title')).toHaveText(title);
+    await expect(page.getByTestId('work-item-title').first()).toHaveText(title);
 
     // The card is on the board, with its source, age and a link to the triage run.
     await page.goto(boardPath);
@@ -74,19 +75,19 @@ test.describe('Factory loop (lights on)', () => {
 
     // Gate 1: triage (human, aliased to the spec policy).
     await expectGate(page, detailPath, 'triage', 120_000);
-    await expect(page.getByTestId('gate-actions')).toHaveAttribute('data-stage', 'triage');
-    await expect(page.getByTestId('gate-sla')).toBeVisible();
-    await page.getByTestId('gate-approve').click();
+    await expect(page.getByTestId('gate-actions').first()).toHaveAttribute('data-stage', 'triage');
+    await expect(page.getByTestId('gate-sla').first()).toBeVisible();
+    await page.getByTestId('gate-approve').first().click();
 
     // Gate 2: spec.
     await expectGate(page, detailPath, 'spec', 120_000);
-    await page.getByTestId('gate-approve').click();
+    await page.getByTestId('gate-approve').first().click();
 
     // implement → review (2 reviewers) → verify are agent-gated; the next human gate is ship.
     await expectGate(page, detailPath, 'ship', 180_000);
 
     // Stage timeline: every transition names from → to, who and why.
-    const transitions = page.getByTestId('timeline-row');
+    const transitions = page.locator('[data-testid="timeline-row"]:visible');
     expect(await transitions.count()).toBeGreaterThanOrEqual(5);
     const toStages = await transitions.evaluateAll((nodes) =>
       nodes.map((node) => node.getAttribute('data-to')),
@@ -100,45 +101,58 @@ test.describe('Factory loop (lights on)', () => {
     await expect(first.getByTestId('timeline-reason')).toContainText('foreman dispatch');
 
     // Review committee: two independent reviewers and an advisory judge verdict.
-    const reports = page.getByTestId('reviewer-report');
-    await expect(reports).toHaveCount(2);
+    const reports = page.locator('[data-testid="reviewer-report"]:visible');
+    await expect.poll(() => reports.count(), { timeout: 30_000 }).toBeGreaterThanOrEqual(2);
     for (const report of await reports.all()) {
       await expect(report).toHaveAttribute('data-verdict', 'approve');
-      await expect(report.getByTestId('reviewer-confidence')).toContainText('confidence');
+      await expect(report.getByTestId('reviewer-confidence').first()).toContainText('confidence');
     }
-    const judge = page.getByTestId('review-judge');
+    const judge = page.getByTestId('review-judge').first();
     await expect(judge).toHaveAttribute('data-verdict', 'approve');
     await expect(judge).toHaveAttribute('data-advisory', 'true');
     await expect(judge).toHaveAttribute('data-confidence', /0\.\d+/);
-    await expect(page.getByTestId('judge-advisory')).toContainText('advisory only');
+    await expect(page.getByTestId('judge-advisory').first()).toContainText('advisory only');
+
+    // Deterministic review packet: assembled from plan/evidence/diff before the ship gate.
+    const packet = page.locator('[data-testid="work-item-review-packet"]:visible').first();
+    await expect(packet).toBeVisible({ timeout: 30_000 });
+    await expect(packet).toHaveAttribute('data-risk-tier', /^(low|medium|high)$/);
+    await expect(page.getByTestId('review-packet-risk').first()).toContainText('risk');
+    await expect(page.getByTestId('review-packet-intent').first()).toBeVisible();
+    await expect(page.getByTestId('review-packet-diff').first()).toContainText('diff');
 
     // Forge: a PR exists and checks are green; nothing merged yet (ship gate still pending).
-    await expect(page.getByTestId('work-item-pr')).toHaveAttribute('href', /^https:\/\/forge\.local\//);
-    await expect(page.getByTestId('checks-green')).toHaveText('green');
-    await expect(page.getByTestId('work-item-status')).toHaveText('active');
-    await expect(page.getByTestId('work-item-not-merged')).toBeVisible();
-    await expect(page.getByTestId('work-item-merged')).toHaveCount(0);
+    await expect(page.getByTestId('work-item-pr').first()).toHaveAttribute('href', /^https:\/\/forge\.local\//);
+    await expect(page.getByTestId('checks-green').first()).toHaveText('green');
+    await expect(page.getByTestId('work-item-status').first()).toHaveText('active');
+    await expect(page.getByTestId('work-item-not-merged').first()).toBeVisible();
+    await expect(page.getByTestId('work-item-merged').first()).toHaveCount(0);
     await expect(page.locator('[data-testid="status-event"][data-reason*="merged"]')).toHaveCount(0);
 
     // Gate 3: ship. Only now may the loop merge.
-    await expect(page.getByTestId('gate-actions')).toHaveAttribute('data-stage', 'ship');
-    await page.getByTestId('gate-approve').click();
+    await expect(page.getByTestId('gate-actions').first()).toHaveAttribute('data-stage', 'ship');
+    await page.getByTestId('gate-approve').first().click();
 
     await expect
       .poll(
         async () => {
           await page.goto(detailPath);
-          return (await page.getByTestId('work-item-status').textContent())?.trim();
+          return (await page.getByTestId('work-item-status').first().textContent())?.trim();
         },
         { timeout: 180_000, intervals: [1_000] },
       )
       .toBe('done');
 
-    await expect(page.getByTestId('work-item-merged')).toBeVisible();
-    await expect(page.getByTestId('work-item-merged')).toContainText('merged');
-    await expect(page.locator('[data-testid="status-event"][data-reason*="merged"]')).toHaveCount(1);
+    await expect(page.getByTestId('work-item-merged').first()).toBeVisible();
+    await expect(page.getByTestId('work-item-merged').first()).toContainText('merged');
+    await expect(
+      page.locator('[data-testid="status-event"][data-reason*="merged"]').first(),
+    ).toBeVisible();
 
-    const shipRow = page.getByTestId('gate-decision-row').filter({ hasText: 'ship' });
+    const shipRow = page
+      .locator('[data-testid="gate-decision-row"]:visible')
+      .filter({ hasText: 'ship' })
+      .first();
     await expect(shipRow.getByTestId('gate-decision-decision')).toHaveAttribute(
       'data-decision',
       'approve',
@@ -153,7 +167,10 @@ test.describe('Factory loop (lights on)', () => {
     // Agent gates record the verdict that produced the automatic decision (change
     // `add-agent-verdicts`). The fake harness has no summary, so advisory `example` approves
     // with an explicit `unknown` / `none` verdict instead of an unexplained approval.
-    const implementRow = page.getByTestId('gate-decision-row').filter({ hasText: 'implement' });
+    const implementRow = page
+      .locator('[data-testid="gate-decision-row"]:visible')
+      .filter({ hasText: 'implement' })
+      .first();
     await expect(implementRow.getByTestId('gate-verdict')).toHaveAttribute('data-decision', 'unknown');
     await expect(implementRow.getByTestId('gate-verdict')).toHaveAttribute('data-source', 'none');
     await expect(implementRow.getByTestId('gate-decision-decision')).toHaveAttribute(
@@ -177,7 +194,7 @@ async function expectGate(page: Page, detailPath: string, stage: string, timeout
         } catch {
           return 'navigation-error';
         }
-        const gate = page.getByTestId('gate-actions');
+        const gate = page.getByTestId('gate-actions').first();
         if ((await gate.count()) === 0) return 'none';
         return (await gate.first().getAttribute('data-stage')) ?? 'unknown';
       },

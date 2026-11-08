@@ -365,6 +365,8 @@ export async function MissionWorkflow(
             (total, milestone) => total + milestone.features.length,
             0,
           ),
+          riskTier: plan.riskTier ?? 'low',
+          riskReasons: plan.riskReasons ?? [],
         },
         dedupeKey: `plan.proposed:${planVersion}`,
       });
@@ -410,7 +412,12 @@ export async function MissionWorkflow(
           missionId: input.missionId,
           type: 'mission.plan.approved',
           actor: decision.actor,
-          payload: { planVersion, reason: decision.reason ?? null },
+          payload: {
+            planVersion,
+            reason: decision.reason ?? null,
+            riskTier: plan.riskTier ?? 'low',
+            riskReasons: plan.riskReasons ?? [],
+          },
           dedupeKey: `plan.approved:${planVersion}`,
         });
         break;

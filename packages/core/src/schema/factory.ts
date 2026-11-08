@@ -14,6 +14,7 @@ import { mcpSchema } from './mcp';
 import { stageDeclarationSchema } from './stage';
 import { AGENT_VERDICT_POLICIES } from '../gates/verdict';
 import { guardConfigSchema } from '../guard/types';
+import { DEFAULT_RISK_GOVERNANCE, RISK_TIERS, type RiskTierPolicy } from '../governance/risk';
 import { validationConfigSchema } from '../validation/schema';
 import { newUlid } from '../work-items/id';
 
@@ -45,6 +46,36 @@ export const selfImprovementSchema = z
     failedRunThreshold: z.number().int().min(1).max(50).default(3),
     reviewerType: z.enum(['humans', 'none']).default('humans'),
     requireBenchmarkWin: z.boolean().default(false),
+  })
+  .strict();
+
+/**
+ * Per-tier risk policy (change `harden-factory-quality`). Missing fields and missing tier
+ * keys inherit `DEFAULT_RISK_GOVERNANCE`, so a factory can override just one action.
+ */
+function riskTierPolicySchema(defaults: RiskTierPolicy) {
+  return z
+    .object({
+      planApproval: z.enum(['auto', 'human']).default(defaults.planApproval),
+      review: z.enum(['agent', 'human']).default(defaults.review),
+      merge: z.enum(MERGE_POLICIES).default(defaults.merge),
+    })
+    .strict()
+    .default(defaults);
+}
+
+export const riskGovernanceSchema = z
+  .object({
+    defaultTier: z.enum(RISK_TIERS).default(DEFAULT_RISK_GOVERNANCE.defaultTier),
+    tiers: z
+      .object({
+        low: riskTierPolicySchema(DEFAULT_RISK_GOVERNANCE.tiers.low),
+        medium: riskTierPolicySchema(DEFAULT_RISK_GOVERNANCE.tiers.medium),
+        high: riskTierPolicySchema(DEFAULT_RISK_GOVERNANCE.tiers.high),
+      })
+      .strict()
+      .default(DEFAULT_RISK_GOVERNANCE.tiers),
+    highRiskPaths: z.array(z.string().min(1)).max(50).default([]),
   })
   .strict();
 
@@ -156,6 +187,11 @@ export const factorySchema = z
     governance: z
       .object({
         autonomyLevel: z.enum(['observe', 'assist', 'auto', 'full']).default('auto'),
+        /**
+         * Risk-tiered autonomy: per-tier plan/review/merge policy and high-risk path globs.
+         * Optional so old factories keep validating with the low-risk defaults.
+         */
+        risk: riskGovernanceSchema.optional(),
         allowedModels: z.array(z.string().min(1)).max(50).optional(),
         /** Action globs that are always denied (e.g. `bash`, `git.push`). */
         denyActions: z.array(z.string().min(1)).max(50).optional(),

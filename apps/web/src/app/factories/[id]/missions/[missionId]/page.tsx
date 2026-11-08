@@ -21,19 +21,266 @@ import {
   validationStatusTone,
 } from '@/lib/missions';
 import type {
+  MissionArchitectureWire,
   MissionBudgetUsage,
   MissionDetail,
   MissionFeature,
   MissionGate,
   MissionMilestone,
   MissionMilestoneStatusWire,
+  MissionPlanFeatureWire,
   MissionPlanMilestoneWire,
+  MissionProductReviewWire,
+  MissionProgramDesignWire,
   MissionSummary,
   MissionValidationAssertionWire,
+  MissionVerticalSliceWire,
+  RiskTierWire,
   WorkItemSummary,
 } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
+
+function riskTone(tier: RiskTierWire): 'success' | 'warning' | 'danger' {
+  if (tier === 'low') return 'success';
+  if (tier === 'medium') return 'warning';
+  return 'danger';
+}
+
+function RiskReasons({
+  tier,
+  reasons,
+}: {
+  tier: RiskTierWire;
+  reasons: string[];
+}) {
+  const escalated = tier === 'medium' || tier === 'high';
+  if (reasons.length === 0) {
+    if (!escalated) return null;
+    return (
+      <p data-testid="mission-plan-risk-reasons-empty" className="text-xs text-slate-500">
+        No risk reasons were recorded for this {tier}-risk plan.
+      </p>
+    );
+  }
+  return (
+    <ul data-testid="mission-plan-risk-reasons" className="space-y-0.5 text-xs text-slate-700">
+      {reasons.map((reason) => (
+        <li key={reason}>{reason}</li>
+      ))}
+    </ul>
+  );
+}
+
+/** Product review section: renders only when the plan carries it (or when escalation demands it). */
+function ProductReviewSection({
+  review,
+  showEmpty,
+}: {
+  review: MissionProductReviewWire | undefined;
+  showEmpty: boolean;
+}) {
+  if (!review) {
+    if (!showEmpty) return null;
+    return (
+      <div data-testid="mission-plan-product-review" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Product review</p>
+        <p className="mt-1 text-xs text-slate-500">No product review was captured for this plan.</p>
+      </div>
+    );
+  }
+  return (
+    <div data-testid="mission-plan-product-review" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Product review</p>
+      <p className="mt-1 text-sm text-slate-700">{review.problem || 'No problem statement recorded.'}</p>
+      <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        Desired behavior
+      </p>
+      {review.desiredBehavior.length === 0 ? (
+        <p className="text-xs text-slate-500">No desired behavior recorded.</p>
+      ) : (
+        <ul className="mt-0.5 space-y-0.5 text-xs text-slate-700">
+          {review.desiredBehavior.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Mockups</p>
+      {review.mockups.length === 0 ? (
+        <p className="text-xs text-slate-500">No mockups recorded.</p>
+      ) : (
+        <ul className="mt-0.5 space-y-0.5 text-xs text-slate-700">
+          {review.mockups.map((item) => (
+            <li key={item} className="font-mono text-[11px]">
+              {item}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function ArchitectureSection({
+  architecture,
+  showEmpty,
+}: {
+  architecture: MissionArchitectureWire | undefined;
+  showEmpty: boolean;
+}) {
+  if (!architecture) {
+    if (!showEmpty) return null;
+    return (
+      <div data-testid="mission-plan-architecture" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Architecture</p>
+        <p className="mt-1 text-xs text-slate-500">No architecture section was captured for this plan.</p>
+      </div>
+    );
+  }
+  return (
+    <div data-testid="mission-plan-architecture" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Architecture</p>
+      <p className="mt-1 text-sm text-slate-700">
+        {architecture.summary || 'No architecture summary recorded.'}
+      </p>
+      {architecture.components.length === 0 ? (
+        <p className="mt-2 text-xs text-slate-500">No components recorded.</p>
+      ) : (
+        <ul className="mt-2 space-y-1">
+          {architecture.components.map((component) => (
+            <li key={component.name} data-testid="mission-architecture-component" className="text-xs text-slate-700">
+              <span className="font-medium text-slate-800">{component.name}</span>
+              {component.responsibility ? <span> — {component.responsibility}</span> : null}
+              {component.contracts.length > 0 ? (
+                <span className="font-mono text-[11px] text-slate-500">
+                  {' '}
+                  · contracts {component.contracts.join(', ')}
+                </span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+      {architecture.dataModels.length > 0 ? (
+        <p className="mt-2 text-xs text-slate-600">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            Data models
+          </span>{' '}
+          {architecture.dataModels.join(', ')}
+        </p>
+      ) : null}
+      {architecture.constraints.length > 0 ? (
+        <p className="mt-1 text-xs text-slate-600">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            Constraints
+          </span>{' '}
+          {architecture.constraints.join(', ')}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function ProgramDesignSection({
+  design,
+  showEmpty,
+}: {
+  design: MissionProgramDesignWire | undefined;
+  showEmpty: boolean;
+}) {
+  if (!design) {
+    if (!showEmpty) return null;
+    return (
+      <div data-testid="mission-plan-program-design" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Program design</p>
+        <p className="mt-1 text-xs text-slate-500">No program design was captured for this plan.</p>
+      </div>
+    );
+  }
+  return (
+    <div data-testid="mission-plan-program-design" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Program design</p>
+      {design.modules.length === 0 ? (
+        <p className="mt-1 text-xs text-slate-500">No modules recorded.</p>
+      ) : (
+        <ul className="mt-1 space-y-1">
+          {design.modules.map((module) => (
+            <li key={`${module.path}:${module.name}`} data-testid="mission-program-module" className="text-xs text-slate-700">
+              <span className="font-medium text-slate-800">{module.name}</span>
+              {module.path ? <span className="font-mono text-[11px] text-slate-500"> · {module.path}</span> : null}
+              {module.responsibility ? <span> — {module.responsibility}</span> : null}
+              {module.publicApi.length > 0 ? (
+                <span className="font-mono text-[11px] text-slate-500">
+                  {' '}
+                  · api {module.publicApi.join(', ')}
+                </span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Call graph</p>
+      {design.callGraph.length === 0 ? (
+        <p className="text-xs text-slate-500">No call graph recorded.</p>
+      ) : (
+        <ul className="mt-0.5 space-y-0.5 text-xs text-slate-700">
+          {design.callGraph.map((edge) => (
+            <li key={edge} className="font-mono text-[11px]">
+              {edge}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function VerticalSlicesSection({
+  slices,
+  showEmpty,
+}: {
+  slices: MissionVerticalSliceWire[] | undefined;
+  showEmpty: boolean;
+}) {
+  if (!slices) {
+    if (!showEmpty) return null;
+    return (
+      <div data-testid="mission-plan-vertical-slices" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Vertical slices</p>
+        <p className="mt-1 text-xs text-slate-500">No vertical slices were captured for this plan.</p>
+      </div>
+    );
+  }
+  const ordered = [...slices].sort((a, b) => a.order - b.order);
+  return (
+    <div data-testid="mission-plan-vertical-slices" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Vertical slices</p>
+      {ordered.length === 0 ? (
+        <p className="mt-1 text-xs text-slate-500">
+          The plan declares a vertical-slices section but lists no slices.
+        </p>
+      ) : (
+        <ul className="mt-1 space-y-1">
+          {ordered.map((slice) => (
+            <li key={`${slice.order}:${slice.name}`} data-testid="mission-vertical-slice" className="text-xs text-slate-700">
+              <span className="font-mono text-[11px] text-slate-400">#{slice.order}</span>{' '}
+              <span className="font-medium text-slate-800">{slice.name}</span>
+              {slice.featureIds.length > 0 ? (
+                <span className="font-mono text-[11px] text-slate-500">
+                  {' '}
+                  · features {slice.featureIds.join(', ')}
+                </span>
+              ) : null}
+              {slice.checks.length > 0 ? (
+                <span className="text-slate-600"> — checks {slice.checks.join(', ')}</span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 /** A compact `key=value` line for checkpoint state / validation evidence records. */
 function compactRecord(record: Record<string, unknown> | null | undefined): string {
@@ -85,6 +332,9 @@ function PlanCard({ mission }: { mission: MissionSummary }) {
   }
 
   const contract = plan.validationContract;
+  const riskTier: RiskTierWire = plan.riskTier ?? 'low';
+  const riskReasons = plan.riskReasons ?? [];
+  const escalatedRisk = riskTier === 'medium' || riskTier === 'high';
 
   return (
     <Card testId="mission-plan-card">
@@ -92,9 +342,14 @@ function PlanCard({ mission }: { mission: MissionSummary }) {
         title="Plan and validation contract"
         hint="The plan is pinned to the mission's definition commit; the contract states what proof is required."
         action={
-          <Badge tone="neutral" testId="mission-plan-version">
-            plan v{mission.planVersion}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge tone={riskTone(riskTier)} testId="mission-plan-risk">
+              {riskTier} risk
+            </Badge>
+            <Badge tone="neutral" testId="mission-plan-version">
+              plan v{mission.planVersion}
+            </Badge>
+          </div>
         }
       />
       <CardBody className="space-y-4">
@@ -103,6 +358,13 @@ function PlanCard({ mission }: { mission: MissionSummary }) {
           <p data-testid="mission-plan-goal" className="mt-1 text-sm text-slate-700">
             {plan.goal || mission.goal}
           </p>
+        </div>
+
+        <div data-testid="mission-plan-risk-reasons-block">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Risk reasons</p>
+          <div className="mt-1">
+            <RiskReasons tier={riskTier} reasons={riskReasons} />
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
@@ -185,6 +447,17 @@ function PlanCard({ mission }: { mission: MissionSummary }) {
                     {assertion.expected ? (
                       <p className="text-[11px] text-slate-500">expected: {assertion.expected}</p>
                     ) : null}
+                    {assertion.thresholds && Object.keys(assertion.thresholds).length > 0 ? (
+                      <p
+                        data-testid="mission-assertion-thresholds"
+                        className="font-mono text-[11px] text-slate-500"
+                      >
+                        thresholds:{' '}
+                        {Object.entries(assertion.thresholds)
+                          .map(([key, value]) => `${key}=${value}`)
+                          .join(', ')}
+                      </p>
+                    ) : null}
                     {assertion.command ? (
                       <p className="font-mono text-[11px] text-slate-400">{assertion.command}</p>
                     ) : null}
@@ -219,6 +492,16 @@ function PlanCard({ mission }: { mission: MissionSummary }) {
             ) : null}
           </div>
         ) : null}
+
+        <div className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Upstream planning artifacts
+          </p>
+          <ProductReviewSection review={plan.productReview} showEmpty={escalatedRisk} />
+          <ArchitectureSection architecture={plan.architecture} showEmpty={escalatedRisk} />
+          <ProgramDesignSection design={plan.programDesign} showEmpty={escalatedRisk} />
+          <VerticalSlicesSection slices={plan.verticalSlices} showEmpty={escalatedRisk} />
+        </div>
       </CardBody>
     </Card>
   );
@@ -230,12 +513,14 @@ function FeatureRows({
   milestone,
   features,
   featureTitleById,
+  planFeatureById,
 }: {
   factoryId: string;
   missionId: string;
   milestone: MissionMilestone;
   features: MissionFeature[];
   featureTitleById: Map<string, string>;
+  planFeatureById: Map<string, MissionPlanFeatureWire>;
 }) {
   const encoded = encodeURIComponent(factoryId);
   const ordered = [...features].sort((a, b) => a.ordinal - b.ordinal);
@@ -250,7 +535,9 @@ function FeatureRows({
 
   return (
     <ul className="space-y-2">
-      {ordered.map((feature) => (
+      {ordered.map((feature) => {
+        const planFeature = planFeatureById.get(feature.id);
+        return (
         <li
           key={feature.id}
           data-testid="mission-feature"
@@ -266,6 +553,16 @@ function FeatureRows({
             <span className="font-mono text-[11px] text-slate-400">
               #{feature.ordinal} · {feature.id}
             </span>
+            {planFeature?.riskTier ? (
+              <Badge tone={riskTone(planFeature.riskTier)} testId="mission-feature-risk">
+                {planFeature.riskTier} risk
+              </Badge>
+            ) : null}
+            {planFeature?.kind ? (
+              <Badge tone={planFeature.kind === 'slice' ? 'success' : 'neutral'} mono testId="mission-feature-kind">
+                {planFeature.kind}
+              </Badge>
+            ) : null}
             {feature.attempt > 1 ? (
               <Badge tone="info" testId="mission-feature-attempt">
                 attempt {feature.attempt}
@@ -280,6 +577,15 @@ function FeatureRows({
 
           {feature.description ? (
             <p className="mt-1 text-xs text-slate-600">{feature.description}</p>
+          ) : null}
+
+          {planFeature?.verticalSlice ? (
+            <p data-testid="mission-feature-slice" className="mt-1 text-xs text-slate-600">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                Vertical slice
+              </span>{' '}
+              {planFeature.verticalSlice}
+            </p>
           ) : null}
 
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
@@ -323,7 +629,8 @@ function FeatureRows({
             />
           ) : null}
         </li>
-      ))}
+        );
+      })}
     </ul>
   );
 }
@@ -355,11 +662,23 @@ function PlanPreview({ milestones }: { milestones: MissionPlanMilestoneWire[] })
                 <li key={feature.id} data-testid="mission-plan-preview-feature" className="text-xs text-slate-600">
                   <span className="font-mono text-[11px] text-slate-400">#{feature.order}</span>{' '}
                   <span className="font-medium text-slate-800">{feature.title}</span>
+                  {feature.riskTier ? (
+                    <span data-testid="mission-plan-preview-feature-risk" data-risk-tier={feature.riskTier}>
+                      {' '}
+                      · {feature.riskTier} risk
+                    </span>
+                  ) : null}
+                  {feature.kind ? (
+                    <span data-testid="mission-plan-preview-feature-kind"> · {feature.kind}</span>
+                  ) : null}
                   {feature.dependsOn.length > 0 ? (
                     <span className="font-mono text-[11px] text-slate-400">
                       {' '}
                       · depends on {feature.dependsOn.join(', ')}
                     </span>
+                  ) : null}
+                  {feature.verticalSlice ? (
+                    <span data-testid="mission-plan-preview-feature-slice"> · slice: {feature.verticalSlice}</span>
                   ) : null}
                 </li>
               ))}
@@ -474,6 +793,11 @@ export default async function MissionDetailPage({
 
   const progress = missionProgress(mission);
   const featureTitleById = new Map(features.map((feature) => [feature.id, feature.title]));
+  const planFeatureById = new Map(
+    (mission.plan?.milestones ?? []).flatMap((milestone) =>
+      milestone.features.map((feature) => [feature.id, feature] as const),
+    ),
+  );
   const orderedMilestones = [...milestones].sort((a, b) => a.ordinal - b.ordinal);
   const orderedEvents = [...events].sort((a, b) => b.id - a.id);
   const orderedCheckpoints = [...checkpoints].sort((a, b) => b.seq - a.seq);
@@ -704,6 +1028,7 @@ export default async function MissionDetailPage({
                     milestone={milestone}
                     features={features.filter((feature) => feature.milestoneId === milestone.id)}
                     featureTitleById={featureTitleById}
+                    planFeatureById={planFeatureById}
                   />
                 </div>
               </section>

@@ -15,6 +15,7 @@ export const validationCheckSchema = z
     evidence: z.enum(['command', 'artifact', 'forge-check', 'manual']),
     command: z.string().min(1).optional(),
     expected: z.string().min(1).optional(),
+    thresholds: z.record(z.string(), z.number().finite()).optional(),
   })
   .strict();
 
@@ -48,5 +49,6 @@ export const validationEvidenceSchema = z
     source: z.enum(VALIDATION_EVIDENCE_SOURCES),
     detail: z.string().optional(),
     at: z.string().optional(),
+    metrics: z.record(z.string(), z.number().finite()).optional(),
   })
   .strict();

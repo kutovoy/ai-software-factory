@@ -49,10 +49,10 @@ tests, production server HTTP 200 with `<h1>Hello, world!</h1>`), with PRs #27�
 fixed: validator-kind filtering, integrated-forge-repo validation, NUL-byte JSONB sanitisation, planner timeout and
 blocked-on-failure handling, a progress watchdog, partial-feature verify ownership, empty mission-feature patches,
 and planner guidance to require build/e2e assertions for runnable goals. A blocked mission's feature retry starts a
-fresh `MissionWorkflow` attempt at that milestone; pause/resume/cancel remain durable controls. `bun run ci` is 871
-pass / 190 skip; `openspec validate --all` is 36/36 with one pre-existing warning (35 specs + the in-flight
-`harden-factory-quality` change). See `docs/ROADMAP.md` §What's left and §Software-factory quality & risk
-workstream.
+fresh `MissionWorkflow` attempt at that milestone; pause/resume/cancel remain durable controls. `bun run ci` is
+915 pass / 192 skip; `openspec validate --all` is 35/35 with one pre-existing warning (the
+`harden-factory-quality` change is archived). See `docs/ROADMAP.md` §What's left and §Software-factory quality
+& risk workstream.
 
 **Console connection recovery — implemented** (2026-11-07, OpenSpec `harden-console-connectivity`). The root layout
 now treats an unreachable `/auth/me` as a degraded session instead of “signed out”, so an API restart no longer
@@ -62,13 +62,26 @@ components once the backend returns. Route-level `error.tsx` and root `global-er
 instead of a white page; server reads time out after 10s (`API_TIMEOUT_MS`). Covered by auth-gate unit tests and a
 Playwright banner/retry spec.
 
-**Next — software-factory quality/risk P0 (planned, 2026-11-07).** The live greenfield mission is not proof of
-brownfield maintainability. The next workstream adds risk-tiered autonomy (low/medium/high; high-risk paths
-require human plan/review/merge even under full autonomy), architecture/maintainability validation assertions
-with thresholds, upstream planning artifacts (product review, architecture, program design, vertical slices),
-vertical-slice mission features, and a compact review packet with human review for high-risk work. Detailed
-findings, evidence and acceptance criteria: [`docs/SOFTWARE_FACTORY_WEAKNESSES.md`](SOFTWARE_FACTORY_WEAKNESSES.md).
-Prepared OpenSpec change: `harden-factory-quality` (P0 after compaction).
+**Software-factory quality/risk P0 — implemented** (2026-11-07, archived OpenSpec `2026-11-07-harden-factory-quality`, ADR-052).
+The live greenfield mission is not proof of brownfield maintainability, so autonomy is now risk-tiered:
+`low`/`medium`/`high` plans carry reasons, only low-risk plans may auto-approve under full autonomy with a
+satisfied benchmark gate, medium/high plans require a human plan gate, and high-risk work items force human
+review and ship gates and never auto-merge. Validation contracts gain `architecture` and `maintainability`
+tiers with named thresholds; medium/high-risk runnable goals must include them. Mission plans gain product
+review, architecture, program design and vertical slices; features declare the end-to-end slice (or an
+enabler). Before a review gate the orchestrator records a deterministic `review.packet` event shown on
+work-item detail and in the Inbox. Detailed findings, evidence and P1/P2 backlog:
+[`docs/SOFTWARE_FACTORY_WEAKNESSES.md`](SOFTWARE_FACTORY_WEAKNESSES.md).
+
+Live checks on `hello-nextjs`: a low-risk mission (`mis_01M6WTB3YTAV6VR80Y02QKTWS8`) was auto-approved by
+`autonomy` with `riskTier: low` under full autonomy + the audited benchmark override. A high-risk mission
+(`mis_01M6WVDQTFNH9BFDB0B458JGCD`) classified `high` from the authentication goal and stayed in
+`awaiting_plan_approval`; after a human plan approval its feature work item
+(`wi_01M6WVFBT0JEKSNVN2J5CTXGCB`) carried `riskTier: high`, `gates.review: human`, `gates.ship: human`,
+`mergePolicy: human` and `riskPolicy: {planApproval: human, review: human, merge: human}`. The configured
+model planner timed out on the larger high-risk artifact prompt, so that live high-risk check used the
+deterministic planner; the gate/merge policy is model-independent. Full Playwright is 66/66; `bash
+scripts/smoke.sh` passes.
 
 **Remote runners + host observability — Linux, Windows and macOS native agents implemented** (2026-11-04/05, merged to
 `main`, archived OpenSpec `2026-11-04-add-remote-runners`; platform/artifact work in `2026-11-05-add-runner-platforms-and-artifacts`). A remote host enrolls from the console with a

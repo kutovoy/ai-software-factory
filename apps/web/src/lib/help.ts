@@ -835,7 +835,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'prose',
         text:
-          'The inbox is the queue of durable waits. A mission plan approval shows the goal, milestones and validation contract; approving starts feature dispatch, rejecting stops the mission and requesting changes re-plans with your feedback. Blocked missions appear here too, with the blocker and a link to the mission. A stage gate approval shows the stage, the gate and the SLA countdown; approving continues the work item, requesting changes requires feedback and routes the item back. Pending permissions are agent-level requests that block a run until decided. Failed runs resolve automatically when a retry succeeds.',
+          'The inbox is the queue of durable waits. A mission plan approval shows the goal, the plan risk tier, milestones and validation contract; approving starts feature dispatch, rejecting stops the mission and requesting changes re-plans with your feedback. Blocked missions appear here too, with the blocker and a link to the mission. A stage gate approval shows the stage, the gate, the SLA countdown and, when the loop has assembled one, a compact review packet: risk tier, changed files, diff stats, assertion status, the first open question and a link to the work item. Approving continues the work item, requesting changes requires feedback and routes the item back. Pending permissions are agent-level requests that block a run until decided. Failed runs resolve automatically when a retry succeeds.',
       },
       {
         kind: 'list',
@@ -864,15 +864,15 @@ export const HELP_ENTRIES: HelpEntry[] = [
     slug: 'work-items',
     title: 'Work items',
     section: 'menu',
-    status: 'Shipped — Phase 2b / 3c',
+    status: 'Shipped — Phase 2b / 3c; review packet and risk tiers in `2026-11-07-harden-factory-quality`',
     summary:
-      'The board of work items by stage, with status filters, created/updated timestamps, create, cancel, retry and per-item gate state.',
+      'The board of work items by stage, with status filters, created/updated timestamps, create, cancel, retry and per-item gate state; detail adds the review packet, architecture/maintainability evidence and the pending gate.',
     pageHref: '/factories/example/work-items',
     blocks: [
       {
         kind: 'prose',
         text:
-          'The board is factory-scoped: it lives at `/factories/<id>/work-items` and groups the newest visible items of that factory by stage (triage → ship). Cancelled items are hidden by default so the board reflects live work; the status chips (all / active / escalated / done / failed / cancelled) toggle exactly the statuses you select, and an empty board says that the filters excluded everything instead of pretending there is no work. Each card carries the stage hint, the pending gate, the SLA countdown, links to the item\'s runs, and when the item was created and last updated (the exact timestamp is in the tooltip). The create form starts an item at triage and pins the current `definitionCommit`.',
+          'The board is factory-scoped: it lives at `/factories/<id>/work-items` and groups the newest visible items of that factory by stage (triage → ship). Cancelled items are hidden by default so the board reflects live work; the status chips (all / active / escalated / done / failed / cancelled) toggle exactly the statuses you select, and an empty board says that the filters excluded everything instead of pretending there is no work. Each card carries the stage hint, the pending gate, the SLA countdown, links to the item\'s runs, and when the item was created and last updated (the exact timestamp is in the tooltip). The create form starts an item at triage and pins the current `definitionCommit`. The detail page is the audit surface: stage timeline, gate history, validation evidence, reviewer reports and, once the loop has assembled one, the deterministic review packet.',
       },
       {
         kind: 'list',
@@ -881,6 +881,9 @@ export const HELP_ENTRIES: HelpEntry[] = [
           'Timestamps: created and last updated, relative with the absolute time in the `title`.',
           'Create: title, type, source, harness and prompt; the response returns the item id and stage.',
           'Open: the detail page lists runs, gate history, events and retries for the item.',
+          'Review packet: a `review.packet` event carries the risk tier, intent, plan reference, changed-file count, diff stats (+/-), assertion statuses with evidence, architecture impact, open questions and a reviewer checklist. It is assembled deterministically from the plan, evidence and diff — not model prose — and the full diff stays linked on the run. The packet is omitted when no event exists; nothing is invented to fill the card.',
+          'Validation contract: every check is pass, fail or missing against recorded evidence. `architecture` and `maintainability` checks (with optional named thresholds such as dependency cycles or diff size) are required for medium/high-risk runnable work, and missing required evidence blocks the verify gate.',
+          'Risk tier: the item inherits its plan/feature risk tier. High-risk items require a human review gate and a human ship gate and are never auto-merged; medium-risk items use agent review plus `auto_on_green` (with optional human sampling); low-risk items may auto-merge when the verification oracle is cheap and reliable.',
           'Cancel: takes an actor + reason, is idempotent and emits exactly one `work_item.cancelled`; a terminal item is refused with `invalid_state`.',
           'Retry: an `escalated`, `failed`, `blocked` or `cancelled` item can be re-opened with an actor + optional reason. It returns to `active` at its current stage, the cancellation flags are cleared, `work_item.retried` records the previous status and the stage is dispatched again under a new attempt (`factory-<itemId>-a<n>`). `active` and `done` items are refused with `work_item_not_retryable`; a double submit within 60 seconds returns the existing dispatch.',
         ],
@@ -1203,24 +1206,25 @@ export const HELP_ENTRIES: HelpEntry[] = [
     slug: 'factories/missions',
     title: 'Missions',
     section: 'menu',
-    status: 'Shipped — archived changes `2026-11-07-add-long-running-missions`, `2026-11-07-add-mission-plan-auto-approval` and `2026-11-07-fix-mission-feature-lifecycle`',
+    status: 'Shipped — archived changes `2026-11-07-add-long-running-missions`, `2026-11-07-add-mission-plan-auto-approval` and `2026-11-07-fix-mission-feature-lifecycle`; risk tiers and planning artifacts in `2026-11-07-harden-factory-quality`',
     summary:
-      'Mission Control: create a goal, review the plan and validation contract, approve it, follow milestones and features, read validation evidence and spend, and pause, resume, cancel or retry.',
+      'Mission Control: create a goal, review the risk tier, upstream planning artifacts and validation contract, approve it, follow vertical slices, read validation evidence and spend, and pause, resume, cancel or retry.',
     pageHref: factoryPageHref('missions'),
     pageHrefLabel: 'Open Missions (example factory)',
     blocks: [
       {
         kind: 'prose',
         text:
-          'A mission is a durable goal above work items. You give it a title and a goal; the planner pins the current `definitionCommit`, writes a mission-level validation contract (behavioral assertions, the tool and the evidence each one requires) and decomposes the goal into milestones and features with dependencies. By default a human approves the plan before anything runs; under full autonomy with a satisfied benchmark gate the plan is approved automatically. The mission then dispatches one feature at a time as a work item that starts at `implement`, runs `review` and `ship`, and leaves whole-app `verify` to the milestone boundary, where fresh scrutiny and user-testing validators check the integrated result. The mission list lives at `/factories/<id>/missions` and each mission has its own detail page.',
+          'A mission is a durable goal above work items. You give it a title and a goal; the planner pins the current `definitionCommit`, derives a risk tier (`low`, `medium` or `high`) with reasons, writes the upstream artifacts — product review, system architecture, program design and vertical slices — and a mission-level validation contract (behavioural assertions, the tool and the evidence each one requires). The contract can include `architecture` and `maintainability` assertions with named thresholds, and medium/high-risk runnable goals must carry at least one of each. Only a `low`-risk plan may be approved automatically under full autonomy with a satisfied benchmark gate; `medium` and `high` plans always wait for a human plan gate. The mission then dispatches one vertical slice at a time as a work item that starts at `implement`, runs `review` and `ship`, and leaves whole-app `verify` to the milestone boundary, where fresh scrutiny and user-testing validators check the integrated result. The mission list lives at `/factories/<id>/missions` and each mission has its own detail page.',
       },
       {
         kind: 'list',
         items: [
           'List: title, status, feature progress (done/total, failed), current milestone, milestone progress, spend against the mission cap, and last-updated time. Status chips narrow the list; the factory is the one whose page you are on.',
           'Create: title, goal and optional caps — `maxCostUsd`, `maxRuns`, `maxWallClockHours`. An empty field means "no mission cap", not zero; factory budget and quotas still apply.',
-          'Plan and contract: the goal, plan version, contract version/source/enforce flag and every assertion with its tier, required flag, tool and expected evidence, plus the planner\'s risks and assumptions.',
-          'Milestones and features: status per milestone (including `validating`), validation round, and per feature its status, order, dependencies, claimed assertion ids, the work item that executes it and whether it is a fix feature from a finding. A feature already satisfied by the integrated branch completes without a PR and records `work_item.no_changes`.',
+          'Plan and contract: the risk tier badge and its reasons, the goal, plan version, contract version/source/enforce flag and every assertion with its tier (including `architecture` and `maintainability`), required flag, tool, expected evidence and any named thresholds, plus the planner\'s risks and assumptions.',
+          'Upstream planning artifacts: product review (problem, desired behaviour, mockups), system architecture (summary, components and contracts, data models, constraints), program design (modules, public API, call graph) and vertical slices (ordered end-to-end behaviour, its features and checks). Each section renders only what the plan contains; for a medium/high-risk plan a missing section is shown as a missing section, never invented.',
+          'Milestones and features: status per milestone (including `validating`), validation round, and per feature its status, order, dependencies, claimed assertion ids, risk tier, `slice`/`enabler` kind, the vertical slice it delivers, the work item that executes it and whether it is a fix feature from a finding. An enabler is scaffolding that a later slice verifies; a plan must contain at least one real slice. A feature already satisfied by the integrated branch completes without a PR and records `work_item.no_changes`.',
           'Timeline and checkpoints: the append-only mission event log (plan, feature, validation, control events) and the small durable state snapshots written at checkpoints.',
           'Validation rounds: scrutiny, user-testing and contract validators with their status, verdict, findings, evidence and a link to the fresh validator run.',
           'Linked work items: the items created for features, with stage, status, PR link and last update.',
@@ -1230,19 +1234,19 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'list',
         items: [
-          'Plan approval: Approve dispatches features, Reject ends the mission without dispatching anything, and Request changes requires feedback — the planner replans from it. Under full autonomy the approval may be automatic; either way the decision is audited with the actor and reason.',
+          'Plan approval: Approve dispatches features, Reject ends the mission without dispatching anything, and Request changes requires feedback — the planner replans from it. Only `low` risk auto-approves; `medium` and `high` require a human decision. Either way the decision is audited with the actor and reason.',
           'Pause/resume: Pause stops new feature and validation dispatch; Resume restarts the scheduler from the recorded checkpoint. Both take an actor and an optional reason.',
           'Cancel: terminal, requires an actor and a reason, and is the only action that cannot be undone.',
           'Retry feature: a failed feature can be retried with an actor and an optional reason. If the mission is `blocked` (its workflow returned), the retry starts a fresh mission attempt at that feature\'s milestone; otherwise the running/paused scheduler picks the pending feature up. Dependencies are re-checked before dispatch.',
-          'Inbox: pending mission plan gates and blocked missions are listed alongside stage gates, so a plan waiting on a human is not hidden behind a mission page. The Inbox decision writes the same mission gate row.',
+          'Inbox: pending mission plan gates and blocked missions are listed alongside stage gates, with the plan risk tier, so a plan waiting on a human is not hidden behind a mission page. The Inbox decision writes the same mission gate row.',
         ],
       },
       {
         kind: 'callout',
         tone: 'warning',
-        title: 'Sequential MVP',
+        title: 'Sequential MVP and risk-tiered autonomy',
         text:
-          'Features run one at a time in dependency order; parallel features and git worktrees are a later phase. The plan gate is human by default; when autonomy is enabled and unpaused, the factory is `autonomyLevel: full`, and the benchmark gate is satisfied by an attestation or an audited override, the plan is approved automatically and the event records the automatic actor/reason. Feature work items run implement → review → ship; whole-app verify is the milestone boundary, so a partial feature is not failed before the rest of its milestone exists. Validators only surface findings — they never implement fixes. The orchestrator turns actionable findings into fix features, and validation rounds are capped so a flaky milestone blocks for a human instead of looping forever.',
+          'Features run one at a time in dependency order; parallel features and git worktrees are a later phase. The plan gate is human by default. When autonomy is enabled and unpaused, the factory is `autonomyLevel: full`, the benchmark gate is satisfied by an attestation or an audited override, and the plan is `low` risk, the plan is approved automatically and the event records the automatic actor/reason. A `medium` or `high` plan is never auto-approved. High-risk work items also require a human review gate and a human ship gate, and are never auto-merged. Feature work items run implement → review → ship; whole-app verify is the milestone boundary, so a partial feature is not failed before the rest of its milestone exists. Validators only surface findings — they never implement fixes. The orchestrator turns actionable findings into fix features, and validation rounds are capped so a flaky milestone blocks for a human instead of looping forever.',
       },
       {
         kind: 'callout',

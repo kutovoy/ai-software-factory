@@ -1,4 +1,4 @@
-import type { WorkItemEvent, WorkItemStage } from './types';
+import type { ReviewPacketWire, RiskTierWire, WorkItemEvent, WorkItemStage } from './types';
 import { WORK_ITEM_STAGES } from './types';
 
 /**
@@ -234,6 +234,49 @@ export function checksRecorded(events: WorkItemEvent[]): ChecksView | null {
   };
 }
 
+/**
+ * Newest deterministic review packet (`review.packet`) for this item, or null. The payload is
+ * validated defensively: a packet without a valid risk tier is treated as absent rather than
+ * rendered with an invented one.
+ */
+export function reviewPacket(events: WorkItemEvent[]): ReviewPacketWire | null {
+  const event = [...events].reverse().find((candidate) => candidate.type === 'review.packet');
+  if (!event) return null;
+  const payload = event.payload ?? {};
+  const riskTier = payload.riskTier;
+  if (riskTier !== 'low' && riskTier !== 'medium' && riskTier !== 'high') return null;
+
+  const diff =
+    payload.diffStats && typeof payload.diffStats === 'object' && !Array.isArray(payload.diffStats)
+      ? (payload.diffStats as Record<string, unknown>)
+      : {};
+  const assertions = Array.isArray(payload.assertions)
+    ? payload.assertions.map((assertion) => {
+        const record = (assertion ?? {}) as Record<string, unknown>;
+        return {
+          id: stringOf(record.id),
+          status: stringOf(record.status) || 'unknown',
+          evidence: stringOf(record.evidence),
+        };
+      })
+    : [];
+
+  return {
+    riskTier: riskTier as RiskTierWire,
+    intent: stringOf(payload.intent),
+    planRef: stringOf(payload.planRef) || null,
+    changedFiles: numberOf(payload.changedFiles) ?? 0,
+    diffStats: {
+      additions: numberOf(diff.additions) ?? 0,
+      deletions: numberOf(diff.deletions) ?? 0,
+    },
+    assertions,
+    architectureImpact: stringList(payload.architectureImpact),
+    openQuestions: stringList(payload.openQuestions),
+    reviewerChecklist: stringList(payload.reviewerChecklist),
+  };
+}
+
 export interface AutonomyEventView {
   type: 'autonomy.enabled' | 'autonomy.paused' | 'autonomy.refused';
   actor: string | null;
@@ -310,6 +353,10 @@ export function boardStages(items: { stage: string }[]): string[] {
 
 function stringOf(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 
 function numberOf(value: unknown): number | null {

@@ -100,7 +100,7 @@ test('the Factories + is an honest link to the add-factory how-to', async ({ pag
   await expect(page).toHaveURL(/\/help\/factories\/add$/);
   await expect(page.getByTestId('help-entry-title')).toHaveText('Add a factory');
   await expect(page.getByTestId('help-entry-status')).toContainText('git-backed');
-  await expect(page.getByTestId('help-entry')).toContainText('never writes the worktree');
+  await expect(page.getByTestId('help-entry').first()).toContainText('does not create factories');
   await expect(page.getByTestId('help-checklist')).toContainText('factory validate');
 
   // Help is part of the main menu, above the account footer.
@@ -145,7 +145,7 @@ test('the API nav opens the reference generated from the served document', async
   await expect(runsList.getByTestId('api-endpoint-responses')).toContainText('400');
 
   // The versioning rule is stated, and the raw document is linked and really served.
-  await expect(page.getByTestId('help-entry')).toContainText('breaking change');
+  await expect(page.getByTestId('help-entry').first()).toContainText('breaking change');
   const rawLink = page.getByTestId('api-raw-spec');
   await expect(rawLink).toHaveAttribute('href', '/api/openapi.json');
   const raw = await page.request.get('/api/openapi.json');
@@ -159,7 +159,7 @@ test('the API nav opens the reference generated from the served document', async
 
   // Tag metadata: every group carries a description, so the explorer renders context.
   const tags = document.tags ?? [];
-  expect(tags.length).toBe(20);
+  expect(tags.length).toBe(22);
   expect(tags.filter((tag) => (tag.description ?? '').trim().length === 0)).toEqual([]);
 
   // The document explains versioning, both base URLs and console auth.
@@ -372,7 +372,7 @@ test('the factory how-tos include supported projects, linked from the quick star
 
   await expect(page).toHaveURL(/\/help\/factories\/supported-projects$/);
   await expect(page.getByTestId('help-entry-title')).toHaveText('Supported projects');
-  const article = page.getByTestId('help-entry');
+  const article = page.getByTestId('help-entry').first();
   await expect(article).toContainText('repository diff verified by checks');
   await expect(article).toContainText('Terraform');
   await expect(article).toContainText('merge queue');

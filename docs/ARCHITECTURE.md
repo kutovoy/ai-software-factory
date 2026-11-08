@@ -179,20 +179,26 @@ operator work. See ADR-049 and `openspec/specs/{retention,quotas,self-improvemen
 
 ## 5b. Long-running missions
 
-A mission is a durable goal above work items (ADR-050/051). The planner writes a mission validation contract
-before features exist; a human approves the plan by default, while full autonomy with a satisfied benchmark
-gate auto-approves it. Features run sequentially as work items that start at `implement`, then `review` and
-`ship`; the factory's whole-app `verify` gate is owned by the milestone boundary, where fresh scrutiny and
-user-testing validators run after all features merge. A mission feature already satisfied by the integrated
-branch may complete with an empty patch and no PR (`work_item.no_changes`); normal work items still fail
-`patch_missing`. For runnable goals the planner must include build and e2e assertions. Findings become targeted
-fix features, capped by validation rounds. Small JSON checkpoints plus an append-only event log hold the shared
-state outside the model, and `continueAsNew` bounds Temporal history at milestone boundaries. Mission budget
-caps are admission guards on top of factory quotas. Validation runs clone the integrated forge repository (not
-the central factory checkout), and local runs honour an explicit `repo.url` so the validator sees the merged
-tree. The MVP is sequential; parallel features/worktrees, mission templates, cross-repo missions and
-mission-level canaries are follow-ups. See `openspec/specs/missions/spec.md`, ADR-050/051 and
-`docs/STATUS.md`.
+A mission is a durable goal above work items (ADR-050/051/052). The planner writes the upstream planning
+artifacts — product review, system architecture, program design and vertical slices — and a mission validation
+contract before features exist. The contract can include `architecture` and `maintainability` assertions with
+named thresholds; medium/high-risk runnable goals must include at least one of each. Plans carry a `riskTier`
+(`low`/`medium`/`high`) with reasons. Only a low-risk plan may be auto-approved, and only when autonomy is
+enabled/unpaused, `autonomyLevel: full`, and the benchmark gate is satisfied; medium/high plans always wait for
+a human plan gate. High-risk work items force human review and human ship gates and never auto-merge. Features
+run sequentially as work items that start at `implement`, then `review` and `ship`; the factory's whole-app
+`verify` gate is owned by the milestone boundary, where fresh scrutiny and user-testing validators run after
+all features merge. A mission feature already satisfied by the integrated branch may complete with an empty
+patch and no PR (`work_item.no_changes`); normal work items still fail `patch_missing`. Findings become
+targeted fix features, capped by validation rounds. Small JSON checkpoints plus an append-only event log hold
+the shared state outside the model, and `continueAsNew` bounds Temporal history at milestone boundaries.
+Mission budget caps are admission guards on top of factory quotas. Validation runs clone the integrated forge
+repository (not the central factory checkout), and local runs honour an explicit `repo.url` so the validator
+sees the merged tree. Before a review gate, the orchestrator records a deterministic `review.packet` event
+(intent, plan reference, diff stats, assertion evidence, architecture impact, open questions and a checklist);
+it is a decision surface, not model prose. The MVP is sequential; parallel features/worktrees, mission
+templates, cross-repo missions and mission-level canaries are follow-ups. See
+`openspec/specs/missions/spec.md`, ADR-050/051/052 and `docs/STATUS.md`.
 
 ## 6. Measurement and self-improvement
 

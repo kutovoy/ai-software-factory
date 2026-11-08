@@ -82,18 +82,18 @@ budget and pause/resume/cancel; the Inbox shows plan gates and blocked missions.
 `hello-nextjs` mission (`mis_01M6VSNQ3ZR06P3HBTEV9W40A1`) reached `done` with four features, passing build and
 Playwright evidence, and PRs #27–#29.
 
-## Software-factory quality & risk workstream (planned, 2026-11-07)
+## Software-factory quality & risk workstream (P0 shipped, 2026-11-07)
 
 Research and live-mission evidence point to the same gap: generation is cheap, but verification and human
 comprehension are scarce; test-pass evidence alone does not protect maintainability. The detailed analysis,
 evidence and implementation plan are in [`docs/SOFTWARE_FACTORY_WEAKNESSES.md`](SOFTWARE_FACTORY_WEAKNESSES.md).
-The prepared OpenSpec change is `harden-factory-quality`.
+The archived OpenSpec change is `2026-11-07-harden-factory-quality` (ADR-052).
 
-**P0 — implement next after compaction:**
+**P0 — shipped:**
 
 1. **Risk-tiered autonomy.** Low/medium/high risk tiers with per-tier plan approval, review and merge policy;
    high-risk paths always require human plan/review/merge, even under `autonomyLevel: full`.
-2. **Architecture + maintainability assertions.** Add `architecture`/`maintainability` validation tiers,
+2. **Architecture + maintainability assertions.** `architecture`/`maintainability` validation tiers,
    deterministic checks where available, thresholds and evidence; medium/high-risk runnable goals must include
    them.
 3. **Planning artifacts.** Mission plans gain product review, system architecture, program design and
@@ -114,7 +114,9 @@ Done: Phases 0–5, roadmap items 1–12, remote runners on Linux/macOS (live-ve
 lights-off cycle with zero human decisions, full `runner: remote` factory cycles on macOS native and
 Linux Docker (PRs #13 and #14), and long-running missions with plan approval, milestones, validation,
 checkpoints, fix features, budget and Mission Control (OpenSpec `add-long-running-missions`), plus console
-connection recovery for API/web restarts (OpenSpec `harden-console-connectivity`).
+connection recovery for API/web restarts (OpenSpec `harden-console-connectivity`) and the risk/quality P0
+workstream: risk-tiered autonomy, architecture/maintainability assertions, planning artifacts, vertical
+slices and deterministic review packets (archived OpenSpec `2026-11-07-harden-factory-quality`, ADR-052).
 
 Remaining, in rough priority order:
 

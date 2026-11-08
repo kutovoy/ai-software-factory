@@ -11,6 +11,19 @@ const createdWorkItems: Array<{ factoryId: string; workItemId: string }> = [];
 /** Factory ids by definition key, cached per worker (change `add-factory-identity`). */
 const factoryIds = new Map<string, string>();
 
+/**
+ * Next.js streaming can leave a transient duplicate of the same server-rendered tree in the
+ * DOM until hydration settles. Tests wait for the network to go idle and give React one
+ * short beat to remove the stale tree before asserting on single nodes.
+ */
+export async function settlePage(
+  page: import('@playwright/test').Page,
+  beatMs = 750,
+): Promise<void> {
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(beatMs);
+}
+
 export function trackRun(factoryId: string, runId: string | null | undefined): void {
   if (!runId) return;
   if (created.some((entry) => entry.runId === runId)) return;

@@ -1101,3 +1101,30 @@ satisfied by an attestation or an audited override; every other factory keeps th
 quality gate. Empty mission features have no PR/review, so milestone validators are the backstop. The live
 `hello-nextjs` mission `mis_01M6VSNQ3ZR06P3HBTEV9W40A1` completed with four features, an automatic plan
 approval, passing scrutiny build evidence and passing Playwright user-testing evidence (PRs #27–#29).
+
+## ADR-052 — Risk-tiered autonomy, quality assertions and review packets
+
+**Status:** accepted (2026-11-07, implemented in archived `2026-11-07-harden-factory-quality`).
+**Context:** a factory-wide `autonomyLevel: full` switch is too coarse. Generation is cheap, but verification
+and human comprehension are scarce; test-pass evidence alone can pass while coupling, duplication or
+comprehension debt worsens. High-blast-radius changes (auth, billing, migrations, public APIs, security) need
+human judgment even when a low-risk loop can run dark. The `hello-nextjs` greenfield mission is evidence for a
+small goal, not for long-lived brownfield maintainability.
+**Decision:** (1) factories may declare `governance.risk` with `low`/`medium`/`high` tiers, per-tier
+`planApproval`/`review`/`merge` policy and `highRiskPaths`. Plans and features carry a derived `riskTier` and
+reasons. Auto-approval is limited to low-risk plans under full autonomy with a satisfied benchmark gate;
+medium/high plans require a human plan gate. High-risk work items force human review and human ship gates and
+never auto-merge. (2) `architecture` and `maintainability` become validation tiers with optional named
+thresholds; medium/high-risk runnable plans must include at least one of each, and missing required evidence
+blocks verify. (3) mission plans gain optional product review, architecture, program design and vertical-slice
+artifacts; features declare a `verticalSlice` and `slice`/`enabler` kind, and a plan must contain at least one
+real slice. (4) before a review gate, the orchestrator records a deterministic `review.packet` event (intent,
+plan reference, diff stats, assertion evidence, architecture impact, open questions, checklist); high-risk
+items use it as the human review surface.
+**Consequences:** autonomy is bounded by blast radius and verification capacity, not by a global switch.
+Old factories and plans remain valid because the risk block and artifacts are optional and the plan schema
+defaults `riskTier` to `low`. The review packet is assembled from stored evidence and diff data, never model
+prose, so it is auditable. Human review for high risk reduces throughput by design. The packet is generated at
+review-gate time, so verify evidence may arrive after the first packet; the raw diff and events remain the
+source of truth. Brownfield maintainability still needs a longitudinal benchmark (P1), not a single greenfield
+mission.

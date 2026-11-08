@@ -176,21 +176,21 @@ test.describe('console operations', () => {
 
     await page.goto(await factoryPage(page.request, 'example', 'work-items'));
     const card = page.locator(
-      `[data-testid="work-item-card"][data-work-item-id="${workItemId}"]`,
+      `[data-testid="work-item-card"][data-work-item-id="${workItemId}"]:visible`,
     );
 
     // Hidden by default; the chip reports it is off.
-    await expect(page.getByTestId('work-items-status-filters')).toBeVisible();
-    await expect(page.getByTestId('work-items-status-cancelled')).toHaveAttribute(
+    await expect(page.getByTestId('work-items-status-filters').first()).toBeVisible();
+    await expect(page.getByTestId('work-items-status-cancelled').first()).toHaveAttribute(
       'data-active',
       'false',
     );
     await expect(card).toHaveCount(0);
 
     // Toggling the chip shows exactly the cancelled item.
-    await page.getByTestId('work-items-status-cancelled').click();
+    await page.getByTestId('work-items-status-cancelled').first().click();
     await expect(page).toHaveURL(/status=/);
-    await expect(page.getByTestId('work-items-status-cancelled')).toHaveAttribute(
+    await expect(page.getByTestId('work-items-status-cancelled').first()).toHaveAttribute(
       'data-active',
       'true',
     );

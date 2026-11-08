@@ -2,10 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  VALIDATION_TIERS,
   buildValidationContract,
   evaluateValidationContract,
   inferValidationChecks,
   parseValidationEvidence,
+  validationCheckSchema,
+  validationEvidenceSchema,
   type ValidationCheck,
   type ValidationContract,
 } from '../src/validation';
@@ -113,6 +116,70 @@ describe('validation contract builder', () => {
     expect(contract.checks).toEqual([explicit]);
   });
 
+  test('includes architecture and maintainability tiers', () => {
+    expect(VALIDATION_TIERS).toContain('architecture');
+    expect(VALIDATION_TIERS).toContain('maintainability');
+  });
+
+  test('infers architecture and maintainability checks after build/e2e', () => {
+    const root = tempDir('factory-validation-');
+    write(
+      root,
+      'package.json',
+      JSON.stringify({
+        scripts: {
+          typecheck: 'tsc --noEmit',
+          test: 'vitest run',
+          'arch:check': 'dependency-cruiser src',
+          jscpd: 'jscpd src',
+        },
+      }),
+    );
+    write(root, 'playwright.config.ts', 'export default {};\n');
+    write(root, 'bun.lock', '');
+
+    const checks = inferValidationChecks(root);
+    expect(checks.map((check) => check.id)).toEqual([
+      'typecheck',
+      'test',
+      'e2e',
+      'architecture',
+      'maintainability',
+    ]);
+    const architecture = checks.find((check) => check.id === 'architecture')!;
+    expect(architecture.tier).toBe('architecture');
+    expect(architecture.title).toBe('Architecture boundaries');
+    expect(architecture.command).toBe('bun run arch:check');
+    expect(architecture.expected).toBe('exit code 0');
+    const maintainability = checks.find((check) => check.id === 'maintainability')!;
+    expect(maintainability.tier).toBe('maintainability');
+    expect(maintainability.title).toBe('Maintainability');
+    expect(maintainability.command).toBe('bun run jscpd');
+  });
+
+  test('accepts the alternate architecture and maintainability script names', () => {
+    const root = tempDir('factory-validation-');
+    write(
+      root,
+      'package.json',
+      JSON.stringify({ scripts: { depcruise: 'depcruise src', quality: 'tsc && eslint' } }),
+    );
+    write(root, 'bun.lock', '');
+
+    const checks = inferValidationChecks(root);
+    expect(checks.map((check) => check.id)).toEqual(['architecture', 'maintainability']);
+    expect(checks[0].command).toBe('bun run depcruise');
+    expect(checks[1].command).toBe('bun run quality');
+  });
+
+  test('does not invent quality checks without scripts', () => {
+    const root = tempDir('factory-validation-');
+    write(root, 'package.json', JSON.stringify({ scripts: { test: 'vitest run' } }));
+
+    const checks = inferValidationChecks(root);
+    expect(checks.map((check) => check.id)).toEqual(['test']);
+  });
+
   test('always returns at least one check', () => {
     const root = tempDir('factory-validation-');
     const contract = buildValidationContract({
@@ -174,6 +241,60 @@ describe('validation evidence parsing', () => {
   test('returns an empty list when no block exists', () => {
     expect(parseValidationEvidence('no evidence here')).toEqual([]);
     expect(parseValidationEvidence('')).toEqual([]);
+  });
+
+  test('parses finite metrics and preserves them', () => {
+    const text = [
+      '```json',
+      '{"validation":[{"id":"architecture","status":"pass","evidence":"no cycles",',
+      '"metrics":{"cycles":0,"duplicationPercent":2.5,"ignored":"text","bad":null}}]}',
+      '```',
+    ].join('\n');
+
+    expect(parseValidationEvidence(text)).toEqual([
+      {
+        checkId: 'architecture',
+        status: 'pass',
+        source: 'agent',
+        detail: 'no cycles',
+        metrics: { cycles: 0, duplicationPercent: 2.5 },
+      },
+    ]);
+  });
+
+  test('omits metrics when none are finite', () => {
+    const text =
+      '```json\n{"validation":[{"id":"test","status":"pass","metrics":{"bad":null}}]}\n```';
+    expect(parseValidationEvidence(text)).toEqual([
+      { checkId: 'test', status: 'pass', source: 'agent' },
+    ]);
+  });
+
+  test('schema mirrors optional thresholds and metrics', () => {
+    const check = {
+      id: 'maintainability',
+      title: 'Maintainability',
+      tier: 'maintainability',
+      required: true,
+      evidence: 'command',
+      thresholds: { maxDuplicationPercent: 3 },
+    };
+    expect(validationCheckSchema.safeParse(check).success).toBe(true);
+    expect(
+      validationCheckSchema.safeParse({ ...check, thresholds: { bad: Number.NaN } }).success,
+    ).toBe(false);
+
+    const evidence = {
+      checkId: 'maintainability',
+      status: 'pass',
+      source: 'agent',
+      metrics: { duplicationPercent: 2 },
+    };
+    expect(validationEvidenceSchema.safeParse(evidence).success).toBe(true);
+    expect(
+      validationEvidenceSchema.safeParse({ ...evidence, metrics: { bad: Number.POSITIVE_INFINITY } })
+        .success,
+    ).toBe(false);
   });
 });
 

@@ -335,6 +335,24 @@ export interface WorkItemEvent {
   createdAt: string | null;
 }
 
+/**
+ * Deterministic review packet (`harden-factory-quality`), stored as a `review.packet`
+ * work-item event. It is assembled from plan, evidence and diff data — not model prose — so a
+ * high-risk human review gate has an auditable decision surface while the full diff stays
+ * linked.
+ */
+export interface ReviewPacketWire {
+  riskTier: RiskTierWire;
+  intent: string;
+  planRef: string | null;
+  changedFiles: number;
+  diffStats: { additions: number; deletions: number };
+  assertions: { id: string; status: string; evidence: string }[];
+  architectureImpact: string[];
+  openQuestions: string[];
+  reviewerChecklist: string[];
+}
+
 export interface GateDecisionVerdictWire {
   decision: 'approve' | 'request_changes' | 'reject' | 'unknown';
   source: 'structured' | 'textual' | 'none';
@@ -367,6 +385,11 @@ export interface InboxGateWire {
   factoryId: string;
   factoryName: string;
   gate: GateDecisionRecord;
+  /**
+   * Newest deterministic review packet recorded for the work item (`review.packet` event);
+   * absent or null when the loop has not assembled one yet. Additive: older APIs omit it.
+   */
+  reviewPacket?: ReviewPacketWire | null;
 }
 
 export interface InboxPermissionWire {
@@ -420,11 +443,20 @@ export interface InboxMissionWire {
 export interface ValidationCheckWire {
   id: string;
   title: string;
-  tier: 'unit' | 'component' | 'integration' | 'e2e' | 'manual';
+  tier:
+    | 'unit'
+    | 'component'
+    | 'integration'
+    | 'e2e'
+    | 'manual'
+    | 'architecture'
+    | 'maintainability';
   required: boolean;
   evidence: 'command' | 'artifact' | 'forge-check' | 'manual';
   command?: string;
   expected?: string;
+  /** Named thresholds the evidence must satisfy (e.g. `{ maxDependencyCycles: 0 }`). */
+  thresholds?: Record<string, number>;
 }
 
 export interface ValidationEvidenceWire {
@@ -433,6 +465,8 @@ export interface ValidationEvidenceWire {
   source: 'agent' | 'forge' | 'human' | 'artifact';
   detail?: string;
   at?: string;
+  /** Measured metrics for thresholded checks (e.g. dependency cycles, duplication). */
+  metrics?: Record<string, number>;
 }
 
 export interface ValidationCheckResultWire {
@@ -1839,13 +1873,69 @@ export interface MissionBudgetWire {
   maxWallClockHours?: number;
 }
 
+/**
+ * Risk tier for a mission plan or feature (`harden-factory-quality`). Low may auto-approve
+ * under full autonomy; medium and high always need a human plan gate, and high also needs a
+ * human review gate. Absent on pre-change plans — treat it as `low`, never invent a tier.
+ */
+export type RiskTierWire = 'low' | 'medium' | 'high';
+
+/** Upstream product review: the problem, the behaviour it must show, and any mockups. */
+export interface MissionProductReviewWire {
+  problem: string;
+  desiredBehavior: string[];
+  mockups: string[];
+}
+
+export interface MissionArchitectureComponentWire {
+  name: string;
+  responsibility: string;
+  contracts: string[];
+}
+
+/** System architecture captured before implementation. */
+export interface MissionArchitectureWire {
+  summary: string;
+  components: MissionArchitectureComponentWire[];
+  dataModels: string[];
+  constraints: string[];
+}
+
+export interface MissionProgramModuleWire {
+  name: string;
+  path: string;
+  responsibility: string;
+  publicApi: string[];
+}
+
+/** Program design: modules, their public surface and the call graph between them. */
+export interface MissionProgramDesignWire {
+  modules: MissionProgramModuleWire[];
+  callGraph: string[];
+}
+
+/** An end-to-end behaviour the plan delivers, with the checks that verify it. */
+export interface MissionVerticalSliceWire {
+  name: string;
+  order: number;
+  featureIds: string[];
+  checks: string[];
+}
+
 /** One behavioral assertion in the mission-level validation contract. */
 export interface MissionValidationAssertionWire {
   id: string;
   title: string;
   /** The observable behaviour the validator must exercise or inspect. */
   assertion: string;
-  tier: 'unit' | 'component' | 'integration' | 'e2e' | 'manual';
+  tier:
+    | 'unit'
+    | 'component'
+    | 'integration'
+    | 'e2e'
+    | 'manual'
+    | 'architecture'
+    | 'maintainability';
   required: boolean;
   /** `agent-browser`, `playwright`, `command`, `manual`, … */
   tool: string;
@@ -1853,6 +1943,8 @@ export interface MissionValidationAssertionWire {
   evidence: string;
   command?: string;
   expected?: string;
+  /** Named thresholds the evidence must satisfy (e.g. `{ maxDependencyCycles: 0 }`). */
+  thresholds?: Record<string, number>;
 }
 
 export interface MissionValidationContractWire {
@@ -1875,6 +1967,12 @@ export interface MissionPlanFeatureWire {
   dependsOn: string[];
   acceptanceCheckIds: string[];
   workItemType?: string;
+  /** Derived feature risk tier; absent means it inherits the plan tier. */
+  riskTier?: RiskTierWire;
+  /** The end-to-end behaviour this feature delivers, or what an enabler unblocks. */
+  verticalSlice?: string;
+  /** `slice` ships a behaviour; `enabler` is scaffolding that a later slice verifies. */
+  kind?: 'slice' | 'enabler';
 }
 
 export interface MissionPlanMilestoneWire {
@@ -1898,6 +1996,19 @@ export interface MissionPlanWire {
   milestones: MissionPlanMilestoneWire[];
   risks: string[];
   assumptions: string[];
+  /**
+   * Derived plan risk tier. The core schema defaults it to `low`; a plan persisted before
+   * `harden-factory-quality` has no field, so the console treats it as `low` without inventing
+   * reasons.
+   */
+  riskTier?: RiskTierWire;
+  /** Human-readable reasons behind `riskTier`; absent on pre-change plans. */
+  riskReasons?: string[];
+  /** Optional upstream planning artifacts; old plans remain valid without them. */
+  productReview?: MissionProductReviewWire;
+  architecture?: MissionArchitectureWire;
+  programDesign?: MissionProgramDesignWire;
+  verticalSlices?: MissionVerticalSliceWire[];
 }
 
 /** A mission row plus the list projection counters. */

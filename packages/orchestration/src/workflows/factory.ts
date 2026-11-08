@@ -17,6 +17,7 @@ import type {
   FactoryWorkflowOutcome,
   FactoryWorkflowResume,
   LoopStageName,
+  MergePolicyName,
   ReviewerReport,
   StageNodeSummary,
   StageWorkflowInput,
@@ -133,6 +134,15 @@ export async function FactoryWorkflow(
   });
 
   const order = input.stageGraph.order;
+
+  // Risk-tiered autonomy (change `harden-factory-quality`): high risk always merges via a
+  // human; the tier policy may also force a human merge/review for any tier.
+  const effectiveMergePolicy: MergePolicyName =
+    input.riskTier === 'high' || input.riskPolicy?.merge === 'human'
+      ? 'human'
+      : input.mergePolicy;
+  const humanReviewPolicy =
+    input.riskTier === 'high' || input.riskPolicy?.review === 'human';
 
   const nodeFor = (stage: string): StageNodeSummary | null =>
     input.stageGraph.nodes.find((node) => node.name === stage) ?? null;
@@ -299,7 +309,8 @@ export async function FactoryWorkflow(
     const autoApproveAllowed =
       input.autonomy.enabled &&
       input.autonomy.benchmarkGateSatisfied &&
-      UNATTENDED_MERGE_POLICIES.has(input.mergePolicy);
+      UNATTENDED_MERGE_POLICIES.has(effectiveMergePolicy) &&
+      !humanReviewPolicy;
 
     const stageHarness = input.harnessOverride ?? node.harness ?? input.defaultHarness;
     // The fake harness always runs on the ephemeral fake runner, never a sandbox.
@@ -339,6 +350,11 @@ export async function FactoryWorkflow(
       ...(input.permissionTimeoutMs ? { permissionTimeoutMs: input.permissionTimeoutMs } : {}),
       ...(input.validationContract ? { validationContract: input.validationContract } : {}),
       ...(input.governance ? { governance: input.governance } : {}),
+      ...(input.riskTier ? { riskTier: input.riskTier } : {}),
+      ...(input.riskPolicy ? { riskPolicy: input.riskPolicy } : {}),
+      ...(input.planRef ? { planRef: input.planRef } : {}),
+      ...(input.architectureImpact ? { architectureImpact: input.architectureImpact } : {}),
+      ...(input.openQuestions ? { openQuestions: input.openQuestions } : {}),
       ...(input.budget?.maxCostUsdPerStage !== undefined
         ? { maxCostUsd: input.budget.maxCostUsdPerStage }
         : input.budget?.maxCostUsdPerRun !== undefined
@@ -394,8 +410,9 @@ export async function FactoryWorkflow(
           });
           reviewVerdict = verdict;
 
-          // Disagreement / reject / incomplete reports force a human review gate.
-          const forceHuman = verdict.verdict !== 'approve';
+          // Disagreement / reject / incomplete reports force a human review gate; high
+          // risk and a human review policy do the same even on an approving verdict.
+          const forceHuman = verdict.verdict !== 'approve' || humanReviewPolicy;
           const gateInput: StageWorkflowInput = {
             ...common,
             phase: 'gate',
@@ -421,12 +438,17 @@ export async function FactoryWorkflow(
           };
         }
 
+        const forcedGate =
+          (stage === 'review' && humanReviewPolicy) ||
+          (stage === 'ship' && effectiveMergePolicy === 'human')
+            ? 'human'
+            : node.gate;
         const stageInput: StageWorkflowInput = {
           ...common,
           // `ship` is a forge/merge stage, not an agent run: it only resolves the deploy
           // gate and the parent then merges (or hands the PR to the merge queue).
           phase: stage === 'ship' ? 'gate' : 'run',
-          gate: node.gate,
+          gate: forcedGate,
         };
 
         return await executeChild(StageWorkflow, {
@@ -665,7 +687,7 @@ export async function FactoryWorkflow(
         return finish('done', stage);
       }
 
-      if (input.mergePolicy === 'disabled') {
+      if (effectiveMergePolicy === 'disabled') {
         await workItems.setWorkItemStatusActivity({
           workItemId: input.workItemId,
           status: 'done',
@@ -675,7 +697,7 @@ export async function FactoryWorkflow(
         return finish('done', stage, 'merge policy disabled', false);
       }
 
-      if (input.mergePolicy === 'human' && result.gate?.automatic === true) {
+      if (effectiveMergePolicy === 'human' && result.gate?.automatic === true) {
         await workItems.setWorkItemStatusActivity({
           workItemId: input.workItemId,
           status: 'escalated',

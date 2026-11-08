@@ -1439,6 +1439,15 @@ async function buildRetryInput(
     defaultHarness: defaults.harness,
     ...(defaults.model ? { defaultModel: defaults.model } : {}),
     defaultRunner: defaults.runner,
+    // A retry keeps the harness the operator chose at creation. Without this override the
+    // stage agent's declared harness (e.g. opencode) would win over the snapshot's `fake`.
+    ...(typeof snapshot.harness === 'string'
+      ? {
+          harnessOverride: snapshot.harness as NonNullable<
+            FactoryWorkflowInput['harnessOverride']
+          >,
+        }
+      : {}),
     ...(typeof snapshot.runner === 'string'
       ? { runnerOverride: snapshot.runner as RunnerKindName }
       : {}),

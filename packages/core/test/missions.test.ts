@@ -71,8 +71,73 @@ function plan(overrides: Partial<MissionPlan> = {}): MissionPlan {
     ],
     risks: [],
     assumptions: [],
+    riskTier: 'low',
+    riskReasons: [],
     ...overrides,
   };
+}
+
+function mediumRiskPlan(): MissionPlan {
+  const base = plan({ riskTier: 'medium', riskReasons: ['goal touches billing'] });
+  base.validationContract.assertions.push(
+    {
+      id: 'VAL-ARCH-001',
+      title: 'Architecture boundaries',
+      assertion: 'No dependency cycles or layering violations',
+      tier: 'architecture',
+      required: true,
+      tool: 'command',
+      evidence: 'exit code 0',
+    },
+    {
+      id: 'VAL-MAINT-001',
+      title: 'Maintainability thresholds',
+      assertion: 'Duplication stays below the threshold',
+      tier: 'maintainability',
+      required: true,
+      tool: 'command',
+      evidence: 'metrics report',
+      thresholds: { maxDuplicationPercent: 3 },
+    },
+  );
+  base.productReview = {
+    problem: 'Billing export is missing',
+    desiredBehavior: ['The export downloads a CSV'],
+    mockups: [],
+  };
+  base.architecture = {
+    summary: 'A small export service behind the existing billing module',
+    components: [
+      { name: 'ExportService', responsibility: 'Builds the CSV', contracts: ['exportCsv()'] },
+    ],
+    dataModels: ['Invoice'],
+    constraints: ['No new runtime dependencies'],
+  };
+  base.programDesign = {
+    modules: [
+      {
+        name: 'ExportService',
+        path: 'src/billing/export.ts',
+        responsibility: 'Builds the CSV',
+        publicApi: ['exportCsv'],
+      },
+    ],
+    callGraph: ['route -> ExportService'],
+  };
+  const [featureA, featureB] = base.milestones[0]!.features;
+  featureA!.kind = 'slice';
+  featureA!.verticalSlice = 'The page renders and the export link works';
+  featureB!.kind = 'slice';
+  featureB!.verticalSlice = 'The link downloads the CSV';
+  base.verticalSlices = [
+    {
+      name: 'Billing export',
+      order: 0,
+      featureIds: [featureA!.id, featureB!.id],
+      checks: ['page renders', 'CSV downloads'],
+    },
+  ];
+  return base;
 }
 
 describe('mission plan validation', () => {
@@ -106,6 +171,96 @@ describe('mission plan validation', () => {
     const result = validateMissionPlan(invalid);
     expect(result.plan).toBeNull();
     expect(result.errors.join(' ')).toContain('unknown assertion');
+  });
+});
+
+describe('mission risk tiers and planning artifacts', () => {
+  it('keeps an old low-risk plan without new artifacts valid', () => {
+    const result = validateMissionPlan(plan());
+    expect(result.errors).toEqual([]);
+    expect(result.plan?.riskTier).toBe('low');
+    expect(result.plan?.riskReasons).toEqual([]);
+    expect(result.plan?.productReview).toBeUndefined();
+  });
+
+  it('requires product review, architecture, program design, slices and quality assertions for medium risk', () => {
+    const result = validateMissionPlan(plan({ riskTier: 'medium' }));
+    expect(result.plan).toBeNull();
+    const errors = result.errors.join(' ');
+    expect(errors).toContain('productReview');
+    expect(errors).toContain('architecture section');
+    expect(errors).toContain('programDesign');
+    expect(errors).toContain('verticalSlices');
+    expect(errors).toContain('architecture assertion');
+    expect(errors).toContain('maintainability assertion');
+  });
+
+  it('applies the same artifact requirements to high risk', () => {
+    const missing = validateMissionPlan(plan({ riskTier: 'high' }));
+    expect(missing.plan).toBeNull();
+    expect(missing.errors.join(' ')).toContain('productReview');
+
+    const complete = mediumRiskPlan();
+    complete.riskTier = 'high';
+    complete.riskReasons = ['goal mentions "security"'];
+    expect(validateMissionPlan(complete).errors).toEqual([]);
+  });
+
+  it('accepts a complete medium-risk plan', () => {
+    const result = validateMissionPlan(mediumRiskPlan());
+    expect(result.errors).toEqual([]);
+    expect(result.plan?.riskTier).toBe('medium');
+    expect(result.plan?.verticalSlices?.[0]?.featureIds).toHaveLength(2);
+    expect(
+      result.plan?.validationContract.assertions.find((item) => item.id === 'VAL-MAINT-001')
+        ?.thresholds,
+    ).toEqual({ maxDuplicationPercent: 3 });
+  });
+
+  it('requires at least one non-enabler feature when slices are present', () => {
+    const invalid = mediumRiskPlan();
+    for (const feature of invalid.milestones[0]!.features) feature.kind = 'enabler';
+    const result = validateMissionPlan(invalid);
+    expect(result.plan).toBeNull();
+    expect(result.errors.join(' ')).toContain('kind "slice"');
+  });
+
+  it('requires enablers to state what later slice verifies them', () => {
+    const invalid = mediumRiskPlan();
+    const enabler = invalid.milestones[0]!.features[0]!;
+    enabler.kind = 'enabler';
+    delete enabler.verticalSlice;
+    const result = validateMissionPlan(invalid);
+    expect(result.plan).toBeNull();
+    expect(result.errors.join(' ')).toContain('enabler feature');
+    expect(result.errors.join(' ')).toContain('verticalSlice');
+  });
+
+  it('rejects unknown, duplicated and uncovered features in vertical slices', () => {
+    const invalid = mediumRiskPlan();
+    const [featureA, featureB] = invalid.milestones[0]!.features;
+    invalid.verticalSlices = [
+      { name: 'First', order: 0, featureIds: [featureA!.id, featureA!.id], checks: [] },
+      { name: 'Second', order: 1, featureIds: ['mft_00000000000000000000000000'], checks: [] },
+    ];
+
+    const result = validateMissionPlan(invalid);
+    expect(result.plan).toBeNull();
+    const errors = result.errors.join(' ');
+    expect(errors).toContain('appears in more than one vertical slice');
+    expect(errors).toContain('unknown feature');
+    expect(errors).toContain(`feature "${featureB!.id}" is not part of any vertical slice`);
+  });
+
+  it('applies slice coverage rules when a low-risk plan declares slices', () => {
+    const invalid = plan();
+    const [featureA] = invalid.milestones[0]!.features;
+    invalid.verticalSlices = [
+      { name: 'Only A', order: 0, featureIds: [featureA!.id], checks: [] },
+    ];
+    const result = validateMissionPlan(invalid);
+    expect(result.plan).toBeNull();
+    expect(result.errors.join(' ')).toContain('not part of any vertical slice');
   });
 });
 

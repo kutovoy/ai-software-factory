@@ -24,9 +24,11 @@ This project is that factory, built to be **self-hosted, inspectable and yours**
 - **Definitions as code.** Agents, gates, scorers, benchmarks and automations live in git
   (`factories/<owner>/<name>/`, with legacy top-level admin factories), versioned and diffable. Each definition
   carries a stable `fac_<ulid>` id; the console reads them and never writes your worktree.
-- **Lights on or lights off.** Gates resolve `automation → factory → global`, each `human`, `agent` or
+- **Lights on or lights off, by risk.** Gates resolve `automation → factory → global`, each `human`, `agent` or
   `policy:<name>`. Full autonomy is possible, but enabling it requires a passing benchmark attestation — or an
-  explicit, audited override.
+  explicit, audited override. Autonomy is risk-tiered: low-risk loops may run dark; medium/high plans need a
+  human, and high-risk changes (auth, billing, migrations, public APIs, security) always require human review
+  and ship decisions.
 - **Model- and harness-agnostic.** Any OpenAI-compatible endpoint (LiteLLM, OpenAI, local), any harness behind one
   adapter contract (opencode today). Provider credentials never enter the sandbox.
 - **It measures and improves itself.** Scorers, judge calibration, benchmarks at pinned commits, then a
@@ -36,6 +38,13 @@ This project is that factory, built to be **self-hosted, inspectable and yours**
 
 Short, dated highlights of user-visible changes. Full detail lives in `docs/STATUS.md`.
 
+- **2026-11-07 — Risk-tiered autonomy and review packets.** Missions now carry a `low`/`medium`/`high` risk
+  tier with reasons; only low-risk plans can auto-approve under full autonomy, while medium/high plans always
+  wait for a human. High-risk work items force human review and ship gates and never auto-merge. Validation
+  contracts gain `architecture` and `maintainability` tiers with named thresholds; mission plans gain product
+  review, architecture, program design and vertical-slice artifacts; features declare the end-to-end slice
+  they deliver. A deterministic `review.packet` (intent, plan ref, diff stats, evidence, architecture impact,
+  open questions, checklist) is shown on work-item detail and in the Inbox.
 - **2026-11-07 — Console connection recovery.** A backend or web restart no longer leaves a white page or
   bounces to sign-in. The console distinguishes an unreachable API from a signed-out session, keeps the
   current route mounted, shows a “Server connection issue” banner with automatic 5s retry, pauses

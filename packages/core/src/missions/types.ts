@@ -1,3 +1,4 @@
+import type { RiskTier } from '../governance/risk';
 import type { ValidationTier } from '../validation/types';
 import type { GateDecisionValue, WorkItemType } from '../work-items/types';
 
@@ -104,6 +105,8 @@ export interface MissionValidationAssertion {
   evidence: string;
   command?: string;
   expected?: string;
+  /** Named thresholds the evidence must satisfy (e.g. `{ maxDependencyCycles: 0 }`). */
+  thresholds?: Record<string, number>;
 }
 
 export interface MissionValidationContract {
@@ -118,6 +121,48 @@ export interface MissionValidationContract {
   source: 'orchestrator' | 'human' | 'factory';
 }
 
+/** Upstream product review: what problem the mission solves and the behavior it must show. */
+export interface MissionProductReview {
+  problem: string;
+  desiredBehavior: string[];
+  mockups: string[];
+}
+
+export interface MissionArchitectureComponent {
+  name: string;
+  responsibility: string;
+  contracts: string[];
+}
+
+/** System architecture captured before implementation. */
+export interface MissionArchitecture {
+  summary: string;
+  components: MissionArchitectureComponent[];
+  dataModels: string[];
+  constraints: string[];
+}
+
+export interface MissionProgramModule {
+  name: string;
+  path: string;
+  responsibility: string;
+  publicApi: string[];
+}
+
+/** Program design: modules, their public surface and the call graph between them. */
+export interface MissionProgramDesign {
+  modules: MissionProgramModule[];
+  callGraph: string[];
+}
+
+/** An end-to-end behavior the plan delivers, in order, with its verification checks. */
+export interface MissionVerticalSlice {
+  name: string;
+  order: number;
+  featureIds: string[];
+  checks: string[];
+}
+
 export interface MissionFeaturePlan {
   id: string;
   title: string;
@@ -129,6 +174,12 @@ export interface MissionFeaturePlan {
   acceptanceCheckIds: string[];
   /** Defaults to `task`. */
   workItemType?: WorkItemType;
+  /** Derived risk tier for this feature; absent means it inherits the plan tier. */
+  riskTier?: RiskTier;
+  /** The end-to-end behavior this feature delivers, or what it unblocks for an enabler. */
+  verticalSlice?: string;
+  /** `slice` ships a behavior; `enabler` is scaffolding that a later slice verifies. */
+  kind?: 'slice' | 'enabler';
 }
 
 export interface MissionMilestonePlan {
@@ -151,6 +202,15 @@ export interface MissionPlan {
   milestones: MissionMilestonePlan[];
   risks: string[];
   assumptions: string[];
+  /** Derived plan risk tier; schema defaults to `low` for old plans. */
+  riskTier: RiskTier;
+  /** Human-readable reasons behind `riskTier`. */
+  riskReasons: string[];
+  /** Optional upstream planning artifacts; old plans remain valid without them. */
+  productReview?: MissionProductReview;
+  architecture?: MissionArchitecture;
+  programDesign?: MissionProgramDesign;
+  verticalSlices?: MissionVerticalSlice[];
 }
 
 export interface Mission {

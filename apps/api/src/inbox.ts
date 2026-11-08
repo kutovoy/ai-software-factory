@@ -7,6 +7,7 @@ import {
   type MissionGate,
   type MissionRow,
   type MissionSummary,
+  type ReviewPacket,
   type WorkItemRow,
 } from '@factory/core';
 import { getSql, type RunRow } from '@factory/orchestration';
@@ -29,6 +30,11 @@ export interface InboxGate {
   factoryId: string;
   factoryName: string;
   gate: GateDecisionRecord;
+  /**
+   * Newest deterministic review packet recorded for the work item, or null when the loop has
+   * not assembled one yet. Additive projection field: older clients simply ignore it.
+   */
+  reviewPacket: ReviewPacket | null;
 }
 
 export interface InboxPermission {
@@ -90,6 +96,8 @@ interface GateInboxRow extends WorkItemRow {
   g_requested_at: unknown;
   g_sla_at: unknown;
   g_decided_at: unknown;
+  /** Newest `review.packet` payload for the work item, or null. */
+  review_packet: unknown;
   factory_identity: string | null;
   factory_name: string | null;
   factory_alias: string | null;
@@ -165,6 +173,61 @@ function errorCodeOf(error: string | null): string {
   return error ? (error.split(':')[0]?.trim() || 'run_failed') : 'run_failed';
 }
 
+const RISK_TIERS = new Set<ReviewPacket['riskTier']>(['low', 'medium', 'high']);
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function finiteNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * Defensive projection of a `review.packet` payload. The event is written by the orchestrator,
+ * but an older or partially-written row must never crash the inbox: a payload without a valid
+ * risk tier is treated as absent, and every other field is normalised to the documented shape.
+ */
+function reviewPacketOf(value: unknown): ReviewPacket | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const riskTier =
+    typeof record.riskTier === 'string' && RISK_TIERS.has(record.riskTier as ReviewPacket['riskTier'])
+      ? (record.riskTier as ReviewPacket['riskTier'])
+      : null;
+  if (!riskTier) return null;
+
+  const diff =
+    record.diffStats && typeof record.diffStats === 'object' && !Array.isArray(record.diffStats)
+      ? (record.diffStats as Record<string, unknown>)
+      : {};
+  const assertions = Array.isArray(record.assertions)
+    ? record.assertions.map((assertion) => {
+        const item = (assertion ?? {}) as Record<string, unknown>;
+        return {
+          id: typeof item.id === 'string' ? item.id : '',
+          status: typeof item.status === 'string' ? item.status : 'unknown',
+          evidence: typeof item.evidence === 'string' ? item.evidence : '',
+        };
+      })
+    : [];
+
+  return {
+    riskTier,
+    intent: typeof record.intent === 'string' ? record.intent : '',
+    planRef: typeof record.planRef === 'string' ? record.planRef : null,
+    changedFiles: finiteNumber(record.changedFiles),
+    diffStats: {
+      additions: finiteNumber(diff.additions),
+      deletions: finiteNumber(diff.deletions),
+    },
+    assertions,
+    architectureImpact: stringList(record.architectureImpact),
+    openQuestions: stringList(record.openQuestions),
+    reviewerChecklist: stringList(record.reviewerChecklist),
+  };
+}
+
 export async function getInboxForApi(
   viewer: Viewer | null,
   options: { limit?: number } = {},
@@ -192,6 +255,7 @@ export async function getInboxForApi(
         g.requested_at as g_requested_at,
         g.sla_at as g_sla_at,
         g.decided_at as g_decided_at,
+        rp.payload as review_packet,
         f.id as factory_identity,
         f.name as factory_name,
         f.alias as factory_alias,
@@ -203,6 +267,13 @@ export async function getInboxForApi(
         from work_item_events e
         where e.work_item_id = w.id and e.type = 'work_item.retried'
       ) r on true
+      left join lateral (
+        select e.payload
+        from work_item_events e
+        where e.work_item_id = w.id and e.type = 'review.packet'
+        order by e.id desc
+        limit 1
+      ) rp on true
       left join factories f on f.key = w.factory
       where g.decision is null
         and (${owner}::uuid is null or w.created_by = ${owner}::uuid)
@@ -312,6 +383,7 @@ export async function getInboxForApi(
     workItem: summarizeWorkItem(mapWorkItem(row)),
     factoryId: factoryIdOf(row),
     factoryName: factoryLabel(row),
+    reviewPacket: reviewPacketOf(row.review_packet),
     gate: mapGate({
       work_item_id: row.id,
       stage: row.g_stage,

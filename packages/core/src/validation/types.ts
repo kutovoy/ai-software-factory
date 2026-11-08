@@ -6,7 +6,15 @@
  * `package.json`), so it must stay safe for the Temporal/workflow sandbox.
  */
 
-export const VALIDATION_TIERS = ['unit', 'component', 'integration', 'e2e', 'manual'] as const;
+export const VALIDATION_TIERS = [
+  'unit',
+  'component',
+  'integration',
+  'e2e',
+  'manual',
+  'architecture',
+  'maintainability',
+] as const;
 export type ValidationTier = (typeof VALIDATION_TIERS)[number];
 
 export const VALIDATION_EVIDENCE_SOURCES = ['agent', 'forge', 'human', 'artifact'] as const;
@@ -26,6 +34,8 @@ export interface ValidationCheck {
   evidence: ValidationEvidenceKind;
   command?: string;
   expected?: string;
+  /** Named thresholds the evidence must satisfy (e.g. `{ maxDuplicationPercent: 3 }`). */
+  thresholds?: Record<string, number>;
 }
 
 export interface ValidationConfig {
@@ -53,6 +63,8 @@ export interface ValidationEvidence {
   source: ValidationEvidenceSource;
   detail?: string;
   at?: string;
+  /** Auditable metric values reported alongside the evidence (finite numbers only). */
+  metrics?: Record<string, number>;
 }
 
 export interface ValidationCheckResult {
@@ -95,6 +107,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** Keeps finite numeric entries; returns undefined when no usable metric remains. */
+function toMetrics(value: unknown): Record<string, number> | undefined {
+  if (!isRecord(value)) return undefined;
+  const metrics: Record<string, number> = {};
+  for (const [key, raw] of Object.entries(value)) {
+    if (typeof raw === 'number' && Number.isFinite(raw)) metrics[key] = raw;
+  }
+  return Object.keys(metrics).length > 0 ? metrics : undefined;
+}
+
 function toEvidence(entry: unknown): ValidationEvidence | null {
   if (!isRecord(entry)) return null;
   const id = entry.id;
@@ -108,12 +130,14 @@ function toEvidence(entry: unknown): ValidationEvidence | null {
         ? entry.detail
         : undefined;
   const at = typeof entry.at === 'string' ? entry.at : undefined;
+  const metrics = toMetrics(entry.metrics);
   return {
     checkId: id,
     status,
     source: 'agent',
     ...(detail !== undefined ? { detail } : {}),
     ...(at !== undefined ? { at } : {}),
+    ...(metrics !== undefined ? { metrics } : {}),
   };
 }
 

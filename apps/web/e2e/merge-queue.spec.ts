@@ -113,11 +113,11 @@ test.describe('Integrations, merge queue and automations', () => {
 
     // Lights-on gates: triage and spec are human, then the ship gate enqueues the PR.
     await expectGate(page, detailPath, 'triage', 120_000);
-    await page.getByTestId('gate-approve').click();
+    await page.getByTestId('gate-approve').first().click();
     await expectGate(page, detailPath, 'spec', 120_000);
-    await page.getByTestId('gate-approve').click();
+    await page.getByTestId('gate-approve').first().click();
     await expectGate(page, detailPath, 'ship', 240_000);
-    await page.getByTestId('gate-approve').click();
+    await page.getByTestId('gate-approve').first().click();
 
     // The queue merges the batch in the worker.
     await expect
@@ -155,7 +155,7 @@ test.describe('Integrations, merge queue and automations', () => {
 
     // The item is done and links to the PR the queue merged.
     await page.goto(detailPath);
-    await expect(page.getByTestId('work-item-status')).toHaveText('done');
+    await expect(page.locator('[data-testid="work-item-status"]:visible')).toHaveText('done');
     await expect(page.getByTestId('work-item-pr')).toHaveAttribute('href', /^https:\/\/forge\.local\//);
   });
 
@@ -222,7 +222,7 @@ async function expectGate(
         } catch {
           return 'navigation-error';
         }
-        const gate = page.getByTestId('gate-actions');
+        const gate = page.getByTestId('gate-actions').first();
         if ((await gate.count()) === 0) return 'none';
         return (await gate.first().getAttribute('data-stage')) ?? 'unknown';
       },

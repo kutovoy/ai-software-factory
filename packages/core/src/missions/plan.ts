@@ -74,6 +74,59 @@ export function validateMissionPlan(value: unknown): MissionPlanValidation {
     }
   }
 
+  const features = allFeatures(plan);
+  const verticalSlices = plan.verticalSlices;
+  const requiresArtifacts =
+    verticalSlices !== undefined || plan.riskTier === 'medium' || plan.riskTier === 'high';
+
+  if (requiresArtifacts) {
+    if (!features.some((feature) => feature.kind !== 'enabler')) {
+      errors.push('mission plan must contain at least one feature with kind "slice"');
+    }
+    for (const feature of features) {
+      if (feature.kind === 'enabler' && !feature.verticalSlice) {
+        errors.push(
+          `enabler feature "${feature.id}" must state what later slice verifies it (verticalSlice)`,
+        );
+      }
+    }
+    if (verticalSlices) {
+      const seen = new Set<string>();
+      for (const slice of verticalSlices) {
+        for (const featureId of slice.featureIds) {
+          if (!featureIds.has(featureId)) {
+            errors.push(
+              `vertical slice "${slice.name}" references unknown feature "${featureId}"`,
+            );
+          }
+          if (seen.has(featureId)) {
+            errors.push(`feature "${featureId}" appears in more than one vertical slice`);
+          }
+          seen.add(featureId);
+        }
+      }
+      for (const feature of features) {
+        if (!seen.has(feature.id)) {
+          errors.push(`feature "${feature.id}" is not part of any vertical slice`);
+        }
+      }
+    }
+  }
+
+  if (plan.riskTier === 'medium' || plan.riskTier === 'high') {
+    if (!plan.productReview) errors.push('medium/high risk plans require a productReview section');
+    if (!plan.architecture) errors.push('medium/high risk plans require an architecture section');
+    if (!plan.programDesign) errors.push('medium/high risk plans require a programDesign section');
+    if (!plan.verticalSlices) errors.push('medium/high risk plans require verticalSlices');
+    const tiers = new Set(plan.validationContract.assertions.map((assertion) => assertion.tier));
+    if (!tiers.has('architecture')) {
+      errors.push('medium/high risk plans require at least one architecture assertion');
+    }
+    if (!tiers.has('maintainability')) {
+      errors.push('medium/high risk plans require at least one maintainability assertion');
+    }
+  }
+
   if (errors.length === 0) {
     try {
       featureDependencyOrder(plan);
@@ -91,6 +144,14 @@ function allFeatureIds(plan: MissionPlan): Set<string> {
     for (const feature of milestone.features) ids.add(feature.id);
   }
   return ids;
+}
+
+function allFeatures(plan: MissionPlan): MissionFeaturePlan[] {
+  const features: MissionFeaturePlan[] = [];
+  for (const milestone of plan.milestones) {
+    features.push(...milestone.features);
+  }
+  return features;
 }
 
 /**

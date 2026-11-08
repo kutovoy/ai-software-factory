@@ -35,8 +35,8 @@ test.describe('Run and work-item actions', () => {
 
     // The fake harness may block on one interactive permission; approve it so the run
     // reaches a terminal state (the stage runs of a factory item auto-allow).
-    const allow = page.getByTestId('permission-allow');
-    const terminal = page.getByTestId('run-terminal');
+    const allow = page.getByTestId('permission-allow').first();
+    const terminal = page.getByTestId('run-terminal').first();
     await expect(allow.or(terminal).first()).toBeVisible({ timeout: 60_000 });
     if (await allow.isVisible()) await allow.click();
     await expect(terminal).toBeVisible({ timeout: 60_000 });
@@ -45,15 +45,15 @@ test.describe('Run and work-item actions', () => {
     await page.reload();
 
     // Terminal: the cancel control is gone, the end state is shown instead.
-    await expect(page.getByTestId('run-cancel')).toHaveCount(0);
-    const state = page.getByTestId('run-terminal-state');
+    await expect(page.getByTestId('run-cancel').first()).toHaveCount(0);
+    const state = page.getByTestId('run-terminal-state').first();
     await expect(state).toBeVisible();
     await expect(state).toContainText('ok');
 
     // A chat run belongs to no work item: no work-item link, and retry-as-new only for a
     // failed/cancelled run (this one is `ok`).
-    await expect(page.getByTestId('run-retry-work-item')).toHaveCount(0);
-    await expect(page.getByTestId('run-retry-button')).toHaveCount(0);
+    await expect(page.getByTestId('run-retry-work-item').first()).toHaveCount(0);
+    await expect(page.getByTestId('run-retry-button').first()).toHaveCount(0);
   });
 
   test('an escalated work item is retried from its page under a new attempt', async ({
@@ -73,10 +73,10 @@ test.describe('Run and work-item actions', () => {
     await page.goto(
       `/factories/${encodeURIComponent(exampleId)}/runs/run_${suffix}_triage_1`,
     );
-    await expect(page.getByTestId('run-terminal-state')).toBeVisible({ timeout: 60_000 });
-    await expect(page.getByTestId('run-cancel')).toHaveCount(0);
-    await expect(page.getByTestId('run-retry-button')).toHaveCount(0);
-    await expect(page.getByTestId('run-retry-work-item')).toHaveAttribute(
+    await expect(page.getByTestId('run-terminal-state').first()).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId('run-cancel').first()).toHaveCount(0);
+    await expect(page.getByTestId('run-retry-button').first()).toHaveCount(0);
+    await expect(page.getByTestId('run-retry-work-item').first()).toHaveAttribute(
       'href',
       detailPath,
     );
@@ -108,19 +108,19 @@ test.describe('Run and work-item actions', () => {
       .toBe('escalated');
 
     await page.goto(detailPath);
-    await expect(page.getByTestId('work-item-status')).toHaveText('escalated');
-    await expect(page.getByTestId('work-item-retry-open')).toBeVisible();
+    await expect(page.locator('[data-testid="work-item-status"]:visible')).toHaveText('escalated');
+    await expect(page.getByTestId('work-item-retry-open').first()).toBeVisible();
 
-    await page.getByTestId('work-item-retry-open').click();
-    await page.getByTestId('work-item-retry-actor').fill('e2e-operator');
-    await page.getByTestId('work-item-retry-reason').fill('e2e: retry after escalation');
-    await page.getByTestId('work-item-retry-submit').click();
+    await page.getByTestId('work-item-retry-open').first().click();
+    await page.getByTestId('work-item-retry-actor').first().fill('e2e-operator');
+    await page.getByTestId('work-item-retry-reason').first().fill('e2e: retry after escalation');
+    await page.getByTestId('work-item-retry-submit').first().click();
 
     // The read model is the truth: the item is active again, on attempt 2.
-    await expect(page.getByTestId('work-item-status')).toHaveText('active', { timeout: 60_000 });
-    await expect(page.getByTestId('work-item-attempt')).toContainText('attempt 2');
-    await expect(page.getByTestId('work-item-attempt-value')).toContainText('2');
-    await expect(page.getByTestId('work-item-retried-events')).toBeVisible();
+    await expect(page.locator('[data-testid="work-item-status"]:visible')).toHaveText('active', { timeout: 60_000 });
+    await expect(page.getByTestId('work-item-attempt').first()).toContainText('attempt 2');
+    await expect(page.getByTestId('work-item-attempt-value').first()).toContainText('2');
+    await expect(page.getByTestId('work-item-retried-events').first()).toBeVisible();
     const retried = page.getByTestId('retried-event').first();
     await expect(retried).toHaveAttribute('data-previous-status', 'escalated');
     await expect(retried).toHaveAttribute('data-attempt', '2');
@@ -195,7 +195,7 @@ async function expectGate(
         } catch {
           return 'navigation-error';
         }
-        const gate = page.getByTestId('gate-actions');
+        const gate = page.getByTestId('gate-actions').first();
         if ((await gate.count()) === 0) return 'none';
         return (await gate.first().getAttribute('data-stage')) ?? 'unknown';
       },

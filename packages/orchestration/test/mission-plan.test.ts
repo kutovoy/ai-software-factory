@@ -68,6 +68,8 @@ function plan(): MissionPlanData {
     ],
     risks: [],
     assumptions: [],
+    riskTier: 'low',
+    riskReasons: ['no elevated risk signals; using tier "low"'],
   };
 }
 

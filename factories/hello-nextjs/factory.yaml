@@ -22,6 +22,27 @@ governance:
   autonomyLevel: full
   requireHumanActions:
     - git.push
+  risk:
+    defaultTier: low
+    highRiskPaths:
+      - "auth/**"
+      - "billing/**"
+      - "migrations/**"
+      - "public-api/**"
+      - "security/**"
+    tiers:
+      low:
+        planApproval: auto
+        review: agent
+        merge: auto_on_green
+      medium:
+        planApproval: human
+        review: agent
+        merge: auto_on_green
+      high:
+        planApproval: human
+        review: human
+        merge: human
 id: fac_01M6VFJKR9N08X65GT5NNQQ548
 mcp:
   discovery:

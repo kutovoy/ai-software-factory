@@ -61,14 +61,38 @@ const SCRIPT_CHECKS: {
   { id: 'e2e', title: 'End-to-end tests', tier: 'e2e', scripts: ['e2e', 'test:e2e'] },
 ];
 
-/** Infers command checks from `package.json` scripts plus Playwright detection. */
-export function inferValidationChecks(repoRoot: string): ValidationCheck[] {
-  const pkg = readPackageJson(repoRoot);
-  const scripts = pkg?.scripts ?? {};
-  const pm = packageManager(repoRoot);
-  const checks: ValidationCheck[] = [];
+/**
+ * Quality checks are appended after build/e2e so the established order is preserved.
+ * They are inferred only when the repository ships a deterministic script; otherwise the
+ * planner/validator must supply an explicit architecture or maintainability assertion.
+ */
+const QUALITY_SCRIPT_CHECKS: {
+  id: string;
+  title: string;
+  tier: ValidationTier;
+  scripts: string[];
+}[] = [
+  {
+    id: 'architecture',
+    title: 'Architecture boundaries',
+    tier: 'architecture',
+    scripts: ['arch', 'arch:check', 'architecture', 'lint:arch', 'depcruise'],
+  },
+  {
+    id: 'maintainability',
+    title: 'Maintainability',
+    tier: 'maintainability',
+    scripts: ['maintainability', 'maintainability:check', 'quality', 'complexity', 'jscpd'],
+  },
+];
 
-  for (const definition of SCRIPT_CHECKS) {
+function scriptChecksFor(
+  definitions: typeof SCRIPT_CHECKS,
+  scripts: Record<string, string>,
+  pm: ReturnType<typeof packageManager>,
+): ValidationCheck[] {
+  const checks: ValidationCheck[] = [];
+  for (const definition of definitions) {
     const script = definition.scripts.find((candidate) => typeof scripts[candidate] === 'string');
     if (!script) continue;
     checks.push({
@@ -81,6 +105,17 @@ export function inferValidationChecks(repoRoot: string): ValidationCheck[] {
       expected: 'exit code 0',
     });
   }
+  return checks;
+}
+
+/** Infers command checks from `package.json` scripts plus Playwright detection. */
+export function inferValidationChecks(repoRoot: string): ValidationCheck[] {
+  const pkg = readPackageJson(repoRoot);
+  const scripts = pkg?.scripts ?? {};
+  const pm = packageManager(repoRoot);
+  const checks: ValidationCheck[] = [];
+
+  checks.push(...scriptChecksFor(SCRIPT_CHECKS, scripts, pm));
 
   if (!checks.some((check) => check.id === 'e2e') && hasPlaywright(repoRoot, pkg)) {
     checks.push({
@@ -93,6 +128,8 @@ export function inferValidationChecks(repoRoot: string): ValidationCheck[] {
       expected: 'exit code 0',
     });
   }
+
+  checks.push(...scriptChecksFor(QUALITY_SCRIPT_CHECKS, scripts, pm));
 
   return checks;
 }

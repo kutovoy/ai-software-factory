@@ -30,7 +30,9 @@ import {
   recordMissionCheckpoint,
   resolveAllGates,
   resolveModelRef,
+  resolveRiskGovernance,
   resolveStageConfigs,
+  riskPolicyFor,
   setMissionFeatureStatus,
   setMissionMilestoneStatus,
   setMissionPlan,
@@ -50,6 +52,9 @@ import {
   type MissionPlan,
   type GateDecisionValue,
   type MissionValidationKind,
+  type RiskGovernance,
+  type RiskTier,
+  type RiskTierPolicy,
   type RoutingDef,
   type WorkItemType,
 } from '@factory/core';
@@ -253,6 +258,33 @@ function featurePrompt(args: {
     .slice(-12)
     .map(compactCheckpoint);
 
+  const planFeature = plan.milestones
+    .flatMap((entry) => entry.features)
+    .find((entry) => entry.id === feature.id);
+
+  const architecture = plan.architecture
+    ? [
+        `Architecture: ${plan.architecture.summary}`,
+        ...(plan.architecture.constraints.length > 0
+          ? [`Constraints: ${plan.architecture.constraints.join('; ')}`]
+          : []),
+      ]
+    : [];
+  const programDesign = plan.programDesign
+    ? [
+        `Program design modules: ${
+          plan.programDesign.modules.length > 0
+            ? plan.programDesign.modules
+                .map((module) => `${module.name} (${module.path}) — ${module.responsibility}`)
+                .join('; ')
+            : 'none recorded'
+        }`,
+        ...(plan.programDesign.callGraph.length > 0
+          ? [`Call graph: ${plan.programDesign.callGraph.join('; ')}`]
+          : []),
+      ]
+    : [];
+
   return [
     `Mission: ${mission.title}`,
     `Goal:\n${mission.goal}`,
@@ -263,10 +295,19 @@ function featurePrompt(args: {
     `Feature: ${feature.title}`,
     feature.description,
     '',
+    `Risk tier: ${plan.riskTier ?? 'low'}${
+      (plan.riskReasons ?? []).length > 0 ? ` (${(plan.riskReasons ?? []).join('; ')})` : ''
+    }`,
+    `Vertical slice: ${planFeature?.verticalSlice ?? feature.title} [${
+      planFeature?.kind ?? 'slice'
+    }]`,
+    ...architecture,
+    ...programDesign,
+    '',
     'Acceptance assertions:',
     ...assertions.map(
       (assertion) =>
-        `- [${assertion.id}] ${assertion.title}: ${assertion.assertion} (evidence: ${assertion.evidence}${assertion.command ? `, command: ${assertion.command}` : ''})`,
+        `- [${assertion.id}] ${assertion.title}: ${assertion.assertion} (evidence: ${assertion.evidence}${assertion.command ? `, command: ${assertion.command}` : ''}${assertion.thresholds ? `, thresholds: ${JSON.stringify(assertion.thresholds)}` : ''})`,
     ),
     '',
     shared.length > 0 ? `Shared state:\n${shared.join('\n')}` : 'Shared state: nothing completed yet.',
@@ -292,7 +333,13 @@ function assertionsForKind(
     if (!ids.has(assertion.id)) return false;
     if (kind === 'contract') return true;
     if (kind === 'scrutiny') {
-      return assertion.tier === 'unit' || assertion.tier === 'component' || assertion.tier === 'integration';
+      return (
+        assertion.tier === 'unit' ||
+        assertion.tier === 'component' ||
+        assertion.tier === 'integration' ||
+        assertion.tier === 'architecture' ||
+        assertion.tier === 'maintainability'
+      );
     }
     return assertion.tier === 'e2e' || assertion.tier === 'manual';
   });
@@ -350,7 +397,7 @@ function validationPrompt(args: {
     'Validation contract assertions:',
     ...assertions.map(
       (assertion) =>
-        `- [${assertion.id}] ${assertion.title}: ${assertion.assertion} (tool: ${assertion.tool}, evidence: ${assertion.evidence}${assertion.command ? `, command: ${assertion.command}` : ''})`,
+        `- [${assertion.id}] ${assertion.title}: ${assertion.assertion} (tool: ${assertion.tool}, evidence: ${assertion.evidence}${assertion.command ? `, command: ${assertion.command}` : ''}${assertion.thresholds ? `, thresholds: ${JSON.stringify(assertion.thresholds)}` : ''})`,
     ),
     ...(previousFindings.length > 0
       ? ['', `Previous failed findings:\n${JSON.stringify(previousFindings)}`]
@@ -423,8 +470,16 @@ export async function planMissionActivity(args: {
   feedback?: string;
   createdAt?: string;
 }): Promise<MissionPlanData> {
+  const sql = getSql();
+  const mission = await getMission(sql, args.missionId);
+  if (!mission) throw missionNotFound(args.missionId);
+
+  const loaded = loadDefinition(mission.factoryRoot);
+  if (!loaded.definition) throw definitionFailure(mission.factory, loaded.errors);
+  const riskGovernance = resolveRiskGovernance(loaded.definition.manifest.governance?.risk);
+
   const planner = getMissionPlanner();
-  const plan = await planner.plan(args);
+  const plan = await planner.plan({ ...args, riskGovernance });
   // The workflow may not import zod; validation stays here, at the activity boundary.
   const validation = validateMissionPlan(plan);
   if (!validation.plan) throw invalidPlan(validation.errors);
@@ -461,6 +516,10 @@ export interface MissionPlanAutoApprovalResult {
   autonomyLevel: string;
   benchmarkGateRequired: boolean;
   benchmarkGateSatisfied: boolean;
+  /** Plan risk tier the decision used; old plans fall back to the governance default. */
+  riskTier: RiskTier;
+  /** Resolved per-tier policy (plan approval / review / merge). */
+  riskPolicy: RiskTierPolicy;
 }
 
 /**
@@ -485,8 +544,16 @@ export async function missionPlanAutoApprovalActivity(args: {
       autonomyLevel: 'unknown',
       benchmarkGateRequired: false,
       benchmarkGateSatisfied: false,
+      riskTier: 'low',
+      riskPolicy: riskPolicyFor(null, 'low'),
     };
   }
+
+  const riskGovernance = resolveRiskGovernance(loaded.definition.manifest.governance?.risk);
+  const plan = asPlan(mission.plan);
+  // Old plans predate `riskTier`; fall back to the governance default instead of failing.
+  const riskTier: RiskTier = plan?.riskTier ?? riskGovernance.defaultTier;
+  const riskPolicy = riskPolicyFor(riskGovernance, riskTier);
 
   const autonomy = await getAutonomyState(sql, mission.factory);
   const resolution = resolveAllGates(loaded.definition.manifest);
@@ -495,17 +562,24 @@ export async function missionPlanAutoApprovalActivity(args: {
     Boolean(autonomy?.overrideActor && autonomy?.overrideReason);
   const autonomyLevel = loaded.definition.manifest.governance?.autonomyLevel ?? 'auto';
   const enabled = Boolean(autonomy?.enabled && !autonomy.paused);
-  const autoApprove = enabled && autonomyLevel === 'full' && benchmarkGateSatisfied;
+  const autoApprove =
+    enabled &&
+    autonomyLevel === 'full' &&
+    benchmarkGateSatisfied &&
+    riskTier === 'low' &&
+    riskPolicy.planApproval === 'auto';
 
   return {
     autoApprove,
     actor: 'autonomy',
     reason: autoApprove
-      ? `autonomyLevel full and benchmark gate satisfied (${autonomy?.overrideActor ? 'audited override' : 'benchmark attestation'}); automatic plan approval`
-      : `autonomy=${enabled ? 'enabled' : 'disabled/paused'}, level=${autonomyLevel}, benchmarkGateSatisfied=${benchmarkGateSatisfied}; human plan approval is required`,
+      ? `autonomyLevel full, risk tier low and benchmark gate satisfied (${autonomy?.overrideActor ? 'audited override' : 'benchmark attestation'}); automatic plan approval`
+      : `autonomy=${enabled ? 'enabled' : 'disabled/paused'}, level=${autonomyLevel}, riskTier=${riskTier}, planApproval=${riskPolicy.planApproval}, benchmarkGateSatisfied=${benchmarkGateSatisfied}; human plan approval is required`,
     autonomyLevel,
     benchmarkGateRequired: resolution.benchmarkGateRequired,
     benchmarkGateSatisfied,
+    riskTier,
+    riskPolicy,
   };
 }
 
@@ -574,6 +648,33 @@ export async function createMissionFeatureWorkItemActivity(args: {
   const loop = compileMissionLoop(mission, prompt);
   const featureStageGraph = missionFeatureStageGraph(loop.stageGraph);
 
+  const riskGovernance = resolveRiskGovernance(loop.definition.manifest.governance?.risk);
+  const planFeature = plan.milestones
+    .flatMap((entry) => entry.features)
+    .find((entry) => entry.id === feature.id);
+  // Old plans predate `riskTier`; fall back to the governance default rather than failing.
+  const riskTier: RiskTier =
+    planFeature?.riskTier ?? plan.riskTier ?? riskGovernance.defaultTier;
+  const riskPolicy = riskPolicyFor(riskGovernance, riskTier);
+  const gates: Record<string, string> = { ...loop.gates };
+  let mergePolicy = loop.definition.manifest.mergePolicy;
+  if (riskTier === 'high') {
+    // High risk always needs a human review and a human ship decision; never auto-merge.
+    gates.review = 'human';
+    gates.ship = 'human';
+    mergePolicy = 'human';
+  } else if (riskTier === 'medium') {
+    // Medium risk keeps agent review + the manifest merge policy unless governance
+    // explicitly tightens either action.
+    gates.review = riskPolicy.review === 'human' ? 'human' : 'agent';
+    if (riskPolicy.merge === 'human') mergePolicy = 'human';
+  }
+
+  const planRef = `${mission.id}#${feature.id}`;
+  const architectureImpact = [...(plan.architecture?.constraints ?? [])];
+  const openQuestions = [...(plan.assumptions ?? [])];
+  const riskReasons = [...(plan.riskReasons ?? [])];
+
   const implementIndex = featureStageGraph.order.indexOf('implement');
   if (implementIndex < 0) {
     throw ApplicationFailure.create({
@@ -632,6 +733,8 @@ export async function createMissionFeatureWorkItemActivity(args: {
       missionFeatureId: feature.id,
       milestoneId: milestone.id,
       goal: mission.goal,
+      riskTier,
+      riskReasons,
     },
     // Mission features implement against the integrated forge repository, so the captured
     // patch applies to the same tree the PR targets. The central factory checkout is only
@@ -639,9 +742,14 @@ export async function createMissionFeatureWorkItemActivity(args: {
     repo: validationRepo(loop.definition, runner),
     allowEmptyPatch: true,
     stageGraph: featureStageGraph,
-    gates: loop.gates,
+    gates,
     agentVerdict: loop.definition.manifest.agentVerdict,
-    mergePolicy: loop.definition.manifest.mergePolicy,
+    mergePolicy,
+    riskTier,
+    riskPolicy,
+    planRef,
+    architectureImpact,
+    openQuestions,
     autonomy: {
       enabled: autonomy?.enabled ?? false,
       paused: autonomy?.paused ?? false,
@@ -690,8 +798,11 @@ export async function createMissionFeatureWorkItemActivity(args: {
       workflowId,
       input: {
         stageGraph: loop.stageGraph.order,
-        gates: loop.gates,
-        mergePolicy: loop.definition.manifest.mergePolicy,
+        gates,
+        mergePolicy,
+        riskTier,
+        riskPolicy,
+        planRef,
         prompt,
         harness,
         ...(model ? { model } : {}),

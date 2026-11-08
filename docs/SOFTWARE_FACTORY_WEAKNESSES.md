@@ -1,7 +1,8 @@
 # Software Factory Weaknesses and Quality Workstream
 
-**Status:** research + implementation plan (2026-11-07). P0 is **not implemented yet**; it is the next
-workstream after context compaction. The prepared OpenSpec change is `harden-factory-quality`.
+**Status:** research + implementation record (2026-11-07). P0 is **implemented and archived** as OpenSpec
+`2026-11-07-harden-factory-quality` (ADR-052); the P1/P2 backlog below remains. The live checks are recorded
+in `docs/STATUS.md`.
 
 **Purpose:** capture why “lights-off” software factories fail, separate the strong claims from the
 overstated ones, and turn the useful parts into a concrete P0 plan for this repository.
@@ -225,7 +226,7 @@ learn which changes were actually good. The loop must include production signals
 
 ---
 
-## 6. P0 implementation plan (after compaction)
+## 6. P0 implementation record
 
 P0 is the minimum set that makes the factory’s autonomy claim defensible. It is intentionally scoped to
 schema, planner, workflow, UI and tests — not a new benchmark platform.

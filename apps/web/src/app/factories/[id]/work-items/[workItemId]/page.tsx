@@ -14,6 +14,8 @@ import { formatDateTime, shortCommit, statusTone } from '@/lib/format';
 import { TimeAgo } from '@/components/ui/TimeAgo';
 import type {
   GateDecisionRecord,
+  ReviewPacketWire,
+  RiskTierWire,
   ValidationCheckResultWire,
   ValidationProjectionWire,
   WorkItemDetail,
@@ -26,6 +28,7 @@ import {
   mergedAt,
   prOpened,
   retryEvents,
+  reviewPacket,
   reviewerReports,
   runsForWorkItem,
   slaState,
@@ -34,6 +37,151 @@ import {
 } from '@/lib/work-items';
 
 export const dynamic = 'force-dynamic';
+
+function riskTone(tier: RiskTierWire): 'success' | 'warning' | 'danger' {
+  if (tier === 'low') return 'success';
+  if (tier === 'medium') return 'warning';
+  return 'danger';
+}
+
+/**
+ * Compact deterministic review packet (`review.packet`). It renders exactly what the event
+ * carries — no invented intent, questions or checklist items — and is omitted entirely when
+ * the loop has not assembled a packet yet.
+ */
+function ReviewPacketCard({ packet }: { packet: ReviewPacketWire | null }) {
+  if (!packet) return null;
+  const failing = packet.assertions.filter((assertion) => assertion.status !== 'pass');
+
+  return (
+    <div data-testid="work-item-review-packet" data-risk-tier={packet.riskTier}>
+      <Card>
+        <CardHeader
+          title="Review packet"
+          hint="Deterministic summary assembled from the plan, evidence and diff; the full diff stays linked on the run."
+          action={
+            <Badge tone={riskTone(packet.riskTier)} testId="review-packet-risk">
+              {packet.riskTier} risk
+            </Badge>
+          }
+        />
+        <CardBody className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+            <span data-testid="review-packet-changed-files">
+              changed files <span className="font-mono">{packet.changedFiles}</span>
+            </span>
+            <span data-testid="review-packet-diff">
+              diff{' '}
+              <span className="font-mono text-emerald-700">+{packet.diffStats.additions}</span>{' '}
+              <span className="font-mono text-red-700">-{packet.diffStats.deletions}</span>
+            </span>
+            <span data-testid="review-packet-plan-ref">
+              plan ref{' '}
+              <span className="font-mono">{packet.planRef ?? 'none recorded'}</span>
+            </span>
+            {packet.riskTier === 'high' ? (
+              <Badge tone="danger" testId="review-packet-human-required">
+                human review required before ship
+              </Badge>
+            ) : null}
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Intent</p>
+            <p data-testid="review-packet-intent" className="mt-1 text-sm text-slate-700">
+              {packet.intent || 'No intent recorded in the packet.'}
+            </p>
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Assertions ({packet.assertions.length}
+              {failing.length > 0 ? ` · ${failing.length} not passing` : ''})
+            </p>
+            {packet.assertions.length === 0 ? (
+              <p data-testid="review-packet-assertions-empty" className="mt-1 text-xs text-slate-500">
+                The packet carries no assertion evidence.
+              </p>
+            ) : (
+              <ul data-testid="review-packet-assertions" className="mt-1 space-y-1">
+                {packet.assertions.map((assertion) => (
+                  <li
+                    key={assertion.id || assertion.evidence}
+                    data-testid="review-packet-assertion"
+                    data-status={assertion.status}
+                    className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs"
+                  >
+                    <Badge
+                      tone={
+                        assertion.status === 'pass'
+                          ? 'success'
+                          : assertion.status === 'fail'
+                            ? 'danger'
+                            : 'warning'
+                      }
+                      mono
+                    >
+                      {assertion.status}
+                    </Badge>
+                    <span className="font-mono text-[11px] text-slate-700">
+                      {assertion.id || 'unnamed assertion'}
+                    </span>
+                    <span className="text-slate-600">{assertion.evidence || 'no evidence recorded'}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <div data-testid="review-packet-architecture-impact">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Architecture impact
+              </p>
+              {packet.architectureImpact.length === 0 ? (
+                <p className="mt-1 text-xs text-slate-500">No architecture impact recorded.</p>
+              ) : (
+                <ul className="mt-1 space-y-0.5 text-xs text-slate-700">
+                  {packet.architectureImpact.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div data-testid="review-packet-open-questions">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Open questions
+              </p>
+              {packet.openQuestions.length === 0 ? (
+                <p className="mt-1 text-xs text-slate-500">No open questions recorded.</p>
+              ) : (
+                <ul className="mt-1 space-y-0.5 text-xs text-slate-700">
+                  {packet.openQuestions.map((question) => (
+                    <li key={question}>{question}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div data-testid="review-packet-checklist">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Reviewer checklist
+              </p>
+              {packet.reviewerChecklist.length === 0 ? (
+                <p className="mt-1 text-xs text-slate-500">No checklist recorded.</p>
+              ) : (
+                <ul className="mt-1 space-y-0.5 text-xs text-slate-700">
+                  {packet.reviewerChecklist.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </CardBody>
+      </Card>
+    </div>
+  );
+}
 
 function validationStatusTone(
   status: ValidationCheckResultWire['status'],
@@ -151,9 +299,33 @@ function ValidationCard({ validation }: { validation: ValidationProjectionWire |
               {
                 header: 'Evidence',
                 cell: (row: ValidationCheckResultWire) => (
-                  <span className="font-mono text-[11px] text-slate-600" data-testid="validation-check-evidence">
-                    {row.evidence?.detail ?? row.check.command ?? row.check.expected ?? '—'}
-                  </span>
+                  <div className="space-y-0.5">
+                    <span className="font-mono text-[11px] text-slate-600" data-testid="validation-check-evidence">
+                      {row.evidence?.detail ?? row.check.command ?? row.check.expected ?? '—'}
+                    </span>
+                    {row.check.thresholds && Object.keys(row.check.thresholds).length > 0 ? (
+                      <p
+                        data-testid="validation-check-thresholds"
+                        className="font-mono text-[11px] text-slate-500"
+                      >
+                        thresholds:{' '}
+                        {Object.entries(row.check.thresholds)
+                          .map(([key, value]) => `${key}=${value}`)
+                          .join(', ')}
+                      </p>
+                    ) : null}
+                    {row.evidence?.metrics && Object.keys(row.evidence.metrics).length > 0 ? (
+                      <p
+                        data-testid="validation-check-metrics"
+                        className="font-mono text-[11px] text-slate-500"
+                      >
+                        metrics:{' '}
+                        {Object.entries(row.evidence.metrics)
+                          .map(([key, value]) => `${key}=${value}`)
+                          .join(', ')}
+                      </p>
+                    ) : null}
+                  </div>
                 ),
               },
             ]}
@@ -207,6 +379,7 @@ export default async function WorkItemDetailPage({
   const runs = runsForWorkItem(workItem.id, events);
   const statuses = statusEvents(events);
   const retries = retryEvents(events);
+  const packet = reviewPacket(events);
   const pendingSla = pendingGate ? slaState(pendingGate.slaAt) : null;
 
   return (
@@ -357,6 +530,8 @@ export default async function WorkItemDetailPage({
           </div>
         </CardBody>
       </Card>
+
+      <ReviewPacketCard packet={packet} />
 
       <ValidationCard validation={detail.validation} />
 

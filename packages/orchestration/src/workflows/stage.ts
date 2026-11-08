@@ -120,6 +120,30 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
   let validationFailed = false;
   let validationMissing: string[] = [];
 
+  /**
+   * Deterministic review packet (change `harden-factory-quality`): assembled from plan,
+   * evidence and diff data before a review gate is requested, so a human reviewer has an
+   * auditable decision surface. A packet failure must never fail the stage.
+   */
+  const requestReviewPacket = async (): Promise<void> => {
+    if (input.stage !== 'review') return;
+    try {
+      await gates.recordReviewPacket({
+        workItemId: input.workItemId,
+        stage: input.stage,
+        attempt: input.attempt,
+        riskTier: input.riskTier ?? 'low',
+        intent: input.title,
+        ...(input.planRef ? { planRef: input.planRef } : {}),
+        ...(input.patchRunId ? { patchRunId: input.patchRunId } : {}),
+        ...(input.architectureImpact ? { architectureImpact: input.architectureImpact } : {}),
+        ...(input.openQuestions ? { openQuestions: input.openQuestions } : {}),
+      });
+    } catch {
+      // Best-effort: the raw diff and events remain available to the reviewer.
+    }
+  };
+
   if (input.phase === 'run' || input.phase === 'review') {
     runId = stageRunId(input.workItemId, input.stage, input.attempt, input.reviewerIndex);
 
@@ -241,6 +265,7 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
     // verdict. The review judge already forced a human gate on a non-approve verdict, so an
     // agent gate here keeps the pre-verdict semantics.
     if (input.phase === 'gate') {
+      await requestReviewPacket();
       await gates.recordGateRequest({
         workItemId: input.workItemId,
         stage: input.stage,
@@ -301,6 +326,7 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
 
     // The gate row is created first so the decision has a stable (item, stage, attempt) key
     // and the event log records both `gate.requested` and `gate.decided`.
+    await requestReviewPacket();
     await gates.recordGateRequest({
       workItemId: input.workItemId,
       stage: input.stage,
@@ -334,6 +360,7 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
   const slaMs = input.gateSlaMs > 0 ? input.gateSlaMs : DEFAULT_GATE_SLA_MS;
   const slaAt = new Date(Date.now() + slaMs).toISOString();
 
+  await requestReviewPacket();
   await gates.recordGateRequest({
     workItemId: input.workItemId,
     stage: input.stage,

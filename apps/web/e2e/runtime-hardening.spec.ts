@@ -27,7 +27,9 @@ test.describe('runtime hardening', () => {
     trackWorkItem(await factoryId(request, FACTORY), workItemId);
 
     await page.goto(await factoryPage(page.request, FACTORY, 'work-items'));
-    const card = page.locator(`[data-testid="work-item-card"][data-work-item-id="${workItemId}"]`);
+    const card = page
+      .locator(`[data-testid="work-item-card"][data-work-item-id="${workItemId}"]:visible`)
+      .first();
     await expect(card).toBeVisible({ timeout: 30_000 });
 
     await card.getByTestId('work-item-cancel-open').click();
@@ -91,7 +93,7 @@ test.describe('runtime hardening', () => {
       `[data-testid="work-item-card"][data-work-item-id="${workItemId}"]`,
     );
     await expect(cancelledCard).toHaveCount(0);
-    await page.getByTestId('work-items-status-cancelled').click();
+    await page.getByTestId('work-items-status-cancelled').first().click();
     await expect(page).toHaveURL(/status=/);
     await expect(cancelledCard).toBeVisible({ timeout: 30_000 });
     await expect(cancelledCard).toHaveAttribute('data-status', 'cancelled');

@@ -57,6 +57,57 @@ describe('deterministic mission planner', () => {
     expect(plan.milestones[0]?.features[1]?.dependsOn).toEqual([
       plan.milestones[0]?.features[0]?.id as string,
     ]);
+
+    // Planning artifacts and vertical slices are filled even for a small goal.
+    expect(plan.riskTier).toBe('low');
+    expect(plan.riskReasons.length).toBeGreaterThan(0);
+    expect(plan.productReview?.problem).toContain('Add a health endpoint');
+    expect(plan.productReview?.desiredBehavior).toEqual([
+      'Add a health endpoint',
+      'Expose it on /health',
+      'Document it in the README',
+    ]);
+    expect(plan.architecture?.summary.length).toBeGreaterThan(0);
+    expect(plan.programDesign).toEqual({ modules: [], callGraph: [] });
+    expect(plan.verticalSlices).toHaveLength(3);
+    expect(plan.verticalSlices?.map((slice) => slice.featureIds.length)).toEqual([1, 1, 1]);
+    for (const feature of plan.milestones[0]?.features ?? []) {
+      expect(feature.riskTier).toBe('low');
+      expect(feature.kind).toBe('slice');
+      expect(feature.verticalSlice?.length).toBeGreaterThan(0);
+    }
+  });
+
+  test('medium/high-risk goals require architecture and maintainability assertions', async () => {
+    const plan = await deterministicMissionPlanner.plan({
+      ...INPUT,
+      title: 'Add authentication',
+      goal: 'Add authentication\nSupport login\nDocument it',
+    });
+
+    expect(validateMissionPlan(plan).errors).toEqual([]);
+    expect(plan.riskTier).toBe('high');
+    expect(plan.riskReasons.join('; ')).toContain('auth');
+    expect(plan.productReview).toBeDefined();
+    expect(plan.architecture).toBeDefined();
+    expect(plan.programDesign).toBeDefined();
+    expect(plan.verticalSlices).toHaveLength(3);
+
+    const assertions = plan.validationContract.assertions;
+    expect(assertions).toHaveLength(5);
+    const architecture = assertions.find((assertion) => assertion.tier === 'architecture');
+    const maintainability = assertions.find((assertion) => assertion.tier === 'maintainability');
+    expect(architecture?.id).toBe('VAL-ARCH');
+    expect(architecture?.thresholds?.maxDependencyCycles).toBe(0);
+    expect(maintainability?.id).toBe('VAL-MAINT');
+    expect(maintainability?.thresholds?.maxDuplicationPercent).toBe(3);
+
+    // Every feature claims the risk assertions so milestone scrutiny exercises them.
+    for (const feature of plan.milestones[0]?.features ?? []) {
+      expect(feature.acceptanceCheckIds).toContain('VAL-ARCH');
+      expect(feature.acceptanceCheckIds).toContain('VAL-MAINT');
+      expect(feature.kind).toBe('slice');
+    }
   });
 
   test('falls back to a single feature when the goal has no non-empty lines', async () => {
@@ -146,6 +197,82 @@ describe('deterministic mission planner', () => {
     ]);
     // Unknown assertion ids are dropped; the first contract assertion is used.
     expect(plan.milestones[0]?.features[1]?.acceptanceCheckIds).toEqual(['A1']);
+    expect(plan.riskTier).toBe('low');
+    expect(plan.riskReasons.length).toBeGreaterThan(0);
+    expect(plan.verticalSlices).toHaveLength(2);
+    for (const feature of plan.milestones[0]?.features ?? []) {
+      expect(feature.kind).toBe('slice');
+      expect(feature.verticalSlice?.length).toBeGreaterThan(0);
+      expect(feature.riskTier).toBe('low');
+    }
+  });
+
+  test('normalises a medium-risk plan and synthesizes omitted artifacts', async () => {
+    const raw = {
+      title: 'Refactor billing',
+      goal: 'Refactor billing',
+      riskTier: 'medium',
+      riskReasons: ['touches billing'],
+      validationContract: {
+        enforce: true,
+        assertions: [
+          {
+            id: 'A1',
+            title: 'Billing still works',
+            assertion: 'The billing flow renders',
+            tier: 'e2e',
+            required: true,
+            tool: 'agent-browser',
+            evidence: 'screenshot',
+            thresholds: { maxDuplicationPercent: 5 },
+          },
+        ],
+      },
+      milestones: [
+        {
+          title: 'Milestone',
+          description: 'One milestone',
+          features: [
+            {
+              title: 'Update billing page',
+              description: 'Update the billing page',
+              dependsOn: [],
+              acceptanceCheckIds: ['A1'],
+            },
+          ],
+        },
+      ],
+    };
+
+    const planner = createOpenAIMissionPlanner({
+      baseUrl: 'http://planner.invalid/v1',
+      apiKey: 'test',
+      model: 'test-model',
+      fetchImpl: (async () =>
+        new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(raw) } }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })) as unknown as typeof fetch,
+    });
+
+    const plan = await planner.plan(INPUT);
+    expect(validateMissionPlan(plan).errors).toEqual([]);
+    expect(plan.riskTier).toBe('medium');
+    expect(plan.productReview).toBeDefined();
+    expect(plan.architecture).toBeDefined();
+    expect(plan.programDesign).toBeDefined();
+    expect(plan.verticalSlices).toHaveLength(1);
+    expect(plan.validationContract.assertions[0]?.thresholds).toEqual({
+      maxDuplicationPercent: 5,
+    });
+    expect(
+      plan.validationContract.assertions.some((assertion) => assertion.tier === 'architecture'),
+    ).toBe(true);
+    expect(
+      plan.validationContract.assertions.some(
+        (assertion) => assertion.tier === 'maintainability',
+      ),
+    ).toBe(true);
   });
 
   test('getMissionPlanner respects the test hook', async () => {

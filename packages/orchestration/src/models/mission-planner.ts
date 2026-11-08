@@ -1,8 +1,16 @@
 import {
+  RISK_TIERS,
+  classifyRisk,
   newMissionFeatureId,
   newMissionMilestoneId,
   validateMissionPlan,
+  type MissionArchitecture,
   type MissionPlan,
+  type MissionProgramDesign,
+  type MissionProductReview,
+  type MissionVerticalSlice,
+  type RiskGovernance,
+  type RiskTier,
 } from '@factory/core';
 import type {
   MissionFeaturePlanData,
@@ -32,6 +40,8 @@ export interface MissionPlannerInput {
   feedback?: string;
   /** Fixed timestamp for tests; defaults to now. */
   createdAt?: string;
+  /** Resolved `governance.risk` block from the factory definition. */
+  riskGovernance?: RiskGovernance;
 }
 
 export interface MissionPlanner {
@@ -50,6 +60,54 @@ function clamp(value: string, max: number): string {
  * after the mission title. Every feature claims one assertion, so the plan is valid and
  * the validation contract is never empty.
  */
+/** Explicit thresholds required for architecture/maintainability assertions. */
+export const ARCHITECTURE_ASSERTION: MissionValidationAssertionData = {
+  id: 'VAL-ARCH',
+  title: 'Architecture boundaries and dependency cycles',
+  assertion:
+    'Inspect module dependencies and the public surface. No dependency cycles, no upward imports across declared layers, and no breaking change to a public API contract.',
+  tier: 'architecture',
+  required: true,
+  tool: 'command',
+  evidence: 'dependency report or command output',
+  thresholds: { maxDependencyCycles: 0 },
+};
+
+export const MAINTAINABILITY_ASSERTION: MissionValidationAssertionData = {
+  id: 'VAL-MAINT',
+  title: 'Maintainability and duplication',
+  assertion:
+    'Measure duplication, complexity and diff size. The change must stay within the stated thresholds and add no dead or duplicated code.',
+  tier: 'maintainability',
+  required: true,
+  tool: 'command',
+  evidence: 'duplication/complexity report or command output',
+  thresholds: { maxDuplicationPercent: 3 },
+};
+
+function uniqueAssertionId(base: string, assertions: MissionValidationAssertionData[]): string {
+  const taken = new Set(assertions.map((assertion) => assertion.id));
+  if (!taken.has(base)) return base;
+  let index = 2;
+  while (taken.has(`${base}-${index}`)) index += 1;
+  return `${base}-${index}`;
+}
+
+function appendRiskAssertions(
+  assertions: MissionValidationAssertionData[],
+  riskTier: RiskTier,
+): MissionValidationAssertionData[] {
+  if (riskTier === 'low') return assertions;
+  const next = [...assertions];
+  if (!next.some((assertion) => assertion.tier === 'architecture')) {
+    next.push({ ...ARCHITECTURE_ASSERTION, id: uniqueAssertionId('VAL-ARCH', next) });
+  }
+  if (!next.some((assertion) => assertion.tier === 'maintainability')) {
+    next.push({ ...MAINTAINABILITY_ASSERTION, id: uniqueAssertionId('VAL-MAINT', next) });
+  }
+  return next;
+}
+
 export const deterministicMissionPlanner: MissionPlanner = {
   id: 'deterministic',
   async plan(input: MissionPlannerInput): Promise<MissionPlanData> {
@@ -60,6 +118,7 @@ export const deterministicMissionPlanner: MissionPlanner = {
       .filter((line) => line.length > 0);
     const titles = lines.length > 0 ? lines : [input.title];
     const milestoneId = newMissionMilestoneId();
+    const risk = classifyRisk({ goal: input.goal, governance: input.riskGovernance });
 
     const assertions: MissionValidationAssertionData[] = titles.map((title, index) => ({
       id: `VAL-${index + 1}`,
@@ -73,6 +132,13 @@ export const deterministicMissionPlanner: MissionPlanner = {
       tool: 'agent-browser',
       evidence: 'screenshot or command output',
     }));
+    const contractAssertions = appendRiskAssertions(assertions, risk.tier);
+    const riskAssertionIds = contractAssertions
+      .filter(
+        (assertion) =>
+          assertion.tier === 'architecture' || assertion.tier === 'maintainability',
+      )
+      .map((assertion) => assertion.id);
 
     const features: MissionFeaturePlanData[] = [];
     for (const [index, title] of titles.entries()) {
@@ -87,10 +153,38 @@ export const deterministicMissionPlanner: MissionPlanner = {
         ),
         order: index,
         dependsOn: previous ? [previous] : [],
-        acceptanceCheckIds: [assertion.id],
+        acceptanceCheckIds: [assertion.id, ...riskAssertionIds],
         workItemType: 'task',
+        riskTier: risk.tier,
+        verticalSlice: clamp(title, 200),
+        kind: 'slice',
       });
     }
+
+    const productReview: MissionProductReview = {
+      problem: clamp(input.goal.trim().length > 0 ? input.goal : input.title, 4000),
+      desiredBehavior: titles.map((title) => clamp(title, 500)),
+      mockups: [],
+    };
+
+    const architecture: MissionArchitecture = {
+      summary: clamp(
+        `Derived from the mission goal: "${input.title || titles[0] || 'Mission'}". Component boundaries are left to the implementer; the plan records the goal so the architecture can be refined as the first slice lands.`,
+        4000,
+      ),
+      components: [],
+      dataModels: [],
+      constraints: [],
+    };
+
+    const programDesign: MissionProgramDesign = { modules: [], callGraph: [] };
+
+    const verticalSlices: MissionVerticalSlice[] = features.map((feature, index) => ({
+      name: clamp(feature.verticalSlice ?? feature.title, 200),
+      order: index,
+      featureIds: [feature.id],
+      checks: [...feature.acceptanceCheckIds],
+    }));
 
     const milestone: MissionMilestonePlanData = {
       id: milestoneId,
@@ -118,13 +212,19 @@ export const deterministicMissionPlanner: MissionPlanner = {
         definitionCommit: input.definitionCommit,
         createdAt,
         enforce: true,
-        assertions,
+        assertions: contractAssertions,
         risks: [],
         source: 'orchestrator',
       },
       milestones: [milestone],
       risks: [],
       assumptions: [],
+      riskTier: risk.tier,
+      riskReasons: risk.reasons,
+      productReview,
+      architecture,
+      programDesign,
+      verticalSlices,
     };
   },
 };
@@ -144,13 +244,31 @@ const PLAN_SYSTEM_PROMPT = [
   'Return exactly one JSON object, no prose.',
   'The object must match this shape:',
   '{"title":string,"goal":string,"risks":string[],"assumptions":string[],',
+  '"riskTier":"low|medium|high","riskReasons":string[],',
+  '"productReview":{"problem":string,"desiredBehavior":string[],"mockups":string[]},',
+  '"architecture":{"summary":string,"components":[{"name":string,"responsibility":string,',
+  '"contracts":string[]}],"dataModels":string[],"constraints":string[]},',
+  '"programDesign":{"modules":[{"name":string,"path":string,"responsibility":string,',
+  '"publicApi":string[]}],"callGraph":string[]},',
+  '"verticalSlices":[{"name":string,"order":number,"featureIds":number[],"checks":string[]}],',
   '"validationContract":{"enforce":boolean,"assertions":[{"id":string,"title":string,',
-  '"assertion":string,"tier":"unit|component|integration|e2e|manual","required":boolean,',
-  '"tool":string,"evidence":string,"command"?:string,"expected"?:string}]},',
+  '"assertion":string,"tier":"unit|component|integration|e2e|manual|architecture|maintainability",',
+  '"required":boolean,"tool":string,"evidence":string,"command"?:string,"expected"?:string,',
+  '"thresholds"?:{"<metric>":number}}]},',
   '"milestones":[{"title":string,"description":string,"features":[{"title":string,',
-  '"description":string,"dependsOn":number[],"acceptanceCheckIds":string[]}]}]}',
+  '"description":string,"dependsOn":number[],"acceptanceCheckIds":string[],',
+  '"riskTier":"low|medium|high","verticalSlice":string,"kind":"slice|enabler"}]}]}',
   'Write the validation contract before the features. Every feature must claim at least',
   'one assertion id. `dependsOn` lists feature indexes inside the same milestone.',
+  'Derive `riskTier` and record concrete `riskReasons`; medium/high risk plans must include',
+  'productReview, architecture, programDesign and verticalSlices.',
+  'A vertical slice is an end-to-end behavior, not a horizontal layer. Prefer slices that',
+  'deliver working behavior; group scaffolding into the first runnable slice. A plan must',
+  'contain at least one `slice`; an `enabler` must state in `verticalSlice` what later slice',
+  'verifies it. Avoid horizontal features such as "add package.json" on their own.',
+  'For medium/high risk include at least one `architecture` assertion (e.g. thresholds',
+  '{"maxDependencyCycles":0}) and one `maintainability` assertion (e.g.',
+  '{"maxDuplicationPercent":3}); state the threshold explicitly.',
   'If the goal asks for runnable software, include at least one integration assertion that',
   'runs the install/build and one e2e assertion that exercises the app in a browser; do not',
   'approve a plan whose only evidence is static file checks.',
@@ -162,6 +280,12 @@ interface RawPlan {
   goal?: unknown;
   risks?: unknown;
   assumptions?: unknown;
+  riskTier?: unknown;
+  riskReasons?: unknown;
+  productReview?: unknown;
+  architecture?: unknown;
+  programDesign?: unknown;
+  verticalSlices?: unknown;
   validationContract?: {
     enforce?: unknown;
     assertions?: unknown;
@@ -180,6 +304,140 @@ function asStringArray(value: unknown): string[] {
     : [];
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function asThresholds(value: unknown): Record<string, number> | undefined {
+  const source = asRecord(value);
+  const metrics: Record<string, number> = {};
+  for (const [key, raw] of Object.entries(source)) {
+    if (typeof raw === 'number' && Number.isFinite(raw)) metrics[key] = raw;
+  }
+  return Object.keys(metrics).length > 0 ? metrics : undefined;
+}
+
+function asRiskTier(value: unknown): RiskTier | null {
+  return typeof value === 'string' && (RISK_TIERS as readonly string[]).includes(value)
+    ? (value as RiskTier)
+    : null;
+}
+
+function asFeatureKind(value: unknown): 'slice' | 'enabler' | null {
+  return value === 'slice' || value === 'enabler' ? value : null;
+}
+
+function parseProductReview(value: unknown): MissionProductReview | undefined {
+  const item = asRecord(value);
+  const problem =
+    typeof item.problem === 'string' && item.problem.trim().length > 0
+      ? clamp(item.problem, 4000)
+      : null;
+  if (!problem) return undefined;
+  return {
+    problem,
+    desiredBehavior: asStringArray(item.desiredBehavior)
+      .map((entry) => clamp(entry, 500))
+      .slice(0, 50),
+    mockups: asStringArray(item.mockups)
+      .map((entry) => clamp(entry, 500))
+      .slice(0, 50),
+  };
+}
+
+function parseArchitecture(value: unknown): MissionArchitecture | undefined {
+  const item = asRecord(value);
+  const summary =
+    typeof item.summary === 'string' && item.summary.trim().length > 0
+      ? clamp(item.summary, 4000)
+      : null;
+  if (!summary) return undefined;
+  const components = (Array.isArray(item.components) ? item.components : [])
+    .slice(0, 100)
+    .map((entry) => {
+      const component = asRecord(entry);
+      return {
+        name: clamp(asString(component.name, 'Component'), 200),
+        responsibility: clamp(asString(component.responsibility, 'Not specified'), 2000),
+        contracts: asStringArray(component.contracts)
+          .map((contract) => clamp(contract, 500))
+          .slice(0, 50),
+      };
+    });
+  return {
+    summary,
+    components,
+    dataModels: asStringArray(item.dataModels)
+      .map((entry) => clamp(entry, 500))
+      .slice(0, 100),
+    constraints: asStringArray(item.constraints)
+      .map((entry) => clamp(entry, 500))
+      .slice(0, 100),
+  };
+}
+
+function parseProgramDesign(value: unknown): MissionProgramDesign | undefined {
+  const item = asRecord(value);
+  if (!('modules' in item) && !('callGraph' in item)) return undefined;
+  const modules = (Array.isArray(item.modules) ? item.modules : [])
+    .slice(0, 100)
+    .map((entry) => {
+      const module = asRecord(entry);
+      return {
+        name: clamp(asString(module.name, 'Module'), 200),
+        path: clamp(asString(module.path, 'src'), 500),
+        responsibility: clamp(asString(module.responsibility, 'Not specified'), 2000),
+        publicApi: asStringArray(module.publicApi)
+          .map((entry) => clamp(entry, 500))
+          .slice(0, 50),
+      };
+    });
+  return {
+    modules,
+    callGraph: asStringArray(item.callGraph)
+      .map((entry) => clamp(entry, 1000))
+      .slice(0, 200),
+  };
+}
+
+/**
+ * Conservative artifact synthesis for medium/high-risk plans whose model omitted a
+ * section. The plan must remain valid, and a missing artifact must not silently downgrade
+ * the plan to "no design".
+ */
+function synthesizeArtifacts(
+  riskTier: RiskTier,
+  input: MissionPlannerInput,
+  features: MissionFeaturePlanData[],
+): {
+  productReview: MissionProductReview | undefined;
+  architecture: MissionArchitecture | undefined;
+  programDesign: MissionProgramDesign | undefined;
+} {
+  if (riskTier === 'low') {
+    return { productReview: undefined, architecture: undefined, programDesign: undefined };
+  }
+  return {
+    productReview: {
+      problem: clamp(input.goal.trim().length > 0 ? input.goal : input.title, 4000),
+      desiredBehavior: features.map((feature) => clamp(feature.title, 500)).slice(0, 50),
+      mockups: [],
+    },
+    architecture: {
+      summary: clamp(
+        `Derived from the mission goal: "${input.title}". The plan requires architecture evidence before approval; component boundaries are recorded as the slices land.`,
+        4000,
+      ),
+      components: [],
+      dataModels: [],
+      constraints: [],
+    },
+    programDesign: { modules: [], callGraph: [] },
+  };
+}
+
 /**
  * Normalises model-supplied ids: models cannot mint valid Crockford ULIDs, so milestone
  * and feature ids are replaced here and `dependsOn` indexes are remapped to the new ids.
@@ -187,25 +445,40 @@ function asStringArray(value: unknown): string[] {
 function normalizePlan(raw: RawPlan, input: MissionPlannerInput): MissionPlanData {
   const createdAt = input.createdAt ?? new Date().toISOString();
   const rawMilestones = Array.isArray(raw.milestones) ? raw.milestones : [];
-  const rawContract =
-    typeof raw.validationContract === 'object' && raw.validationContract !== null
-      ? raw.validationContract
-      : {};
+  const rawContract = asRecord(raw.validationContract);
   const rawAssertions = Array.isArray(rawContract.assertions) ? rawContract.assertions : [];
 
+  const declaredTier = asRiskTier(raw.riskTier);
+  const classification = classifyRisk({
+    ...(declaredTier ? { declaredTier } : {}),
+    goal: input.goal,
+    governance: input.riskGovernance,
+  });
+  const riskTier = classification.tier;
+  const riskReasons = asStringArray(raw.riskReasons);
+  for (const reason of classification.reasons) {
+    if (!riskReasons.includes(reason)) riskReasons.push(reason);
+  }
+
   const assertions: MissionValidationAssertionData[] = rawAssertions.map((entry, index) => {
-    const item = (typeof entry === 'object' && entry !== null ? entry : {}) as Record<
-      string,
-      unknown
-    >;
+    const item = asRecord(entry);
     const tier = asString(item.tier, 'e2e');
+    const thresholds = asThresholds(item.thresholds);
     return {
       id: asString(item.id, `VAL-${index + 1}`),
       title: clamp(asString(item.title, `Assertion ${index + 1}`), 200),
       assertion: clamp(asString(item.assertion, `Assertion ${index + 1} holds`), 4000),
-      tier: (['unit', 'component', 'integration', 'e2e', 'manual'] as const).includes(
-        tier as 'unit' | 'component' | 'integration' | 'e2e' | 'manual',
-      )
+      tier: (
+        [
+          'unit',
+          'component',
+          'integration',
+          'e2e',
+          'manual',
+          'architecture',
+          'maintainability',
+        ] as const
+      ).includes(tier as MissionValidationAssertionData['tier'])
         ? (tier as MissionValidationAssertionData['tier'])
         : 'e2e',
       required: item.required === false ? false : true,
@@ -217,22 +490,18 @@ function normalizePlan(raw: RawPlan, input: MissionPlannerInput): MissionPlanDat
       ...(typeof item.expected === 'string' && item.expected.trim().length > 0
         ? { expected: clamp(item.expected, 1000) }
         : {}),
+      ...(thresholds ? { thresholds } : {}),
     };
   });
 
   // Every milestone gets fresh ULIDs; feature ids are assigned before `dependsOn` is
   // remapped so the model's indexes can be resolved in one pass.
   const milestones: MissionMilestonePlanData[] = rawMilestones.map((entry, milestoneIndex) => {
-    const item = (typeof entry === 'object' && entry !== null ? entry : {}) as Record<
-      string,
-      unknown
-    >;
+    const item = asRecord(entry);
     const rawFeatures = Array.isArray(item.features) ? item.features : [];
     const featureIds = rawFeatures.map(() => newMissionFeatureId());
     const features: MissionFeaturePlanData[] = rawFeatures.map((featureEntry, featureIndex) => {
-      const feature = (
-        typeof featureEntry === 'object' && featureEntry !== null ? featureEntry : {}
-      ) as Record<string, unknown>;
+      const feature = asRecord(featureEntry);
       const rawDependsOn = Array.isArray(feature.dependsOn) ? feature.dependsOn : [];
       const dependsOn = rawDependsOn
         .map((dependency) =>
@@ -242,9 +511,14 @@ function normalizePlan(raw: RawPlan, input: MissionPlannerInput): MissionPlanDat
       const claimed = asStringArray(feature.acceptanceCheckIds).filter((id) =>
         assertions.some((assertion) => assertion.id === id),
       );
+      const title = clamp(asString(feature.title, `Feature ${featureIndex + 1}`), 200);
+      const verticalSlice =
+        typeof feature.verticalSlice === 'string' && feature.verticalSlice.trim().length > 0
+          ? clamp(feature.verticalSlice, 2000)
+          : title;
       return {
         id: featureIds[featureIndex] as string,
-        title: clamp(asString(feature.title, `Feature ${featureIndex + 1}`), 200),
+        title,
         description: clamp(
           asString(feature.description, asString(feature.title, `Feature ${featureIndex + 1}`)),
           8000,
@@ -254,6 +528,9 @@ function normalizePlan(raw: RawPlan, input: MissionPlannerInput): MissionPlanDat
         acceptanceCheckIds:
           claimed.length > 0 ? claimed : assertions[0] ? [assertions[0].id] : [],
         workItemType: 'task',
+        riskTier: asRiskTier(feature.riskTier) ?? riskTier,
+        verticalSlice,
+        kind: asFeatureKind(feature.kind) ?? 'slice',
       };
     });
 
@@ -265,6 +542,86 @@ function normalizePlan(raw: RawPlan, input: MissionPlannerInput): MissionPlanDat
       features,
     };
   });
+
+  const allFeatures = milestones.flatMap((milestone) => milestone.features);
+
+  // A plan must contain at least one real slice; a model that marked everything an
+  // enabler gets its first feature promoted instead of failing the whole plan.
+  if (allFeatures.length > 0 && !allFeatures.some((feature) => feature.kind !== 'enabler')) {
+    const first = allFeatures[0] as MissionFeaturePlanData;
+    first.kind = 'slice';
+  }
+
+  // Medium/high-risk plans require architecture and maintainability assertions.
+  if (riskTier !== 'low') {
+    if (!assertions.some((assertion) => assertion.tier === 'architecture')) {
+      assertions.push({ ...ARCHITECTURE_ASSERTION, id: uniqueAssertionId('VAL-ARCH', assertions) });
+    }
+    if (!assertions.some((assertion) => assertion.tier === 'maintainability')) {
+      assertions.push({
+        ...MAINTAINABILITY_ASSERTION,
+        id: uniqueAssertionId('VAL-MAINT', assertions),
+      });
+    }
+    const riskAssertionIds = assertions
+      .filter(
+        (assertion) =>
+          assertion.tier === 'architecture' || assertion.tier === 'maintainability',
+      )
+      .map((assertion) => assertion.id);
+    for (const feature of allFeatures) {
+      for (const id of riskAssertionIds) {
+        if (!feature.acceptanceCheckIds.includes(id)) feature.acceptanceCheckIds.push(id);
+      }
+    }
+  }
+
+  const parsedProductReview = parseProductReview(raw.productReview);
+  const parsedArchitecture = parseArchitecture(raw.architecture);
+  const parsedProgramDesign = parseProgramDesign(raw.programDesign);
+  const synthesized = synthesizeArtifacts(riskTier, input, allFeatures);
+  const productReview = parsedProductReview ?? synthesized.productReview;
+  const architecture = parsedArchitecture ?? synthesized.architecture;
+  const programDesign = parsedProgramDesign ?? synthesized.programDesign;
+
+  // Vertical slices: model indexes are remapped to minted feature ids; any feature not
+  // covered by a slice gets its own conservative slice so the plan always validates.
+  const rawSlices = Array.isArray(raw.verticalSlices) ? raw.verticalSlices : [];
+  const slices: MissionVerticalSlice[] = [];
+  const covered = new Set<string>();
+  const knownIds = new Set(allFeatures.map((feature) => feature.id));
+  for (const entry of rawSlices.slice(0, 100)) {
+    const item = asRecord(entry);
+    const name = asString(item.name, '');
+    if (name.length === 0) continue;
+    const rawIds = Array.isArray(item.featureIds) ? item.featureIds : [];
+    const ids: string[] = [];
+    for (const value of rawIds) {
+      const id =
+        typeof value === 'number' ? allFeatures[value]?.id : typeof value === 'string' ? value : null;
+      if (id && knownIds.has(id) && !covered.has(id) && !ids.includes(id)) ids.push(id);
+    }
+    if (ids.length === 0) continue;
+    for (const id of ids) covered.add(id);
+    slices.push({
+      name: clamp(name, 200),
+      order: slices.length,
+      featureIds: ids,
+      checks: asStringArray(item.checks)
+        .map((check) => clamp(check, 500))
+        .slice(0, 100),
+    });
+  }
+  for (const feature of allFeatures) {
+    if (covered.has(feature.id)) continue;
+    covered.add(feature.id);
+    slices.push({
+      name: clamp(feature.verticalSlice ?? feature.title, 200),
+      order: slices.length,
+      featureIds: [feature.id],
+      checks: [...feature.acceptanceCheckIds],
+    });
+  }
 
   return {
     version: 'v1alpha1',
@@ -288,6 +645,12 @@ function normalizePlan(raw: RawPlan, input: MissionPlannerInput): MissionPlanDat
     milestones,
     risks: asStringArray(raw.risks),
     assumptions: asStringArray(raw.assumptions),
+    riskTier,
+    riskReasons,
+    ...(productReview ? { productReview } : {}),
+    ...(architecture ? { architecture } : {}),
+    ...(programDesign ? { programDesign } : {}),
+    ...(slices.length > 0 ? { verticalSlices: slices } : {}),
   };
 }
 

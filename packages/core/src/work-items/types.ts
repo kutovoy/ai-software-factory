@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { RiskTier } from '../governance/risk';
 import { codedString } from '../schema/common';
 import { LOOP_STAGES } from '../stage-graph/graph';
 
@@ -191,6 +192,8 @@ export const WORK_ITEM_EVENT_TYPES = [
   'gate.decided',
   'gate.escalated',
   'review.verdict',
+  /** Deterministic compact packet assembled after review/verify evidence is available. */
+  'review.packet',
   'pr.opened',
   'checks.recorded',
   'loop.requested_changes',
@@ -219,3 +222,20 @@ export const WORK_ITEM_EVENT_TYPES = [
   'guard.failed',
 ] as const;
 export type WorkItemEventType = (typeof WORK_ITEM_EVENT_TYPES)[number];
+
+/**
+ * Deterministic review packet (change `harden-factory-quality`). Assembled from plan,
+ * evidence and diff data — not model prose — so a human review gate has an auditable
+ * decision surface while the full diff stays linked.
+ */
+export interface ReviewPacket {
+  riskTier: RiskTier;
+  intent: string;
+  planRef: string | null;
+  changedFiles: number;
+  diffStats: { additions: number; deletions: number };
+  assertions: Array<{ id: string; status: string; evidence: string }>;
+  architectureImpact: string[];
+  openQuestions: string[];
+  reviewerChecklist: string[];
+}

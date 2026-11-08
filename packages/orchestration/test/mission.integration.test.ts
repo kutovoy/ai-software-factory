@@ -304,6 +304,117 @@ suite('mission activities', () => {
     }
   });
 
+  test('does not auto-approve a high-risk plan', async () => {
+    const sql = getSql();
+    const mission = await createMission(sql, {
+      id: newMissionId(),
+      factory: 'itest-autonomy',
+      title: 'High-risk autonomy plan',
+      goal: 'Add authentication\nSupport login',
+      definitionCommit: 'itest123',
+      factoryRoot: HELLO_ROOT,
+    });
+
+    try {
+      await setAutonomyState(sql, {
+        factory: 'itest-autonomy',
+        enabled: true,
+        paused: false,
+        actor: 'itest',
+        reason: 'high-risk auto-approval integration test',
+        overrideActor: 'itest',
+        overrideReason: 'audited override',
+      });
+
+      const plan = await planMissionActivity({
+        missionId: mission.id,
+        factory: mission.factory,
+        definitionCommit: mission.definitionCommit,
+        title: mission.title,
+        goal: mission.goal,
+        createdAt: '2026-11-06T00:00:00.000Z',
+      });
+      expect(plan.riskTier).toBe('high');
+      await persistMissionPlanActivity({ missionId: mission.id, plan, planVersion: 1 });
+
+      const auto = await missionPlanAutoApprovalActivity({ missionId: mission.id });
+      expect(auto.autoApprove).toBe(false);
+      expect(auto.riskTier).toBe('high');
+      expect(auto.riskPolicy.planApproval).toBe('human');
+      expect(auto.riskPolicy.review).toBe('human');
+      expect(auto.riskPolicy.merge).toBe('human');
+    } finally {
+      await sql`delete from missions where id = ${mission.id}`;
+      await sql`delete from autonomy_state where factory = 'itest-autonomy'`;
+    }
+  });
+
+  test('high-risk feature work items force human review/ship gates and human merge', async () => {
+    const sql = getSql();
+    const high = await createMission(sql, {
+      id: newMissionId(),
+      factory: 'itest-features',
+      title: 'High-risk feature',
+      goal: 'Add authentication\nSupport login',
+      definitionCommit: 'itest123',
+      factoryRoot: HELLO_ROOT,
+    });
+    const low = await createMission(sql, {
+      id: newMissionId(),
+      factory: 'itest-features',
+      title: 'Low-risk feature',
+      goal: 'Add a footer\nStyle it',
+      definitionCommit: 'itest123',
+      factoryRoot: HELLO_ROOT,
+    });
+
+    try {
+      for (const [mission, expectedTier] of [
+        [high, 'high'],
+        [low, 'low'],
+      ] as const) {
+        const plan = await planMissionActivity({
+          missionId: mission.id,
+          factory: mission.factory,
+          definitionCommit: mission.definitionCommit,
+          title: mission.title,
+          goal: mission.goal,
+          createdAt: '2026-11-06T00:00:00.000Z',
+        });
+        expect(plan.riskTier).toBe(expectedTier);
+        await persistMissionPlanActivity({ missionId: mission.id, plan, planVersion: 1 });
+
+        const features = await listMissionFeatures(sql, mission.id);
+        const feature = features[0]!;
+        const created = await createMissionFeatureWorkItemActivity({
+          missionId: mission.id,
+          featureId: feature.id,
+        });
+
+        expect(created.input.riskTier).toBe(expectedTier);
+        expect(created.input.planRef).toBe(`${mission.id}#${feature.id}`);
+        expect(created.input.sourceRef.riskTier).toBe(expectedTier);
+        expect(Array.isArray(created.input.architectureImpact)).toBe(true);
+        expect(Array.isArray(created.input.openQuestions)).toBe(true);
+
+        if (expectedTier === 'high') {
+          expect(created.input.riskPolicy?.review).toBe('human');
+          expect(created.input.riskPolicy?.merge).toBe('human');
+          expect(created.input.gates.review).toBe('human');
+          expect(created.input.gates.ship).toBe('human');
+          expect(created.input.mergePolicy).toBe('human');
+        } else {
+          expect(created.input.riskPolicy?.review).toBe('agent');
+          expect(created.input.gates.review).toBe('agent');
+          expect(created.input.mergePolicy).toBe('auto_on_green');
+        }
+      }
+    } finally {
+      await sql`delete from work_items where mission_id in (${high.id}, ${low.id})`;
+      await sql`delete from missions where id in (${high.id}, ${low.id})`;
+    }
+  });
+
   test('records checkpoints and status transitions', async () => {
     const checkpoint = await recordMissionCheckpointActivity({
       missionId: mission.id,

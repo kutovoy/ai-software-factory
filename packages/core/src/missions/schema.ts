@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { RISK_TIERS } from '../governance/risk';
 import { VALIDATION_TIERS } from '../validation/types';
 import { WORK_ITEM_TYPES } from '../work-items/types';
 import {
@@ -33,6 +34,7 @@ export const missionValidationAssertionSchema = z
     evidence: z.string().min(1).max(500),
     command: z.string().min(1).max(2000).optional(),
     expected: z.string().min(1).max(1000).optional(),
+    thresholds: z.record(z.string(), z.number().finite()).optional(),
   })
   .strict();
 
@@ -50,6 +52,56 @@ export const missionValidationContractSchema = z
   })
   .strict();
 
+export const missionProductReviewSchema = z
+  .object({
+    problem: z.string().min(1).max(4000),
+    desiredBehavior: z.array(z.string().min(1).max(500)).max(50),
+    mockups: z.array(z.string().min(1).max(500)).max(50),
+  })
+  .strict();
+
+export const missionArchitectureComponentSchema = z
+  .object({
+    name: z.string().min(1).max(200),
+    responsibility: z.string().min(1).max(2000),
+    contracts: z.array(z.string().min(1).max(500)).max(50),
+  })
+  .strict();
+
+export const missionArchitectureSchema = z
+  .object({
+    summary: z.string().min(1).max(4000),
+    components: z.array(missionArchitectureComponentSchema).max(100),
+    dataModels: z.array(z.string().min(1).max(500)).max(100),
+    constraints: z.array(z.string().min(1).max(500)).max(100),
+  })
+  .strict();
+
+export const missionProgramModuleSchema = z
+  .object({
+    name: z.string().min(1).max(200),
+    path: z.string().min(1).max(500),
+    responsibility: z.string().min(1).max(2000),
+    publicApi: z.array(z.string().min(1).max(500)).max(50),
+  })
+  .strict();
+
+export const missionProgramDesignSchema = z
+  .object({
+    modules: z.array(missionProgramModuleSchema).max(100),
+    callGraph: z.array(z.string().min(1).max(1000)).max(200),
+  })
+  .strict();
+
+export const missionVerticalSliceSchema = z
+  .object({
+    name: z.string().min(1).max(200),
+    order: z.number().int().min(0),
+    featureIds: z.array(z.string().regex(MISSION_FEATURE_ID_RE)).min(1),
+    checks: z.array(z.string().min(1).max(500)),
+  })
+  .strict();
+
 export const missionFeaturePlanSchema = z
   .object({
     id: z.string().regex(MISSION_FEATURE_ID_RE),
@@ -59,6 +111,9 @@ export const missionFeaturePlanSchema = z
     dependsOn: z.array(z.string().regex(MISSION_FEATURE_ID_RE)).default([]),
     acceptanceCheckIds: z.array(z.string().min(1).max(120)).min(1),
     workItemType: z.enum(WORK_ITEM_TYPES).optional(),
+    riskTier: z.enum(RISK_TIERS).optional(),
+    verticalSlice: z.string().min(1).max(2000).optional(),
+    kind: z.enum(['slice', 'enabler']).optional(),
   })
   .strict();
 
@@ -85,6 +140,12 @@ export const missionPlanSchema = z
     milestones: z.array(missionMilestonePlanSchema).min(1),
     risks: z.array(z.string()).default([]),
     assumptions: z.array(z.string()).default([]),
+    riskTier: z.enum(RISK_TIERS).default('low'),
+    riskReasons: z.array(z.string()).default([]),
+    productReview: missionProductReviewSchema.optional(),
+    architecture: missionArchitectureSchema.optional(),
+    programDesign: missionProgramDesignSchema.optional(),
+    verticalSlices: z.array(missionVerticalSliceSchema).optional(),
   })
   .strict();
 

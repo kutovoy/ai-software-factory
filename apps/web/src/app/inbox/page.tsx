@@ -10,10 +10,16 @@ import { safeGet } from '@/lib/api';
 import { shortCommit } from '@/lib/format';
 import { missionStatusTone, shortMissionId } from '@/lib/missions';
 import { TimeAgo } from '@/components/ui/TimeAgo';
-import type { InboxProjectionWire } from '@/lib/types';
+import type { InboxProjectionWire, RiskTierWire } from '@/lib/types';
 import { slaState } from '@/lib/work-items';
 
 export const dynamic = 'force-dynamic';
+
+function riskTone(tier: RiskTierWire): 'success' | 'warning' | 'danger' {
+  if (tier === 'low') return 'success';
+  if (tier === 'medium') return 'warning';
+  return 'danger';
+}
 
 const EMPTY_INBOX: InboxProjectionWire = {
   gates: [],
@@ -84,6 +90,14 @@ export default async function InboxPage() {
                         <Badge tone={missionStatusTone(mission.status)} testId="inbox-mission-status">
                           {mission.status.replace(/_/g, ' ')}
                         </Badge>
+                        {mission.plan?.riskTier ? (
+                          <Badge
+                            tone={riskTone(mission.plan.riskTier)}
+                            testId="inbox-mission-risk"
+                          >
+                            {mission.plan.riskTier} risk
+                          </Badge>
+                        ) : null}
                         {item.gate ? (
                           <Badge tone="warning" mono testId="inbox-mission-gate">
                             {item.gate.gate} gate · #{item.gate.attempt}
@@ -142,9 +156,11 @@ export default async function InboxPage() {
               </p>
             ) : (
               <ul data-testid="inbox-gates-list" className="divide-y divide-slate-100">
-                {gates.map(({ workItem, factoryId, factoryName, gate }) => {
+                {gates.map(({ workItem, factoryId, factoryName, gate, reviewPacket }) => {
                   const sla = slaState(gate.slaAt);
                   const encoded = encodeURIComponent(factoryId);
+                  const firstQuestion = reviewPacket?.openQuestions[0] ?? null;
+                  const passing = reviewPacket?.assertions.filter((assertion) => assertion.status === 'pass').length ?? 0;
                   return (
                     <li
                       key={`${workItem.id}:${gate.stage}:${gate.attempt}`}
@@ -185,6 +201,58 @@ export default async function InboxPage() {
                       </div>
                       {gate.verdict ? (
                         <GateVerdictBadge verdict={gate.verdict} testId="inbox-gate-verdict" />
+                      ) : null}
+                      {reviewPacket ? (
+                        <div
+                          data-testid="inbox-gate-review-packet"
+                          data-risk-tier={reviewPacket.riskTier}
+                          className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                        >
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
+                            <Badge
+                              tone={riskTone(reviewPacket.riskTier)}
+                              testId="inbox-gate-review-packet-risk"
+                            >
+                              {reviewPacket.riskTier} risk
+                            </Badge>
+                            <span data-testid="inbox-gate-review-packet-files">
+                              changed files{' '}
+                              <span className="font-mono">{reviewPacket.changedFiles}</span>
+                            </span>
+                            <span data-testid="inbox-gate-review-packet-diff">
+                              diff{' '}
+                              <span className="font-mono text-emerald-700">
+                                +{reviewPacket.diffStats.additions}
+                              </span>{' '}
+                              <span className="font-mono text-red-700">
+                                -{reviewPacket.diffStats.deletions}
+                              </span>
+                            </span>
+                            <span data-testid="inbox-gate-review-packet-assertions">
+                              assertions{' '}
+                              <span className="font-mono">
+                                {reviewPacket.assertions.length} · {passing} passing
+                              </span>
+                            </span>
+                            {firstQuestion ? (
+                              <span
+                                data-testid="inbox-gate-review-packet-question"
+                                className="text-slate-700"
+                              >
+                                open question: {firstQuestion}
+                              </span>
+                            ) : (
+                              <span className="text-slate-500">no open questions</span>
+                            )}
+                            <Link
+                              href={`/factories/${encoded}/work-items/${encodeURIComponent(workItem.id)}`}
+                              data-testid="inbox-gate-review-packet-link"
+                              className="font-mono text-[11px] text-sky-700 underline decoration-sky-200 underline-offset-2"
+                            >
+                              open review packet
+                            </Link>
+                          </div>
+                        </div>
                       ) : null}
                       <GateDecisionActions
                         factoryId={factoryId}
