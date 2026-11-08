@@ -11,7 +11,7 @@ Public-release prep: `README.md`, `LICENSE` (MIT, © Nick Kutovyy), `NOTICE` (at
 
 ## Compaction handoff (read this first)
 
-The P0 software-factory quality/risk workstream is **implemented and archived** in
+The P0 software-factory quality/risk workstream is **implemented and archived** at `81be27f` in
 `openspec/changes/archive/2026-11-07-harden-factory-quality/` (ADR-052). It adds risk-tiered autonomy
 (low/medium/high; only low-risk plans auto-approve under full autonomy), architecture/maintainability
 assertions with thresholds, upstream planning artifacts, vertical-slice features and deterministic
