@@ -12,13 +12,13 @@ Public-release prep: `README.md`, `LICENSE` (MIT, © Nick Kutovyy), `NOTICE` (at
 ## Compaction handoff (read this first)
 
 The anti-slop workstream is **implemented** on `feat/anti-slop-quality-loop`:
-- P0 (OpenSpec `add-anti-slop-budgets-and-proof`, ADR-053): risk-tiered slop budgets with stop conditions,
+- P0 (OpenSpec `2026-11-25-add-anti-slop-budgets-and-proof`, ADR-053): risk-tiered slop budgets with stop conditions,
   proof artifacts, review packet v2, deterministic context packs, plan depth/expected pain/leverage and
   `show-me`/`anti-slop` skills.
-- P1 (OpenSpec `add-review-capacity-and-compounding`, ADR-054): `quality.reviewCapacity` attention budget,
+- P1 (OpenSpec `2026-11-25-add-review-capacity-and-compounding`, ADR-054): `quality.reviewCapacity` attention budget,
   autonomy refusal when saturated, comprehension proxies, PR decision links, work-item decision trail, mission
   experiment metadata, longitudinal quality evals and lesson-aware context packs.
-- P2 (OpenSpec `add-risk-aware-routing-and-standards`, ADR-055): risk-aware routing (high risk → deep tier) and
+- P2 (OpenSpec `2026-11-25-add-risk-aware-routing-and-standards`, ADR-055): risk-aware routing (high risk → deep tier) and
   `quality.standards` public API/schema caps with a review-gate stop condition. Gate waits already release the
   runner sandbox; code mode remains deferred.
 

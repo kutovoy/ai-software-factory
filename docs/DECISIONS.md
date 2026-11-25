@@ -1131,7 +1131,7 @@ mission.
 
 ## ADR-053 — Slop budgets, proof artifacts and context packs
 
-**Status:** accepted (2026-11-25, implemented in `add-anti-slop-budgets-and-proof`).
+**Status:** accepted (2026-11-25, implemented in `2026-11-25-add-anti-slop-budgets-and-proof`).
 **Context:** the review packet v1 made review auditable but still asked a human to reconstruct intent from a
 diff. Production is cheap, review and comprehension are constant-cost, and a large diff can pass every gate.
 The factory needed a deterministic way to cap change size, force proof for behavioral claims, give the agent
@@ -1156,7 +1156,7 @@ packets raise the floor, while repo-specific checks and human judgment remain th
 
 ## ADR-054 — Review capacity, comprehension proxies and longitudinal quality
 
-**Status:** accepted (2026-11-25, implemented in `add-review-capacity-and-compounding`).
+**Status:** accepted (2026-11-25, implemented in `2026-11-25-add-review-capacity-and-compounding`).
 **Context:** slop budgets cap individual changes, but the factory can still start more work than humans can
 review. Review and comprehension are the scarce resources; a green queue can hide an unread backlog. The
 factory also lacked a single decision trail from plan to PR and a way to compare codebase quality across
@@ -1178,7 +1178,7 @@ wiring.
 
 ## ADR-055 — Risk-aware routing and public API/schema standards
 
-**Status:** accepted (2026-11-25, implemented in `add-risk-aware-routing-and-standards`).
+**Status:** accepted (2026-11-25, implemented in `2026-11-25-add-risk-aware-routing-and-standards`).
 **Context:** a deterministic routing score based on the prompt and stage does not know the work item's blast
 radius; a high-risk auth or migration change could be sent to a cheap model. The review packet counted public
 API/schema changes but did not stop a gate. The `12 Rules` talk argues for routing by stakes and deterministic

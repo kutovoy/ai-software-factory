@@ -698,3 +698,69 @@ human review decision before ship.
 #### Scenario: Low-risk work item
 - **WHEN** a work item is `low` risk and verification is green
 - **THEN** the UI may show the packet without blocking auto-merge
+
+### Requirement: Review packet decision surface
+
+Work-item detail and Inbox SHALL render the review packet as a decision surface: budget vs actual, blast
+radius, proof artifacts, read-first list, decisions, reviewer roles and comprehension estimates.
+
+#### Scenario: Proof gallery
+- **WHEN** a packet has proof artifacts
+- **THEN** the UI shows thumbnails/links bound to the run and commit
+- **AND** a missing required proof is called out
+
+#### Scenario: Read-first
+- **WHEN** a packet has changed files
+- **THEN** the UI shows the ordered files and why to read them first
+
+### Requirement: Plan depth and visual artifacts
+
+Mission Control SHALL show plan depth, expected pain, leverage and visual plan artifacts before approval.
+
+#### Scenario: Plan gate
+- **WHEN** a plan is awaiting approval
+- **THEN** the gate shows plan depth and leverage
+- **AND** visual artifacts are rendered or linked
+
+### Requirement: Context pack visibility
+
+Work-item detail SHALL show the context pack sources used for the change.
+
+#### Scenario: Context sources
+- **WHEN** a work item was dispatched with a context pack
+- **THEN** the detail page lists the ADRs, constraints and prior failures used
+
+### Requirement: Review capacity and comprehension cards
+
+The Gates page SHALL show review capacity and comprehension projections with honest unknown states.
+
+#### Scenario: Capacity card
+- **WHEN** the autonomy read model reports capacity
+- **THEN** the page shows open gates, unread diff lines, oldest gate age and saturation
+- **AND** it explains how to drain the queue
+
+#### Scenario: Comprehension card
+- **WHEN** the read model reports comprehension
+- **THEN** the page shows unread diff volume, items without human review and review coverage
+- **AND** it never claims a specific human read a specific diff
+
+### Requirement: Experiment and decision trail UI
+
+Mission Control SHALL show experiment metadata, and work-item detail SHALL show the decision trail.
+
+#### Scenario: Experiment
+- **WHEN** a plan has experiment metadata
+- **THEN** Mission Control shows the flag, metric, guardrail and cleanup window
+
+#### Scenario: Decision trail
+- **WHEN** a work item has decisions
+- **THEN** the detail page lists plan, gates, review, PR and merge in order
+
+### Requirement: Standards card
+
+Work-item detail and Inbox SHALL show the public API/schema standards result from the review packet.
+
+#### Scenario: Standards result
+- **WHEN** a packet has a standards result
+- **THEN** the UI shows the caps, actual counts and pass/exceeded status
+- **AND** an exceeded result is called out before the gate decision

@@ -393,7 +393,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     title: 'Work-item lifecycle',
     section: 'concepts',
     status:
-      'Shipped — Phase 2b / 3c; risk tiers, review packet and architecture/maintainability evidence in `2026-11-07-harden-factory-quality`; risk-aware routing and standards guard in `add-risk-aware-routing-and-standards`',
+      'Shipped — Phase 2b / 3c; risk tiers, review packet and architecture/maintainability evidence in `2026-11-07-harden-factory-quality`; risk-aware routing and standards guard in `2026-11-25-add-risk-aware-routing-and-standards`',
     summary:
       'Intake → triage → spec → plan → implement → review → verify → ship, with durable gates between stages, a risk-tiered review path, risk-aware routing and one terminal state.',
     blocks: [
@@ -879,7 +879,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     title: 'Work items',
     section: 'menu',
     status:
-      'Shipped — Phase 2b / 3c; review packet and risk tiers in `2026-11-07-harden-factory-quality`; packet v2, slop budgets, proof and context packs in `add-anti-slop-budgets-and-proof`; decision trail in `add-review-capacity-and-compounding`; standards guard in `add-risk-aware-routing-and-standards`',
+      'Shipped — Phase 2b / 3c; review packet and risk tiers in `2026-11-07-harden-factory-quality`; packet v2, slop budgets, proof and context packs in `2026-11-25-add-anti-slop-budgets-and-proof`; decision trail in `2026-11-25-add-review-capacity-and-compounding`; standards guard in `2026-11-25-add-risk-aware-routing-and-standards`',
     summary:
       'The board of work items by stage, with status filters, created/updated timestamps, create, cancel, retry and per-item gate state; detail adds review packet v2 (slop budget, blast radius, public API/schema standards, proof, read-first, decisions, roles), architecture/maintainability evidence, the pending gate and one chronological decision trail.',
     pageHref: '/factories/example/work-items',
@@ -1228,7 +1228,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     slug: 'factories/missions',
     title: 'Missions',
     section: 'menu',
-    status: 'Shipped — archived changes `2026-11-07-add-long-running-missions`, `2026-11-07-add-mission-plan-auto-approval` and `2026-11-07-fix-mission-feature-lifecycle`; risk tiers and planning artifacts in `2026-11-07-harden-factory-quality`; plan depth and visual artifacts in `add-anti-slop-budgets-and-proof`; experiment metadata in `add-review-capacity-and-compounding`',
+    status: 'Shipped — archived changes `2026-11-07-add-long-running-missions`, `2026-11-07-add-mission-plan-auto-approval` and `2026-11-07-fix-mission-feature-lifecycle`; risk tiers and planning artifacts in `2026-11-07-harden-factory-quality`; plan depth and visual artifacts in `2026-11-25-add-anti-slop-budgets-and-proof`; experiment metadata in `2026-11-25-add-review-capacity-and-compounding`',
     summary:
       'Mission Control: create a goal, review the risk tier, plan depth, expected pain and leverage, the upstream planning artifacts (including visual artifacts), the experiment/rollout record and validation contract, approve it, follow vertical slices, read validation evidence and spend, and pause, resume, cancel or retry.',
     pageHref: factoryPageHref('missions'),
@@ -1531,7 +1531,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     title: 'Gates',
     section: 'menu',
     status:
-      'Shipped — Phase 2b / 3c / 4b; risk policy in `2026-11-07-harden-factory-quality`; slop budgets and review-packet waivers in `add-anti-slop-budgets-and-proof`; review capacity and comprehension in `add-review-capacity-and-compounding`; public API/schema standards in `add-risk-aware-routing-and-standards`',
+      'Shipped — Phase 2b / 3c / 4b; risk policy in `2026-11-07-harden-factory-quality`; slop budgets and review-packet waivers in `2026-11-25-add-anti-slop-budgets-and-proof`; review capacity and comprehension in `2026-11-25-add-review-capacity-and-compounding`; public API/schema standards in `2026-11-25-add-risk-aware-routing-and-standards`',
     summary:
       'The resolved gate table with its source, the autonomy policy and kill switch, the risk-tier policy, risk-aware routing and slop/standards budgets, the review-capacity and comprehension cards, the benchmark-attestation card and the canary state.',
     pageHref: factoryPageHref('gates'),
@@ -1607,7 +1607,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     slug: 'factories/settings',
     title: 'Settings',
     section: 'menu',
-    status: 'Shipped — Phase 3b / 6a; risk policy in `2026-11-07-harden-factory-quality`; experiment metadata in `add-review-capacity-and-compounding`',
+    status: 'Shipped — Phase 3b / 6a; risk policy in `2026-11-07-harden-factory-quality`; experiment metadata in `2026-11-25-add-review-capacity-and-compounding`',
     summary:
       'The manifest summary (including the experiment provider and flag prefix when declared), repositories, secret references, risk policy and the GitHub connection form (repos, webhook, dry run, merge ownership).',
     pageHref: factoryPageHref('settings'),
@@ -2140,7 +2140,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     title: 'A gate looks stuck',
     section: 'troubleshooting',
     status:
-      'Symptom → check (risk-tiered gates in `2026-11-07-harden-factory-quality`; slop budgets and proof in `add-anti-slop-budgets-and-proof`; review capacity in `add-review-capacity-and-compounding`; standards guard in `add-risk-aware-routing-and-standards`)',
+      'Symptom → check (risk-tiered gates in `2026-11-07-harden-factory-quality`; slop budgets and proof in `2026-11-25-add-anti-slop-budgets-and-proof`; review capacity in `2026-11-25-add-review-capacity-and-compounding`; standards guard in `2026-11-25-add-risk-aware-routing-and-standards`)',
     summary:
       'A gate is a durable wait by design. Check whether it is waiting for you, paused by the kill switch, blocked by an automation override, held by a slop-budget or public API/schema standards overage, a missing proof artifact, queued behind a saturated review capacity, or a deliberate medium/high-risk plan or high-risk review gate.',
     blocks: [

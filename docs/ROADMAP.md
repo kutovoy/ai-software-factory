@@ -107,17 +107,17 @@ The archived OpenSpec change is `2026-11-07-harden-factory-quality` (ADR-052).
 maintenance loops, feature-flag experiments, unified decision graph, session learning, code mode and
 model/harness routing. See the weaknesses doc for the full backlog and acceptance criteria.
 
-**Anti-slop P0 — shipped (2026-11-25, OpenSpec `add-anti-slop-budgets-and-proof`, ADR-053):** risk-tiered
+**Anti-slop P0 — shipped (2026-11-25, OpenSpec `2026-11-25-add-anti-slop-budgets-and-proof`, ADR-053):** risk-tiered
 slop budgets with stop conditions, proof artifacts (screenshot/video/HTML/curl/report), review packet v2
 (budget, blast radius, read-first, decisions, roles, comprehension), deterministic context packs, plan depth/
 expected pain/leverage, and `show-me`/`anti-slop` skills.
 
-**Anti-slop P1 — shipped (2026-11-25, OpenSpec `add-review-capacity-and-compounding`, ADR-054):**
+**Anti-slop P1 — shipped (2026-11-25, OpenSpec `2026-11-25-add-review-capacity-and-compounding`, ADR-054):**
 `quality.reviewCapacity` attention budget, autonomy refusal when saturated, comprehension projections on the
 Gates page, PR decision links, work-item decision trail, mission experiment metadata, deterministic
 longitudinal quality evals, and lesson-aware context packs.
 
-**Anti-slop P2 — shipped (2026-11-25, OpenSpec `add-risk-aware-routing-and-standards`, ADR-055):**
+**Anti-slop P2 — shipped (2026-11-25, OpenSpec `2026-11-25-add-risk-aware-routing-and-standards`, ADR-055):**
 risk-aware routing (high risk → deep tier), `quality.standards` public API/schema caps with a review-gate stop
 condition and packet/Inbox UI. Gate waits already release the runner sandbox; code mode remains
 harness-dependent and is deferred rather than shipped as a no-op flag.

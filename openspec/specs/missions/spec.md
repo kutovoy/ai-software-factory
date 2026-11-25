@@ -182,3 +182,44 @@ which later slice verifies it.
 #### Scenario: Enabler
 - **WHEN** a feature is marked `enabler`
 - **THEN** it states what it unblocks and which later slice verifies it
+
+### Requirement: Plan depth and leverage
+
+Mission plans SHALL carry `planDepth`, `expectedPain` and `leverage` so small changes stay light and
+high-cost changes receive full upstream design.
+
+#### Scenario: Small change
+- **WHEN** a plan is low risk and reversible
+- **THEN** it may use a light plan without full architecture/program-design sections
+
+#### Scenario: High-cost change
+- **WHEN** a plan touches data, schema or a high-risk path
+- **THEN** it uses a full plan
+- **AND** it waits for a human plan gate
+
+### Requirement: Visual plan artifacts
+
+Medium/high-risk UI plans SHALL reference at least one visual artifact (mockup, diagram or HTML page).
+
+#### Scenario: UI plan
+- **WHEN** a medium/high-risk plan changes a user-visible surface
+- **THEN** the plan references a visual artifact
+- **AND** Mission Control renders or links it
+
+### Requirement: Experiment metadata
+
+Mission plans SHALL carry optional experiment metadata: flag, success metric, guardrail and cleanup window.
+
+#### Scenario: Experiment plan
+- **WHEN** a plan includes an experiment
+- **THEN** Mission Control shows the flag, metric, guardrail and cleanup window
+- **AND** the plan gate records the experiment reference
+
+### Requirement: Plan decision trail
+
+Mission Control and work-item detail SHALL show a chronological decision trail from plan through gates,
+review, PR and merge.
+
+#### Scenario: Decision trail
+- **WHEN** a work item has gate decisions, review verdicts and a PR
+- **THEN** the detail page lists them in order with actor/reason

@@ -264,3 +264,89 @@ A work item MAY be created as a mission feature and SHALL link back to its missi
 - **WHEN** a mission feature work item is retried
 - **THEN** it keeps its mission and feature links
 - **AND** it resumes at its current stage under a new attempt
+
+### Requirement: Slop stop conditions
+
+A work item SHALL measure deterministic slop metrics after implementation and SHALL stop or escalate when
+the risk-tiered budget is exceeded.
+
+#### Scenario: Agent review overage
+- **WHEN** an agent-gated review stage exceeds the budget
+- **THEN** the gate resolves `request_changes`
+- **AND** the feedback names the exceeded metrics
+
+#### Scenario: Human review overage
+- **WHEN** a human review gate exceeds the budget
+- **THEN** the packet shows the overage
+- **AND** approval requires an explicit waiver reason
+
+### Requirement: Context pack
+
+Every feature/work item SHALL receive a deterministic context pack before implementation.
+
+#### Scenario: Pack contents
+- **WHEN** a stage prompt is built
+- **THEN** it includes relevant ADRs, architecture constraints, prior failures/PRs and test standards
+- **AND** the pack is bounded and records its sources
+
+### Requirement: Review packet v2
+
+A review packet SHALL include budget vs actual, blast radius, proof artifacts, a deterministic read-first
+list, decisions, reviewer roles and comprehension estimates.
+
+#### Scenario: High-risk packet
+- **WHEN** a high-risk work item reaches review
+- **THEN** the packet lists high-risk paths, proof and the reviewer roles
+- **AND** the human gate shows the packet before a decision
+
+### Requirement: Review-capacity backpressure
+
+Mission plan auto-approval SHALL refuse when the factory's review capacity is saturated.
+
+#### Scenario: Saturated review queue
+- **WHEN** open gates or unread diff lines exceed the configured capacity
+- **THEN** auto-approval returns false with `review_capacity_exceeded`
+- **AND** the reason names the exceeded cap
+
+#### Scenario: Capacity available
+- **WHEN** capacity is within bounds and the other autonomy conditions hold
+- **THEN** a low-risk plan may auto-approve
+
+### Requirement: Decision-linked pull requests
+
+Pull request bodies SHALL link the work item, plan reference, risk tier, context pack and review packet so a
+reviewer can reconstruct intent and evidence without leaving the forge.
+
+#### Scenario: PR body
+- **WHEN** a pull request is opened
+- **THEN** the body names the work item and plan reference
+- **AND** it names the risk tier, context pack and review-packet reference
+
+### Requirement: Risk-aware routing
+
+Routing SHALL consider the work item's risk tier. High-risk work SHALL use the deep inference tier even when
+the prompt score is lower.
+
+#### Scenario: High risk
+- **WHEN** a high-risk work item is routed
+- **THEN** the deep tier is selected
+- **AND** the reason records the risk tier
+
+#### Scenario: Low risk
+- **WHEN** a low-risk work item is routed
+- **THEN** the existing score-based tier selection applies
+
+### Requirement: Standards stop condition
+
+A review packet SHALL record public API/schema standards vs actual, and an exceeded standard SHALL stop an
+agent review gate.
+
+#### Scenario: Exceeded standard
+- **WHEN** public API or schema changes exceed the configured cap
+- **THEN** the packet reports `standards.status: exceeded`
+- **AND** an agent review gate resolves `request_changes`
+
+#### Scenario: Human gate
+- **WHEN** a human review gate has an exceeded standard
+- **THEN** the packet shows the counts
+- **AND** approval requires an explicit waiver reason

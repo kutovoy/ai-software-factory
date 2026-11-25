@@ -321,3 +321,67 @@ rules, so autonomy is bounded by blast radius and verification capacity.
 #### Scenario: Existing definitions
 - **WHEN** a factory definition omits the risk block
 - **THEN** it validates with conservative defaults
+
+### Requirement: Quality budgets
+
+Factory definitions SHALL declare an optional `quality.slopBudget` block with per-risk-tier limits for diff
+lines, changed files, new dependencies, duplication delta and complexity delta. Existing definitions SHALL
+validate with conservative defaults.
+
+#### Scenario: Default budgets
+- **WHEN** a factory omits `quality.slopBudget`
+- **THEN** the resolver reports the low/medium/high defaults
+- **AND** the factory remains valid
+
+#### Scenario: Override
+- **WHEN** a factory declares a partial `quality.slopBudget`
+- **THEN** missing tier fields inherit the defaults
+- **AND** the resolved budget is recorded on the work item/review packet
+
+### Requirement: Proof requirements
+
+Factory definitions SHALL declare optional proof requirements for UI/behavioral changes, including accepted
+artifact kinds.
+
+#### Scenario: UI change without proof
+- **WHEN** `quality.proof.requireForUi` is true and a UI/behavioral assertion has no proof artifact
+- **THEN** the validation projection is incomplete
+- **AND** the verify gate refuses approval
+
+### Requirement: Review capacity configuration
+
+Factory definitions SHALL declare optional `quality.reviewCapacity` caps for open gates, unread diff lines,
+gate age and review hours per week. Existing definitions SHALL validate with defaults.
+
+#### Scenario: Default capacity
+- **WHEN** a factory omits `quality.reviewCapacity`
+- **THEN** the resolver reports the shipped defaults
+- **AND** the factory remains valid
+
+#### Scenario: Saturated factory
+- **WHEN** pending gates or unread diff lines exceed the configured caps
+- **THEN** the factory is reported saturated
+- **AND** full autonomy/plan auto-approval requires an explicit override
+
+### Requirement: Experiment configuration
+
+Factory definitions SHALL declare an optional experiment provider, project-key secret reference and flag
+prefix.
+
+#### Scenario: Experiment config
+- **WHEN** a factory declares `experiments.provider: posthog`
+- **THEN** the manifest validates
+- **AND** the secret reference is resolved by name only
+
+### Requirement: Standards configuration
+
+Factory definitions SHALL declare optional `quality.standards` caps for public API and schema changes.
+
+#### Scenario: Default standards
+- **WHEN** a factory omits `quality.standards`
+- **THEN** the resolver reports the shipped defaults
+- **AND** the factory remains valid
+
+#### Scenario: Override
+- **WHEN** a factory declares a partial `quality.standards`
+- **THEN** missing fields inherit the defaults

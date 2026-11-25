@@ -84,7 +84,7 @@ deterministic planner; the gate/merge policy is model-independent. Full Playwrig
 scripts/smoke.sh` passes.
 
 **Anti-slop P2 — risk-aware routing and standards guard — implemented** (2026-11-25, OpenSpec
-`add-risk-aware-routing-and-standards`, ADR-055). High-risk work is routed to the deep inference tier even when
+`2026-11-25-add-risk-aware-routing-and-standards`, ADR-055). High-risk work is routed to the deep inference tier even when
 the prompt score is lower; low-risk work keeps score-based routing, and the risk tier is threaded through
 work-item creation, retry and mission stage configs. `quality.standards` caps public API and schema changes
 (default 5/3); the review packet records caps vs actual, records `standards.exceeded`, and an agent review
@@ -96,7 +96,7 @@ reached `done` with `riskTier=low`, slop `pass`, standards `pass` (0 public API 
 a context pack.
 
 **Anti-slop P1 — review capacity, comprehension, decision trails, experiments and longitudinal quality —
-implemented** (2026-11-25, OpenSpec `add-review-capacity-and-compounding`, ADR-054). Factories can declare
+implemented** (2026-11-25, OpenSpec `2026-11-25-add-review-capacity-and-compounding`, ADR-054). Factories can declare
 `quality.reviewCapacity` (open gates, unread diff lines, gate age, review hours); a saturated factory cannot
 auto-approve a mission plan or enable full autonomy without an audited override. `GET /autonomy` now reports
 `reviewCapacity` and aggregate `comprehension` proxies (unread diff volume, items without human review,
@@ -111,7 +111,7 @@ smoke passed; hello-nextjs cycle reached `done`; autonomy read model reported
 `comprehension {unreadDiffLines:104, itemsWithoutHumanReview:1, reviewCoveragePercent:0}`.
 
 **Anti-slop P0 — slop budgets, proof, context packs and review packet v2 — implemented** (2026-11-25,
-OpenSpec `add-anti-slop-budgets-and-proof`, ADR-053). Every work item now resolves a risk tier and a
+OpenSpec `2026-11-25-add-anti-slop-budgets-and-proof`, ADR-053). Every work item now resolves a risk tier and a
 risk-tiered `quality.slopBudget` (diff lines, changed files, new dependencies, duplication/complexity delta),
 gets a deterministic context pack (relevant ADRs, architecture constraints, test standards, prior failures and
 relevant files), and records a `review.packet` v2 with budget vs actual, blast radius, proof artifacts,
