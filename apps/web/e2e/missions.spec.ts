@@ -39,6 +39,12 @@ test('mission list and detail render the plan, features and lifecycle controls',
     planDepth: 'full',
     expectedPain: 'medium',
     leverage: 'Add one static route and link it from the navigation',
+    experiment: {
+      flag: 'factory_docs_page',
+      successMetric: 'docs page views above baseline within 14 days',
+      guardrail: 'no increase in navigation error rate',
+      cleanupAfterDays: 30,
+    },
     productReview: {
       problem: 'Operators cannot find setup documentation from inside the app.',
       desiredBehavior: [
@@ -172,6 +178,13 @@ test('mission list and detail render the plan, features and lifecycle controls',
   await expect(page.getByTestId('mission-plan-depth').first()).toContainText('full');
   await expect(page.getByTestId('mission-plan-pain').first()).toContainText('medium');
   await expect(page.getByTestId('mission-plan-leverage').first()).toContainText('static route');
+  await expect(page.getByTestId('mission-plan-experiment').first()).toBeVisible();
+  await expect(page.getByTestId('mission-plan-experiment-flag').first()).toContainText('factory_docs_page');
+  await expect(page.getByTestId('mission-plan-experiment-metric').first()).toContainText('docs page views');
+  await expect(page.getByTestId('mission-plan-experiment-guardrail').first()).toContainText(
+    'navigation error rate',
+  );
+  await expect(page.getByTestId('mission-plan-experiment-cleanup').first()).toContainText('30');
   await expect(page.getByTestId('mission-plan-product-review').first()).toBeVisible();
   await expect(page.getByTestId('mission-plan-visual-artifacts').first()).toBeVisible();
   await expect(page.getByTestId('mission-plan-visual-artifact').first()).toContainText('docs-page.png');

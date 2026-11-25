@@ -11,13 +11,18 @@ Public-release prep: `README.md`, `LICENSE` (MIT, © Nick Kutovyy), `NOTICE` (at
 
 ## Compaction handoff (read this first)
 
-The anti-slop P0 workstream is **implemented** on `feat/anti-slop-quality-loop` (2026-11-25, OpenSpec
-`add-anti-slop-budgets-and-proof`, ADR-053): risk-tiered slop budgets with stop conditions, proof artifacts,
-review packet v2, deterministic context packs, plan depth/expected pain/leverage and `show-me`/`anti-slop`
-skills. `bun run ci` 970 pass / 192 skip; full Playwright 66/66; smoke passed; the hello-nextjs cycle reached
-`done` with a low-risk `planDepth: light`, a context pack, slop actual 113 lines / 7 files / 7 dependencies
-against a 250/10/8 budget (`pass`) and a packet v2. The fresh hello-nextjs factory is
-`fac_01M88X9THZEJ8F0Q39EW7PWZFS`.
+The anti-slop workstream is **implemented** on `feat/anti-slop-quality-loop`:
+- P0 (OpenSpec `add-anti-slop-budgets-and-proof`, ADR-053): risk-tiered slop budgets with stop conditions,
+  proof artifacts, review packet v2, deterministic context packs, plan depth/expected pain/leverage and
+  `show-me`/`anti-slop` skills.
+- P1 (OpenSpec `add-review-capacity-and-compounding`, ADR-054): `quality.reviewCapacity` attention budget,
+  autonomy refusal when saturated, comprehension proxies, PR decision links, work-item decision trail, mission
+  experiment metadata, longitudinal quality evals and lesson-aware context packs.
+
+`bun run ci` 1019 pass / 193 skip; full Playwright 66/66; smoke passed; the hello-nextjs cycle reached `done`.
+The fresh hello-nextjs factory is `fac_01M890NWYEE50996AGBV307XEY`. Its autonomy read model reports
+`reviewCapacity {saturated:false, openGates:0, unreadDiffLines:0}` and
+`comprehension {unreadDiffLines:104, itemsWithoutHumanReview:1, reviewCoveragePercent:0}`.
 
 The earlier P0 software-factory quality/risk workstream is **implemented and archived** at `81be27f` in
 `openspec/changes/archive/2026-11-07-harden-factory-quality/` (ADR-052). It adds risk-tiered autonomy

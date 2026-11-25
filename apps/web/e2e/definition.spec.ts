@@ -117,4 +117,21 @@ test('gates page keeps a lights-on factory explicit about human touchpoints', as
   const status = page.getByTestId('gates-attestation-status');
   await expect(status).toContainText('human gates remain');
   await expect(status).not.toContainText('a passing, calibrated attestation matches this version');
+
+  // Review capacity + comprehension (change `add-review-capacity-and-compounding`): the
+  // cards must render from `GET /autonomy`. An honest empty or saturated state is acceptable
+  // here; fabricated numbers are not, so assert on the badge's explicit data attribute.
+  await expect(page.getByTestId('gates-review-capacity')).toBeVisible();
+  const saturation = page.getByTestId('gates-review-capacity-badge');
+  await expect(saturation).toBeVisible();
+  await expect(saturation).toHaveAttribute('data-saturated', /^(true|false)$/);
+  await expect(page.getByTestId('gates-review-capacity-open-gates')).toBeVisible();
+  await expect(page.getByTestId('gates-review-capacity-unread-lines')).toBeVisible();
+  await expect(page.getByTestId('gates-review-capacity-oldest-gate')).toBeVisible();
+
+  await expect(page.getByTestId('gates-comprehension')).toBeVisible();
+  await expect(page.getByTestId('gates-comprehension-unread-lines')).toBeVisible();
+  await expect(page.getByTestId('gates-comprehension-items-without-review')).toBeVisible();
+  await expect(page.getByTestId('gates-comprehension-modules-without-touch')).toBeVisible();
+  await expect(page.getByTestId('gates-comprehension-coverage')).toContainText('%');
 });

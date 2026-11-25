@@ -48,6 +48,7 @@ import {
   validationContractSchema,
   type AgentDef,
   type AgentVerdict,
+  type ComprehensionMetrics,
   type ExpectedPain,
   type FactoryDefinition,
   type GateDecisionRecord,
@@ -56,6 +57,8 @@ import {
   ModelNotAllowedError,
   type PlanDepth,
   type QualityConfig,
+  type ReviewCapacityStatus,
+  resolveReviewCapacity,
   type RiskTier,
   type RiskTierPolicy,
   type RoutingDef,
@@ -71,8 +74,10 @@ import {
 import {
   buildContextPack,
   cancelWorkItem,
+  comprehensionForFactory,
   getSql,
   pauseWorkItemAutonomy,
+  reviewCapacityForFactory,
   startFactoryWorkflow,
   submitGateDecision,
   type ContextPack,
@@ -1071,8 +1076,10 @@ export interface AutonomyResult {
  * Enable or pause autonomy (the kill switch). Enabling is refused while
  * `benchmarkGateRequired` is unresolved (no passing, calibrated attestation matches the
  * running commit + configHash) unless an explicit override {actor, reason} is recorded
- * (spec: autonomy policy and kill switch, ADR-018). Pausing always succeeds, forces every
- * gate to `human`, and stops new stage dispatch.
+ * (spec: autonomy policy and kill switch, ADR-018). Enabling is also refused while review
+ * capacity is saturated (change `add-review-capacity-and-compounding`) without an explicit
+ * override. Pausing always succeeds, forces every gate to `human`, and stops new stage
+ * dispatch.
  */
 export async function setAutonomyForApi(
   config: ApiConfig,
@@ -1093,6 +1100,20 @@ export async function setAutonomyForApi(
       thresholds: definition.manifest.readiness.thresholds,
     });
     if (report.status !== 'ready') throw readinessNotReady(factory, report);
+  }
+
+  // Review-capacity gate (change `add-review-capacity-and-compounding`): widening autonomy
+  // while the factory already owes more review than the team can absorb would compound the
+  // backlog. Refuse unless an explicit audited override is supplied; pausing always works.
+  if (body.enabled && !body.override) {
+    const capacity = resolveReviewCapacity(definition.manifest.quality?.reviewCapacity);
+    const reviewCapacity = await reviewCapacityForFactory(factory, capacity);
+    if (reviewCapacity.saturated) {
+      throw autonomyRefused(
+        'review capacity is saturated; drain open review gates or pass an explicit override',
+        { factory, reviewCapacity },
+      );
+    }
   }
 
   const resolution = resolveAllGates(definition.manifest);
@@ -1216,6 +1237,13 @@ export interface AutonomyReadModel {
     at: string | null;
     payload: Record<string, unknown>;
   } | null;
+  /**
+   * Factory-level attention budget (change `add-review-capacity-and-compounding`): pending
+   * gates, unread diff volume and the oldest gate measured against `quality.reviewCapacity`.
+   */
+  reviewCapacity: ReviewCapacityStatus;
+  /** Aggregate comprehension proxies; never claims a human read a specific diff. */
+  comprehension: ComprehensionMetrics;
 }
 
 function autonomyEvidence(event: WorkItemEvent | null): AutonomyReadModel['lastEvent'] {
@@ -1235,6 +1263,10 @@ function autonomyEvidence(event: WorkItemEvent | null): AutonomyReadModel['lastE
  * `autonomy.*` event as evidence. The console no longer derives autonomy from work-item
  * events. When autonomy was never enabled the response says so (`enabled: false` with a
  * reason) and leaves `updatedAt` null rather than inventing a timestamp.
+ *
+ * Since `add-review-capacity-and-compounding` the read model also carries the factory-level
+ * review-capacity status and the aggregate comprehension proxies. Both are projections over
+ * existing gates/review packets — no migration, no new table.
  */
 export async function getAutonomyForApi(
   config: ApiConfig,
@@ -1245,11 +1277,14 @@ export async function getAutonomyForApi(
   if (!definition) throw definitionInvalid(factory, errors);
 
   const resolution = resolveAllGates(definition.manifest);
+  const capacity = resolveReviewCapacity(definition.manifest.quality?.reviewCapacity);
   const sql = getSql();
-  const [state, gate, lastEvent] = await Promise.all([
+  const [state, gate, lastEvent, reviewCapacity, comprehension] = await Promise.all([
     getAutonomyState(sql, factory),
     benchmarkGateStatus(config, factory),
     latestAutonomyEvent(sql, factory),
+    reviewCapacityForFactory(factory, capacity),
+    comprehensionForFactory(factory),
   ]);
 
   return {
@@ -1280,6 +1315,8 @@ export async function getAutonomyForApi(
       reason: gate.reason,
     },
     lastEvent: autonomyEvidence(lastEvent),
+    reviewCapacity,
+    comprehension,
   };
 }
 

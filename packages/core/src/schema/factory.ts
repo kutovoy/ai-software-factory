@@ -11,11 +11,13 @@ import {
 } from './common';
 import { improvementSchema } from './improvement';
 import { mcpSchema } from './mcp';
+import { experimentsConfigSchema } from './experiments';
 import { stageDeclarationSchema } from './stage';
 import { AGENT_VERDICT_POLICIES } from '../gates/verdict';
 import { guardConfigSchema } from '../guard/types';
 import { DEFAULT_RISK_GOVERNANCE, RISK_TIERS, type RiskTierPolicy } from '../governance/risk';
 import {
+  DEFAULT_REVIEW_CAPACITY,
   DEFAULT_SLOP_BUDGETS,
   PROOF_KINDS,
   type SlopBudget,
@@ -121,11 +123,43 @@ export const qualityProofSchema = z
   })
   .strict();
 
+/**
+ * Factory-level review-capacity caps (change `add-review-capacity-and-compounding`).
+ * Every field is defaulted, so a partial block inherits the shipped defaults.
+ */
+export const reviewCapacitySchema = z
+  .object({
+    maxOpenGates: z
+      .number()
+      .int()
+      .min(1)
+      .max(10_000)
+      .default(DEFAULT_REVIEW_CAPACITY.maxOpenGates),
+    maxUnreadDiffLines: z
+      .number()
+      .int()
+      .min(0)
+      .max(10_000_000)
+      .default(DEFAULT_REVIEW_CAPACITY.maxUnreadDiffLines),
+    maxGateAgeHours: z
+      .number()
+      .min(0.1)
+      .max(24 * 365)
+      .default(DEFAULT_REVIEW_CAPACITY.maxGateAgeHours),
+    maxReviewHoursPerWeek: z
+      .number()
+      .min(0.1)
+      .max(168)
+      .default(DEFAULT_REVIEW_CAPACITY.maxReviewHoursPerWeek),
+  })
+  .strict();
+
 /** The optional `quality` block; absent means defaults everywhere. */
 export const qualityConfigSchema = z
   .object({
     slopBudget: slopBudgetConfigSchema.optional(),
     proof: qualityProofSchema.optional(),
+    reviewCapacity: reviewCapacitySchema.optional(),
   })
   .strict();
 
@@ -189,6 +223,12 @@ export const factorySchema = z
      * `add-anti-slop-budgets-and-proof`). Optional: old factories keep the shipped defaults.
      */
     quality: qualityConfigSchema.optional(),
+    /**
+     * Optional experiment provider metadata (change
+     * `add-review-capacity-and-compounding`). Metadata only in P1; secrets are referenced
+     * by name and never inlined.
+     */
+    experiments: experimentsConfigSchema.optional(),
     /** Agent readiness (roadmap item 2); advisory unless `enforceAutonomy` is true. */
     readiness: z
       .object({

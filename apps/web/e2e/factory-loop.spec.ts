@@ -167,6 +167,22 @@ test.describe('Factory loop (lights on)', () => {
       page.locator('[data-testid="status-event"][data-reason*="merged"]').first(),
     ).toBeVisible();
 
+    // Decision trail (change `add-review-capacity-and-compounding`): one chronological list
+    // from the plan ref through gate decisions, the PR and the merge. It is built from the
+    // event log, so the ship decision and the merge must appear once they are recorded.
+    await expect(page.getByTestId('work-item-decision-trail').first()).toBeVisible();
+    const shipTrailRow = page
+      .locator('[data-testid="work-item-decision-trail-row"]:visible')
+      .filter({ hasText: 'ship approve' })
+      .first();
+    await expect(shipTrailRow.getByTestId('work-item-decision-trail-actor')).toContainText('local-user');
+    await expect(
+      page.locator('[data-testid="work-item-decision-trail-kind"][data-kind="pr"]').first(),
+    ).toBeVisible();
+    await expect(
+      page.locator('[data-testid="work-item-decision-trail-kind"][data-kind="merge"]').first(),
+    ).toBeVisible();
+
     const shipRow = page
       .locator('[data-testid="gate-decision-row"]:visible')
       .filter({ hasText: 'ship' })

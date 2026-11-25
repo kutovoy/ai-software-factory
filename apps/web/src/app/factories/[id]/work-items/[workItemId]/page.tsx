@@ -20,9 +20,11 @@ import type {
   ValidationProjectionWire,
   WorkItemDetail,
 } from '@/lib/types';
+import { type DecisionTrailRow } from '@/lib/work-items';
 import {
   canRetryWorkItem,
   checksRecorded,
+  decisionTrail,
   judgeVerdict,
   lastAutonomyEvent,
   mergedAt,
@@ -667,6 +669,12 @@ export default async function WorkItemDetailPage({
   const retries = retryEvents(events);
   const packet = reviewPacket(events);
   const pendingSla = pendingGate ? slaState(pendingGate.slaAt) : null;
+  // The plan ref is persisted on the item's creation snapshot for mission features; the
+  // review packet carries it too. The trail reads both and never invents one.
+  const snapshotPlanRef =
+    workItem.input && typeof workItem.input.planRef === 'string' ? workItem.input.planRef : null;
+  const planRef = snapshotPlanRef ?? packet?.planRef ?? null;
+  const trail = decisionTrail({ planRef, gates, events });
 
   return (
     <div data-testid="work-item-detail" data-work-item-id={workItem.id} className="mx-auto max-w-6xl space-y-4 px-6 py-6">
@@ -1056,6 +1064,73 @@ export default async function WorkItemDetailPage({
             ]}
           />
         )}
+      </Card>
+
+      <Card testId="work-item-decision-trail">
+        <CardHeader
+          title="Decision trail"
+          hint="One chronological trail from the plan ref through gate decisions, review verdicts, the pull request, the merge and any incident. Built from the event log; empty rows are omitted."
+        />
+        <CardBody>
+          {trail.length === 0 ? (
+            <EmptyState
+              testId="work-item-decision-trail-empty"
+              title="No decisions recorded yet"
+              description="The plan ref, gate decisions, review verdicts, PR and merge appear here once the loop records them."
+            />
+          ) : (
+            <Table
+              testId="work-item-decision-trail-table"
+              rowTestId="work-item-decision-trail-row"
+              rows={trail}
+              rowKey={(row: DecisionTrailRow) => row.key}
+              columns={[
+                {
+                  header: 'Time',
+                  cell: (row: DecisionTrailRow) => (
+                    <span data-testid="work-item-decision-trail-time" className="text-xs text-slate-500">
+                      {row.at ? formatDateTime(row.at) : '—'}
+                    </span>
+                  ),
+                },
+                {
+                  header: 'Kind',
+                  cell: (row: DecisionTrailRow) => (
+                    <span data-testid="work-item-decision-trail-kind" data-kind={row.kind}>
+                      <Badge tone={row.kind === 'incident' ? 'danger' : row.kind === 'merge' ? 'success' : 'neutral'} mono>
+                        {row.kind}
+                      </Badge>
+                    </span>
+                  ),
+                },
+                {
+                  header: 'Actor',
+                  cell: (row: DecisionTrailRow) => (
+                    <span data-testid="work-item-decision-trail-actor" className="font-mono text-xs text-slate-600">
+                      {row.actor ?? '—'}
+                    </span>
+                  ),
+                },
+                {
+                  header: 'Decision',
+                  cell: (row: DecisionTrailRow) => (
+                    <span data-testid="work-item-decision-trail-decision" className="text-xs text-slate-800">
+                      {row.decision}
+                    </span>
+                  ),
+                },
+                {
+                  header: 'Reason / ref',
+                  cell: (row: DecisionTrailRow) => (
+                    <span data-testid="work-item-decision-trail-reason" className="text-xs text-slate-600">
+                      {[row.reason, row.ref].filter(Boolean).join(' · ') || '—'}
+                    </span>
+                  ),
+                },
+              ]}
+            />
+          )}
+        </CardBody>
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">

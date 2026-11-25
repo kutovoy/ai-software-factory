@@ -10,6 +10,7 @@ export * from './types';
 export * from './stage-runner';
 export * from './mission-plan';
 export * from './context-pack';
+export * from './review-capacity';
 export * from './client';
 export * from './factory-client';
 export * from './scoring-client';

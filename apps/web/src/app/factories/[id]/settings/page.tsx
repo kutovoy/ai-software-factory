@@ -74,6 +74,12 @@ export default async function SettingsPage({ params }: { params: Promise<{ id: s
                     : manifest.agentDefaults.model ?? '—'}
                   {manifest.agentDefaults.runner ? ` · runner ${manifest.agentDefaults.runner}` : ''}
                 </dd>
+                <dt className="text-slate-500">Experiments</dt>
+                <dd data-testid="settings-experiments" className="font-mono text-xs text-slate-700">
+                  {manifest.experiments
+                    ? `${manifest.experiments.provider} · flags ${manifest.experiments.flagPrefix ?? 'factory_'}${manifest.experiments.requireCleanup === false ? ' · cleanup optional' : ' · cleanup required'}${manifest.experiments.projectKeySecret ? ` · key ${manifest.experiments.projectKeySecret}` : ''}`
+                    : '— not configured'}
+                </dd>
               </dl>
             </CardBody>
           </Card>

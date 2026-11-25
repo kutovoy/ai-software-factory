@@ -15,6 +15,7 @@ import {
   getWorkItem,
   listMissionCheckpoints,
   listMissionFeatures,
+  listLessons,
   listMissionMilestones,
   listMissionValidations,
   listMissionWorkItems,
@@ -53,6 +54,7 @@ import {
   type MissionPlan,
   type GateDecisionValue,
   type MissionValidationKind,
+  type ReviewCapacityStatus,
   type RiskGovernance,
   type RiskTier,
   type RiskTierPolicy,
@@ -63,6 +65,7 @@ import { loadConfig } from '../config';
 import { buildContextPack } from '../context-pack';
 import { getRun, getSql, insertRun } from '../db';
 import { getMissionPlanner } from '../models/mission-planner';
+import { reviewCapacityForFactory, reviewCapacityRefusalReason } from '../review-capacity';
 import {
   missionValidationRunId,
   runWorkflowIdFor,
@@ -536,6 +539,8 @@ export interface MissionPlanAutoApprovalResult {
   riskTier: RiskTier;
   /** Resolved per-tier policy (plan approval / review / merge). */
   riskPolicy: RiskTierPolicy;
+  /** Factory review pressure at decision time (change `add-review-capacity-and-compounding`). */
+  reviewCapacity: ReviewCapacityStatus;
 }
 
 /**
@@ -543,6 +548,10 @@ export interface MissionPlanAutoApprovalResult {
  * policy as the factory loop: autonomy enabled and unpaused, `autonomyLevel: full`, and
  * the benchmark gate satisfied by an attestation or an audited override. Everything else
  * stays on the human plan gate.
+ *
+ * Review capacity is the backpressure gate: a saturated factory (too many open gates, too
+ * much unread diff, stale gates) always keeps the plan on the human gate, with a
+ * `review_capacity_exceeded` reason naming the exceeded cap.
  */
 export async function missionPlanAutoApprovalActivity(args: {
   missionId: string;
@@ -552,6 +561,12 @@ export async function missionPlanAutoApprovalActivity(args: {
   if (!mission) throw missionNotFound(args.missionId);
 
   const loaded = loadDefinition(mission.factoryRoot);
+  const quality = loaded.definition?.manifest.quality;
+  const reviewCapacity = await reviewCapacityForFactory(
+    mission.factory,
+    resolveQualityConfig(quality).reviewCapacity,
+  );
+
   if (!loaded.definition) {
     return {
       autoApprove: false,
@@ -562,6 +577,7 @@ export async function missionPlanAutoApprovalActivity(args: {
       benchmarkGateSatisfied: false,
       riskTier: 'low',
       riskPolicy: riskPolicyFor(null, 'low'),
+      reviewCapacity,
     };
   }
 
@@ -583,19 +599,25 @@ export async function missionPlanAutoApprovalActivity(args: {
     autonomyLevel === 'full' &&
     benchmarkGateSatisfied &&
     riskTier === 'low' &&
-    riskPolicy.planApproval === 'auto';
+    riskPolicy.planApproval === 'auto' &&
+    !reviewCapacity.saturated;
+
+  const reason = reviewCapacity.saturated
+    ? `${reviewCapacityRefusalReason(reviewCapacity)}; human plan approval is required`
+    : autoApprove
+      ? `autonomyLevel full, risk tier low and benchmark gate satisfied (${autonomy?.overrideActor ? 'audited override' : 'benchmark attestation'}); automatic plan approval`
+      : `autonomy=${enabled ? 'enabled' : 'disabled/paused'}, level=${autonomyLevel}, riskTier=${riskTier}, planApproval=${riskPolicy.planApproval}, benchmarkGateSatisfied=${benchmarkGateSatisfied}; human plan approval is required`;
 
   return {
     autoApprove,
     actor: 'autonomy',
-    reason: autoApprove
-      ? `autonomyLevel full, risk tier low and benchmark gate satisfied (${autonomy?.overrideActor ? 'audited override' : 'benchmark attestation'}); automatic plan approval`
-      : `autonomy=${enabled ? 'enabled' : 'disabled/paused'}, level=${autonomyLevel}, riskTier=${riskTier}, planApproval=${riskPolicy.planApproval}, benchmarkGateSatisfied=${benchmarkGateSatisfied}; human plan approval is required`,
+    reason,
     autonomyLevel,
     benchmarkGateRequired: resolution.benchmarkGateRequired,
     benchmarkGateSatisfied,
     riskTier,
     riskPolicy,
+    reviewCapacity,
   };
 }
 
@@ -726,6 +748,10 @@ export async function createMissionFeatureWorkItemActivity(args: {
     .filter((checkpoint) => checkpoint.kind === 'validation.failed')
     .slice(-3)
     .map(compactCheckpoint);
+  // Approved experience lessons: the factory's own plus explicitly promoted shared ones.
+  // The caller scopes visibility; the pack only renders what it is given.
+  const lessons = await listLessons(sql, { factory: mission.factory, limit: 5 });
+  const priorLessons = lessons.map((lesson) => `${lesson.cue}: ${lesson.lesson}`);
   const contextPack = buildContextPack({
     factoryRoot: mission.factoryRoot,
     ...(repoRoot ? { repoRoot } : {}),
@@ -735,6 +761,7 @@ export async function createMissionFeatureWorkItemActivity(args: {
     definitionCommit: mission.definitionCommit,
     plan,
     priorFailures,
+    priorLessons,
   });
 
   const autonomy = await getAutonomyState(sql, mission.factory);

@@ -1,4 +1,5 @@
 import { pathMatchesHighRisk, type RiskTier } from '../governance/risk';
+import { resolveReviewCapacity } from './capacity';
 import {
   DEFAULT_SLOP_BUDGETS,
   PROOF_KINDS,
@@ -9,6 +10,7 @@ import {
   type PlanDepth,
   type ProofKind,
   type QualityConfig,
+  type ResolvedReviewCapacity,
   type SlopBudget,
   type SlopBudgetConfig,
   type SlopEvaluation,
@@ -73,11 +75,14 @@ export function resolveSlopBudgets(
 export interface ResolvedQualityConfig {
   slopBudget: Record<RiskTier, SlopBudget>;
   proof: { requireForUi: boolean; kinds: ProofKind[] };
+  /** Factory-level review-capacity caps (change `add-review-capacity-and-compounding`). */
+  reviewCapacity: ResolvedReviewCapacity;
 }
 
 /**
  * Resolves the optional `quality` block. Missing/partial values inherit defaults: budgets
- * come from `DEFAULT_SLOP_BUDGETS`, `requireForUi` is off and every proof kind is accepted.
+ * come from `DEFAULT_SLOP_BUDGETS`, `requireForUi` is off, every proof kind is accepted and
+ * review capacity comes from `DEFAULT_REVIEW_CAPACITY`.
  */
 export function resolveQualityConfig(value: unknown | null | undefined): ResolvedQualityConfig {
   const source = isRecord(value) ? value : {};
@@ -91,6 +96,7 @@ export function resolveQualityConfig(value: unknown | null | undefined): Resolve
   return {
     slopBudget: resolveSlopBudgets(source),
     proof: { requireForUi, kinds: kinds.length > 0 ? kinds : [...PROOF_KINDS] },
+    reviewCapacity: resolveReviewCapacity(source.reviewCapacity),
   };
 }
 

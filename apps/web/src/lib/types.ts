@@ -217,6 +217,21 @@ export interface FactoryManifest {
   };
   /** Deterministic pre-PR guard hooks (spec `guard-hooks`, roadmap item 4). */
   guard?: Record<string, unknown>;
+  /**
+   * Optional experiment provider metadata (change `add-review-capacity-and-compounding`).
+   * Metadata only in P1: no provider is called and `projectKeySecret` is a secret *name*.
+   */
+  experiments?: ExperimentsConfigWire;
+}
+
+/** `factory.yaml` › `experiments` as declared. Absent means "not configured". */
+export interface ExperimentsConfigWire {
+  provider: 'posthog' | 'statsig' | 'launchdarkly' | 'generic';
+  /** Secret name holding the project key; never the value. */
+  projectKeySecret?: string;
+  /** Prefix applied to every flag the factory creates (defaults to `factory_`). */
+  flagPrefix?: string;
+  requireCleanup?: boolean;
 }
 
 export interface FactoryDetail {
@@ -628,6 +643,36 @@ export interface AutonomyReadWire {
     at: string | null;
     payload: Record<string, unknown>;
   } | null;
+  /**
+   * Review-capacity projection (change `add-review-capacity-and-compounding`). Optional so a
+   * console can read an older API that predates the field.
+   */
+  reviewCapacity?: ReviewCapacityStatusWire;
+  /** Aggregate comprehension proxies; absent on older APIs. */
+  comprehension?: ComprehensionMetricsWire;
+}
+
+/**
+ * The factory-level attention budget measured against `quality.reviewCapacity`. `reasons`
+ * names every exceeded cap; empty when within bounds.
+ */
+export interface ReviewCapacityStatusWire {
+  saturated: boolean;
+  openGates: number;
+  unreadDiffLines: number;
+  oldestGateHours: number;
+  reasons: string[];
+}
+
+/**
+ * Honest aggregate proxies. They never claim a human read a specific diff; they describe how
+ * much shipped work has not been reviewed by a human.
+ */
+export interface ComprehensionMetricsWire {
+  unreadDiffLines: number;
+  itemsWithoutHumanReview: number;
+  modulesWithoutHumanTouch: number;
+  reviewCoveragePercent: number;
 }
 
 export interface AutonomyState {
@@ -2054,6 +2099,19 @@ export interface MissionPlanMilestoneWire {
   features: MissionPlanFeatureWire[];
 }
 
+/**
+ * Optional experiment/rollout record on a mission plan (change
+ * `add-review-capacity-and-compounding`). Metadata only: the flag, the metric that proves it
+ * worked, an optional guardrail and a cleanup window. Absent on plans written before the
+ * change, and never derived by the console.
+ */
+export interface MissionExperimentWire {
+  flag: string;
+  successMetric: string;
+  guardrail?: string;
+  cleanupAfterDays?: number;
+}
+
 /** The planner's persisted plan (`missions.plan`), approved before features run. */
 export interface MissionPlanWire {
   version: string;
@@ -2089,6 +2147,8 @@ export interface MissionPlanWire {
   expectedPain?: 'low' | 'medium' | 'high';
   /** The smallest change that unlocks the outcome. */
   leverage?: string;
+  /** Optional experiment/rollout/cleanup record; absent on pre-change plans. */
+  experiment?: MissionExperimentWire;
 }
 
 /** A mission row plus the list projection counters. */

@@ -55,6 +55,61 @@ export interface SlopBudgetConfig {
 export const PROOF_KINDS = ['screenshot', 'video', 'html', 'curl', 'report', 'file'] as const;
 export type ProofKind = (typeof PROOF_KINDS)[number];
 
+/**
+ * Factory-level attention budget (change `add-review-capacity-and-compounding`).
+ *
+ * The factory can produce more changes than a team can review; these caps make review
+ * capacity an explicit, measurable backpressure signal. Every field is optional so old
+ * factories validate with the shipped defaults.
+ */
+export interface ReviewCapacityConfig {
+  /** Maximum pending review gates across the factory. */
+  maxOpenGates?: number;
+  /** Maximum unread diff lines across pending review gates. */
+  maxUnreadDiffLines?: number;
+  /** Maximum age (hours) of the oldest pending review gate. */
+  maxGateAgeHours?: number;
+  /** Maximum review effort (hours) the team can spend per week. */
+  maxReviewHoursPerWeek?: number;
+}
+
+/** Shipped review-capacity defaults. */
+export const DEFAULT_REVIEW_CAPACITY = {
+  maxOpenGates: 20,
+  maxUnreadDiffLines: 4000,
+  maxGateAgeHours: 48,
+  maxReviewHoursPerWeek: 20,
+} as const;
+
+/** A capacity config with every cap resolved to a number. */
+export interface ResolvedReviewCapacity {
+  maxOpenGates: number;
+  maxUnreadDiffLines: number;
+  maxGateAgeHours: number;
+  maxReviewHoursPerWeek: number;
+}
+
+/** Current factory review pressure against the resolved caps. */
+export interface ReviewCapacityStatus {
+  saturated: boolean;
+  openGates: number;
+  unreadDiffLines: number;
+  oldestGateHours: number;
+  /** Human-readable reasons, e.g. `open gates 21 > 20`; empty when within bounds. */
+  reasons: string[];
+}
+
+/**
+ * Honest aggregate comprehension proxies. They never claim a human read a specific diff;
+ * they report how much shipped work has not been reviewed by a human.
+ */
+export interface ComprehensionMetrics {
+  unreadDiffLines: number;
+  itemsWithoutHumanReview: number;
+  modulesWithoutHumanTouch: number;
+  reviewCoveragePercent: number;
+}
+
 /** The factory's optional `quality` block. */
 export interface QualityConfig {
   slopBudget?: SlopBudgetConfig;
@@ -62,6 +117,8 @@ export interface QualityConfig {
     requireForUi?: boolean;
     kinds?: ProofKind[];
   };
+  /** Review-capacity caps (change `add-review-capacity-and-compounding`). */
+  reviewCapacity?: ReviewCapacityConfig;
 }
 
 /** Per-file counts derived from a unified diff. */

@@ -39,6 +39,14 @@ This project is that factory, built to be **self-hosted, inspectable and yours**
 
 Short, dated highlights of user-visible changes. Full detail lives in `docs/STATUS.md`.
 
+- **2026-11-25 — Review capacity, comprehension and decision trails.** The factory now has a
+  factory-level attention budget: `quality.reviewCapacity` caps open gates, unread diff lines, gate age and
+  review hours. A saturated factory cannot auto-approve a plan or enable full autonomy without an audited
+  override. The autonomy read model reports comprehension proxies (unread diff volume, items without human
+  review, modules without human touch, review coverage). Pull requests carry plan/risk/context/review-packet
+  links, work-item detail shows a decision trail, mission plans can declare experiments/rollout/cleanup, and
+  deterministic longitudinal quality evals compare codebase degradation across checkpoints. Context packs
+  now include approved experience lessons.
 - **2026-11-25 — Slop budgets, proof artifacts and context packs.** Every work item now gets a
   risk-tiered slop budget (diff lines, changed files, new dependencies, duplication/complexity delta) and a
   deterministic context pack (ADRs, architecture constraints, test standards, prior failures). The review

@@ -207,6 +207,62 @@ describe('context pack builder', () => {
     expect(pack.sources).toContain('prior-failures');
   });
 
+  test('includes prior lessons with a provenance label', async () => {
+    const root = await makeRoot();
+    const pack = buildContextPack({
+      factoryRoot: root,
+      factory: 'example',
+      title: 'Fix the invoice export',
+      prompt: 'invoice export fails',
+      definitionCommit: 'abc1234',
+      priorLessons: ['scope:non_compliant: keep the diff inside the approved scope'],
+    });
+    expect(pack.markdown).toContain('## Prior lessons');
+    expect(pack.markdown).toContain(
+      '- scope:non_compliant: keep the diff inside the approved scope',
+    );
+    expect(pack.sources).toContain('prior-lessons');
+  });
+
+  test('prior lessons are bounded to five and 400 characters each', async () => {
+    const root = await makeRoot();
+    const lessons = Array.from(
+      { length: 7 },
+      (_, index) => `lesson ${index} ${'z'.repeat(800)}`,
+    );
+    const pack = buildContextPack({
+      factoryRoot: root,
+      factory: 'example',
+      title: 'Fix the invoice export',
+      prompt: 'invoice export fails',
+      definitionCommit: 'abc1234',
+      priorLessons: lessons,
+    });
+    expect(pack.markdown).toContain('- lesson 0 ');
+    expect(pack.markdown).toContain('- lesson 4 ');
+    expect(pack.markdown).not.toContain('- lesson 5 ');
+    // Each rendered lesson line is capped at 400 characters (including the `- ` prefix).
+    const lessonLines = pack.markdown
+      .split('\n')
+      .filter((line) => line.startsWith('- lesson '));
+    expect(lessonLines.length).toBe(5);
+    for (const line of lessonLines) expect(line.length).toBeLessThanOrEqual(402);
+  });
+
+  test('omits the prior lessons section when the list is empty', async () => {
+    const root = await makeRoot();
+    const pack = buildContextPack({
+      factoryRoot: root,
+      factory: 'example',
+      title: 'Fix the invoice export',
+      prompt: 'invoice export fails',
+      definitionCommit: 'abc1234',
+      priorLessons: [],
+    });
+    expect(pack.markdown).not.toContain('## Prior lessons');
+    expect(pack.sources).not.toContain('prior-lessons');
+  });
+
   test('the rendered pack never exceeds the hard character cap', async () => {
     const root = await makeRoot();
     await mkdir(join(root, 'docs'), { recursive: true });
@@ -224,6 +280,7 @@ describe('context pack builder', () => {
         Array.from({ length: 40 }, (_, index) => `constraint ${index} ${'x'.repeat(200)}`),
       ),
       priorFailures: Array.from({ length: 10 }, (_, index) => `failure ${index} ${'y'.repeat(2000)}`),
+      priorLessons: Array.from({ length: 10 }, (_, index) => `lesson ${index} ${'z'.repeat(2000)}`),
     });
 
     expect(pack.markdown.length).toBeLessThanOrEqual(MAX_CONTEXT_PACK_CHARS);

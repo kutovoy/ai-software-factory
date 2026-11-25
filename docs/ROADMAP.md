@@ -112,6 +112,11 @@ slop budgets with stop conditions, proof artifacts (screenshot/video/HTML/curl/r
 (budget, blast radius, read-first, decisions, roles, comprehension), deterministic context packs, plan depth/
 expected pain/leverage, and `show-me`/`anti-slop` skills.
 
+**Anti-slop P1 — shipped (2026-11-25, OpenSpec `add-review-capacity-and-compounding`, ADR-054):**
+`quality.reviewCapacity` attention budget, autonomy refusal when saturated, comprehension projections on the
+Gates page, PR decision links, work-item decision trail, mission experiment metadata, deterministic
+longitudinal quality evals, and lesson-aware context packs.
+
 ## What's left (2026-11-07)
 
 Done: Phases 0–5, roadmap items 1–12, remote runners on Linux/macOS (live-verified) and Windows native

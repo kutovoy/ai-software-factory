@@ -193,6 +193,18 @@ export interface MissionMilestonePlan {
   features: MissionFeaturePlan[];
 }
 
+/**
+ * Optional experiment/rollout record for a mission plan (change
+ * `add-review-capacity-and-compounding`). Metadata only in P1: the flag, the metric that
+ * proves it worked, an optional guardrail and a cleanup window.
+ */
+export interface MissionExperiment {
+  flag: string;
+  successMetric: string;
+  guardrail?: string;
+  cleanupAfterDays?: number;
+}
+
 export interface MissionPlan {
   version: 'v1alpha1';
   missionId: string;
@@ -220,6 +232,8 @@ export interface MissionPlan {
   expectedPain?: ExpectedPain;
   /** The smallest change that unlocks the outcome (max 2000 chars). */
   leverage?: string;
+  /** Optional experiment/rollout/cleanup record (change `add-review-capacity-and-compounding`). */
+  experiment?: MissionExperiment;
 }
 
 export interface Mission {

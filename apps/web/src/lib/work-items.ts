@@ -1,4 +1,10 @@
-import type { ReviewPacketWire, RiskTierWire, WorkItemEvent, WorkItemStage } from './types';
+import type {
+  GateDecisionRecord,
+  ReviewPacketWire,
+  RiskTierWire,
+  WorkItemEvent,
+  WorkItemStage,
+} from './types';
 import { WORK_ITEM_STAGES } from './types';
 
 /**
@@ -397,6 +403,170 @@ export function lastAutonomyEvent(events: WorkItemEvent[]): AutonomyEventView | 
     reason: stringOf(event.payload.reason) || null,
     at: event.createdAt,
   };
+}
+
+/* ------------------------------------------------------- decision trail */
+
+export type DecisionTrailKind = 'plan' | 'gate' | 'review' | 'pr' | 'merge' | 'incident';
+
+/**
+ * One chronological row of the unified decision trail (change
+ * `add-review-capacity-and-compounding`). Every row comes from a real artifact — the plan ref
+ * persisted on the item, a decided gate, a review verdict event, the PR/merge events or an
+ * incident event — so an empty trail stays empty instead of being padded.
+ */
+export interface DecisionTrailRow {
+  /** Stable key for React lists; built from the source record. */
+  key: string;
+  kind: DecisionTrailKind;
+  /** Null when the source carries no timestamp; the UI renders an explicit dash. */
+  at: string | null;
+  actor: string | null;
+  decision: string;
+  /** Reason / feedback / summary behind the decision, when the source has one. */
+  reason: string | null;
+  /** Stable reference: plan ref, gate id, PR url, commit sha or event type. */
+  ref: string | null;
+}
+
+function trailSortKey(row: DecisionTrailRow): number {
+  if (!row.at) return Number.NEGATIVE_INFINITY;
+  const ms = Date.parse(row.at);
+  return Number.isNaN(ms) ? Number.NEGATIVE_INFINITY : ms;
+}
+
+/**
+ * Builds the decision trail from the plan ref and the durable read model. Order is
+ * chronological; undated rows (a plan ref without a packet timestamp) come first. Only
+ * decided gates and recorded events contribute — a pending gate is not a decision and is
+ * already rendered by the gate card.
+ */
+export function decisionTrail(input: {
+  planRef?: string | null;
+  gates: GateDecisionRecord[];
+  events: WorkItemEvent[];
+}): DecisionTrailRow[] {
+  const rows: DecisionTrailRow[] = [];
+  const planRef = typeof input.planRef === 'string' && input.planRef.trim().length > 0
+    ? input.planRef
+    : null;
+
+  if (planRef) {
+    // The packet is the only event that carries the plan ref; its timestamp dates the plan row.
+    const packet = [...input.events]
+      .reverse()
+      .find(
+        (event) =>
+          event.type === 'review.packet' && stringOf(event.payload.planRef) === planRef,
+      );
+    rows.push({
+      key: `plan:${planRef}`,
+      kind: 'plan',
+      at: packet?.createdAt ?? null,
+      actor: null,
+      decision: 'plan',
+      reason: null,
+      ref: planRef,
+    });
+  }
+
+  for (const gate of input.gates) {
+    if (gate.decision === null) continue;
+    rows.push({
+      key: `gate:${gate.stage}:${gate.attempt}`,
+      kind: 'gate',
+      at: gate.decidedAt,
+      actor: gate.actor,
+      decision: `${gate.stage} ${gate.decision}`,
+      reason: gate.feedback ?? gate.reason ?? null,
+      ref: `gate ${gate.gate} · ${gate.stage}#${gate.attempt}${gate.automatic ? ' · automatic' : ''}`,
+    });
+  }
+
+  for (const event of input.events) {
+    if (event.type === 'review.verdict') {
+      const verdict = stringOf(event.payload.verdict) || 'unknown';
+      const reviewer = stringOf(event.payload.reviewer);
+      const confidence = numberOf(event.payload.confidence);
+      rows.push({
+        key: `review:${event.id}`,
+        kind: 'review',
+        at: event.createdAt,
+        actor: reviewer || event.actor,
+        decision: `review ${verdict}`,
+        reason: confidence !== null ? `confidence ${confidence}` : null,
+        ref: event.payload.advisory === true ? 'advisory' : null,
+      });
+      continue;
+    }
+
+    if (event.type === 'pr.opened') {
+      const prUrl = stringOf(event.payload.prUrl);
+      const prNumber = numberOrNull(event.payload.prNumber);
+      rows.push({
+        key: `pr:${event.id}`,
+        kind: 'pr',
+        at: event.createdAt,
+        actor: event.actor,
+        decision: prNumber !== null ? `PR #${prNumber} opened` : 'PR opened',
+        reason: null,
+        ref: prUrl || null,
+      });
+      continue;
+    }
+
+    if (event.type === 'merge.merged') {
+      const sha = stringOf(event.payload.sha);
+      rows.push({
+        key: `merge:${event.id}`,
+        kind: 'merge',
+        at: event.createdAt,
+        actor: event.actor,
+        decision: 'merged',
+        reason: null,
+        ref: sha || null,
+      });
+      continue;
+    }
+
+    // Incidents: an explicit incident event, or a revert the merge queue recorded.
+    if (/incident/i.test(event.type) || event.type === 'merge.reverted') {
+      rows.push({
+        key: `incident:${event.id}`,
+        kind: 'incident',
+        at: event.createdAt,
+        actor: event.actor,
+        decision: event.type === 'merge.reverted' ? 'reverted' : 'incident',
+        reason: stringOf(event.payload.reason) || null,
+        ref: event.type,
+      });
+    }
+  }
+
+  // A merge recorded only through the ship status event still belongs to the trail.
+  const hasMergeEvent = rows.some((row) => row.kind === 'merge');
+  if (!hasMergeEvent) {
+    const at = mergedAt(input.events);
+    if (at) {
+      rows.push({
+        key: 'merge:status',
+        kind: 'merge',
+        at,
+        actor: null,
+        decision: 'merged',
+        reason: null,
+        ref: null,
+      });
+    }
+  }
+
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => {
+      const delta = trailSortKey(a.row) - trailSortKey(b.row);
+      return delta !== 0 ? delta : a.index - b.index;
+    })
+    .map(({ row }) => row);
 }
 
 export interface SlaState {

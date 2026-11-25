@@ -417,6 +417,47 @@ function PlanCard({ mission }: { mission: MissionSummary }) {
           </div>
         </div>
 
+        {plan.experiment ? (
+          <div
+            data-testid="mission-plan-experiment"
+            className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2"
+          >
+            <p className="text-xs font-semibold uppercase tracking-wide text-sky-800">
+              Experiment / rollout
+            </p>
+            <div className="mt-1 grid gap-1 text-xs text-sky-900 md:grid-cols-2">
+              <p>
+                flag <span className="font-mono" data-testid="mission-plan-experiment-flag">{plan.experiment.flag}</span>
+              </p>
+              <p>
+                success metric{' '}
+                <span className="font-mono" data-testid="mission-plan-experiment-metric">
+                  {plan.experiment.successMetric}
+                </span>
+              </p>
+              {plan.experiment.guardrail ? (
+                <p data-testid="mission-plan-experiment-guardrail">
+                  guardrail <span className="font-mono">{plan.experiment.guardrail}</span>
+                </p>
+              ) : null}
+              {typeof plan.experiment.cleanupAfterDays === 'number' ? (
+                <p data-testid="mission-plan-experiment-cleanup">
+                  cleanup after <span className="font-mono">{plan.experiment.cleanupAfterDays}</span> days
+                </p>
+              ) : null}
+            </div>
+            <p className="mt-1 text-[11px] text-sky-800">
+              Metadata only: no experiment provider is called. The flag, metric and cleanup window are
+              recorded here so the rollout stays auditable.
+            </p>
+          </div>
+        ) : escalatedRisk ? (
+          <p data-testid="mission-plan-experiment-empty" className="text-xs text-slate-500">
+            No experiment or rollout is recorded for this {riskTier}-risk plan. Add one before approving
+            if the change needs a measured rollout and a cleanup window.
+          </p>
+        ) : null}
+
         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
           <Badge tone={contract.enforce ? 'warning' : 'neutral'} testId="mission-contract-enforce">
             enforce {contract.enforce ? 'on' : 'off'}

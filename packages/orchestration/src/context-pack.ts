@@ -32,6 +32,8 @@ export interface ContextPackInput {
   plan?: MissionPlanData | null;
   /** Prior failure summaries supplied by the caller (already compacted). */
   priorFailures?: string[];
+  /** Approved experience lessons for the factory (already scoped/promoted by the caller). */
+  priorLessons?: string[];
 }
 
 export interface ContextPack {
@@ -50,6 +52,8 @@ const MAX_CONSTRAINTS = 10;
 const MAX_TEST_SCRIPTS = 8;
 const MAX_PRIOR_FAILURES = 3;
 const MAX_PRIOR_FAILURE_CHARS = 400;
+const MAX_PRIOR_LESSONS = 5;
+const MAX_PRIOR_LESSON_CHARS = 400;
 const MAX_FILES = 20;
 const MAX_KEYWORDS = 24;
 const MAX_WALK_ENTRIES = 4000;
@@ -326,6 +330,16 @@ export function buildContextPack(input: ContextPackInput): ContextPack {
   if (priorFailures.length > 0) {
     sections.push(['## Prior failures', ...priorFailures].join('\n'));
     sources.push('prior-failures');
+  }
+
+  const priorLessons = (input.priorLessons ?? [])
+    .filter((entry) => typeof entry === 'string' && entry.trim().length > 0)
+    .slice(0, MAX_PRIOR_LESSONS)
+    .map((entry) => `- ${truncate(entry, MAX_PRIOR_LESSON_CHARS)}`);
+  if (priorLessons.length > 0) {
+    sections.push(['## Prior lessons', ...priorLessons].join('\n'));
+    // Provenance label: the caller only passes approved, factory-visible lessons.
+    sources.push('prior-lessons');
   }
 
   if (input.repoRoot) {

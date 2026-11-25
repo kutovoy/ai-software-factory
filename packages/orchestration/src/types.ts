@@ -9,6 +9,7 @@ import type { ValidationContract, ValidationTier } from '@factory/core/validatio
 import type {
   ExpectedPain,
   MissionArchitecture,
+  MissionExperiment,
   MissionProgramDesign,
   MissionProductReview,
   MissionVerticalSlice,
@@ -534,6 +535,8 @@ export interface MissionPlanData {
   expectedPain?: ExpectedPain;
   /** The smallest change that unlocks the outcome (max 2000 chars). */
   leverage?: string;
+  /** Optional experiment/rollout/cleanup record (change `add-review-capacity-and-compounding`). */
+  experiment?: MissionExperiment;
 }
 
 export interface MissionWorkflowResume {

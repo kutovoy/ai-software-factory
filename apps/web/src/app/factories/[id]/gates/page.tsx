@@ -259,6 +259,145 @@ export default async function GatesPage({ params }: { params: Promise<{ id: stri
         </CardBody>
       </Card>
 
+      <Card testId="gates-review-capacity">
+        <CardHeader
+          title="Review capacity"
+          hint="The factory-level attention budget from quality.reviewCapacity: pending gates, unread diff volume and the oldest gate."
+          action={
+            autonomyRead?.reviewCapacity ? (
+              <span
+                data-testid="gates-review-capacity-badge"
+                data-saturated={autonomyRead.reviewCapacity.saturated ? 'true' : 'false'}
+              >
+                <Badge
+                  tone={autonomyRead.reviewCapacity.saturated ? 'danger' : 'success'}
+                  testId="gates-review-capacity-saturation"
+                >
+                  {autonomyRead.reviewCapacity.saturated ? 'saturated' : 'within capacity'}
+                </Badge>
+              </span>
+            ) : null
+          }
+        />
+        <CardBody className="space-y-2 text-xs text-slate-700">
+          {autonomyRead?.reviewCapacity ? (
+            <>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">Open gates</p>
+                  <p data-testid="gates-review-capacity-open-gates" className="font-mono text-sm text-slate-800">
+                    {autonomyRead.reviewCapacity.openGates}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">Unread diff lines</p>
+                  <p
+                    data-testid="gates-review-capacity-unread-lines"
+                    className="font-mono text-sm text-slate-800"
+                  >
+                    {autonomyRead.reviewCapacity.unreadDiffLines}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">Oldest gate</p>
+                  <p
+                    data-testid="gates-review-capacity-oldest-gate"
+                    className="font-mono text-sm text-slate-800"
+                  >
+                    {autonomyRead.reviewCapacity.oldestGateHours.toFixed(1)}h
+                  </p>
+                </div>
+              </div>
+              {autonomyRead.reviewCapacity.reasons.length > 0 ? (
+                <ul data-testid="gates-review-capacity-reasons" className="space-y-0.5 text-red-800">
+                  {autonomyRead.reviewCapacity.reasons.map((reason) => (
+                    <li key={reason}>{reason}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p data-testid="gates-review-capacity-reasons-empty" className="text-slate-500">
+                  No cap is exceeded. Enabling full autonomy stays available without an override.
+                </p>
+              )}
+              <p data-testid="gates-review-capacity-hint" className="text-slate-500">
+                When saturated, drain the queue before starting more work: review or reject open gates
+                first, and split large changes into smaller ones so each diff fits the budget. Enabling
+                full autonomy is refused until the queue is drained unless an explicit override is
+                recorded.
+              </p>
+            </>
+          ) : (
+            <EmptyState
+              testId="gates-review-capacity-unavailable"
+              title="Review capacity is unavailable"
+              description="The autonomy read model could not be loaded, so no capacity measurement exists. This is not a zero backlog — refresh once the API is reachable."
+            />
+          )}
+        </CardBody>
+      </Card>
+
+      <Card testId="gates-comprehension">
+        <CardHeader
+          title="Comprehension"
+          hint="Aggregate proxies over review packets and human gate decisions. They never claim a person read a specific diff."
+        />
+        <CardBody className="space-y-2 text-xs text-slate-700">
+          {autonomyRead?.comprehension ? (
+            <>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">Unread diff volume</p>
+                  <p
+                    data-testid="gates-comprehension-unread-lines"
+                    className="font-mono text-sm text-slate-800"
+                  >
+                    {autonomyRead.comprehension.unreadDiffLines}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">Without human review</p>
+                  <p
+                    data-testid="gates-comprehension-items-without-review"
+                    className="font-mono text-sm text-slate-800"
+                  >
+                    {autonomyRead.comprehension.itemsWithoutHumanReview}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">Modules without touch</p>
+                  <p
+                    data-testid="gates-comprehension-modules-without-touch"
+                    className="font-mono text-sm text-slate-800"
+                  >
+                    {autonomyRead.comprehension.modulesWithoutHumanTouch}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">Review coverage</p>
+                  <p
+                    data-testid="gates-comprehension-coverage"
+                    className="font-mono text-sm text-slate-800"
+                  >
+                    {autonomyRead.comprehension.reviewCoveragePercent}%
+                  </p>
+                </div>
+              </div>
+              <p data-testid="gates-comprehension-note" className="text-slate-500">
+                These are aggregate proxies, not per-person surveillance: review coverage counts work
+                items whose newest review packet has a human gate decision, and unread volume counts the
+                diff lines of packets that have none.
+              </p>
+            </>
+          ) : (
+            <EmptyState
+              testId="gates-comprehension-unavailable"
+              title="Comprehension metrics are unavailable"
+              description="The autonomy read model could not be loaded. Nothing is reported rather than showing fabricated zeroes — refresh once the API is reachable."
+            />
+          )}
+        </CardBody>
+      </Card>
+
       <Card testId="gates-table-card">
         <CardHeader
           title="Stage gates"

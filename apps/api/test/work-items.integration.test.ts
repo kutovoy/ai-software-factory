@@ -256,6 +256,15 @@ suite('work item API', () => {
   test('GET /autonomy returns the declared policy, live state and no invented timestamp', async () => {
     const sql = getSql();
     await sql`delete from autonomy_state where factory = 'example'`;
+    // Test isolation: earlier suites may have left undecided gates on `example`. The
+    // review-capacity gate refuses enabling autonomy while the queue is over its caps, so
+    // drain the fixture gates before asserting the enable path (change
+    // `add-review-capacity-and-compounding`).
+    await sql`
+      delete from gate_decisions g
+      using work_items w
+      where g.work_item_id = w.id and w.factory = 'example' and g.decision is null
+    `;
 
     const initial = await req(app, `/factories/${exampleId}/autonomy`);
     expect(initial.status).toBe(200);
@@ -274,6 +283,19 @@ suite('work item API', () => {
         everEnabled: boolean;
         reason: string | null;
         lastEvent: { type: string; at: string | null } | null;
+        reviewCapacity?: {
+          saturated: boolean;
+          openGates: number;
+          unreadDiffLines: number;
+          oldestGateHours: number;
+          reasons: string[];
+        };
+        comprehension?: {
+          unreadDiffLines: number;
+          itemsWithoutHumanReview: number;
+          modulesWithoutHumanTouch: number;
+          reviewCoveragePercent: number;
+        };
       };
     };
     const read = initialBody.autonomy;
@@ -289,6 +311,20 @@ suite('work item API', () => {
     // A prior kill-switch action may have left an `autonomy.*` event on a work item; the
     // read model reports it as evidence. It never invents one.
     if (read.lastEvent) expect(read.lastEvent.type.startsWith('autonomy.')).toBe(true);
+
+    // Review capacity + comprehension (change `add-review-capacity-and-compounding`): the
+    // read model projects existing gates/packets, so the shapes are always present and the
+    // numbers are honest measurements, never a fixed placeholder.
+    expect(read.reviewCapacity).toBeDefined();
+    expect(typeof read.reviewCapacity?.saturated).toBe('boolean');
+    expect(read.reviewCapacity?.openGates).toBeGreaterThanOrEqual(0);
+    expect(read.reviewCapacity?.unreadDiffLines).toBeGreaterThanOrEqual(0);
+    expect(read.reviewCapacity?.oldestGateHours).toBeGreaterThanOrEqual(0);
+    expect(Array.isArray(read.reviewCapacity?.reasons)).toBe(true);
+    expect(read.comprehension).toBeDefined();
+    expect(read.comprehension?.itemsWithoutHumanReview).toBeGreaterThanOrEqual(0);
+    expect(read.comprehension?.modulesWithoutHumanTouch).toBeGreaterThanOrEqual(0);
+    expect(read.comprehension?.reviewCoveragePercent).toBeGreaterThanOrEqual(0);
 
     const enabled = await postJson(app, `/factories/${exampleId}/autonomy`, {
       enabled: true,
@@ -317,6 +353,73 @@ suite('work item API', () => {
     expect(afterBody.autonomy.everEnabled).toBe(true);
     expect(afterBody.autonomy.benchmarkAttestation.required).toBe(false);
     expect(afterBody.autonomy.benchmarkAttestation.satisfied).toBe(true);
+  }, 60_000);
+
+  test('POST /autonomy refuses while review capacity is saturated unless an override is recorded', async () => {
+    const sql = getSql();
+    const created = await postJson(app, `/factories/${exampleId}/work-items`, {
+      title: 'itest: review capacity',
+      harness: 'fake',
+    });
+    expect(created.status).toBe(201);
+    const { workItem } = (await created.json()) as { workItem: { id: string } };
+
+    try {
+      // The projection reads existing gate rows, so pending gates can be seeded directly:
+      // more than the default `maxOpenGates` (20) makes the factory saturated without a worker.
+      for (let attempt = 1; attempt <= 21; attempt += 1) {
+        await sql`
+          insert into gate_decisions (work_item_id, stage, attempt, gate, requested_at)
+          values (${workItem.id}, 'triage', ${attempt}, 'human', now())
+        `;
+      }
+
+      const refused = await postJson(app, `/factories/${exampleId}/autonomy`, {
+        enabled: true,
+        actor: 'ada',
+        reason: 'itest: capacity refusal',
+      });
+      expect(refused.status).toBe(409);
+      const refusedBody = (await refused.json()) as {
+        code: string;
+        message: string;
+        details?: { factory?: string; reviewCapacity?: { saturated: boolean; reasons: string[] } };
+      };
+      expect(refusedBody.code).toBe('autonomy_refused');
+      expect(refusedBody.message).toContain('review capacity is saturated');
+      expect(refusedBody.details?.factory).toBe('example');
+      expect(refusedBody.details?.reviewCapacity?.saturated).toBe(true);
+      expect(refusedBody.details?.reviewCapacity?.reasons.join(' ')).toContain('open gates');
+
+      // Pausing always succeeds, even while saturated.
+      const paused = await postJson(app, `/factories/${exampleId}/autonomy`, {
+        enabled: false,
+        actor: 'ada',
+        reason: 'itest: capacity pause',
+      });
+      expect(paused.status).toBe(200);
+
+      // An explicit audited override bypasses the capacity refusal.
+      const override = await postJson(app, `/factories/${exampleId}/autonomy`, {
+        enabled: true,
+        actor: 'ada',
+        reason: 'itest: capacity override',
+        override: { actor: 'grace', reason: 'itest: audited capacity override' },
+      });
+      expect(override.status).toBe(200);
+      const overrideBody = (await override.json()) as {
+        autonomy: { enabled: boolean; overrideActor: string | null };
+      };
+      expect(overrideBody.autonomy.enabled).toBe(true);
+      expect(overrideBody.autonomy.overrideActor).toBe('grace');
+    } finally {
+      await sql`delete from gate_decisions where work_item_id = ${workItem.id}`;
+      await postJson(app, `/factories/${exampleId}/autonomy`, {
+        enabled: false,
+        actor: 'ada',
+        reason: 'itest: capacity cleanup',
+      });
+    }
   }, 60_000);
 
   test('POST /work-items/:id/cancel records once, is idempotent and refuses a done item', async () => {

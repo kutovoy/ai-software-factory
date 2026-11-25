@@ -197,6 +197,10 @@ function planIdentity(
   // Planning metadata (change `add-anti-slop-budgets-and-proof`): an API-supplied plan may
   // omit `planDepth`/`expectedPain`/`leverage`; derive them deterministically from the risk
   // tier and goal instead of leaving the UI to invent values. Supplied values always win.
+  //
+  // `experiment` (change `add-review-capacity-and-compounding`) is metadata only: the spread
+  // below passes a supplied record through unchanged and `validateMissionPlan` keeps it, so
+  // the API never derives a flag or a metric the planner did not state.
   const planRiskTier = isRiskTier(input.riskTier) ? input.riskTier : 'low';
   const derivedLeverage = firstNonEmptyLine(goal);
 

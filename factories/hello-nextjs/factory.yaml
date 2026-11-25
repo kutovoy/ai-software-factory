@@ -43,7 +43,7 @@ governance:
         planApproval: human
         review: human
         merge: human
-id: fac_01M88X9THZEJ8F0Q39EW7PWZFS
+id: fac_01M890NWYEE50996AGBV307XEY
 mcp:
   discovery:
     enabled: true

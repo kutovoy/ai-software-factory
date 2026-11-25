@@ -129,6 +129,19 @@ export const missionMilestonePlanSchema = z
   })
   .strict();
 
+/**
+ * Optional experiment/rollout record (change `add-review-capacity-and-compounding`).
+ * Strict and bounded; old plans stay valid without it.
+ */
+export const missionExperimentSchema = z
+  .object({
+    flag: z.string().min(1).max(200),
+    successMetric: z.string().min(1).max(500),
+    guardrail: z.string().min(1).max(500).optional(),
+    cleanupAfterDays: z.number().int().min(0).max(365).optional(),
+  })
+  .strict();
+
 export const missionPlanSchema = z
   .object({
     version: z.literal('v1alpha1'),
@@ -152,6 +165,7 @@ export const missionPlanSchema = z
     planDepth: z.enum(PLAN_DEPTHS).optional(),
     expectedPain: z.enum(EXPECTED_PAIN_LEVELS).optional(),
     leverage: z.string().min(1).max(2000).optional(),
+    experiment: missionExperimentSchema.optional(),
   })
   .strict();
 

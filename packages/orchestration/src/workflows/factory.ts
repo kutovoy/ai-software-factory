@@ -524,7 +524,12 @@ export async function FactoryWorkflow(
           title: input.title,
           body:
             `Work item ${input.workItemId}\n\n` +
-            `Implements the approved scope. Definition commit: ${input.definitionCommit}.`,
+            `Plan: ${input.planRef ?? 'none'}\n` +
+            `Risk: ${input.riskTier ?? 'low'}\n` +
+            `Context pack: ${input.contextPackRef ?? 'none'}\n` +
+            `Review packet: workItem:${input.workItemId}#review-packet\n` +
+            `Definition commit: ${input.definitionCommit}\n\n` +
+            `Implements the approved scope.`,
           runId: result.runId,
           ...(input.allowEmptyPatch ? { allowEmptyPatch: true } : {}),
         });

@@ -876,9 +876,9 @@ export const HELP_ENTRIES: HelpEntry[] = [
     title: 'Work items',
     section: 'menu',
     status:
-      'Shipped — Phase 2b / 3c; review packet and risk tiers in `2026-11-07-harden-factory-quality`; packet v2, slop budgets, proof and context packs in `add-anti-slop-budgets-and-proof`',
+      'Shipped — Phase 2b / 3c; review packet and risk tiers in `2026-11-07-harden-factory-quality`; packet v2, slop budgets, proof and context packs in `add-anti-slop-budgets-and-proof`; decision trail in `add-review-capacity-and-compounding`',
     summary:
-      'The board of work items by stage, with status filters, created/updated timestamps, create, cancel, retry and per-item gate state; detail adds review packet v2 (slop budget, blast radius, proof, read-first, decisions, roles), architecture/maintainability evidence and the pending gate.',
+      'The board of work items by stage, with status filters, created/updated timestamps, create, cancel, retry and per-item gate state; detail adds review packet v2 (slop budget, blast radius, proof, read-first, decisions, roles), architecture/maintainability evidence, the pending gate and one chronological decision trail.',
     pageHref: '/factories/example/work-items',
     blocks: [
       {
@@ -895,6 +895,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
           'Open: the detail page lists runs, gate history, events and retries for the item.',
           'Review packet: a `review.packet` event carries the risk tier, intent, plan reference, changed-file count, diff stats (+/-), assertion statuses with evidence, architecture impact, open questions and a reviewer checklist. It is assembled deterministically from the plan, evidence and diff — not model prose — and the full diff stays linked on the run. The packet is omitted when no event exists; nothing is invented to fill the card.',
           'Review packet v2: the same packet also carries the slop status (`pass`, `exceeded` or `unknown`) with budget vs actual per metric (diff lines, changed files, new dependencies, duplication and complexity deltas), the blast radius (changed paths, high-risk paths, public API and schema change counts), a proof gallery of artifacts bound to the run and commit (screenshot, video, html, curl, report, file — image thumbnails only for image paths), an ordered read-first list, gate decisions with actors and reasons, reviewer roles (correctness, architecture, security, product), comprehension estimates and the context-pack reference. Each section renders only when the packet carries it; an older packet leaves them absent rather than showing zeroes.',
+          'Decision trail: one chronological list from the plan ref (`workItem.input.planRef` or the review packet) through decided gates, review verdicts, the PR opened, the merge and any incident or revert. Each row carries the time, actor, decision and reason/ref. Only recorded artifacts contribute — a pending gate is not a decision and is already shown by the gate card, and an empty trail says so instead of inventing rows.',
           'Slop budgets: the factory\'s `quality.slopBudget` caps a patch per risk tier (defaults: low 200 diff lines / 5 files / 0 new dependencies, medium 400 / 10 / 1, high 800 / 20 / 2, plus duplication and complexity deltas). Metrics are measured from the captured patch; an unknown metric stays unknown, never zero. An overage records `slop.budget_exceeded`; an agent review gate resolves `request_changes`, and a human gate shows the overage with an explicit waiver path.',
           'Context pack: before implementation the API builds a deterministic, bounded bundle (relevant ADRs, plan constraints, test commands, prior failures and likely files) and records its ref (`<factory>@<commit>#context-pack`). It is passed into stage prompts and linked from the review packet, so the reviewer can read the same context the agent got.',
           'Validation contract: every check is pass, fail or missing against recorded evidence. `architecture` and `maintainability` checks (with optional named thresholds such as dependency cycles or diff size) are required for medium/high-risk runnable work, and missing required evidence blocks the verify gate.',
@@ -1146,7 +1147,8 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'list',
         items: [
-          'Risk, quality and review data: mission plans expose `riskTier`/`riskReasons`, `planDepth`, `expectedPain`, `leverage`, planning artifacts (including `productReview.visualArtifacts`) and `architecture`/`maintainability` assertions; the inbox gate projection adds `reviewPacket` v2 (slop budget/actual/status, blast radius, proof artifacts, read-first, decisions, reviewer roles, comprehension and `contextPackRef`) for the work item. Both are additive `/api/v1` fields.',
+          'Risk, quality and review data: mission plans expose `riskTier`/`riskReasons`, `planDepth`, `expectedPain`, `leverage`, planning artifacts (including `productReview.visualArtifacts`), `architecture`/`maintainability` assertions and an optional `experiment` record (`flag`, `successMetric`, `guardrail`, `cleanupAfterDays`); the inbox gate projection adds `reviewPacket` v2 (slop budget/actual/status, blast radius, proof artifacts, read-first, decisions, reviewer roles, comprehension and `contextPackRef`) for the work item. All are additive `/api/v1` fields.',
+          'Autonomy read model: `GET /api/v1/factories/<factoryId>/autonomy` adds `reviewCapacity` (saturated flag, open gates, unread diff lines, oldest gate hours and the exceeded caps as `reasons`) and `comprehension` (unread diff volume, items without human review, modules without human touch, review coverage percent). Enabling autonomy without an override returns `409 autonomy_refused` with the same `reviewCapacity` details when the queue is saturated; pausing always succeeds.',
           'Filter: the box above the operations narrows the list by path, method or summary as you type — useful with 61 paths on one page.',
           'Tags: groups are alphabetical and each carries a one-line description of the resource it covers, so `runs` and `work-items` are not just labels.',
           'Servers: the selector shows the console origin (`/`), which is where “Try it out” really sends requests. The raw document still advertises the direct API host (`http://localhost:8080`) for Postman and other Swagger UI imports — add `?servers=console` to `/api/openapi.json` to get the console-targeted copy.',
@@ -1222,9 +1224,9 @@ export const HELP_ENTRIES: HelpEntry[] = [
     slug: 'factories/missions',
     title: 'Missions',
     section: 'menu',
-    status: 'Shipped — archived changes `2026-11-07-add-long-running-missions`, `2026-11-07-add-mission-plan-auto-approval` and `2026-11-07-fix-mission-feature-lifecycle`; risk tiers and planning artifacts in `2026-11-07-harden-factory-quality`; plan depth and visual artifacts in `add-anti-slop-budgets-and-proof`',
+    status: 'Shipped — archived changes `2026-11-07-add-long-running-missions`, `2026-11-07-add-mission-plan-auto-approval` and `2026-11-07-fix-mission-feature-lifecycle`; risk tiers and planning artifacts in `2026-11-07-harden-factory-quality`; plan depth and visual artifacts in `add-anti-slop-budgets-and-proof`; experiment metadata in `add-review-capacity-and-compounding`',
     summary:
-      'Mission Control: create a goal, review the risk tier, plan depth, expected pain and leverage, the upstream planning artifacts (including visual artifacts) and validation contract, approve it, follow vertical slices, read validation evidence and spend, and pause, resume, cancel or retry.',
+      'Mission Control: create a goal, review the risk tier, plan depth, expected pain and leverage, the upstream planning artifacts (including visual artifacts), the experiment/rollout record and validation contract, approve it, follow vertical slices, read validation evidence and spend, and pause, resume, cancel or retry.',
     pageHref: factoryPageHref('missions'),
     pageHrefLabel: 'Open Missions (example factory)',
     blocks: [
@@ -1239,6 +1241,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
           'List: title, status, feature progress (done/total, failed), current milestone, milestone progress, spend against the mission cap, and last-updated time. Status chips narrow the list; the factory is the one whose page you are on.',
           'Create: title, goal and optional caps — `maxCostUsd`, `maxRuns`, `maxWallClockHours`. An empty field means "no mission cap", not zero; factory budget and quotas still apply.',
           'Plan and contract: the risk tier badge and its reasons, the goal, plan version, plan depth (`none`, `light` or `full`), expected pain (`low`, `medium` or `high`) and the leverage statement (the smallest change that unlocks the outcome), the contract version/source/enforce flag and every assertion with its tier (including `architecture` and `maintainability`), required flag, tool, expected evidence and any named thresholds, plus the planner\'s risks and assumptions. A plan that omits the depth/pain/leverage fields leaves them absent rather than inventing them.',
+          'Experiment / rollout: when the plan carries an `experiment`, the card shows the flag, the success metric, an optional guardrail and the cleanup window. It is metadata only — no experiment provider is called — and a medium/high-risk plan with no experiment says so instead of inventing one; a low-risk plan simply omits the section.',
           'Upstream planning artifacts: product review (problem, desired behaviour, mockups and visual artifacts), system architecture (summary, components and contracts, data models, constraints), program design (modules, public API, call graph) and vertical slices (ordered end-to-end behaviour, its features and checks). Each section renders only what the plan contains; for a medium/high-risk plan a missing section is shown as a missing section, never invented. A medium/high-risk UI plan should carry at least one visual artifact (a mockup or diagram reference); a plan without one says so explicitly.',
           'Milestones and features: status per milestone (including `validating`), validation round, and per feature its status, order, dependencies, claimed assertion ids, risk tier, `slice`/`enabler` kind, the vertical slice it delivers, the work item that executes it and whether it is a fix feature from a finding. An enabler is scaffolding that a later slice verifies; a plan must contain at least one real slice. A feature already satisfied by the integrated branch completes without a PR and records `work_item.no_changes`.',
           'High-risk features: the feature work item forces a human review gate and a human ship gate. The review gate shows the deterministic `review.packet` v2 (intent, plan ref, diff stats, assertion evidence, slop status and budget vs actual, blast radius, proof artifacts, read-first order, decisions, reviewer roles, comprehension, context-pack ref, architecture impact, open questions, checklist); the raw diff stays linked on the run.',
@@ -1263,7 +1266,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
         tone: 'warning',
         title: 'Sequential MVP and risk-tiered autonomy',
         text:
-          'Features run one at a time in dependency order; parallel features and git worktrees are a later phase. The plan gate is human by default. When autonomy is enabled and unpaused, the factory is `autonomyLevel: full`, the benchmark gate is satisfied by an attestation or an audited override, and the plan is `low` risk, the plan is approved automatically and the event records the automatic actor/reason. A `medium` or `high` plan is never auto-approved. High-risk work items also require a human review gate and a human ship gate, and are never auto-merged. Feature work items run implement → review → ship; whole-app verify is the milestone boundary, so a partial feature is not failed before the rest of its milestone exists. Validators only surface findings — they never implement fixes. The orchestrator turns actionable findings into fix features, and validation rounds are capped so a flaky milestone blocks for a human instead of looping forever.',
+          'Features run one at a time in dependency order; parallel features and git worktrees are a later phase. The plan gate is human by default. When autonomy is enabled and unpaused, the factory is `autonomyLevel: full`, the benchmark gate is satisfied by an attestation or an audited override, the plan is `low` risk, and review capacity is not saturated, the plan is approved automatically and the event records the automatic actor/reason. A saturated factory returns `autoApprove: false` with a `review_capacity_exceeded` reason instead, so the plan waits for a human. A `medium` or `high` plan is never auto-approved. High-risk work items also require a human review gate and a human ship gate, and are never auto-merged. Feature work items run implement → review → ship; whole-app verify is the milestone boundary, so a partial feature is not failed before the rest of its milestone exists. Validators only surface findings — they never implement fixes. The orchestrator turns actionable findings into fix features, and validation rounds are capped so a flaky milestone blocks for a human instead of looping forever.',
       },
       {
         kind: 'callout',
@@ -1524,16 +1527,16 @@ export const HELP_ENTRIES: HelpEntry[] = [
     title: 'Gates',
     section: 'menu',
     status:
-      'Shipped — Phase 2b / 3c / 4b; risk policy in `2026-11-07-harden-factory-quality`; slop budgets and review-packet waivers in `add-anti-slop-budgets-and-proof`',
+      'Shipped — Phase 2b / 3c / 4b; risk policy in `2026-11-07-harden-factory-quality`; slop budgets and review-packet waivers in `add-anti-slop-budgets-and-proof`; review capacity and comprehension in `add-review-capacity-and-compounding`',
     summary:
-      'The resolved gate table with its source, the autonomy policy and kill switch, the risk-tier policy and slop budgets, the benchmark-attestation card and the canary state.',
+      'The resolved gate table with its source, the autonomy policy and kill switch, the risk-tier policy and slop budgets, the review-capacity and comprehension cards, the benchmark-attestation card and the canary state.',
     pageHref: factoryPageHref('gates'),
     pageHrefLabel: 'Open Gates (example factory)',
     blocks: [
       {
         kind: 'prose',
         text:
-          'Gates shows, per stage, the resolved gate (`human`, `agent` or `policy:<name>`) and where it came from (automation → factory → global). The autonomy card enables/pauses the kill switch: enabling a fully autonomous factory is refused while no passing, calibrated, non-partial attestation matches the current commit + configHash, unless an explicit `{actor, reason}` override is confirmed. Pausing always works.',
+          'Gates shows, per stage, the resolved gate (`human`, `agent` or `policy:<name>`) and where it came from (automation → factory → global). The autonomy card enables/pauses the kill switch: enabling a fully autonomous factory is refused while no passing, calibrated, non-partial attestation matches the current commit + configHash, unless an explicit `{actor, reason}` override is confirmed. Enabling is also refused while the factory\'s review capacity is saturated (open gates, unread diff lines or the oldest gate over `quality.reviewCapacity`) unless an explicit override is recorded; pausing always works.',
       },
       {
         kind: 'list',
@@ -1542,11 +1545,20 @@ export const HELP_ENTRIES: HelpEntry[] = [
           'Risk policy: `low`/`medium`/`high` plan approval, review and merge rules plus the configured high-risk path globs. Only low-risk plans auto-approve; high-risk work forces human review and ship.',
           'Slop budgets: the per-tier `quality.slopBudget` caps (diff lines, changed files, new dependencies, duplication and complexity deltas) resolved from the manifest with the shipped defaults. A patch over its tier budget records `slop.budget_exceeded`; an agent review gate resolves `request_changes`, and a human review gate shows the overage with the waiver path (approve with a reason, or request changes to shrink the patch).',
           'Review packet v2: the review gate decision surface carries the slop status, budget vs actual, blast radius, proof artifacts, read-first list, decisions, reviewer roles, comprehension and context-pack ref alongside the original intent/assertions/checklist.',
+          'Review capacity: pending gates, the unread diff volume of their newest review packets and the oldest gate age, measured against the resolved `quality.reviewCapacity` caps (defaults: 20 open gates, 4000 unread diff lines, 48h oldest gate, 20 review hours/week). The badge marks `saturated` with `data-saturated`, and every exceeded cap is named as a reason. When it is saturated, drain the queue — review or reject open gates first and split large changes — before starting more work.',
+          'Comprehension: aggregate proxies over review packets and human gate decisions — unread diff volume, items with no human review, top-level modules with no human touch and review coverage percent. They are honest aggregates, not per-person surveillance; they never claim a person read a specific diff.',
           'Automation overrides: which automation raises/lowers which stage.',
           'Attestation card: required/not required, current/missing, suite rows with config hash and pass rate.',
           'Canary card: active/last rollout and a link to the canary panel.',
           'Kill switch: enable/pause with an audit event (`autonomy.*`).',
         ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Honest empty states',
+        text:
+          'If `GET /autonomy` cannot be read, the capacity and comprehension cards say the measurement is unavailable instead of showing zeroes. A zero backlog and an unreadable projection are different states.',
       },
     ],
     related: [
@@ -1589,9 +1601,9 @@ export const HELP_ENTRIES: HelpEntry[] = [
     slug: 'factories/settings',
     title: 'Settings',
     section: 'menu',
-    status: 'Shipped — Phase 3b / 6a; risk policy in `2026-11-07-harden-factory-quality`',
+    status: 'Shipped — Phase 3b / 6a; risk policy in `2026-11-07-harden-factory-quality`; experiment metadata in `add-review-capacity-and-compounding`',
     summary:
-      'The manifest summary, repositories, secret references, risk policy and the GitHub connection form (repos, webhook, dry run, merge ownership).',
+      'The manifest summary (including the experiment provider and flag prefix when declared), repositories, secret references, risk policy and the GitHub connection form (repos, webhook, dry run, merge ownership).',
     pageHref: factoryPageHref('settings'),
     pageHrefLabel: 'Open Settings (example factory)',
     blocks: [
@@ -1606,6 +1618,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
           'GitHub connection: token secret ref, webhook secret ref, webhook URL, filters, dry-run and merge-queue ownership.',
           'Repositories: the code forges the factory works on; no repos means the webhook route ignores every delivery.',
           'Risk policy: `governance.risk` tiers and high-risk paths are shown from the manifest; they are edited in git, not here.',
+          'Experiments: when `factory.yaml` declares an `experiments` block, the manifest summary shows the provider (`posthog`, `statsig`, `launchdarkly` or `generic`), the flag prefix (default `factory_`), whether cleanup is required and the project-key secret *name* — never its value. Without the block the row says it is not configured; nothing is derived.',
           'Secrets / MCP: names only; values never leave the store.',
         ],
       },
@@ -2121,9 +2134,9 @@ export const HELP_ENTRIES: HelpEntry[] = [
     title: 'A gate looks stuck',
     section: 'troubleshooting',
     status:
-      'Symptom → check (risk-tiered gates in `2026-11-07-harden-factory-quality`; slop budgets and proof in `add-anti-slop-budgets-and-proof`)',
+      'Symptom → check (risk-tiered gates in `2026-11-07-harden-factory-quality`; slop budgets and proof in `add-anti-slop-budgets-and-proof`; review capacity in `add-review-capacity-and-compounding`)',
     summary:
-      'A gate is a durable wait by design. Check whether it is waiting for you, paused by the kill switch, blocked by an automation override, held by a slop-budget overage or a missing proof artifact, or a deliberate medium/high-risk plan or high-risk review gate.',
+      'A gate is a durable wait by design. Check whether it is waiting for you, paused by the kill switch, blocked by an automation override, held by a slop-budget overage or a missing proof artifact, queued behind a saturated review capacity, or a deliberate medium/high-risk plan or high-risk review gate.',
     blocks: [
       {
         kind: 'list',
@@ -2135,6 +2148,8 @@ export const HELP_ENTRIES: HelpEntry[] = [
           'The packet says slop `exceeded`: the patch went over its risk-tier `quality.slopBudget`. An agent review gate resolves `request_changes` automatically; a human gate shows the overage with the waiver path — approve with a reason to waive it, or request changes to shrink the patch. The named metrics are on the packet (`review-packet-budget`), and `slop.budget_exceeded` in the event log is the audit record.',
           'Proof is missing: UI/behavioral assertions may require a proof artifact (`quality.proof`), and the packet\'s proof gallery is bound to the run and commit. A missing required proof leaves the verify projection incomplete; capture the artifact or approve with an explicit reason. The packet never invents a proof thumbnail for a non-image path.',
           'The context pack looks wrong: it is deterministic and bounded (ADRs, plan constraints, test commands, prior failures, likely files) and pinned to the definition commit in its ref. Rebuild happens on retry only when the snapshot has no pack; the pack is context, not evidence.',
+          'Review capacity is saturated: the Gates page names the exceeded caps (open gates, unread diff lines, oldest gate, review hours) against `quality.reviewCapacity`. Mission auto-approval returns `autoApprove: false` with `review_capacity_exceeded`, and enabling autonomy is refused with `409 autonomy_refused` unless an explicit `{actor, reason}` override is recorded. Drain the queue first: decide or reject open gates and split large changes so each diff fits the budget.',
+          'Comprehension looks low: the Gates card reports aggregate proxies (unread diff volume, items without human review, modules without human touch, review coverage). It measures review pressure, not a person\'s reading; decide gates in Inbox to move it.',
           'The kill switch is on: pausing autonomy forces every gate back to `human` and pauses new dispatch. The Gates page shows the newest `autonomy.*` event with actor/reason.',
           'A decision did not take effect: decisions are delivered as a Temporal Update (Signal fallback); if Temporal is unreachable the decision is recorded but not delivered. Check `/health` and retry.',
           'A permission prompt, not a gate: the permission SLA (`PERMISSION_TIMEOUT_MS`, default 30 min) auto-denies; approve sooner if the agent should continue.',

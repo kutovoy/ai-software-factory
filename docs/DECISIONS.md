@@ -1153,3 +1153,25 @@ a smaller, evidence-backed surface and a reading order. Context packs reduce fir
 bounded and provenance-aware; a stale pack is shown as stale, never hidden. Proof artifacts must be run-scoped
 so a stale screenshot cannot approve a new commit. The factory still cannot buy verification: budgets and
 packets raise the floor, while repo-specific checks and human judgment remain the source of truth.
+
+## ADR-054 — Review capacity, comprehension proxies and longitudinal quality
+
+**Status:** accepted (2026-11-25, implemented in `add-review-capacity-and-compounding`).
+**Context:** slop budgets cap individual changes, but the factory can still start more work than humans can
+review. Review and comprehension are the scarce resources; a green queue can hide an unread backlog. The
+factory also lacked a single decision trail from plan to PR and a way to compare codebase quality across
+checkpoints.
+**Decision:** (1) factories may declare `quality.reviewCapacity` caps for open gates, unread diff lines, gate
+age and review hours. A saturated factory cannot auto-approve a mission plan or enable full autonomy without
+an explicit audited override; pausing always works. (2) `GET /autonomy` reports capacity plus aggregate
+comprehension proxies (unread diff volume, items without human review, modules without human touch, review
+coverage); these are aggregate, never per-person. (3) PR bodies link the work item, plan, risk tier, context
+pack and review packet; work-item detail shows a chronological decision trail. (4) mission plans may declare
+experiment/rollout/cleanup metadata; runtime provider wiring is deferred. (5) `packages/evals` adds
+deterministic longitudinal quality comparison across checkpoints. (6) context packs include approved
+experience lessons.
+**Consequences:** autonomy is bounded by the team's review capacity, not just a benchmark gate. The capacity
+check can throttle throughput; teams can raise caps or override with an audit trail. Comprehension proxies are
+honest estimates and must not be used as individual surveillance. Longitudinal evals need checkpoint data;
+missing metrics are reported unknown, never zero. Experiments are explicit and auditable even before provider
+wiring.

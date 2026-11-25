@@ -7,3 +7,4 @@ export * from './judge';
 export * from './calibration';
 export * from './benchmark';
 export * from './improve/index';
+export * from './longitudinal';

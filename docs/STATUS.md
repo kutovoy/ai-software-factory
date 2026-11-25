@@ -83,6 +83,21 @@ model planner timed out on the larger high-risk artifact prompt, so that live hi
 deterministic planner; the gate/merge policy is model-independent. Full Playwright is 66/66; `bash
 scripts/smoke.sh` passes.
 
+**Anti-slop P1 — review capacity, comprehension, decision trails, experiments and longitudinal quality —
+implemented** (2026-11-25, OpenSpec `add-review-capacity-and-compounding`, ADR-054). Factories can declare
+`quality.reviewCapacity` (open gates, unread diff lines, gate age, review hours); a saturated factory cannot
+auto-approve a mission plan or enable full autonomy without an audited override. `GET /autonomy` now reports
+`reviewCapacity` and aggregate `comprehension` proxies (unread diff volume, items without human review,
+modules without human touch, review coverage), shown on the Gates page. Pull-request bodies link the work
+item, plan, risk tier, context pack and review packet; work-item detail shows a chronological decision trail.
+Mission plans can declare experiment/rollout/cleanup metadata, and Settings shows the experiment provider.
+`packages/evals` adds deterministic longitudinal quality comparison (duplication, complexity, dependency
+growth, churn/rework, review time, change failure rate, public API/schema changes). Context packs include
+approved experience lessons. Live verification: `bun run ci` 1019 pass / 193 skip; full Playwright 66/66;
+smoke passed; hello-nextjs cycle reached `done`; autonomy read model reported
+`reviewCapacity {saturated:false, openGates:0, unreadDiffLines:0}` and
+`comprehension {unreadDiffLines:104, itemsWithoutHumanReview:1, reviewCoveragePercent:0}`.
+
 **Anti-slop P0 — slop budgets, proof, context packs and review packet v2 — implemented** (2026-11-25,
 OpenSpec `add-anti-slop-budgets-and-proof`, ADR-053). Every work item now resolves a risk tier and a
 risk-tiered `quality.slopBudget` (diff lines, changed files, new dependencies, duplication/complexity delta),
