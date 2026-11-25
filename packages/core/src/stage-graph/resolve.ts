@@ -1,5 +1,6 @@
 import { resolveLoopGate, type ResolvedLoopGate } from '../gates/loop';
 import { assertModelAllowed, type GovernanceConfig } from '../governance/policy';
+import type { RiskTier } from '../governance/risk';
 import { resolveModelRef, type ResolvedModel } from '../model/ref';
 import { chooseRouting } from '../routing/classify';
 import type { AutomationDef } from '../schema/automation';
@@ -56,6 +57,8 @@ export interface StageResolutionContext {
   routing?: RoutingDef | null;
   /** Work-item prompt used by the routing classifier. */
   taskPrompt?: string;
+  /** Work-item risk tier; `high` forces deep routing when a classifier exists. */
+  riskTier?: RiskTier;
   /** Governance allowlist/policy for the factory. */
   governance?: GovernanceConfig | null;
 }
@@ -88,12 +91,19 @@ function inferenceFor(
   routing: RoutingDef | null,
   taskPrompt: string,
   stage: LoopStage,
+  riskTier?: RiskTier,
 ): {
   harness: { type: HarnessType; model: string } | null;
   model: string | null;
   modelRef: ResolvedModel | null;
 } {
-  const routed = chooseRouting({ routing, prompt: taskPrompt, stage, env });
+  const routed = chooseRouting({
+    routing,
+    prompt: taskPrompt,
+    stage,
+    env,
+    ...(riskTier ? { riskTier } : {}),
+  });
   const harness = routed.harness ?? agent?.doc.harness ?? manifest.agentDefaults.harness ?? null;
   const declared = routed.model ?? agent?.doc.model ?? manifest.agentDefaults.model ?? harness?.model ?? null;
   const modelRef = declared === null ? null : resolveModelRef(declared, env);
@@ -143,6 +153,7 @@ export function resolveStageConfigs(
       context.routing ?? null,
       context.taskPrompt ?? '',
       node.name,
+      context.riskTier,
     );
     assertModelAllowed(context.governance, inference.model);
     const gate = resolveLoopGate(node.name, context.automation ?? null, context.manifest, {

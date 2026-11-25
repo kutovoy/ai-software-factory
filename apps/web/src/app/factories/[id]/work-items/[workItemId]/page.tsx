@@ -115,6 +115,7 @@ function ReviewPacketCard({ packet }: { packet: ReviewPacketWire | null }) {
   );
 
   const blast = packet.blastRadius;
+  const standards = packet.standards;
   const blastHasData =
     blast !== undefined &&
     (blast.paths.length > 0 ||
@@ -249,6 +250,60 @@ function ReviewPacketCard({ packet }: { packet: ReviewPacketWire | null }) {
                     <li key={path}>{path}</li>
                   ))}
                 </ul>
+              ) : null}
+            </div>
+          ) : null}
+
+          {standards ? (
+            <div data-testid="review-packet-standards" data-standards-status={standards.status}>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  Standards (actual / cap)
+                </p>
+                <Badge tone={slopTone(standards.status)} mono>
+                  standards {standards.status}
+                </Badge>
+              </div>
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600">
+                <span
+                  data-metric="maxPublicApiChanges"
+                  data-over={
+                    standards.publicApiChanges > standards.maxPublicApiChanges ? 'true' : 'false'
+                  }
+                  className={
+                    standards.publicApiChanges > standards.maxPublicApiChanges
+                      ? 'text-red-700'
+                      : undefined
+                  }
+                >
+                  public API changes{' '}
+                  <span className="font-mono">
+                    {standards.publicApiChanges} / {standards.maxPublicApiChanges}
+                  </span>
+                </span>
+                <span
+                  data-metric="maxSchemaChanges"
+                  data-over={standards.schemaChanges > standards.maxSchemaChanges ? 'true' : 'false'}
+                  className={
+                    standards.schemaChanges > standards.maxSchemaChanges
+                      ? 'text-red-700'
+                      : undefined
+                  }
+                >
+                  schema changes{' '}
+                  <span className="font-mono">
+                    {standards.schemaChanges} / {standards.maxSchemaChanges}
+                  </span>
+                </span>
+              </div>
+              {standards.status === 'exceeded' ? (
+                <p
+                  data-testid="review-packet-standards-exceeded"
+                  className="mt-1 text-xs font-semibold text-red-700"
+                >
+                  exceeds the factory standards caps: an agent review gate resolves
+                  request_changes, and a human gate needs an explicit waiver reason before approval.
+                </p>
               ) : null}
             </div>
           ) : null}

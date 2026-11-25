@@ -52,4 +52,67 @@ describe('model routing classifier', () => {
     expect(choice.source).toBe('stage');
     expect(choice.model).toBe('review-model');
   });
+
+  test('high risk forces the deep tier even when the classifier is disabled', () => {
+    const choice = chooseRouting({
+      routing: {
+        stages: { implement: { model: 'stage-model' } },
+        classifier: {
+          enabled: false,
+          cheap: { model: 'cheap-model' },
+          standard: { model: 'standard-model' },
+          deep: { model: 'deep-model' },
+        },
+      },
+      prompt: 'update the readme typo',
+      stage: 'implement',
+      riskTier: 'high',
+    });
+    expect(choice.source).toBe('classifier');
+    expect(choice.tier).toBe('deep');
+    expect(choice.model).toBe('deep-model');
+    expect(choice.reason).toContain('risk=high');
+  });
+
+  test('low or absent risk keeps the score-based tier', () => {
+    const low = chooseRouting({
+      routing,
+      prompt: 'update the readme typo',
+      stage: 'triage',
+      riskTier: 'low',
+      env: { CHEAP_MODEL: 'cheap', STANDARD_MODEL: 'standard', DEEP_MODEL: 'deep' },
+    });
+    expect(low.tier).toBe('cheap');
+
+    const absent = chooseRouting({
+      routing,
+      prompt: 'Build a small Next.js page',
+      stage: 'implement',
+      env: { CHEAP_MODEL: 'cheap', STANDARD_MODEL: 'standard', DEEP_MODEL: 'deep' },
+    });
+    expect(absent.tier).toBe('standard');
+    expect(absent.reason).not.toContain('risk=');
+  });
+
+  test('high risk without a classifier falls back to the stage route and records it', () => {
+    const choice = chooseRouting({
+      routing: {
+        stages: { review: { model: 'review-model' } },
+        default: { model: 'default-model' },
+      },
+      prompt: 'anything',
+      stage: 'review',
+      riskTier: 'high',
+    });
+    expect(choice.source).toBe('stage');
+    expect(choice.model).toBe('review-model');
+    expect(choice.reason).toContain('risk=high');
+  });
+
+  test('no routing stays honest and names the risk tier', () => {
+    const choice = chooseRouting({ routing: null, prompt: 'anything', stage: 'review', riskTier: 'high' });
+    expect(choice.source).toBe('none');
+    expect(choice.tier).toBeNull();
+    expect(choice.reason).toContain('risk=high');
+  });
 });

@@ -83,6 +83,18 @@ model planner timed out on the larger high-risk artifact prompt, so that live hi
 deterministic planner; the gate/merge policy is model-independent. Full Playwright is 66/66; `bash
 scripts/smoke.sh` passes.
 
+**Anti-slop P2 — risk-aware routing and standards guard — implemented** (2026-11-25, OpenSpec
+`add-risk-aware-routing-and-standards`, ADR-055). High-risk work is routed to the deep inference tier even when
+the prompt score is lower; low-risk work keeps score-based routing, and the risk tier is threaded through
+work-item creation, retry and mission stage configs. `quality.standards` caps public API and schema changes
+(default 5/3); the review packet records caps vs actual, records `standards.exceeded`, and an agent review
+gate resolves `request_changes` when exceeded (a human gate shows the counts and requires a waiver). The
+work-item detail and Inbox show the standards result. Gate waits already release the runner sandbox because a
+stage run ends before its gate; code mode remains harness-dependent and is documented as deferred. Live
+verification: `bun run ci` 1037 pass / 193 skip; full Playwright 66/66; smoke passed; hello-nextjs cycle
+reached `done` with `riskTier=low`, slop `pass`, standards `pass` (0 public API / 0 schema changes vs 5/3) and
+a context pack.
+
 **Anti-slop P1 — review capacity, comprehension, decision trails, experiments and longitudinal quality —
 implemented** (2026-11-25, OpenSpec `add-review-capacity-and-compounding`, ADR-054). Factories can declare
 `quality.reviewCapacity` (open gates, unread diff lines, gate age, review hours); a saturated factory cannot

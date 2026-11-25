@@ -393,9 +393,9 @@ export const HELP_ENTRIES: HelpEntry[] = [
     title: 'Work-item lifecycle',
     section: 'concepts',
     status:
-      'Shipped — Phase 2b / 3c; risk tiers, review packet and architecture/maintainability evidence in `2026-11-07-harden-factory-quality`',
+      'Shipped — Phase 2b / 3c; risk tiers, review packet and architecture/maintainability evidence in `2026-11-07-harden-factory-quality`; risk-aware routing and standards guard in `add-risk-aware-routing-and-standards`',
     summary:
-      'Intake → triage → spec → plan → implement → review → verify → ship, with durable gates between stages, a risk-tiered review path and one terminal state.',
+      'Intake → triage → spec → plan → implement → review → verify → ship, with durable gates between stages, a risk-tiered review path, risk-aware routing and one terminal state.',
     blocks: [
       {
         kind: 'prose',
@@ -409,6 +409,8 @@ export const HELP_ENTRIES: HelpEntry[] = [
           'Stages: triage (intake judgement), spec (scope + acceptance criteria), plan, implement (branch + PR), review (two reviewers + advisory judge), verify (forge checks), ship (the only merge point).',
           'Gates: a human gate waits for `{decision, actor, reason}`; an agent gate lets the loop continue; `policy:<name>` delegates to a named policy.',
           'Risk tier: a mission feature inherits its plan/feature `low`/`medium`/`high` tier. High-risk items force a human review gate and a human ship gate and never auto-merge; medium uses agent review + `auto_on_green`; low may auto-merge when verification is cheap and reliable.',
+          'Risk-aware routing: when the factory ships a `routing.yaml`, the item\'s risk tier is passed into routing. `high` forces the deep inference tier even when the prompt score would pick a cheaper one (the reason records `risk=high`); `low`/`medium` keep the existing score-based selection, so a low-risk docs change can still use cheap.',
+          'Standards guard: `quality.standards` caps how much a single change may touch — public API surfaces and schema files (shipped defaults: 5 and 3). The review packet records actual vs cap and `standards.status`; an exceeded standard records `standards.exceeded`, makes an agent review gate resolve `request_changes`, and shows the counts at a human gate, which needs an explicit waiver reason to approve.',
           'Review packet: before a review gate the orchestrator records a deterministic `review.packet` event (intent, plan ref, diff stats, assertion evidence, architecture impact, open questions and checklist). It is a decision surface, not model prose; the full diff stays linked on the run.',
           'Validation evidence: the contract can require `architecture` and `maintainability` checks with named thresholds (dependency cycles, duplication, diff size). Missing required evidence blocks the verify gate.',
           'Terminal states: `done`, `cancelled`, `rejected`, `failed`. Cancel is idempotent, records actor/reason and emits exactly one `work_item.cancelled` event.',
@@ -846,12 +848,13 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'prose',
         text:
-          'The inbox is the queue of durable waits. A mission plan approval shows the goal, the plan risk tier, plan depth, expected pain and leverage, milestones and validation contract; approving starts feature dispatch, rejecting stops the mission and requesting changes re-plans with your feedback. Blocked missions appear here too, with the blocker and a link to the mission. A stage gate approval shows the stage, the gate, the SLA countdown and, when the loop has assembled one, a compact review packet: risk tier, slop status, changed files, diff stats, assertion status, proof count, the first open question and a link to the work item. Approving continues the work item, requesting changes requires feedback and routes the item back. Pending permissions are agent-level requests that block a run until decided. Failed runs resolve automatically when a retry succeeds.',
+          'The inbox is the queue of durable waits. A mission plan approval shows the goal, the plan risk tier, plan depth, expected pain and leverage, milestones and validation contract; approving starts feature dispatch, rejecting stops the mission and requesting changes re-plans with your feedback. Blocked missions appear here too, with the blocker and a link to the mission. A stage gate approval shows the stage, the gate, the SLA countdown and, when the loop has assembled one, a compact review packet: risk tier, slop status, public API/schema standards, changed files, diff stats, assertion status, proof count, the first open question and a link to the work item. Approving continues the work item, requesting changes requires feedback and routes the item back. Pending permissions are agent-level requests that block a run until decided. Failed runs resolve automatically when a retry succeeds.',
       },
       {
         kind: 'list',
         items: [
-          'Gate approvals — approve or request changes with a reason; the decision is attributed to the actor. The compact packet shows the slop status and proof count when the packet carries them.',
+          'Gate approvals — approve or request changes with a reason; the decision is attributed to the actor. The compact packet shows the slop status, the standards result (`pass`/`exceeded` with actual/cap counts) and the proof count when the packet carries them.',
+          'Standards exceeded — the packet calls out an exceeded public API/schema cap before the decision controls. An agent gate already resolved `request_changes`; approving a human gate over it records your reason as the explicit waiver.',
           'Mission waits — approve, reject or request plan changes; open a blocked mission to retry a feature, resume, or cancel.',
           'Pending permissions — allow or deny; denial ends the run with the feedback attached.',
           'Failed runs — deep links to the run; a successful retry removes the row.',
@@ -876,9 +879,9 @@ export const HELP_ENTRIES: HelpEntry[] = [
     title: 'Work items',
     section: 'menu',
     status:
-      'Shipped — Phase 2b / 3c; review packet and risk tiers in `2026-11-07-harden-factory-quality`; packet v2, slop budgets, proof and context packs in `add-anti-slop-budgets-and-proof`; decision trail in `add-review-capacity-and-compounding`',
+      'Shipped — Phase 2b / 3c; review packet and risk tiers in `2026-11-07-harden-factory-quality`; packet v2, slop budgets, proof and context packs in `add-anti-slop-budgets-and-proof`; decision trail in `add-review-capacity-and-compounding`; standards guard in `add-risk-aware-routing-and-standards`',
     summary:
-      'The board of work items by stage, with status filters, created/updated timestamps, create, cancel, retry and per-item gate state; detail adds review packet v2 (slop budget, blast radius, proof, read-first, decisions, roles), architecture/maintainability evidence, the pending gate and one chronological decision trail.',
+      'The board of work items by stage, with status filters, created/updated timestamps, create, cancel, retry and per-item gate state; detail adds review packet v2 (slop budget, blast radius, public API/schema standards, proof, read-first, decisions, roles), architecture/maintainability evidence, the pending gate and one chronological decision trail.',
     pageHref: '/factories/example/work-items',
     blocks: [
       {
@@ -897,9 +900,10 @@ export const HELP_ENTRIES: HelpEntry[] = [
           'Review packet v2: the same packet also carries the slop status (`pass`, `exceeded` or `unknown`) with budget vs actual per metric (diff lines, changed files, new dependencies, duplication and complexity deltas), the blast radius (changed paths, high-risk paths, public API and schema change counts), a proof gallery of artifacts bound to the run and commit (screenshot, video, html, curl, report, file — image thumbnails only for image paths), an ordered read-first list, gate decisions with actors and reasons, reviewer roles (correctness, architecture, security, product), comprehension estimates and the context-pack reference. Each section renders only when the packet carries it; an older packet leaves them absent rather than showing zeroes.',
           'Decision trail: one chronological list from the plan ref (`workItem.input.planRef` or the review packet) through decided gates, review verdicts, the PR opened, the merge and any incident or revert. Each row carries the time, actor, decision and reason/ref. Only recorded artifacts contribute — a pending gate is not a decision and is already shown by the gate card, and an empty trail says so instead of inventing rows.',
           'Slop budgets: the factory\'s `quality.slopBudget` caps a patch per risk tier (defaults: low 200 diff lines / 5 files / 0 new dependencies, medium 400 / 10 / 1, high 800 / 20 / 2, plus duplication and complexity deltas). Metrics are measured from the captured patch; an unknown metric stays unknown, never zero. An overage records `slop.budget_exceeded`; an agent review gate resolves `request_changes`, and a human gate shows the overage with an explicit waiver path.',
+          'Standards guard: the packet also carries `standards` — the measured public API and schema change counts against the factory\'s `quality.standards` caps (shipped defaults: 5 public API, 3 schema). The card shows actual / cap per metric and a `pass`/`exceeded` badge; an exceeded result is called out in red, records `standards.exceeded`, stops an agent review gate with `request_changes`, and needs an explicit waiver reason at a human gate. A packet recorded before the guard shows no standards card rather than fabricated counts.',
           'Context pack: before implementation the API builds a deterministic, bounded bundle (relevant ADRs, plan constraints, test commands, prior failures and likely files) and records its ref (`<factory>@<commit>#context-pack`). It is passed into stage prompts and linked from the review packet, so the reviewer can read the same context the agent got.',
           'Validation contract: every check is pass, fail or missing against recorded evidence. `architecture` and `maintainability` checks (with optional named thresholds such as dependency cycles or diff size) are required for medium/high-risk runnable work, and missing required evidence blocks the verify gate.',
-          'Risk tier: the item inherits its plan/feature risk tier. High-risk items require a human review gate and a human ship gate and are never auto-merged; medium-risk items use agent review plus `auto_on_green` (with optional human sampling); low-risk items may auto-merge when the verification oracle is cheap and reliable.',
+          'Risk tier: the item inherits its plan/feature risk tier. High-risk items require a human review gate and a human ship gate and are never auto-merged; medium-risk items use agent review plus `auto_on_green` (with optional human sampling); low-risk items may auto-merge when the verification oracle is cheap and reliable. The same tier feeds routing: `high` forces the deep inference tier, while lower tiers keep score-based selection.',
           'Cancel: takes an actor + reason, is idempotent and emits exactly one `work_item.cancelled`; a terminal item is refused with `invalid_state`.',
           'Retry: an `escalated`, `failed`, `blocked` or `cancelled` item can be re-opened with an actor + optional reason. It returns to `active` at its current stage, the cancellation flags are cleared, `work_item.retried` records the previous status and the stage is dispatched again under a new attempt (`factory-<itemId>-a<n>`). `active` and `done` items are refused with `work_item_not_retryable`; a double submit within 60 seconds returns the existing dispatch.',
         ],
@@ -1147,7 +1151,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
       {
         kind: 'list',
         items: [
-          'Risk, quality and review data: mission plans expose `riskTier`/`riskReasons`, `planDepth`, `expectedPain`, `leverage`, planning artifacts (including `productReview.visualArtifacts`), `architecture`/`maintainability` assertions and an optional `experiment` record (`flag`, `successMetric`, `guardrail`, `cleanupAfterDays`); the inbox gate projection adds `reviewPacket` v2 (slop budget/actual/status, blast radius, proof artifacts, read-first, decisions, reviewer roles, comprehension and `contextPackRef`) for the work item. All are additive `/api/v1` fields.',
+          'Risk, quality and review data: mission plans expose `riskTier`/`riskReasons`, `planDepth`, `expectedPain`, `leverage`, planning artifacts (including `productReview.visualArtifacts`), `architecture`/`maintainability` assertions and an optional `experiment` record (`flag`, `successMetric`, `guardrail`, `cleanupAfterDays`); the inbox gate projection adds `reviewPacket` v2 (slop budget/actual/status, blast radius, `standards` with public API/schema actual vs cap and `pass`/`exceeded`, proof artifacts, read-first, decisions, reviewer roles, comprehension and `contextPackRef`) for the work item. Routing decisions expose their tier and reason (including `risk=high`); all are additive `/api/v1` fields.',
           'Autonomy read model: `GET /api/v1/factories/<factoryId>/autonomy` adds `reviewCapacity` (saturated flag, open gates, unread diff lines, oldest gate hours and the exceeded caps as `reasons`) and `comprehension` (unread diff volume, items without human review, modules without human touch, review coverage percent). Enabling autonomy without an override returns `409 autonomy_refused` with the same `reviewCapacity` details when the queue is saturated; pausing always succeeds.',
           'Filter: the box above the operations narrows the list by path, method or summary as you type — useful with 61 paths on one page.',
           'Tags: groups are alphabetical and each carries a one-line description of the resource it covers, so `runs` and `work-items` are not just labels.',
@@ -1527,9 +1531,9 @@ export const HELP_ENTRIES: HelpEntry[] = [
     title: 'Gates',
     section: 'menu',
     status:
-      'Shipped — Phase 2b / 3c / 4b; risk policy in `2026-11-07-harden-factory-quality`; slop budgets and review-packet waivers in `add-anti-slop-budgets-and-proof`; review capacity and comprehension in `add-review-capacity-and-compounding`',
+      'Shipped — Phase 2b / 3c / 4b; risk policy in `2026-11-07-harden-factory-quality`; slop budgets and review-packet waivers in `add-anti-slop-budgets-and-proof`; review capacity and comprehension in `add-review-capacity-and-compounding`; public API/schema standards in `add-risk-aware-routing-and-standards`',
     summary:
-      'The resolved gate table with its source, the autonomy policy and kill switch, the risk-tier policy and slop budgets, the review-capacity and comprehension cards, the benchmark-attestation card and the canary state.',
+      'The resolved gate table with its source, the autonomy policy and kill switch, the risk-tier policy, risk-aware routing and slop/standards budgets, the review-capacity and comprehension cards, the benchmark-attestation card and the canary state.',
     pageHref: factoryPageHref('gates'),
     pageHrefLabel: 'Open Gates (example factory)',
     blocks: [
@@ -1543,6 +1547,8 @@ export const HELP_ENTRIES: HelpEntry[] = [
         items: [
           'Stage table: gate, resolution source and meaning; merge policy with its note.',
           'Risk policy: `low`/`medium`/`high` plan approval, review and merge rules plus the configured high-risk path globs. Only low-risk plans auto-approve; high-risk work forces human review and ship.',
+          'Risk-aware routing: when `routing.yaml` is present, the work item\'s risk tier is passed into the deterministic classifier. `high` always selects the deep inference tier and records `risk=high` in the reason; `low`/`medium` keep score-based tier selection, so cheap work stays cheap.',
+          'Standards: the per-factory `quality.standards` caps on public API and schema changes (shipped defaults: 5 and 3). The review packet records actual vs cap and `pass`/`exceeded`; an exceeded result records `standards.exceeded`, an agent review gate resolves `request_changes`, and a human gate needs an explicit waiver reason to approve.',
           'Slop budgets: the per-tier `quality.slopBudget` caps (diff lines, changed files, new dependencies, duplication and complexity deltas) resolved from the manifest with the shipped defaults. A patch over its tier budget records `slop.budget_exceeded`; an agent review gate resolves `request_changes`, and a human review gate shows the overage with the waiver path (approve with a reason, or request changes to shrink the patch).',
           'Review packet v2: the review gate decision surface carries the slop status, budget vs actual, blast radius, proof artifacts, read-first list, decisions, reviewer roles, comprehension and context-pack ref alongside the original intent/assertions/checklist.',
           'Review capacity: pending gates, the unread diff volume of their newest review packets and the oldest gate age, measured against the resolved `quality.reviewCapacity` caps (defaults: 20 open gates, 4000 unread diff lines, 48h oldest gate, 20 review hours/week). The badge marks `saturated` with `data-saturated`, and every exceeded cap is named as a reason. When it is saturated, drain the queue — review or reject open gates first and split large changes — before starting more work.',
@@ -2134,18 +2140,20 @@ export const HELP_ENTRIES: HelpEntry[] = [
     title: 'A gate looks stuck',
     section: 'troubleshooting',
     status:
-      'Symptom → check (risk-tiered gates in `2026-11-07-harden-factory-quality`; slop budgets and proof in `add-anti-slop-budgets-and-proof`; review capacity in `add-review-capacity-and-compounding`)',
+      'Symptom → check (risk-tiered gates in `2026-11-07-harden-factory-quality`; slop budgets and proof in `add-anti-slop-budgets-and-proof`; review capacity in `add-review-capacity-and-compounding`; standards guard in `add-risk-aware-routing-and-standards`)',
     summary:
-      'A gate is a durable wait by design. Check whether it is waiting for you, paused by the kill switch, blocked by an automation override, held by a slop-budget overage or a missing proof artifact, queued behind a saturated review capacity, or a deliberate medium/high-risk plan or high-risk review gate.',
+      'A gate is a durable wait by design. Check whether it is waiting for you, paused by the kill switch, blocked by an automation override, held by a slop-budget or public API/schema standards overage, a missing proof artifact, queued behind a saturated review capacity, or a deliberate medium/high-risk plan or high-risk review gate.',
     blocks: [
       {
         kind: 'list',
         items: [
           'Nothing is broken if the item sits at a stage with a `human` gate: the workflow is parked on a durable wait and costs no activity slot. Decide it in Inbox or via `POST /factories/:factoryId/work-items/:id/gates/:stage`.',
           'The gate is not the one you expected: read the Gates page. Automation overrides win over the factory gate (automation → factory → global).',
+          'A run used the deep model on a small change: routing is risk-aware. A `high` risk tier forces the deep tier regardless of prompt score (the routing reason says `risk=high`), while `low`/`medium` keep score-based selection. Check the work item\'s risk badge and `governance.risk` high-risk paths before assuming routing is broken.',
           'It is a deliberate risk gate: medium/high-risk mission plans always wait for a human plan gate, and high-risk work items always wait for a human review and ship gate even under full autonomy. Check the plan risk badge/reasons and the review packet before deciding.',
           'The review packet is missing: packet generation is best-effort and happens before the review gate; the raw diff, run evidence and work-item event log remain the source of truth.',
           'The packet says slop `exceeded`: the patch went over its risk-tier `quality.slopBudget`. An agent review gate resolves `request_changes` automatically; a human gate shows the overage with the waiver path — approve with a reason to waive it, or request changes to shrink the patch. The named metrics are on the packet (`review-packet-budget`), and `slop.budget_exceeded` in the event log is the audit record.',
+          'The packet says standards `exceeded`: the change touched more public API surfaces or schema files than `quality.standards` allows (shipped defaults: 5 and 3). An agent review gate resolves `request_changes` automatically; a human gate shows actual vs cap per metric and needs an explicit waiver reason to approve. `standards.exceeded` in the event log is the audit record. Split the change, or raise the cap deliberately in `factory.yaml` › `quality.standards`.',
           'Proof is missing: UI/behavioral assertions may require a proof artifact (`quality.proof`), and the packet\'s proof gallery is bound to the run and commit. A missing required proof leaves the verify projection incomplete; capture the artifact or approve with an explicit reason. The packet never invents a proof thumbnail for a non-image path.',
           'The context pack looks wrong: it is deterministic and bounded (ADRs, plan constraints, test commands, prior failures, likely files) and pinned to the definition commit in its ref. Rebuild happens on retry only when the snapshot has no pack; the pack is context, not evidence.',
           'Review capacity is saturated: the Gates page names the exceeded caps (open gates, unread diff lines, oldest gate, review hours) against `quality.reviewCapacity`. Mission auto-approval returns `autoApprove: false` with `review_capacity_exceeded`, and enabling autonomy is refused with `409 autonomy_refused` unless an explicit `{actor, reason}` override is recorded. Drain the queue first: decide or reject open gates and split large changes so each diff fits the budget.',

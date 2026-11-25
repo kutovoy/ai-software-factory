@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  DEFAULT_QUALITY_STANDARDS,
   DEFAULT_SLOP_BUDGETS,
   evaluateSlopBudget,
   parsePatchMetrics,
@@ -13,9 +14,11 @@ import {
   comprehensionFor,
   decisionsFromEvents,
   parsePatchStats,
+  parseStandards,
   reviewerRolesFor,
   slopActualFor,
   slopMetricsFromEvents,
+  standardsFor,
 } from '../src/activities/work-items';
 
 function event(
@@ -227,6 +230,45 @@ describe('review packet v2 facts', () => {
     expect(blastRadius.highRiskPaths).toEqual(['src/api/users.ts']);
     expect(blastRadius.publicApiChanges).toBe(1);
     expect(blastRadius.schemaChanges).toBe(1);
+  });
+
+  test('standards pass within caps and exceed when a count is above', () => {
+    const metrics = parsePatchMetrics(SMALL_PATCH);
+    const blastRadius = blastRadiusFor(metrics, []);
+
+    expect(standardsFor(blastRadius, DEFAULT_QUALITY_STANDARDS)).toEqual({
+      maxPublicApiChanges: 5,
+      maxSchemaChanges: 3,
+      publicApiChanges: 1,
+      schemaChanges: 1,
+      status: 'pass',
+    });
+
+    const exceeded = standardsFor(blastRadius, {
+      ...DEFAULT_QUALITY_STANDARDS,
+      maxPublicApiChanges: 0,
+    });
+    expect(exceeded.status).toBe('exceeded');
+    expect(exceeded.maxPublicApiChanges).toBe(0);
+  });
+
+  test('stored standards parse defensively, re-deriving a missing status', () => {
+    expect(parseStandards(undefined, DEFAULT_QUALITY_STANDARDS)).toEqual({
+      maxPublicApiChanges: 5,
+      maxSchemaChanges: 3,
+      publicApiChanges: 0,
+      schemaChanges: 0,
+      status: 'pass',
+    });
+    expect(
+      parseStandards(
+        { maxPublicApiChanges: 1, maxSchemaChanges: 1, publicApiChanges: 2, schemaChanges: 0 },
+        DEFAULT_QUALITY_STANDARDS,
+      ),
+    ).toMatchObject({ status: 'exceeded', publicApiChanges: 2, maxPublicApiChanges: 1 });
+    expect(
+      parseStandards({ status: 'pass', publicApiChanges: 9, maxPublicApiChanges: 1 }, DEFAULT_QUALITY_STANDARDS),
+    ).toMatchObject({ status: 'pass', maxSchemaChanges: 3 });
   });
 
   test('read-first puts high-risk files first, then the largest change', () => {

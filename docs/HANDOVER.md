@@ -18,11 +18,15 @@ The anti-slop workstream is **implemented** on `feat/anti-slop-quality-loop`:
 - P1 (OpenSpec `add-review-capacity-and-compounding`, ADR-054): `quality.reviewCapacity` attention budget,
   autonomy refusal when saturated, comprehension proxies, PR decision links, work-item decision trail, mission
   experiment metadata, longitudinal quality evals and lesson-aware context packs.
+- P2 (OpenSpec `add-risk-aware-routing-and-standards`, ADR-055): risk-aware routing (high risk → deep tier) and
+  `quality.standards` public API/schema caps with a review-gate stop condition. Gate waits already release the
+  runner sandbox; code mode remains deferred.
 
-`bun run ci` 1019 pass / 193 skip; full Playwright 66/66; smoke passed; the hello-nextjs cycle reached `done`.
-The fresh hello-nextjs factory is `fac_01M890NWYEE50996AGBV307XEY`. Its autonomy read model reports
-`reviewCapacity {saturated:false, openGates:0, unreadDiffLines:0}` and
-`comprehension {unreadDiffLines:104, itemsWithoutHumanReview:1, reviewCoveragePercent:0}`.
+`bun run ci` 1037 pass / 193 skip; full Playwright 66/66; smoke passed; the hello-nextjs cycle reached `done`.
+The fresh hello-nextjs factory is `fac_01M893XQW6058BCH0FM9K4R9F5`. Its work item carried
+`riskTier=low`, slop `pass`, standards `pass` (0 public API / 0 schema changes vs 5/3), a context pack and a
+packet v2; the autonomy read model reports `reviewCapacity {saturated:false, openGates:0, unreadDiffLines:0}`
+and `comprehension {unreadDiffLines:104, itemsWithoutHumanReview:1, reviewCoveragePercent:0}`.
 
 The earlier P0 software-factory quality/risk workstream is **implemented and archived** at `81be27f` in
 `openspec/changes/archive/2026-11-07-harden-factory-quality/` (ADR-052). It adds risk-tiered autonomy

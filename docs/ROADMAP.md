@@ -117,6 +117,11 @@ expected pain/leverage, and `show-me`/`anti-slop` skills.
 Gates page, PR decision links, work-item decision trail, mission experiment metadata, deterministic
 longitudinal quality evals, and lesson-aware context packs.
 
+**Anti-slop P2 — shipped (2026-11-25, OpenSpec `add-risk-aware-routing-and-standards`, ADR-055):**
+risk-aware routing (high risk → deep tier), `quality.standards` public API/schema caps with a review-gate stop
+condition and packet/Inbox UI. Gate waits already release the runner sandbox; code mode remains
+harness-dependent and is deferred rather than shipped as a no-op flag.
+
 ## What's left (2026-11-07)
 
 Done: Phases 0–5, roadmap items 1–12, remote runners on Linux/macOS (live-verified) and Windows native

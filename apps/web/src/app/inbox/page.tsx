@@ -248,6 +248,26 @@ export default async function InboxPage() {
                                 <span className="font-mono">{reviewPacket.slopStatus}</span>
                               </span>
                             ) : null}
+                            {reviewPacket.standards ? (
+                              <span
+                                data-testid="inbox-gate-standards"
+                                data-standards-status={reviewPacket.standards.status}
+                                className={
+                                  reviewPacket.standards.status === 'exceeded'
+                                    ? 'text-red-700'
+                                    : undefined
+                                }
+                              >
+                                standards{' '}
+                                <span className="font-mono">
+                                  {reviewPacket.standards.status} · api{' '}
+                                  {reviewPacket.standards.publicApiChanges}/
+                                  {reviewPacket.standards.maxPublicApiChanges} · schema{' '}
+                                  {reviewPacket.standards.schemaChanges}/
+                                  {reviewPacket.standards.maxSchemaChanges}
+                                </span>
+                              </span>
+                            ) : null}
                             {(reviewPacket.proofArtifacts?.length ?? 0) > 0 ? (
                               <span data-testid="inbox-gate-proof">
                                 proof{' '}

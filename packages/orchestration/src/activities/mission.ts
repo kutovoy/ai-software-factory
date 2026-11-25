@@ -140,6 +140,7 @@ interface DefinitionContext {
 function compileMissionLoop(
   mission: Mission,
   taskPrompt: string,
+  riskTier?: RiskTier,
 ): DefinitionContext {
   const { definition, errors } = loadDefinition(mission.factoryRoot);
   if (!definition) throw definitionFailure(mission.factory, errors);
@@ -158,6 +159,7 @@ function compileMissionLoop(
     spawner: foremanAgentName(agents),
     taskPrompt,
     ...(routing ? { routing } : {}),
+    ...(riskTier ? { riskTier } : {}),
     ...(definition.manifest.governance
       ? { governance: definition.manifest.governance }
       : {}),
@@ -683,17 +685,20 @@ export async function createMissionFeatureWorkItemActivity(args: {
 
   const checkpoints = await listMissionCheckpoints(sql, args.missionId);
   const prompt = featurePrompt({ mission, plan, milestone, feature, checkpoints });
-  const loop = compileMissionLoop(mission, prompt);
-  const featureStageGraph = missionFeatureStageGraph(loop.stageGraph);
 
-  const riskGovernance = resolveRiskGovernance(loop.definition.manifest.governance?.risk);
   const planFeature = plan.milestones
     .flatMap((entry) => entry.features)
     .find((entry) => entry.id === feature.id);
+  // Risk must be known before stage routing so high-risk work gets the deep tier.
+  const riskGovernance = resolveRiskGovernance(
+    loadDefinition(mission.factoryRoot).definition?.manifest.governance?.risk,
+  );
   // Old plans predate `riskTier`; fall back to the governance default rather than failing.
   const riskTier: RiskTier =
     planFeature?.riskTier ?? plan.riskTier ?? riskGovernance.defaultTier;
   const riskPolicy = riskPolicyFor(riskGovernance, riskTier);
+  const loop = compileMissionLoop(mission, prompt, riskTier);
+  const featureStageGraph = missionFeatureStageGraph(loop.stageGraph);
   const gates: Record<string, string> = { ...loop.gates };
   let mergePolicy = loop.definition.manifest.mergePolicy;
   if (riskTier === 'high') {

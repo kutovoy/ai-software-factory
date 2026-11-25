@@ -174,6 +174,38 @@ describe('per-stage config resolution', () => {
     expect(configs.ship.model).toBe('test/model');
   });
 
+  it('routes a high-risk item to the deep classifier tier', () => {
+    const routing = {
+      stages: { implement: { model: 'env:STAGE_MODEL' } },
+      classifier: {
+        enabled: false,
+        cheap: { model: 'env:CHEAP_MODEL' },
+        standard: { model: 'env:STANDARD_MODEL' },
+        deep: { model: 'env:DEEP_MODEL' },
+      },
+    };
+    const env = { ...MODEL_ENV, STAGE_MODEL: 'stage', DEEP_MODEL: 'deep' };
+
+    const risky = resolveStageConfigs(graph, {
+      manifest: definition.manifest,
+      agents,
+      routing,
+      taskPrompt: 'update the readme typo',
+      riskTier: 'high',
+      env,
+    });
+    expect(risky.implement.model).toBe('deep');
+
+    const calm = resolveStageConfigs(graph, {
+      manifest: definition.manifest,
+      agents,
+      routing,
+      taskPrompt: 'update the readme typo',
+      env,
+    });
+    expect(calm.implement.model).toBe('stage');
+  });
+
   it('inherits factory defaults when an agent declares no inference', () => {
     const configs = resolveStageConfigs(compileStageGraph([{ name: 'spec', agent: 'plain' }]), {
       manifest: definition.manifest,

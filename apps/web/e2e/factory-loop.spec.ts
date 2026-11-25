@@ -127,6 +127,14 @@ test.describe('Factory loop (lights on)', () => {
       /^(pass|exceeded|unknown)$/,
     );
     await expect(page.getByTestId('review-packet-budget').first()).toBeVisible();
+    // Standards guard (`add-risk-aware-routing-and-standards`): the packet records public API
+    // and schema counts against the factory caps. Assert the honest pass/exceeded state; the
+    // fake example patch stays inside the shipped defaults, but never assert a fabricated pass.
+    const standards = page.getByTestId('review-packet-standards').first();
+    await expect(standards).toBeVisible();
+    await expect(standards).toHaveAttribute('data-standards-status', /^(pass|exceeded)$/);
+    await expect(standards).toContainText('public API changes');
+    await expect(standards).toContainText('schema changes');
     await expect(page.getByTestId('review-packet-read-first').first()).toBeVisible();
     await expect(page.getByTestId('review-packet-roles').first()).toBeVisible();
     // Proof is collected from the run's artifacts; if the fake harness produced none the

@@ -1,4 +1,5 @@
 import { resolveModelRef } from '../model/ref';
+import type { RiskTier } from '../governance/risk';
 import type { HarnessType } from '../schema/common';
 import type { RoutingDef } from '../schema/routing';
 
@@ -9,6 +10,11 @@ import type { RoutingDef } from '../schema/routing';
  * an LLM: the same input always yields the same tier, so routing is reproducible in tests
  * and audits. When `routing.classifier.enabled` is true, the chosen tier's inference wins
  * over the agent/default model; otherwise the existing stage/default routing is used.
+ *
+ * Risk-aware routing (change `add-risk-aware-routing-and-standards`): a `high` risk tier
+ * always selects the `deep` tier when the classifier block exists, regardless of the score
+ * or `enabled`. Without a classifier block the stage/default route is kept and the reason
+ * records `risk=high`, so the choice stays honest about what it could not upgrade.
  */
 
 export type RoutingTier = 'cheap' | 'standard' | 'deep';
@@ -74,25 +80,50 @@ function resolved(
 
 /**
  * Selects the inference for a stage. Precedence:
- *  1. enabled classifier tier;
- *  2. explicit stage route in `routing.yaml`;
- *  3. routing default;
- *  4. none (the caller keeps the agent/default model).
+ *  1. high risk tier + classifier block (forced `deep`);
+ *  2. enabled classifier tier;
+ *  3. explicit stage route in `routing.yaml`;
+ *  4. routing default;
+ *  5. none (the caller keeps the agent/default model).
  */
 export function chooseRouting(args: {
   routing: RoutingDef | null | undefined;
   prompt: string;
   stage: string;
   env?: NodeJS.ProcessEnv;
+  /** Work-item risk tier; `high` forces the deep tier when a classifier exists. */
+  riskTier?: RiskTier;
 }): RoutingChoice {
   const env = args.env ?? process.env;
   const routing = args.routing;
+  const risk = args.riskTier;
+  const riskSuffix = risk === 'high' ? ' (risk=high)' : '';
   if (!routing) {
-    return { tier: null, model: null, harness: null, score: 0, reason: 'no routing.yaml', source: 'none' };
+    return {
+      tier: null,
+      model: null,
+      harness: null,
+      score: 0,
+      reason: `no routing.yaml${riskSuffix}`,
+      source: 'none',
+    };
+  }
+
+  const scored = scoreTask(args.prompt, args.stage);
+
+  if (risk === 'high' && routing.classifier) {
+    const inference = routing.classifier.deep;
+    const value = resolved(inference, env);
+    return {
+      tier: 'deep',
+      ...value,
+      score: scored.score,
+      reason: `deep: risk=high; ${scored.reason}`,
+      source: 'classifier',
+    };
   }
 
   if (routing.classifier?.enabled) {
-    const scored = scoreTask(args.prompt, args.stage);
     const tier = tierForScore(scored.score);
     const inference = routing.classifier[tier];
     const value = resolved(inference, env);
@@ -100,7 +131,7 @@ export function chooseRouting(args: {
       tier,
       ...value,
       score: scored.score,
-      reason: `${tier}: ${scored.reason}`,
+      reason: `${tier}: ${scored.reason}${riskSuffix}`,
       source: 'classifier',
     };
   }
@@ -112,7 +143,7 @@ export function chooseRouting(args: {
       tier: null,
       ...value,
       score: 0,
-      reason: `explicit stage route for ${args.stage}`,
+      reason: `explicit stage route for ${args.stage}${riskSuffix}`,
       source: 'stage',
     };
   }
@@ -123,10 +154,17 @@ export function chooseRouting(args: {
       tier: null,
       ...value,
       score: 0,
-      reason: 'routing default',
+      reason: `routing default${riskSuffix}`,
       source: 'default',
     };
   }
 
-  return { tier: null, model: null, harness: null, score: 0, reason: 'routing has no route', source: 'none' };
+  return {
+    tier: null,
+    model: null,
+    harness: null,
+    score: 0,
+    reason: `routing has no route${riskSuffix}`,
+    source: 'none',
+  };
 }

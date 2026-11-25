@@ -70,6 +70,23 @@ describe('reviewPacket', () => {
       reviewerChecklist: [],
     });
   });
+
+  test('surfaces the standards result only when the packet carries it', () => {
+    const standards = {
+      maxPublicApiChanges: 5,
+      maxSchemaChanges: 3,
+      publicApiChanges: 6,
+      schemaChanges: 1,
+      status: 'exceeded' as const,
+    };
+    expect(reviewPacket([event(1, { ...packet, standards })])?.standards).toEqual(standards);
+    expect(reviewPacket([event(1, packet)])?.standards).toBeUndefined();
+    // An unknown status is normalised to `pass`, never invented as exceeded.
+    expect(
+      reviewPacket([event(1, { ...packet, standards: { ...standards, status: 'unknown' } })])
+        ?.standards?.status,
+    ).toBe('pass');
+  });
 });
 
 /**

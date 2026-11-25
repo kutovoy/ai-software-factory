@@ -1175,3 +1175,22 @@ check can throttle throughput; teams can raise caps or override with an audit tr
 honest estimates and must not be used as individual surveillance. Longitudinal evals need checkpoint data;
 missing metrics are reported unknown, never zero. Experiments are explicit and auditable even before provider
 wiring.
+
+## ADR-055 — Risk-aware routing and public API/schema standards
+
+**Status:** accepted (2026-11-25, implemented in `add-risk-aware-routing-and-standards`).
+**Context:** a deterministic routing score based on the prompt and stage does not know the work item's blast
+radius; a high-risk auth or migration change could be sent to a cheap model. The review packet counted public
+API/schema changes but did not stop a gate. The `12 Rules` talk argues for routing by stakes and deterministic
+standards checks.
+**Decision:** (1) `chooseRouting` accepts the work item's risk tier; `high` forces the deep inference tier when
+a classifier block exists, while low/absent risk keeps score-based routing. The risk tier is threaded through
+work-item creation/retry and mission stage configs. (2) factories may declare `quality.standards` caps for
+public API and schema changes (default 5/3). The review packet records caps vs actual and `standards.exceeded`;
+an agent review gate resolves `request_changes`, and a human gate shows the counts and requires a waiver.
+(3) gate waits release the runner sandbox because a stage run ends before its gate; code mode is a deferred,
+harness-dependent capability and is not exposed as a no-op flag.
+**Consequences:** high-stakes work gets a stronger model and a structural stop condition, at higher cost and
+latency. Low-risk work keeps cheap routing. Standards counts are deterministic file/path heuristics; a repo
+can tune the caps. `requireMigrationForSchemaChange` is recorded for a future enforcement step, not enforced
+yet. Code mode remains a roadmap item rather than a misleading toggle.

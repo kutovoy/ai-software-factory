@@ -17,6 +17,7 @@ import { AGENT_VERDICT_POLICIES } from '../gates/verdict';
 import { guardConfigSchema } from '../guard/types';
 import { DEFAULT_RISK_GOVERNANCE, RISK_TIERS, type RiskTierPolicy } from '../governance/risk';
 import {
+  DEFAULT_QUALITY_STANDARDS,
   DEFAULT_REVIEW_CAPACITY,
   DEFAULT_SLOP_BUDGETS,
   PROOF_KINDS,
@@ -154,12 +155,37 @@ export const reviewCapacitySchema = z
   })
   .strict();
 
+/**
+ * Public-API/schema blast-radius caps (change `add-risk-aware-routing-and-standards`).
+ * Every field is defaulted, so a partial block inherits the shipped standards.
+ */
+export const qualityStandardsSchema = z
+  .object({
+    maxPublicApiChanges: z
+      .number()
+      .int()
+      .min(0)
+      .max(10_000)
+      .default(DEFAULT_QUALITY_STANDARDS.maxPublicApiChanges),
+    maxSchemaChanges: z
+      .number()
+      .int()
+      .min(0)
+      .max(10_000)
+      .default(DEFAULT_QUALITY_STANDARDS.maxSchemaChanges),
+    requireMigrationForSchemaChange: z
+      .boolean()
+      .default(DEFAULT_QUALITY_STANDARDS.requireMigrationForSchemaChange),
+  })
+  .strict();
+
 /** The optional `quality` block; absent means defaults everywhere. */
 export const qualityConfigSchema = z
   .object({
     slopBudget: slopBudgetConfigSchema.optional(),
     proof: qualityProofSchema.optional(),
     reviewCapacity: reviewCapacitySchema.optional(),
+    standards: qualityStandardsSchema.optional(),
   })
   .strict();
 

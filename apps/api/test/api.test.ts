@@ -10,7 +10,7 @@ import {
   toEnvelope,
 } from '../src/errors';
 import { mapRunnerName, resolveRunDefaults, workItemIdForRun } from '../src/runs';
-import { factorySchema } from '@factory/core';
+import { factorySchema, type RoutingDef } from '@factory/core';
 import { redact } from '../src/logger';
 
 describe('error envelope', () => {
@@ -172,5 +172,35 @@ describe('run defaults', () => {
   test('the fake harness never needs a resolved model', () => {
     const defaults = resolveRunDefaults(envManifest, { harness: 'fake' }, {});
     expect(defaults.model).toBe('fake/fake-model');
+  });
+
+  const routing: RoutingDef = {
+    stages: {},
+    classifier: {
+      enabled: true,
+      cheap: { model: 'cheap/model' },
+      standard: { model: 'standard/model' },
+      deep: { model: 'deep/model' },
+    },
+  };
+
+  test('high risk forces the deep tier even for a low-score prompt', () => {
+    const defaults = resolveRunDefaults(
+      manifest,
+      {},
+      {},
+      { routing, prompt: 'fix a typo in the readme', stage: 'implement', riskTier: 'high' },
+    );
+    expect(defaults.model).toBe('deep/model');
+  });
+
+  test('without a risk tier, routing keeps the existing score-based tier', () => {
+    const defaults = resolveRunDefaults(
+      manifest,
+      {},
+      {},
+      { routing, prompt: 'fix a typo in the readme', stage: 'ship' },
+    );
+    expect(defaults.model).toBe('cheap/model');
   });
 });

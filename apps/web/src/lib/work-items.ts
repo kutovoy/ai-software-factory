@@ -310,6 +310,7 @@ export function reviewPacket(events: WorkItemEvent[]): ReviewPacketWire | null {
   const slopBudget = recordOf(payload.slopBudget);
   const slopActual = recordOf(payload.slopActual);
   const blastRadius = recordOf(payload.blastRadius);
+  const standards = recordOf(payload.standards);
   const comprehension = recordOf(payload.comprehension);
 
   return {
@@ -362,6 +363,19 @@ export function reviewPacket(events: WorkItemEvent[]): ReviewPacketWire | null {
             highRiskPaths: stringList(blastRadius.highRiskPaths),
             publicApiChanges: numberOf(blastRadius.publicApiChanges) ?? 0,
             schemaChanges: numberOf(blastRadius.schemaChanges) ?? 0,
+          },
+        }
+      : {}),
+    // Standards guard (`add-risk-aware-routing-and-standards`): only surfaced when the packet
+    // carries it, so a packet recorded before the guard omits the card instead of inventing caps.
+    ...(Object.keys(standards).length > 0
+      ? {
+          standards: {
+            maxPublicApiChanges: numberOf(standards.maxPublicApiChanges) ?? 0,
+            maxSchemaChanges: numberOf(standards.maxSchemaChanges) ?? 0,
+            publicApiChanges: numberOf(standards.publicApiChanges) ?? 0,
+            schemaChanges: numberOf(standards.schemaChanges) ?? 0,
+            status: standards.status === 'exceeded' ? 'exceeded' : 'pass',
           },
         }
       : {}),

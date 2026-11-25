@@ -117,6 +117,32 @@ export function slopOverageFeedback(packet: ReviewPacket): string {
     : 'slop budget exceeded';
 }
 
+/**
+ * True when the packet's standards status must block an agent gate (request changes).
+ * A missing packet never blocks — the raw diff stays available to the reviewer.
+ */
+export function standardsBlockGate(packet: ReviewPacket | null): boolean {
+  return packet !== null && packet.standards.status === 'exceeded';
+}
+
+/**
+ * Names every exceeded standards cap so `request_changes` feedback is actionable
+ * (change `add-risk-aware-routing-and-standards`). Counts equal to a cap are not overages.
+ */
+export function standardsOverageFeedback(packet: ReviewPacket): string {
+  const entries: string[] = [];
+  const standards = packet.standards;
+  if (standards.publicApiChanges > standards.maxPublicApiChanges) {
+    entries.push(`public API changes ${standards.publicApiChanges} > ${standards.maxPublicApiChanges}`);
+  }
+  if (standards.schemaChanges > standards.maxSchemaChanges) {
+    entries.push(`schema changes ${standards.schemaChanges} > ${standards.maxSchemaChanges}`);
+  }
+  return entries.length > 0
+    ? `standards exceeded: ${entries.join('; ')}`
+    : 'standards exceeded';
+}
+
 export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWorkflowResult> {
   let decision: GateDecisionInput | null = null;
 
@@ -169,6 +195,7 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
         ...(input.architectureImpact ? { architectureImpact: input.architectureImpact } : {}),
         ...(input.openQuestions ? { openQuestions: input.openQuestions } : {}),
         ...(input.slopBudget ? { slopBudget: input.slopBudget } : {}),
+        ...(input.quality?.standards ? { standards: input.quality.standards } : {}),
         ...(input.highRiskPaths ? { highRiskPaths: input.highRiskPaths } : {}),
         contextPackRef,
         definitionCommit: input.definitionCommit,
@@ -338,13 +365,21 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
         }
       }
       const slopExceeded = overages.length > 0;
-      const decision: StageGateOutcome['decision'] = slopExceeded ? 'request_changes' : 'approve';
-      const reason = slopExceeded
-        ? 'slop budget exceeded'
-        : 'agent gate satisfied by the gate evidence';
-      const feedback = slopExceeded
-        ? `slop budget exceeded: ${overages.join('; ')}`
-        : undefined;
+      const standardsExceeded = standardsBlockGate(packet);
+      const feedbackParts: string[] = [];
+      if (slopExceeded) feedbackParts.push(`slop budget exceeded: ${overages.join('; ')}`);
+      if (standardsExceeded && packet) feedbackParts.push(standardsOverageFeedback(packet));
+      const blocked = feedbackParts.length > 0;
+      const decision: StageGateOutcome['decision'] = blocked ? 'request_changes' : 'approve';
+      const reason =
+        slopExceeded && standardsExceeded
+          ? 'slop budget and standards exceeded'
+          : slopExceeded
+            ? 'slop budget exceeded'
+            : standardsExceeded
+              ? 'standards exceeded'
+              : 'agent gate satisfied by the gate evidence';
+      const feedback = blocked ? feedbackParts.join('; ') : undefined;
       await gates.recordGateRequest({
         workItemId: input.workItemId,
         stage: input.stage,
@@ -407,6 +442,11 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
       decision = 'request_changes';
       reason = 'slop budget exceeded';
       feedback = slopOverageFeedback(packet);
+    } else if (packet !== null && standardsBlockGate(packet)) {
+      // Public-API/schema blast radius above the factory caps stops the loop too.
+      decision = 'request_changes';
+      reason = 'standards exceeded';
+      feedback = standardsOverageFeedback(packet);
     } else if (verdict.decision === 'approve') {
       decision = 'approve';
       reason = 'agent verdict: approve';

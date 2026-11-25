@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { RiskTier } from '../governance/risk';
-import type { ProofKind, SlopBudget } from '../quality/types';
+import type { ProofKind, SlopBudget, StandardsStatus } from '../quality/types';
 import { codedString } from '../schema/common';
 import { LOOP_STAGES } from '../stage-graph/graph';
 
@@ -225,6 +225,8 @@ export const WORK_ITEM_EVENT_TYPES = [
   'slop.measured',
   /** A risk-tiered slop budget was exceeded; the review gate stops or requires a waiver. */
   'slop.budget_exceeded',
+  /** Public-API/schema standards were exceeded; an agent gate requests changes. */
+  'standards.exceeded',
   /** Optional model-written review explainer artifact; never replaces packet facts. */
   'review.explainer',
   /** Deterministic context pack built before implementation and referenced by the packet. */
@@ -239,6 +241,7 @@ export type WorkItemEventType = (typeof WORK_ITEM_EVENT_TYPES)[number];
  *
  * Review packet v2 (change `add-anti-slop-budgets-and-proof`) adds budget vs actual, blast
  * radius, proof artifacts, a read-first list, decisions, reviewer roles and comprehension.
+ * `add-risk-aware-routing-and-standards` adds the measured standards status.
  */
 export interface ReviewPacket {
   riskTier: RiskTier;
@@ -267,6 +270,8 @@ export interface ReviewPacket {
     publicApiChanges: number;
     schemaChanges: number;
   };
+  /** Measured public-API/schema blast radius against the factory's standards caps. */
+  standards: StandardsStatus;
   proofArtifacts: Array<{
     kind: ProofKind;
     path: string;

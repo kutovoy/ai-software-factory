@@ -397,6 +397,19 @@ export interface ReviewPacketDecisionWire {
 }
 
 /**
+ * Standards guard result (`add-risk-aware-routing-and-standards`): measured public-API/schema
+ * counts against the factory's resolved caps. Optional on the wire so a packet recorded before
+ * the guard still renders honestly.
+ */
+export interface ReviewPacketStandardsWire {
+  maxPublicApiChanges: number;
+  maxSchemaChanges: number;
+  publicApiChanges: number;
+  schemaChanges: number;
+  status: 'pass' | 'exceeded';
+}
+
+/**
  * Deterministic review packet (`harden-factory-quality`), stored as a `review.packet`
  * work-item event. It is assembled from plan, evidence and diff data — not model prose — so a
  * high-risk human review gate has an auditable decision surface while the full diff stays
@@ -425,6 +438,7 @@ export interface ReviewPacketWire {
     publicApiChanges: number;
     schemaChanges: number;
   };
+  standards?: ReviewPacketStandardsWire;
   proofArtifacts?: ReviewPacketProofWire[];
   readFirst?: ReviewPacketReadFirstWire[];
   decisions?: ReviewPacketDecisionWire[];

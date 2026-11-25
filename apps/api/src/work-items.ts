@@ -530,6 +530,9 @@ export async function createWorkItemForApi(
       prompt: body.prompt?.trim() || body.title,
       stage: (compiled.graph.order[0] as string) ?? 'triage',
       ...(manifest.governance ? { governance: manifest.governance } : {}),
+      // Risk-aware routing (`add-risk-aware-routing-and-standards`): high-risk items use the
+      // deep tier regardless of prompt score.
+      riskTier: qualitySnapshot.riskTier,
     },
   );
 
@@ -1628,6 +1631,9 @@ async function buildRetryInput(
           : item.title,
       stage: item.stage,
       ...(manifest.governance ? { governance: manifest.governance } : {}),
+      // Retry keeps the snapshot's risk tier so routing cannot silently downgrade a retried
+      // high-risk item (change `add-risk-aware-routing-and-standards`).
+      riskTier,
     },
   );
 

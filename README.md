@@ -39,6 +39,12 @@ This project is that factory, built to be **self-hosted, inspectable and yours**
 
 Short, dated highlights of user-visible changes. Full detail lives in `docs/STATUS.md`.
 
+- **2026-11-25 — Risk-aware routing and standards guard.** High-risk work items are routed to the deep
+  inference tier even when the prompt score is lower; low-risk work keeps score-based routing. A
+  `quality.standards` block caps public API and schema changes, the review packet records caps vs actual, and
+  an exceeded standard stops an agent review gate (`request_changes`) or requires a human waiver. The review
+  packet and Inbox show the standards result. Gate waits already release the runner sandbox, so no
+  suspend flag was added; code mode remains harness-dependent and deferred.
 - **2026-11-25 — Review capacity, comprehension and decision trails.** The factory now has a
   factory-level attention budget: `quality.reviewCapacity` caps open gates, unread diff lines, gate age and
   review hours. A saturated factory cannot auto-approve a plan or enable full autonomy without an audited

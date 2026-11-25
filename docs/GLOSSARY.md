@@ -25,6 +25,8 @@ Terms used across specs, code and UI. Keep this aligned with `packages/core` typ
 | **Comprehension proxy** | Aggregate signals (unread diff volume, items without human review, modules without human touch, review coverage) that estimate comprehension debt without per-person surveillance. |
 | **Decision trail** | The chronological path from plan to gate decisions, review verdicts, PR and merge, shown on work-item detail and linked from the PR. |
 | **Longitudinal quality** | Deterministic comparison of codebase quality across checkpoints (duplication, complexity, dependency growth, churn/rework, review time, change failure rate). |
+| **Standards guard** | `quality.standards` caps public API/schema changes; the review packet records caps vs actual and an exceeded standard stops an agent review gate or needs a human waiver. |
+| **Risk-aware routing** | Routing that sends high-risk work to the deep inference tier regardless of prompt score; low-risk work keeps score-based routing. |
 | **Comprehension debt** | The gap between code shipped and code humans understand. It grows when review/reading is removed; planned as a metric and autonomy gate. |
 | **Checkpoint** | A small JSON snapshot of mission state (completed work, decisions, failed approaches, tests, blockers, budget) that lets the next feature start with fresh context. |
 | **Mission Control** | The factory-scoped console view of missions: plan approval, milestones/features, checkpoints, validation evidence, budget and pause/resume/cancel controls. |

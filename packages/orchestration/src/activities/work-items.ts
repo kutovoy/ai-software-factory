@@ -2,11 +2,13 @@ import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  DEFAULT_QUALITY_STANDARDS,
   DEFAULT_SLOP_BUDGETS,
   PROOF_KINDS,
   appendWorkItemEvent,
   attachPullRequest,
   evaluateSlopBudget,
+  evaluateStandards,
   getAutonomyState,
   getWorkItem,
   getWorkItemCancel,
@@ -24,9 +26,11 @@ import {
   type LoopStage,
   type PatchMetrics,
   type ProofKind,
+  type QualityStandards,
   type ReviewPacket,
   type RiskTier,
   type SlopBudget,
+  type StandardsStatus,
   type WorkItemCancelState,
   type WorkItemEvent,
   type WorkItemStatus,
@@ -340,8 +344,55 @@ export function blastRadiusFor(
   };
 }
 
-/** Ordered files a reviewer should open first: high-risk first, then the largest change. */
-export function buildReadFirst(
+/**
+ * Standards status for a measured blast radius (change
+ * `add-risk-aware-routing-and-standards`). Deterministic and exported so the packet, the
+ * event and the gate all read the same numbers.
+ */
+export function standardsFor(
+  blastRadius: ReviewPacket['blastRadius'],
+  config: QualityStandards,
+): StandardsStatus {
+  return evaluateStandards(
+    {
+      publicApiChanges: blastRadius.publicApiChanges,
+      schemaChanges: blastRadius.schemaChanges,
+    },
+    config,
+  );
+}
+
+/**
+ * Defensive parse of a stored `standards` payload (old packets have none). Caps fall back to
+ * the resolved config; counts fall back to zero. A missing/unknown status is re-derived from
+ * the counts so an old packet never claims a pass it did not measure.
+ */
+export function parseStandards(
+  value: unknown,
+  fallback: QualityStandards,
+): StandardsStatus {
+  const record = asRecord(value);
+  const maxPublicApiChanges = asNumber(record.maxPublicApiChanges, fallback.maxPublicApiChanges);
+  const maxSchemaChanges = asNumber(record.maxSchemaChanges, fallback.maxSchemaChanges);
+  const publicApiChanges = asNumber(record.publicApiChanges);
+  const schemaChanges = asNumber(record.schemaChanges);
+  const status: StandardsStatus['status'] =
+    record.status === 'pass' || record.status === 'exceeded'
+      ? record.status
+      : publicApiChanges > maxPublicApiChanges || schemaChanges > maxSchemaChanges
+        ? 'exceeded'
+        : 'pass';
+  return {
+    maxPublicApiChanges,
+    maxSchemaChanges,
+    publicApiChanges,
+    schemaChanges,
+    status,
+  };
+}
+
+
+/** Ordered files a reviewer should open first: high-risk first, then the largest change. */export function buildReadFirst(
   files: PatchMetrics['files'],
   highRiskPaths: string[],
 ): Array<{ path: string; why: string }> {
@@ -551,7 +602,12 @@ export async function proofArtifactsFor(
 
 function packetFromPayload(
   payload: Record<string, unknown>,
-  fallback: { riskTier: RiskTier; intent: string; slopBudget: SlopBudget },
+  fallback: {
+    riskTier: RiskTier;
+    intent: string;
+    slopBudget: SlopBudget;
+    standards: QualityStandards;
+  },
 ): ReviewPacket {
   const diffStats = asRecord(payload.diffStats);
   const changedFiles = asNumber(payload.changedFiles);
@@ -606,6 +662,7 @@ function packetFromPayload(
       publicApiChanges: asNumber(blastRadius.publicApiChanges),
       schemaChanges: asNumber(blastRadius.schemaChanges),
     },
+    standards: parseStandards(payload.standards, fallback.standards),
     proofArtifacts: (Array.isArray(payload.proofArtifacts) ? payload.proofArtifacts : [])
       .map(asRecord)
       .filter((entry) => typeof entry.path === 'string' && entry.path.length > 0)
@@ -680,6 +737,8 @@ export async function recordReviewPacket(args: {
   contextPackRef?: string | null;
   /** Definition commit proof artifacts are bound to. */
   definitionCommit?: string;
+  /** Resolved public-API/schema caps; defaults to the shipped standards. */
+  standards?: QualityStandards;
 }): Promise<ReviewPacket> {
   const sql = getSql();
   const workItem = await getWorkItem(sql, args.workItemId);
@@ -687,6 +746,7 @@ export async function recordReviewPacket(args: {
 
   const events = await listWorkItemEvents(sql, args.workItemId, 1000);
   const budget = args.slopBudget ?? DEFAULT_SLOP_BUDGETS[args.riskTier];
+  const standardsConfig = args.standards ?? DEFAULT_QUALITY_STANDARDS;
   const existing = events.find(
     (event) =>
       event.type === 'review.packet' &&
@@ -698,6 +758,7 @@ export async function recordReviewPacket(args: {
       riskTier: args.riskTier,
       intent: args.intent,
       slopBudget: budget,
+      standards: standardsConfig,
     });
   }
 
@@ -719,6 +780,7 @@ export async function recordReviewPacket(args: {
   const slopActual = slopActualFor(metrics, deltas);
   const evaluation = evaluateSlopBudget(slopActual, budget);
   const blastRadius = blastRadiusFor(metrics, args.highRiskPaths ?? []);
+  const standards = standardsFor(blastRadius, standardsConfig);
   const proofArtifacts = await proofArtifactsFor(args.patchRunId ?? null, args.definitionCommit);
   const readFirst = buildReadFirst(metrics.files, blastRadius.highRiskPaths);
   const decisions = decisionsFromEvents(events);
@@ -743,6 +805,7 @@ export async function recordReviewPacket(args: {
     slopActual,
     slopStatus: evaluation.status,
     blastRadius,
+    standards,
     proofArtifacts,
     readFirst,
     decisions,
@@ -784,6 +847,23 @@ export async function recordReviewPacket(args: {
         },
       });
     }
+  }
+
+  // Standards guard (change `add-risk-aware-routing-and-standards`): recorded before the
+  // packet so the audit trail keeps its causal order. Idempotent because an existing packet
+  // returns above without appending anything.
+  if (standards.status === 'exceeded') {
+    await appendWorkItemEvent(sql, {
+      workItemId: args.workItemId,
+      type: 'standards.exceeded',
+      stage,
+      actor: 'foreman',
+      payload: {
+        standards,
+        riskTier: args.riskTier,
+        ...(args.attempt !== undefined ? { attempt: args.attempt } : {}),
+      },
+    });
   }
 
   await appendWorkItemEvent(sql, {

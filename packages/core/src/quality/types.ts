@@ -110,6 +110,35 @@ export interface ComprehensionMetrics {
   reviewCoveragePercent: number;
 }
 
+/**
+ * Factory-level standards guard (change `add-risk-aware-routing-and-standards`).
+ *
+ * Caps the blast radius a single change may have: how many public API surfaces and schema
+ * files it touches. Defaults are shipped, so old factories validate unchanged.
+ */
+export interface QualityStandards {
+  maxPublicApiChanges: number;
+  maxSchemaChanges: number;
+  /** Recorded for future use; the P2 gate evaluates the counts only. */
+  requireMigrationForSchemaChange: boolean;
+}
+
+/** Shipped standards defaults. */
+export const DEFAULT_QUALITY_STANDARDS: QualityStandards = {
+  maxPublicApiChanges: 5,
+  maxSchemaChanges: 3,
+  requireMigrationForSchemaChange: false,
+};
+
+/** Measured blast radius against the resolved caps. */
+export interface StandardsStatus {
+  maxPublicApiChanges: number;
+  maxSchemaChanges: number;
+  publicApiChanges: number;
+  schemaChanges: number;
+  status: 'pass' | 'exceeded';
+}
+
 /** The factory's optional `quality` block. */
 export interface QualityConfig {
   slopBudget?: SlopBudgetConfig;
@@ -119,6 +148,8 @@ export interface QualityConfig {
   };
   /** Review-capacity caps (change `add-review-capacity-and-compounding`). */
   reviewCapacity?: ReviewCapacityConfig;
+  /** Public-API/schema blast-radius caps (change `add-risk-aware-routing-and-standards`). */
+  standards?: QualityStandards;
 }
 
 /** Per-file counts derived from a unified diff. */

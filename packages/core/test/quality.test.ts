@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'bun:test';
 import {
+  DEFAULT_QUALITY_STANDARDS,
   DEFAULT_SLOP_BUDGETS,
   PROOF_KINDS,
   SLOP_BUDGET_TIERS,
   evaluateSlopBudget,
+  evaluateStandards,
   factorySchema,
   highRiskPathsTouched,
   parsePatchMetrics,
   planDepthFor,
+  qualityConfigSchema,
   resolveQualityConfig,
+  resolveQualityStandards,
   resolveSlopBudgets,
 } from '../src/index';
 
@@ -115,6 +119,64 @@ describe('quality config resolution', () => {
   it('falls back to all kinds when none are usable', () => {
     const resolved = resolveQualityConfig({ proof: { kinds: ['png'] } });
     expect(resolved.proof.kinds).toEqual([...PROOF_KINDS]);
+  });
+
+  it('resolves standards to the shipped defaults and keeps valid overrides', () => {
+    expect(resolveQualityConfig(undefined).standards).toEqual(DEFAULT_QUALITY_STANDARDS);
+    const resolved = resolveQualityConfig({
+      standards: { maxPublicApiChanges: 1, maxSchemaChanges: -2, requireMigrationForSchemaChange: true },
+    });
+    expect(resolved.standards).toEqual({
+      maxPublicApiChanges: 1,
+      maxSchemaChanges: DEFAULT_QUALITY_STANDARDS.maxSchemaChanges,
+      requireMigrationForSchemaChange: true,
+    });
+    expect(resolveQualityStandards(null)).toEqual(DEFAULT_QUALITY_STANDARDS);
+  });
+
+  it('accepts a partial standards block in the factory schema', () => {
+    const parsed = qualityConfigSchema.parse({ standards: { maxSchemaChanges: 1 } });
+    expect(parsed.standards).toEqual({
+      maxPublicApiChanges: DEFAULT_QUALITY_STANDARDS.maxPublicApiChanges,
+      maxSchemaChanges: 1,
+      requireMigrationForSchemaChange: false,
+    });
+    expect(qualityConfigSchema.parse({})).toEqual({});
+  });
+});
+
+describe('standards evaluation', () => {
+  it('passes when counts stay within the caps', () => {
+    const status = evaluateStandards(
+      { publicApiChanges: 5, schemaChanges: 3 },
+      DEFAULT_QUALITY_STANDARDS,
+    );
+    expect(status.status).toBe('pass');
+    expect(status).toMatchObject({ publicApiChanges: 5, schemaChanges: 3 });
+  });
+
+  it('exceeds when either count is above its cap', () => {
+    const publicApi = evaluateStandards(
+      { publicApiChanges: 6, schemaChanges: 0 },
+      DEFAULT_QUALITY_STANDARDS,
+    );
+    expect(publicApi.status).toBe('exceeded');
+    expect(publicApi.maxPublicApiChanges).toBe(5);
+
+    const schema = evaluateStandards(
+      { publicApiChanges: 0, schemaChanges: 4 },
+      DEFAULT_QUALITY_STANDARDS,
+    );
+    expect(schema.status).toBe('exceeded');
+    expect(schema.maxSchemaChanges).toBe(3);
+  });
+
+  it('treats negative or non-finite counts as zero, never an overage', () => {
+    const status = evaluateStandards(
+      { publicApiChanges: -1, schemaChanges: Number.NaN },
+      { ...DEFAULT_QUALITY_STANDARDS, maxPublicApiChanges: 0, maxSchemaChanges: 0 },
+    );
+    expect(status).toMatchObject({ publicApiChanges: 0, schemaChanges: 0, status: 'pass' });
   });
 });
 

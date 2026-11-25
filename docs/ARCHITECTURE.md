@@ -206,7 +206,10 @@ gate age and review hours. A saturated factory cannot auto-approve a plan or ena
 audited override. `GET /autonomy` reports the capacity and aggregate comprehension proxies, the Gates page
 shows them, and PR bodies link the plan, risk tier, context pack and review packet. Mission plans may declare
 experiment/rollout/cleanup metadata, and deterministic longitudinal evals compare codebase quality across
-checkpoints. The MVP is sequential; parallel features/worktrees, mission
+checkpoints. Routing is risk-aware: high-risk work uses the deep inference tier; low-risk work keeps the
+score-based tier. `quality.standards` caps public API/schema changes, and an exceeded standard stops an agent
+review gate or requires a human waiver. Gate waits already release the runner sandbox because a stage run ends
+before its gate; code mode remains a deferred, harness-dependent capability. The MVP is sequential; parallel features/worktrees, mission
 templates, cross-repo missions and mission-level canaries are follow-ups. See
 `openspec/specs/missions/spec.md`, ADR-050/051/052 and `docs/STATUS.md`.
 

@@ -1,4 +1,5 @@
 import {
+  DEFAULT_QUALITY_STANDARDS,
   isProofKind,
   mapGate,
   mapMission,
@@ -210,6 +211,40 @@ function slopStatusOf(value: unknown): ReviewPacket['slopStatus'] {
   return value === 'pass' || value === 'exceeded' || value === 'unknown' ? value : 'unknown';
 }
 
+/** Clamps a standards count to a non-negative integer; negative/NaN/non-number → 0. */
+function standardsCount(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
+/**
+ * Defensive standards projection (change `add-risk-aware-routing-and-standards`). A packet
+ * written before the standards guard carries no `standards` field; the honest fallback uses
+ * the shipped caps and the packet's measured blast radius, and reports `pass` (an older packet
+ * was never blocked by standards). Only `pass`/`exceeded` are accepted as a status.
+ */
+function standardsOf(
+  value: unknown,
+  blastRadius: ReviewPacket['blastRadius'],
+): ReviewPacket['standards'] {
+  const record = recordOf(value);
+  if (Object.keys(record).length === 0) {
+    return {
+      maxPublicApiChanges: DEFAULT_QUALITY_STANDARDS.maxPublicApiChanges,
+      maxSchemaChanges: DEFAULT_QUALITY_STANDARDS.maxSchemaChanges,
+      publicApiChanges: blastRadius.publicApiChanges,
+      schemaChanges: blastRadius.schemaChanges,
+      status: 'pass',
+    };
+  }
+  return {
+    maxPublicApiChanges: standardsCount(record.maxPublicApiChanges),
+    maxSchemaChanges: standardsCount(record.maxSchemaChanges),
+    publicApiChanges: standardsCount(record.publicApiChanges),
+    schemaChanges: standardsCount(record.schemaChanges),
+    status: record.status === 'exceeded' ? 'exceeded' : 'pass',
+  };
+}
+
 /**
  * Defensive projection of a `review.packet` payload. The event is written by the orchestrator,
  * but an older or partially-written row must never crash the inbox: a payload without a valid
@@ -281,6 +316,12 @@ function reviewPacketOf(value: unknown): ReviewPacket | null {
     : [];
   const reviewerRoles = stringList(record.reviewerRoles);
   const contextPackRef = typeof record.contextPackRef === 'string' ? record.contextPackRef : null;
+  const projectedBlastRadius: ReviewPacket['blastRadius'] = {
+    paths: stringList(blastRadius.paths),
+    highRiskPaths: stringList(blastRadius.highRiskPaths),
+    publicApiChanges: finiteNumber(blastRadius.publicApiChanges),
+    schemaChanges: finiteNumber(blastRadius.schemaChanges),
+  };
 
   return {
     riskTier,
@@ -306,12 +347,8 @@ function reviewPacketOf(value: unknown): ReviewPacket | null {
       complexityDelta: nullableNumber(actual.complexityDelta),
     },
     slopStatus: slopStatusOf(record.slopStatus),
-    blastRadius: {
-      paths: stringList(blastRadius.paths),
-      highRiskPaths: stringList(blastRadius.highRiskPaths),
-      publicApiChanges: finiteNumber(blastRadius.publicApiChanges),
-      schemaChanges: finiteNumber(blastRadius.schemaChanges),
-    },
+    blastRadius: projectedBlastRadius,
+    standards: standardsOf(record.standards, projectedBlastRadius),
     proofArtifacts,
     readFirst,
     decisions,

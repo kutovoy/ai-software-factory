@@ -10,6 +10,7 @@ import {
   type FactoryDefinition,
   type FactoryManifest,
   type GovernanceConfig,
+  type RiskTier,
   type RoutingDef,
   type RunnerDef,
 } from '@factory/core';
@@ -121,6 +122,8 @@ export function resolveRunDefaults(
     prompt?: string;
     stage?: string;
     governance?: GovernanceConfig | null;
+    /** Work-item risk tier; `high` forces the deep tier (change `add-risk-aware-routing-and-standards`). */
+    riskTier?: RiskTier;
   } = {},
 ): RunDefaults {
   // An explicit harness (e.g. the smoke/e2e `fake` harness) always wins over routing.
@@ -131,6 +134,7 @@ export function resolveRunDefaults(
           prompt: routingOptions.prompt ?? '',
           stage: routingOptions.stage ?? 'implement',
           env,
+          ...(routingOptions.riskTier ? { riskTier: routingOptions.riskTier } : {}),
         })
       : null;
   const harness =
