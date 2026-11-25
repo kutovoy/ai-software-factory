@@ -8,6 +8,7 @@ import {
   workflowInfo,
 } from '@temporalio/workflow';
 import { parseAgentVerdict } from '@factory/core/gates/verdict';
+import type { ReviewPacket } from '@factory/core';
 import {
   VALIDATION_EVIDENCE_INSTRUCTION,
   evaluateValidationContract,
@@ -91,6 +92,31 @@ export const DEFAULT_GATE_SLA_MS = 24 * 60 * 60 * 1000;
 /** How often a durable gate wait wakes to re-check its deadline. */
 const GATE_WAIT_SLICE_MS = 60 * 1000;
 
+/** Prompt budget for the deterministic context pack (task 4.2). */
+const MAX_CONTEXT_PACK_PROMPT_CHARS = 6000;
+
+/** Names every budget overage so `request_changes` feedback is actionable. */
+export function slopOverageFeedback(packet: ReviewPacket): string {
+  const entries: string[] = [];
+  const push = (metric: string, actual: number | null, limit: number): void => {
+    if (actual !== null && Number.isFinite(actual) && actual > limit) {
+      entries.push(`${metric} ${actual} > ${limit}`);
+    }
+  };
+  push('diffLines', packet.slopActual.diffLines, packet.slopBudget.maxDiffLines);
+  push('changedFiles', packet.slopActual.changedFiles, packet.slopBudget.maxChangedFiles);
+  push('newDependencies', packet.slopActual.newDependencies, packet.slopBudget.maxNewDependencies);
+  push(
+    'duplicationDeltaPercent',
+    packet.slopActual.duplicationDeltaPercent,
+    packet.slopBudget.maxDuplicationDeltaPercent,
+  );
+  push('complexityDelta', packet.slopActual.complexityDelta, packet.slopBudget.maxComplexityDelta);
+  return entries.length > 0
+    ? `slop budget exceeded: ${entries.join('; ')}`
+    : 'slop budget exceeded';
+}
+
 export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWorkflowResult> {
   let decision: GateDecisionInput | null = null;
 
@@ -121,14 +147,18 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
   let validationMissing: string[] = [];
 
   /**
-   * Deterministic review packet (change `harden-factory-quality`): assembled from plan,
-   * evidence and diff data before a review gate is requested, so a human reviewer has an
-   * auditable decision surface. A packet failure must never fail the stage.
+   * Deterministic review packet (change `harden-factory-quality`; v2 in
+   * `add-anti-slop-budgets-and-proof`): assembled from plan, evidence, patch and run
+   * artifacts before a review gate is requested. Best-effort — a packet failure must never
+   * fail the stage, and only the `review` stage carries a patch to measure.
    */
-  const requestReviewPacket = async (): Promise<void> => {
-    if (input.stage !== 'review') return;
+  const contextPackRef =
+    input.contextPackRef ?? (input.contextPack ? `${input.workItemId}#context-pack` : null);
+
+  const requestReviewPacket = async (): Promise<ReviewPacket | null> => {
+    if (input.stage !== 'review') return null;
     try {
-      await gates.recordReviewPacket({
+      return await gates.recordReviewPacket({
         workItemId: input.workItemId,
         stage: input.stage,
         attempt: input.attempt,
@@ -138,9 +168,14 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
         ...(input.patchRunId ? { patchRunId: input.patchRunId } : {}),
         ...(input.architectureImpact ? { architectureImpact: input.architectureImpact } : {}),
         ...(input.openQuestions ? { openQuestions: input.openQuestions } : {}),
+        ...(input.slopBudget ? { slopBudget: input.slopBudget } : {}),
+        ...(input.highRiskPaths ? { highRiskPaths: input.highRiskPaths } : {}),
+        contextPackRef,
+        definitionCommit: input.definitionCommit,
       });
     } catch {
       // Best-effort: the raw diff and events remain available to the reviewer.
+      return null;
     }
   };
 
@@ -156,6 +191,18 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
         : []),
       `Work item: ${input.workItemId}`,
       `Definition commit: ${input.definitionCommit}`,
+      ...(input.planDepth ? [`Plan depth: ${input.planDepth}`] : []),
+      ...(input.expectedPain ? [`Expected pain: ${input.expectedPain}`] : []),
+      ...(input.leverage ? [`Leverage: ${input.leverage}`] : []),
+      ...(input.contextPack
+        ? [
+            '',
+            'Context pack:',
+            input.contextPack.length > MAX_CONTEXT_PACK_PROMPT_CHARS
+              ? `${input.contextPack.slice(0, MAX_CONTEXT_PACK_PROMPT_CHARS - 1)}…`
+              : input.contextPack,
+          ]
+        : []),
       ...(input.gate === 'agent' ? ['', AGENT_VERDICT_INSTRUCTION] : []),
       ...(input.stage === 'verify' && input.validationContract
         ? [
@@ -265,7 +312,39 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
     // verdict. The review judge already forced a human gate on a non-approve verdict, so an
     // agent gate here keeps the pre-verdict semantics.
     if (input.phase === 'gate') {
-      await requestReviewPacket();
+      const packet = await requestReviewPacket();
+      const overages: string[] = [];
+      if (packet?.slopStatus === 'exceeded') {
+        const { slopActual: actual, slopBudget: budget } = packet;
+        if (actual.changedFiles > budget.maxChangedFiles) {
+          overages.push(`${actual.changedFiles} files > ${budget.maxChangedFiles}`);
+        }
+        if (actual.newDependencies > budget.maxNewDependencies) {
+          overages.push(`${actual.newDependencies} new dependencies > ${budget.maxNewDependencies}`);
+        }
+        if (actual.diffLines > budget.maxDiffLines) {
+          overages.push(`${actual.diffLines} diff lines > ${budget.maxDiffLines}`);
+        }
+        if (
+          actual.duplicationDeltaPercent !== null &&
+          actual.duplicationDeltaPercent > budget.maxDuplicationDeltaPercent
+        ) {
+          overages.push(
+            `${actual.duplicationDeltaPercent}% duplication > ${budget.maxDuplicationDeltaPercent}%`,
+          );
+        }
+        if (actual.complexityDelta !== null && actual.complexityDelta > budget.maxComplexityDelta) {
+          overages.push(`${actual.complexityDelta} complexity > ${budget.maxComplexityDelta}`);
+        }
+      }
+      const slopExceeded = overages.length > 0;
+      const decision: StageGateOutcome['decision'] = slopExceeded ? 'request_changes' : 'approve';
+      const reason = slopExceeded
+        ? 'slop budget exceeded'
+        : 'agent gate satisfied by the gate evidence';
+      const feedback = slopExceeded
+        ? `slop budget exceeded: ${overages.join('; ')}`
+        : undefined;
       await gates.recordGateRequest({
         workItemId: input.workItemId,
         stage: input.stage,
@@ -277,16 +356,27 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
         workItemId: input.workItemId,
         stage: input.stage,
         attempt: input.attempt,
-        decision: 'approve',
+        decision,
         actor,
-        reason: 'agent gate satisfied by the gate evidence',
+        reason,
+        ...(feedback ? { feedback } : {}),
         automatic: true,
       });
-      const outcome: StageGateOutcome = { decision: 'approve', actor, automatic: true };
+      const outcome: StageGateOutcome = {
+        decision,
+        actor,
+        automatic: true,
+        reason,
+        ...(feedback ? { feedback } : {}),
+      };
       return { stage: input.stage, runId, status: runStatus, gate: outcome, ...(summary ? { summary } : {}) };
     }
 
     const verdict = parseAgentVerdict(summary);
+
+    // The packet is recorded before deciding: a measured budget overage is a stop condition
+    // (task 1.4). Validation enforcement still wins; a packet failure is ignored.
+    const packet = await requestReviewPacket();
 
     // `request_changes` feeds the existing loop/escalation path in `factory.ts`; a missing
     // verdict is only fatal when the factory opts into `agentVerdict: required`.
@@ -304,17 +394,22 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
       decision = 'request_changes';
       reason = 'validation incomplete';
       feedback = `validation incomplete: missing ${validationMissing.join(', ')}`;
-    } else if (verdict.decision === 'approve') {
-      decision = 'approve';
-      reason = 'agent verdict: approve';
-    } else if (verdict.decision === 'request_changes') {
-      decision = 'request_changes';
-      reason = 'agent verdict: request_changes';
-      feedback = verdictFeedback;
     } else if (verdict.decision === 'reject') {
       decision = 'reject';
       reason = 'agent verdict: reject';
       feedback = verdictFeedback;
+    } else if (verdict.decision === 'request_changes') {
+      decision = 'request_changes';
+      reason = 'agent verdict: request_changes';
+      feedback = verdictFeedback;
+    } else if (packet?.slopStatus === 'exceeded') {
+      // Budget overage stops the loop even when the agent approved its own work.
+      decision = 'request_changes';
+      reason = 'slop budget exceeded';
+      feedback = slopOverageFeedback(packet);
+    } else if (verdict.decision === 'approve') {
+      decision = 'approve';
+      reason = 'agent verdict: approve';
     } else if (required) {
       decision = 'request_changes';
       reason = 'missing agent verdict';
@@ -326,7 +421,6 @@ export async function StageWorkflow(input: StageWorkflowInput): Promise<StageWor
 
     // The gate row is created first so the decision has a stable (item, stage, attempt) key
     // and the event log records both `gate.requested` and `gate.decided`.
-    await requestReviewPacket();
     await gates.recordGateRequest({
       workItemId: input.workItemId,
       stage: input.stage,

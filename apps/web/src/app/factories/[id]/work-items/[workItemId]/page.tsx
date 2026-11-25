@@ -44,14 +44,86 @@ function riskTone(tier: RiskTierWire): 'success' | 'warning' | 'danger' {
   return 'danger';
 }
 
+function slopTone(status: 'pass' | 'exceeded' | 'unknown'): 'success' | 'danger' | 'neutral' {
+  if (status === 'pass') return 'success';
+  if (status === 'exceeded') return 'danger';
+  return 'neutral';
+}
+
+const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.svg'];
+
+/** True only for a path that really looks like an image; thumbnails are never invented. */
+function isImagePath(path: string): boolean {
+  const lower = path.toLowerCase().split(/[?#]/)[0] ?? '';
+  return IMAGE_EXTENSIONS.some((extension) => lower.endsWith(extension));
+}
+
 /**
  * Compact deterministic review packet (`review.packet`). It renders exactly what the event
- * carries — no invented intent, questions or checklist items — and is omitted entirely when
- * the loop has not assembled a packet yet.
+ * carries — no invented intent, questions, checklist items, proof or decisions — and is
+ * omitted entirely when the loop has not assembled a packet yet.
+ *
+ * Packet v2 (`add-anti-slop-budgets-and-proof`) adds slop budget vs actual, blast radius, a
+ * proof gallery, read-first, decisions, reviewer roles, comprehension and the context-pack
+ * ref. Each section renders only when the packet carries data for it.
  */
 function ReviewPacketCard({ packet }: { packet: ReviewPacketWire | null }) {
   if (!packet) return null;
   const failing = packet.assertions.filter((assertion) => assertion.status !== 'pass');
+
+  const budget = packet.slopBudget;
+  const actual = packet.slopActual;
+  const budgetMetrics =
+    budget && actual
+      ? [
+          {
+            key: 'maxDiffLines',
+            label: 'diff lines',
+            actual: actual.diffLines,
+            limit: budget.maxDiffLines,
+          },
+          {
+            key: 'maxChangedFiles',
+            label: 'changed files',
+            actual: actual.changedFiles,
+            limit: budget.maxChangedFiles,
+          },
+          {
+            key: 'maxNewDependencies',
+            label: 'new dependencies',
+            actual: actual.newDependencies,
+            limit: budget.maxNewDependencies,
+          },
+          {
+            key: 'maxDuplicationDeltaPercent',
+            label: 'duplication delta %',
+            actual: actual.duplicationDeltaPercent,
+            limit: budget.maxDuplicationDeltaPercent,
+          },
+          {
+            key: 'maxComplexityDelta',
+            label: 'complexity delta',
+            actual: actual.complexityDelta,
+            limit: budget.maxComplexityDelta,
+          },
+        ]
+      : [];
+  const overages = budgetMetrics.filter(
+    (metric) => metric.actual !== null && metric.actual > metric.limit,
+  );
+
+  const blast = packet.blastRadius;
+  const blastHasData =
+    blast !== undefined &&
+    (blast.paths.length > 0 ||
+      blast.highRiskPaths.length > 0 ||
+      blast.publicApiChanges > 0 ||
+      blast.schemaChanges > 0);
+  const proof = packet.proofArtifacts ?? [];
+  const readFirst = packet.readFirst ?? [];
+  const decisions = packet.decisions ?? [];
+  const roles = packet.reviewerRoles ?? [];
+  const comprehension = packet.comprehension;
 
   return (
     <div data-testid="work-item-review-packet" data-risk-tier={packet.riskTier}>
@@ -60,9 +132,22 @@ function ReviewPacketCard({ packet }: { packet: ReviewPacketWire | null }) {
           title="Review packet"
           hint="Deterministic summary assembled from the plan, evidence and diff; the full diff stays linked on the run."
           action={
-            <Badge tone={riskTone(packet.riskTier)} testId="review-packet-risk">
-              {packet.riskTier} risk
-            </Badge>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={riskTone(packet.riskTier)} testId="review-packet-risk">
+                {packet.riskTier} risk
+              </Badge>
+              {packet.slopStatus ? (
+                <span
+                  data-testid="review-packet-slop"
+                  data-slop-status={packet.slopStatus}
+                  title="Slop budget status measured from the captured patch"
+                >
+                  <Badge tone={slopTone(packet.slopStatus)} mono>
+                    slop {packet.slopStatus}
+                  </Badge>
+                </span>
+              ) : null}
+            </div>
           }
         />
         <CardBody className="space-y-3">
@@ -92,6 +177,79 @@ function ReviewPacketCard({ packet }: { packet: ReviewPacketWire | null }) {
               {packet.intent || 'No intent recorded in the packet.'}
             </p>
           </div>
+
+          {budgetMetrics.length > 0 ? (
+            <div data-testid="review-packet-budget" data-slop-status={packet.slopStatus ?? 'unknown'}>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Slop budget (actual / limit)
+              </p>
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600">
+                {budgetMetrics.map((metric) => {
+                  const over = metric.actual !== null && metric.actual > metric.limit;
+                  return (
+                    <span
+                      key={metric.key}
+                      data-metric={metric.key}
+                      data-over={over ? 'true' : 'false'}
+                      className={over ? 'text-red-700' : undefined}
+                    >
+                      {metric.label}{' '}
+                      <span className="font-mono">
+                        {metric.actual === null ? 'unknown' : metric.actual} / {metric.limit}
+                      </span>
+                    </span>
+                  );
+                })}
+              </div>
+              {overages.length > 0 ? (
+                <p data-testid="review-packet-budget-overages" className="mt-1 text-xs text-red-700">
+                  over budget: {overages.map((metric) => metric.label).join(', ')}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {blastHasData && blast ? (
+            <div data-testid="review-packet-blast-radius">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Blast radius
+              </p>
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600">
+                <span>
+                  paths <span className="font-mono">{blast.paths.length}</span>
+                </span>
+                <span className={blast.highRiskPaths.length > 0 ? 'text-amber-700' : undefined}>
+                  high-risk paths <span className="font-mono">{blast.highRiskPaths.length}</span>
+                </span>
+                <span>
+                  public API changes <span className="font-mono">{blast.publicApiChanges}</span>
+                </span>
+                <span>
+                  schema changes <span className="font-mono">{blast.schemaChanges}</span>
+                </span>
+              </div>
+              {blast.highRiskPaths.length > 0 ? (
+                <ul
+                  data-testid="review-packet-blast-radius-high-risk"
+                  className="mt-1 space-y-0.5 font-mono text-[11px] text-amber-800"
+                >
+                  {blast.highRiskPaths.map((path) => (
+                    <li key={path}>{path}</li>
+                  ))}
+                </ul>
+              ) : null}
+              {blast.paths.length > 0 ? (
+                <ul
+                  data-testid="review-packet-blast-radius-paths"
+                  className="mt-1 space-y-0.5 font-mono text-[11px] text-slate-600"
+                >
+                  {blast.paths.map((path) => (
+                    <li key={path}>{path}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
 
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
@@ -132,6 +290,134 @@ function ReviewPacketCard({ packet }: { packet: ReviewPacketWire | null }) {
               </ul>
             )}
           </div>
+
+          {proof.length > 0 ? (
+            <div data-testid="review-packet-proof">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Proof ({proof.length})
+              </p>
+              <ul className="mt-1 space-y-1">
+                {proof.map((artifact) => (
+                  <li
+                    key={`${artifact.kind}:${artifact.path}`}
+                    data-testid="review-packet-proof-artifact"
+                    data-proof-kind={artifact.kind}
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone="neutral" mono>
+                        {artifact.kind}
+                      </Badge>
+                      <a
+                        href={artifact.path}
+                        target="_blank"
+                        rel="noreferrer"
+                        data-testid="review-packet-proof-link"
+                        className="font-mono text-[11px] text-sky-700 underline decoration-sky-200 underline-offset-2"
+                      >
+                        {artifact.label || artifact.path}
+                      </a>
+                      <span className="font-mono text-[11px] text-slate-500">{artifact.path}</span>
+                      {artifact.hash ? (
+                        <span className="font-mono text-[11px] text-slate-400" title={artifact.hash}>
+                          sha {artifact.hash.slice(0, 12)}
+                        </span>
+                      ) : null}
+                    </div>
+                    {isImagePath(artifact.path) ? (
+                      <img
+                        src={artifact.path}
+                        alt={artifact.label || artifact.path}
+                        data-testid="review-packet-proof-thumbnail"
+                        className="mt-1 max-h-40 rounded border border-slate-200"
+                      />
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {readFirst.length > 0 ? (
+            <div data-testid="review-packet-read-first">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Read first
+              </p>
+              <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-xs text-slate-700">
+                {readFirst.map((entry, index) => (
+                  <li key={`${entry.path}:${index}`} data-testid="review-packet-read-first-item">
+                    <span className="font-mono text-[11px]">{entry.path}</span>
+                    {entry.why ? <span className="text-slate-500"> — {entry.why}</span> : null}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
+
+          {decisions.length > 0 ? (
+            <div data-testid="review-packet-decisions">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Decisions
+              </p>
+              <ul className="mt-1 space-y-1 text-xs text-slate-700">
+                {decisions.map((decision, index) => (
+                  <li
+                    key={`${decision.at}:${decision.actor}:${index}`}
+                    data-testid="review-packet-decision"
+                    className="flex flex-wrap items-center gap-2"
+                  >
+                    <Badge tone="neutral" mono>
+                      {decision.decision || 'unknown'}
+                    </Badge>
+                    <span className="font-mono text-[11px] text-slate-600">
+                      {decision.actor || 'unknown actor'}
+                    </span>
+                    {decision.reason ? <span className="text-slate-600">{decision.reason}</span> : null}
+                    {decision.at ? (
+                      <span className="text-[11px] text-slate-400">{formatDateTime(decision.at)}</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {roles.length > 0 ? (
+            <div data-testid="review-packet-roles" className="flex flex-wrap items-center gap-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Reviewer roles
+              </p>
+              {roles.map((role) => (
+                <span key={role} data-testid="review-packet-role">
+                  <Badge tone="info" mono>
+                    {role}
+                  </Badge>
+                </span>
+              ))}
+            </div>
+          ) : null}
+
+          {comprehension ? (
+            <div data-testid="review-packet-comprehension" className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600">
+              <span>
+                read time <span className="font-mono">{comprehension.estimatedReadMinutes} min</span>
+              </span>
+              <span>
+                files without tests{' '}
+                <span className="font-mono">{comprehension.filesWithoutTests}</span>
+              </span>
+              <span>
+                modules without owner{' '}
+                <span className="font-mono">{comprehension.modulesWithoutOwner}</span>
+              </span>
+            </div>
+          ) : null}
+
+          {packet.contextPackRef ? (
+            <p data-testid="review-packet-context" className="text-xs text-slate-600">
+              context pack <span className="font-mono text-[11px]">{packet.contextPackRef}</span>
+            </p>
+          ) : null}
 
           <div className="grid gap-3 md:grid-cols-3">
             <div data-testid="review-packet-architecture-impact">
@@ -508,6 +794,24 @@ export default async function WorkItemDetailPage({
               </p>
             )}
           </div>
+          {workItem.input !== undefined ? (
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-400">Context pack</p>
+              {typeof workItem.input.contextPackRef === 'string' &&
+              workItem.input.contextPackRef.trim() !== '' ? (
+                <p
+                  data-testid="work-item-context-pack"
+                  className="break-all font-mono text-[11px] text-slate-600"
+                >
+                  {workItem.input.contextPackRef}
+                </p>
+              ) : (
+                <p data-testid="work-item-context-pack-empty" className="text-sm text-slate-500">
+                  none recorded
+                </p>
+              )}
+            </div>
+          ) : null}
           <div className="md:col-span-2">
             <p className="text-xs uppercase tracking-wide text-slate-400">Source reference</p>
             <p data-testid="work-item-source-ref" className="font-mono text-xs text-slate-600">

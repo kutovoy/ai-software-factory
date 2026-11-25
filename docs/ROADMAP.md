@@ -103,9 +103,14 @@ The archived OpenSpec change is `2026-11-07-harden-factory-quality` (ADR-052).
 5. **Review packet + human review.** A compact deterministic review packet on work-item detail/Inbox; high-risk
    work items require a human review gate before ship.
 
-**P1/P2:** context pack per feature, longitudinal brownfield benchmark, comprehension-debt metric, quality
-stop conditions, safe dark maintenance loops, model/harness routing, and “risk-tiered autonomy” language.
-See the weaknesses doc for the full backlog and acceptance criteria.
+**P1/P2:** longitudinal brownfield benchmark, comprehension-debt metric, review-capacity gate, safe dark
+maintenance loops, feature-flag experiments, unified decision graph, session learning, code mode and
+model/harness routing. See the weaknesses doc for the full backlog and acceptance criteria.
+
+**Anti-slop P0 — shipped (2026-11-25, OpenSpec `add-anti-slop-budgets-and-proof`, ADR-053):** risk-tiered
+slop budgets with stop conditions, proof artifacts (screenshot/video/HTML/curl/report), review packet v2
+(budget, blast radius, read-first, decisions, roles, comprehension), deterministic context packs, plan depth/
+expected pain/leverage, and `show-me`/`anti-slop` skills.
 
 ## What's left (2026-11-07)
 

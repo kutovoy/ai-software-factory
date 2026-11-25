@@ -83,6 +83,20 @@ model planner timed out on the larger high-risk artifact prompt, so that live hi
 deterministic planner; the gate/merge policy is model-independent. Full Playwright is 66/66; `bash
 scripts/smoke.sh` passes.
 
+**Anti-slop P0 — slop budgets, proof, context packs and review packet v2 — implemented** (2026-11-25,
+OpenSpec `add-anti-slop-budgets-and-proof`, ADR-053). Every work item now resolves a risk tier and a
+risk-tiered `quality.slopBudget` (diff lines, changed files, new dependencies, duplication/complexity delta),
+gets a deterministic context pack (relevant ADRs, architecture constraints, test standards, prior failures and
+relevant files), and records a `review.packet` v2 with budget vs actual, blast radius, proof artifacts,
+read-first ordering, gate decisions, reviewer roles and comprehension estimates. A slop overage stops an
+agent review gate (`request_changes`) or requires an explicit human waiver; proof artifacts are collected from
+the run/artifact store and bound to the commit. Mission plans carry `planDepth`, `expectedPain`, `leverage`
+and visual artifact references. New project-local skills: `show-me` (HTML mockups/diagrams/explainers) and
+`anti-slop` (deterministic rules + review heuristics). Live verification: `bun run ci` 970 pass / 192 skip;
+full Playwright 66/66; `bash scripts/smoke.sh` passed; the hello-nextjs cycle reached `done` with
+`riskTier=low`, `planDepth=light`, context pack `hello-nextjs@<commit>#context-pack`, slop actual 113 lines /
+7 files / 7 dependencies against a 250/10/8 budget → `pass`, and a packet v2 on the work item.
+
 **Remote runners + host observability — Linux, Windows and macOS native agents implemented** (2026-11-04/05, merged to
 `main`, archived OpenSpec `2026-11-04-add-remote-runners`; platform/artifact work in `2026-11-05-add-runner-platforms-and-artifacts`). A remote host enrolls from the console with a
 one-time token, exchanges it for a bearer agent token, then heartbeats and polls an outbound command

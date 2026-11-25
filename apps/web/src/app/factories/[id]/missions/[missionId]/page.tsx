@@ -117,6 +117,34 @@ function ProductReviewSection({
           ))}
         </ul>
       )}
+      {(review.visualArtifacts?.length ?? 0) > 0 ? (
+        <>
+          <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            Visual artifacts
+          </p>
+          <ul data-testid="mission-plan-visual-artifacts" className="mt-0.5 space-y-0.5 text-xs">
+            {review.visualArtifacts?.map((item) => (
+              <li key={item} data-testid="mission-plan-visual-artifact">
+                <a
+                  href={item}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="break-all font-mono text-[11px] text-sky-700 underline decoration-sky-200 underline-offset-2"
+                >
+                  {item}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : showEmpty ? (
+        <p
+          data-testid="mission-plan-visual-artifacts-empty"
+          className="mt-2 text-xs text-slate-500"
+        >
+          No visual artifacts recorded for this plan; a medium/high-risk UI plan should carry one.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -359,6 +387,28 @@ function PlanCard({ mission }: { mission: MissionSummary }) {
             {plan.goal || mission.goal}
           </p>
         </div>
+
+        {plan.planDepth || plan.expectedPain || plan.leverage ? (
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
+              {plan.planDepth ? (
+                <span data-testid="mission-plan-depth">
+                  plan depth <span className="font-mono">{plan.planDepth}</span>
+                </span>
+              ) : null}
+              {plan.expectedPain ? (
+                <span data-testid="mission-plan-pain">
+                  expected pain <span className="font-mono">{plan.expectedPain}</span>
+                </span>
+              ) : null}
+            </div>
+            {plan.leverage ? (
+              <p data-testid="mission-plan-leverage" className="text-xs text-slate-700">
+                leverage: {plan.leverage}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         <div data-testid="mission-plan-risk-reasons-block">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Risk reasons</p>

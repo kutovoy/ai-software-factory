@@ -1,10 +1,13 @@
 /**
  * Validation contract types (roadmap item 1).
  *
- * This module is deliberately dependency-free: no Node APIs, no zod, no imports at all.
- * Orchestration workflows import it directly (see the `./validation/types` export in
- * `package.json`), so it must stay safe for the Temporal/workflow sandbox.
+ * This module has no runtime imports (the `ProofKind` import is type-only and erased), no
+ * Node APIs and no zod. Orchestration workflows import it directly (see the
+ * `./validation/types` export in `package.json`), so it must stay safe for the
+ * Temporal/workflow sandbox.
  */
+
+import type { ProofKind } from '../quality/types';
 
 export const VALIDATION_TIERS = [
   'unit',
@@ -36,6 +39,8 @@ export interface ValidationCheck {
   expected?: string;
   /** Named thresholds the evidence must satisfy (e.g. `{ maxDuplicationPercent: 3 }`). */
   thresholds?: Record<string, number>;
+  /** Required proof artifact kind for UI/behavioral checks (change `add-anti-slop-budgets-and-proof`). */
+  artifactKind?: ProofKind;
 }
 
 export interface ValidationConfig {
@@ -65,6 +70,8 @@ export interface ValidationEvidence {
   at?: string;
   /** Auditable metric values reported alongside the evidence (finite numbers only). */
   metrics?: Record<string, number>;
+  /** Run-scoped proof artifact paths (max 20); omitted when the evidence carries none. */
+  artifacts?: string[];
 }
 
 export interface ValidationCheckResult {
@@ -117,6 +124,15 @@ function toMetrics(value: unknown): Record<string, number> | undefined {
   return Object.keys(metrics).length > 0 ? metrics : undefined;
 }
 
+/** Keeps non-empty artifact paths (max 20); undefined when nothing usable remains. */
+function toArtifacts(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const artifacts = value
+    .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+    .slice(0, 20);
+  return artifacts.length > 0 ? artifacts : undefined;
+}
+
 function toEvidence(entry: unknown): ValidationEvidence | null {
   if (!isRecord(entry)) return null;
   const id = entry.id;
@@ -131,6 +147,7 @@ function toEvidence(entry: unknown): ValidationEvidence | null {
         : undefined;
   const at = typeof entry.at === 'string' ? entry.at : undefined;
   const metrics = toMetrics(entry.metrics);
+  const artifacts = toArtifacts(entry.artifacts);
   return {
     checkId: id,
     status,
@@ -138,6 +155,7 @@ function toEvidence(entry: unknown): ValidationEvidence | null {
     ...(detail !== undefined ? { detail } : {}),
     ...(at !== undefined ? { at } : {}),
     ...(metrics !== undefined ? { metrics } : {}),
+    ...(artifacts !== undefined ? { artifacts } : {}),
   };
 }
 

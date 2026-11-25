@@ -261,6 +261,51 @@ export function reviewPacket(events: WorkItemEvent[]): ReviewPacketWire | null {
       })
     : [];
 
+  const proofArtifacts = Array.isArray(payload.proofArtifacts)
+    ? payload.proofArtifacts.flatMap((entry) => {
+        const record = recordOf(entry);
+        const kind = record.kind;
+        if (!isProofKind(kind) || typeof record.path !== 'string') return [];
+        return [
+          {
+            kind,
+            path: record.path,
+            label: stringOf(record.label),
+            ...(typeof record.commit === 'string' ? { commit: record.commit } : {}),
+            ...(typeof record.hash === 'string' ? { hash: record.hash } : {}),
+          },
+        ];
+      })
+    : undefined;
+
+  const readFirst = Array.isArray(payload.readFirst)
+    ? payload.readFirst.flatMap((entry) => {
+        const record = recordOf(entry);
+        if (typeof record.path !== 'string') return [];
+        return [{ path: record.path, why: stringOf(record.why) }];
+      })
+    : undefined;
+
+  const decisions = Array.isArray(payload.decisions)
+    ? payload.decisions.map((entry) => {
+        const record = recordOf(entry);
+        return {
+          at: stringOf(record.at),
+          actor: stringOf(record.actor),
+          decision: stringOf(record.decision),
+          reason: stringOf(record.reason),
+          ...(typeof record.ref === 'string' ? { ref: record.ref } : {}),
+        };
+      })
+    : undefined;
+
+  const reviewerRoles = stringList(payload.reviewerRoles);
+  const slopStatus = payload.slopStatus;
+  const slopBudget = recordOf(payload.slopBudget);
+  const slopActual = recordOf(payload.slopActual);
+  const blastRadius = recordOf(payload.blastRadius);
+  const comprehension = recordOf(payload.comprehension);
+
   return {
     riskTier: riskTier as RiskTierWire,
     intent: stringOf(payload.intent),
@@ -274,6 +319,60 @@ export function reviewPacket(events: WorkItemEvent[]): ReviewPacketWire | null {
     architectureImpact: stringList(payload.architectureImpact),
     openQuestions: stringList(payload.openQuestions),
     reviewerChecklist: stringList(payload.reviewerChecklist),
+    // Review packet v2 (`add-anti-slop-budgets-and-proof`). Only fields the payload actually
+    // carries are surfaced; a pre-v2 packet leaves them absent so the card omits the section
+    // instead of showing a fabricated zero.
+    ...(Object.keys(slopBudget).length > 0
+      ? {
+          slopBudget: {
+            maxDiffLines: numberOf(slopBudget.maxDiffLines) ?? 0,
+            maxChangedFiles: numberOf(slopBudget.maxChangedFiles) ?? 0,
+            maxNewDependencies: numberOf(slopBudget.maxNewDependencies) ?? 0,
+            maxDuplicationDeltaPercent: numberOf(slopBudget.maxDuplicationDeltaPercent) ?? 0,
+            maxComplexityDelta: numberOf(slopBudget.maxComplexityDelta) ?? 0,
+          },
+        }
+      : {}),
+    ...(Object.keys(slopActual).length > 0
+      ? {
+          slopActual: {
+            changedFiles: numberOf(slopActual.changedFiles) ?? 0,
+            additions: numberOf(slopActual.additions) ?? 0,
+            deletions: numberOf(slopActual.deletions) ?? 0,
+            diffLines: numberOf(slopActual.diffLines) ?? 0,
+            newDependencies: numberOf(slopActual.newDependencies) ?? 0,
+            duplicationDeltaPercent: numberOf(slopActual.duplicationDeltaPercent),
+            complexityDelta: numberOf(slopActual.complexityDelta),
+          },
+        }
+      : {}),
+    ...(slopStatus === 'pass' || slopStatus === 'exceeded' || slopStatus === 'unknown'
+      ? { slopStatus }
+      : {}),
+    ...(Object.keys(blastRadius).length > 0
+      ? {
+          blastRadius: {
+            paths: stringList(blastRadius.paths),
+            highRiskPaths: stringList(blastRadius.highRiskPaths),
+            publicApiChanges: numberOf(blastRadius.publicApiChanges) ?? 0,
+            schemaChanges: numberOf(blastRadius.schemaChanges) ?? 0,
+          },
+        }
+      : {}),
+    ...(proofArtifacts ? { proofArtifacts } : {}),
+    ...(readFirst ? { readFirst } : {}),
+    ...(decisions ? { decisions } : {}),
+    ...(reviewerRoles.length > 0 ? { reviewerRoles } : {}),
+    ...(Object.keys(comprehension).length > 0
+      ? {
+          comprehension: {
+            estimatedReadMinutes: numberOf(comprehension.estimatedReadMinutes) ?? 0,
+            filesWithoutTests: numberOf(comprehension.filesWithoutTests) ?? 0,
+            modulesWithoutOwner: numberOf(comprehension.modulesWithoutOwner) ?? 0,
+          },
+        }
+      : {}),
+    ...(typeof payload.contextPackRef === 'string' ? { contextPackRef: payload.contextPackRef } : {}),
   };
 }
 
@@ -353,6 +452,18 @@ export function boardStages(items: { stage: string }[]): string[] {
 
 function stringOf(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+function recordOf(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+const PROOF_KINDS = ['screenshot', 'video', 'html', 'curl', 'report', 'file'] as const;
+
+function isProofKind(value: unknown): value is (typeof PROOF_KINDS)[number] {
+  return typeof value === 'string' && (PROOF_KINDS as readonly string[]).includes(value);
 }
 
 function stringList(value: unknown): string[] {

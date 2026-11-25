@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { RISK_TIERS } from '../governance/risk';
+import { EXPECTED_PAIN_LEVELS, PLAN_DEPTHS } from '../quality/types';
 import { VALIDATION_TIERS } from '../validation/types';
 import { WORK_ITEM_TYPES } from '../work-items/types';
 import {
@@ -57,6 +58,7 @@ export const missionProductReviewSchema = z
     problem: z.string().min(1).max(4000),
     desiredBehavior: z.array(z.string().min(1).max(500)).max(50),
     mockups: z.array(z.string().min(1).max(500)).max(50),
+    visualArtifacts: z.array(z.string().min(1).max(500)).max(50).optional(),
   })
   .strict();
 
@@ -146,6 +148,10 @@ export const missionPlanSchema = z
     architecture: missionArchitectureSchema.optional(),
     programDesign: missionProgramDesignSchema.optional(),
     verticalSlices: z.array(missionVerticalSliceSchema).optional(),
+    /** Optional plan depth metadata; old plans stay valid without it. */
+    planDepth: z.enum(PLAN_DEPTHS).optional(),
+    expectedPain: z.enum(EXPECTED_PAIN_LEVELS).optional(),
+    leverage: z.string().min(1).max(2000).optional(),
   })
   .strict();
 

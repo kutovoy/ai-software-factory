@@ -120,6 +120,24 @@ test.describe('Factory loop (lights on)', () => {
     await expect(page.getByTestId('review-packet-risk').first()).toContainText('risk');
     await expect(page.getByTestId('review-packet-intent').first()).toBeVisible();
     await expect(page.getByTestId('review-packet-diff').first()).toContainText('diff');
+    // Review packet v2: slop status, budget vs actual, read-first and reviewer roles.
+    await expect(page.getByTestId('review-packet-slop').first()).toBeVisible();
+    await expect(page.getByTestId('review-packet-slop').first()).toHaveAttribute(
+      'data-slop-status',
+      /^(pass|exceeded|unknown)$/,
+    );
+    await expect(page.getByTestId('review-packet-budget').first()).toBeVisible();
+    await expect(page.getByTestId('review-packet-read-first').first()).toBeVisible();
+    await expect(page.getByTestId('review-packet-roles').first()).toBeVisible();
+    // Proof is collected from the run's artifacts; if the fake harness produced none the
+    // gallery is absent — assert the honest state instead of a fabricated artifact.
+    const proof = page.getByTestId('review-packet-proof');
+    if ((await proof.count()) > 0) {
+      await expect(proof.first()).toBeVisible();
+      await expect(page.getByTestId('review-packet-proof-link').first()).toBeVisible();
+    } else {
+      await expect(proof).toHaveCount(0);
+    }
 
     // Forge: a PR exists and checks are green; nothing merged yet (ship gate still pending).
     await expect(page.getByTestId('work-item-pr').first()).toHaveAttribute('href', /^https:\/\/forge\.local\//);

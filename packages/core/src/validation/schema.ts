@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PROOF_KINDS } from '../quality/types';
 import { VALIDATION_EVIDENCE_SOURCES, VALIDATION_TIERS } from './types';
 
 /**
@@ -16,6 +17,7 @@ export const validationCheckSchema = z
     command: z.string().min(1).optional(),
     expected: z.string().min(1).optional(),
     thresholds: z.record(z.string(), z.number().finite()).optional(),
+    artifactKind: z.enum(PROOF_KINDS).optional(),
   })
   .strict();
 
@@ -50,5 +52,6 @@ export const validationEvidenceSchema = z
     detail: z.string().optional(),
     at: z.string().optional(),
     metrics: z.record(z.string(), z.number().finite()).optional(),
+    artifacts: z.array(z.string().min(1)).max(20).optional(),
   })
   .strict();

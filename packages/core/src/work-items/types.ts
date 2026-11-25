@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { RiskTier } from '../governance/risk';
+import type { ProofKind, SlopBudget } from '../quality/types';
 import { codedString } from '../schema/common';
 import { LOOP_STAGES } from '../stage-graph/graph';
 
@@ -220,6 +221,14 @@ export const WORK_ITEM_EVENT_TYPES = [
   'guard.checked',
   /** Deterministic guard hooks failed; the PR is not committed. */
   'guard.failed',
+  /** Deterministic slop metrics measured from the captured patch (anti-slop budgets). */
+  'slop.measured',
+  /** A risk-tiered slop budget was exceeded; the review gate stops or requires a waiver. */
+  'slop.budget_exceeded',
+  /** Optional model-written review explainer artifact; never replaces packet facts. */
+  'review.explainer',
+  /** Deterministic context pack built before implementation and referenced by the packet. */
+  'context.pack',
 ] as const;
 export type WorkItemEventType = (typeof WORK_ITEM_EVENT_TYPES)[number];
 
@@ -227,6 +236,9 @@ export type WorkItemEventType = (typeof WORK_ITEM_EVENT_TYPES)[number];
  * Deterministic review packet (change `harden-factory-quality`). Assembled from plan,
  * evidence and diff data — not model prose — so a human review gate has an auditable
  * decision surface while the full diff stays linked.
+ *
+ * Review packet v2 (change `add-anti-slop-budgets-and-proof`) adds budget vs actual, blast
+ * radius, proof artifacts, a read-first list, decisions, reviewer roles and comprehension.
  */
 export interface ReviewPacket {
   riskTier: RiskTier;
@@ -238,4 +250,43 @@ export interface ReviewPacket {
   architectureImpact: string[];
   openQuestions: string[];
   reviewerChecklist: string[];
+  slopBudget: SlopBudget;
+  slopActual: {
+    changedFiles: number;
+    additions: number;
+    deletions: number;
+    diffLines: number;
+    newDependencies: number;
+    duplicationDeltaPercent: number | null;
+    complexityDelta: number | null;
+  };
+  slopStatus: 'pass' | 'exceeded' | 'unknown';
+  blastRadius: {
+    paths: string[];
+    highRiskPaths: string[];
+    publicApiChanges: number;
+    schemaChanges: number;
+  };
+  proofArtifacts: Array<{
+    kind: ProofKind;
+    path: string;
+    label: string;
+    commit?: string;
+    hash?: string;
+  }>;
+  readFirst: Array<{ path: string; why: string }>;
+  decisions: Array<{
+    at: string;
+    actor: string;
+    decision: string;
+    reason: string;
+    ref?: string;
+  }>;
+  reviewerRoles: string[];
+  comprehension: {
+    estimatedReadMinutes: number;
+    filesWithoutTests: number;
+    modulesWithoutOwner: number;
+  };
+  contextPackRef: string | null;
 }

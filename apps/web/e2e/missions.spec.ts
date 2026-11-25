@@ -36,6 +36,9 @@ test('mission list and detail render the plan, features and lifecycle controls',
     createdAt: new Date().toISOString(),
     riskTier: 'medium',
     riskReasons: ['Adds a new public route', 'Touches shared navigation'],
+    planDepth: 'full',
+    expectedPain: 'medium',
+    leverage: 'Add one static route and link it from the navigation',
     productReview: {
       problem: 'Operators cannot find setup documentation from inside the app.',
       desiredBehavior: [
@@ -43,6 +46,7 @@ test('mission list and detail render the plan, features and lifecycle controls',
         'The Docs link appears in the navigation',
       ],
       mockups: ['docs-page.png'],
+      visualArtifacts: ['docs-page.png', 'docs-navigation-diagram.svg'],
     },
     architecture: {
       summary: 'A single static docs route inside the existing Next.js app.',
@@ -165,7 +169,12 @@ test('mission list and detail render the plan, features and lifecycle controls',
   await expect(page.getByTestId('mission-plan-card').first()).toBeVisible();
   await expect(page.getByTestId('mission-plan-risk').first()).toHaveText('medium risk');
   await expect(page.getByTestId('mission-plan-risk-reasons').first()).toBeVisible();
+  await expect(page.getByTestId('mission-plan-depth').first()).toContainText('full');
+  await expect(page.getByTestId('mission-plan-pain').first()).toContainText('medium');
+  await expect(page.getByTestId('mission-plan-leverage').first()).toContainText('static route');
   await expect(page.getByTestId('mission-plan-product-review').first()).toBeVisible();
+  await expect(page.getByTestId('mission-plan-visual-artifacts').first()).toBeVisible();
+  await expect(page.getByTestId('mission-plan-visual-artifact').first()).toContainText('docs-page.png');
   await expect(page.getByTestId('mission-plan-architecture').first()).toBeVisible();
   await expect(page.getByTestId('mission-plan-program-design').first()).toBeVisible();
   await expect(page.getByTestId('mission-plan-vertical-slices').first()).toBeVisible();

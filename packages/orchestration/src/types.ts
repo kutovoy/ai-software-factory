@@ -7,12 +7,16 @@ import type { AgentVerdict, AgentVerdictPolicy } from '@factory/core/gates/verdi
 import type { GovernanceConfig } from '@factory/core/governance/policy';
 import type { ValidationContract, ValidationTier } from '@factory/core/validation/types';
 import type {
+  ExpectedPain,
   MissionArchitecture,
   MissionProgramDesign,
   MissionProductReview,
   MissionVerticalSlice,
+  PlanDepth,
+  QualityConfig,
   RiskTier,
   RiskTierPolicy,
+  SlopBudget,
 } from '@factory/core';
 
 export type RunStatus = 'pending' | 'running' | 'ok' | 'error' | 'cancelled';
@@ -388,6 +392,25 @@ export interface FactoryWorkflowInput {
   architectureImpact?: string[];
   /** Open plan questions a reviewer should confirm (review packet context). */
   openQuestions?: string[];
+  /**
+   * Deterministic context pack (change `add-anti-slop-budgets-and-proof`): ADRs, plan
+   * constraints, test standards and relevant files, passed into every stage prompt.
+   */
+  contextPack?: string;
+  /** Stable reference of the context pack (`<factory>@<commit>#context-pack`). */
+  contextPackRef?: string | null;
+  /** Resolved `quality` block: slop budgets + proof requirements. */
+  quality?: QualityConfig;
+  /** Planning depth from the mission planner (change `add-anti-slop-budgets-and-proof`). */
+  planDepth?: PlanDepth;
+  /** How much review/attention the change is expected to need. */
+  expectedPain?: ExpectedPain;
+  /** The smallest change that unlocks the outcome. */
+  leverage?: string;
+  /** High-risk path globs from governance; the review packet matches changed files. */
+  highRiskPaths?: string[];
+  /** Budget for this item's risk tier (resolved from `quality.slopBudget`). */
+  slopBudget?: SlopBudget;
 }
 
 export type FactoryOutcomeStatus = 'done' | 'escalated' | 'cancelled' | 'blocked';
@@ -505,6 +528,12 @@ export interface MissionPlanData {
   architecture?: MissionArchitecture;
   programDesign?: MissionProgramDesign;
   verticalSlices?: MissionVerticalSlice[];
+  /** Planning depth metadata (change `add-anti-slop-budgets-and-proof`). */
+  planDepth?: PlanDepth;
+  /** How much review/attention the change is expected to need. */
+  expectedPain?: ExpectedPain;
+  /** The smallest change that unlocks the outcome (max 2000 chars). */
+  leverage?: string;
 }
 
 export interface MissionWorkflowResume {
@@ -652,6 +681,22 @@ export interface StageWorkflowInput {
   architectureImpact?: string[];
   /** Open plan questions a reviewer should confirm. */
   openQuestions?: string[];
+  /** Deterministic context pack included in the stage prompt (bounded markdown). */
+  contextPack?: string;
+  /** Stable context-pack reference recorded in the review packet. */
+  contextPackRef?: string | null;
+  /** Resolved `quality` block (slop budgets + proof requirements). */
+  quality?: QualityConfig;
+  /** Planning depth metadata from the mission plan. */
+  planDepth?: PlanDepth;
+  /** Expected pain level from the mission plan. */
+  expectedPain?: ExpectedPain;
+  /** Smallest change that unlocks the outcome. */
+  leverage?: string;
+  /** High-risk path globs the review packet matches against changed files. */
+  highRiskPaths?: string[];
+  /** Budget for this stage's risk tier. */
+  slopBudget?: SlopBudget;
 }
 
 export interface StageGateOutcome {

@@ -1,14 +1,20 @@
 import {
+  EXPECTED_PAIN_LEVELS,
+  PLAN_DEPTHS,
   RISK_TIERS,
   classifyRisk,
   newMissionFeatureId,
   newMissionMilestoneId,
+  planDepthFor,
   validateMissionPlan,
+  type ExpectedPain,
   type MissionArchitecture,
   type MissionPlan,
   type MissionProgramDesign,
   type MissionProductReview,
   type MissionVerticalSlice,
+  type PlanDepth,
+  type QualityConfig,
   type RiskGovernance,
   type RiskTier,
 } from '@factory/core';
@@ -42,6 +48,8 @@ export interface MissionPlannerInput {
   createdAt?: string;
   /** Resolved `governance.risk` block from the factory definition. */
   riskGovernance?: RiskGovernance;
+  /** Parsed `quality` block; carried for budget-aware planning (P0 does not gate on it). */
+  quality?: QualityConfig;
 }
 
 export interface MissionPlanner {
@@ -165,6 +173,8 @@ export const deterministicMissionPlanner: MissionPlanner = {
       problem: clamp(input.goal.trim().length > 0 ? input.goal : input.title, 4000),
       desiredBehavior: titles.map((title) => clamp(title, 500)),
       mockups: [],
+      // Honest: the deterministic planner invents no visuals; the UI shows an empty state.
+      visualArtifacts: [],
     };
 
     const architecture: MissionArchitecture = {
@@ -197,6 +207,20 @@ export const deterministicMissionPlanner: MissionPlanner = {
       features,
     };
 
+    // Plan depth metadata (change `add-anti-slop-budgets-and-proof`): deterministic, sized
+    // from the risk tier and the number of goal lines (~80 changed lines each).
+    const expectedPain: ExpectedPain = risk.tier;
+    const planDepth: PlanDepth = planDepthFor({
+      riskTier: risk.tier,
+      expectedPain,
+      changeSize: titles.length * 80,
+      reversible: true,
+    });
+    const leverage = clamp(
+      (titles[0] ?? '').trim().length > 0 ? (titles[0] as string) : input.title || 'Mission',
+      2000,
+    );
+
     return {
       version: 'v1alpha1',
       missionId: input.missionId,
@@ -225,6 +249,9 @@ export const deterministicMissionPlanner: MissionPlanner = {
       architecture,
       programDesign,
       verticalSlices,
+      planDepth,
+      expectedPain,
+      leverage,
     };
   },
 };
@@ -245,7 +272,9 @@ const PLAN_SYSTEM_PROMPT = [
   'The object must match this shape:',
   '{"title":string,"goal":string,"risks":string[],"assumptions":string[],',
   '"riskTier":"low|medium|high","riskReasons":string[],',
-  '"productReview":{"problem":string,"desiredBehavior":string[],"mockups":string[]},',
+  '"planDepth":"none|light|full","expectedPain":"low|medium|high","leverage":string,',
+  '"productReview":{"problem":string,"desiredBehavior":string[],"mockups":string[],',
+  '"visualArtifacts":string[]},',
   '"architecture":{"summary":string,"components":[{"name":string,"responsibility":string,',
   '"contracts":string[]}],"dataModels":string[],"constraints":string[]},',
   '"programDesign":{"modules":[{"name":string,"path":string,"responsibility":string,',
@@ -262,6 +291,12 @@ const PLAN_SYSTEM_PROMPT = [
   'one assertion id. `dependsOn` lists feature indexes inside the same milestone.',
   'Derive `riskTier` and record concrete `riskReasons`; medium/high risk plans must include',
   'productReview, architecture, programDesign and verticalSlices.',
+  'Set `planDepth` and `expectedPain` explicitly: low-risk reversible changes may be',
+  '"none"/"light"; medium risk is "light"; high risk or data/API/schema changes are "full"',
+  'with "high" expected pain. `leverage` states the smallest change that unlocks the goal.',
+  'For a UI or behavioral medium/high plan, put a visual mockup/diagram reference in',
+  'productReview.visualArtifacts (e.g. "docs/mockups/<name>.html"); never invent a file that',
+  'will not exist — leave the array empty when no visual was produced.',
   'A vertical slice is an end-to-end behavior, not a horizontal layer. Prefer slices that',
   'deliver working behavior; group scaffolding into the first runnable slice. A plan must',
   'contain at least one `slice`; an `enabler` must state in `verticalSlice` what later slice',
@@ -282,6 +317,9 @@ interface RawPlan {
   assumptions?: unknown;
   riskTier?: unknown;
   riskReasons?: unknown;
+  planDepth?: unknown;
+  expectedPain?: unknown;
+  leverage?: unknown;
   productReview?: unknown;
   architecture?: unknown;
   programDesign?: unknown;
@@ -329,6 +367,26 @@ function asFeatureKind(value: unknown): 'slice' | 'enabler' | null {
   return value === 'slice' || value === 'enabler' ? value : null;
 }
 
+function asPlanDepth(value: unknown): PlanDepth | null {
+  return typeof value === 'string' && (PLAN_DEPTHS as readonly string[]).includes(value)
+    ? (value as PlanDepth)
+    : null;
+}
+
+function asExpectedPain(value: unknown): ExpectedPain | null {
+  return typeof value === 'string' && (EXPECTED_PAIN_LEVELS as readonly string[]).includes(value)
+    ? (value as ExpectedPain)
+    : null;
+}
+
+function firstGoalLine(goal: string): string | null {
+  for (const line of goal.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed.length > 0) return trimmed;
+  }
+  return null;
+}
+
 function parseProductReview(value: unknown): MissionProductReview | undefined {
   const item = asRecord(value);
   const problem =
@@ -342,6 +400,9 @@ function parseProductReview(value: unknown): MissionProductReview | undefined {
       .map((entry) => clamp(entry, 500))
       .slice(0, 50),
     mockups: asStringArray(item.mockups)
+      .map((entry) => clamp(entry, 500))
+      .slice(0, 50),
+    visualArtifacts: asStringArray(item.visualArtifacts)
       .map((entry) => clamp(entry, 500))
       .slice(0, 50),
   };
@@ -424,6 +485,7 @@ function synthesizeArtifacts(
       problem: clamp(input.goal.trim().length > 0 ? input.goal : input.title, 4000),
       desiredBehavior: features.map((feature) => clamp(feature.title, 500)).slice(0, 50),
       mockups: [],
+      visualArtifacts: [],
     },
     architecture: {
       summary: clamp(
@@ -623,6 +685,24 @@ function normalizePlan(raw: RawPlan, input: MissionPlannerInput): MissionPlanDat
     });
   }
 
+  // Plan depth metadata: use the model's values when present, otherwise derive
+  // deterministically from the risk tier and the plan size. Never fail on absence.
+  const expectedPain = asExpectedPain(raw.expectedPain) ?? riskTier;
+  const planDepth =
+    asPlanDepth(raw.planDepth) ??
+    planDepthFor({
+      riskTier,
+      expectedPain,
+      changeSize: allFeatures.length * 80,
+      reversible: true,
+    });
+  const leverage = clamp(
+    (typeof raw.leverage === 'string' && raw.leverage.trim().length > 0
+      ? raw.leverage
+      : firstGoalLine(input.goal) ?? input.title) || 'Mission',
+    2000,
+  );
+
   return {
     version: 'v1alpha1',
     missionId: input.missionId,
@@ -651,6 +731,9 @@ function normalizePlan(raw: RawPlan, input: MissionPlannerInput): MissionPlanDat
     ...(architecture ? { architecture } : {}),
     ...(programDesign ? { programDesign } : {}),
     ...(slices.length > 0 ? { verticalSlices: slices } : {}),
+    planDepth,
+    expectedPain,
+    leverage,
   };
 }
 

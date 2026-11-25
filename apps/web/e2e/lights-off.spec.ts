@@ -139,6 +139,15 @@ test.describe('Factory loop (lights off)', () => {
     await expect(packet).toBeVisible({ timeout: 30_000 });
     await expect(packet).toHaveAttribute('data-risk-tier', /^(low|medium|high)$/);
     await expect(page.getByTestId('review-packet-risk').first()).toContainText('risk');
+    // Review packet v2 fields are present whenever the loop assembled a packet.
+    await expect(page.getByTestId('review-packet-slop').first()).toBeVisible();
+    await expect(page.getByTestId('review-packet-slop').first()).toHaveAttribute(
+      'data-slop-status',
+      /^(pass|exceeded|unknown)$/,
+    );
+    await expect(page.getByTestId('review-packet-budget').first()).toBeVisible();
+    await expect(page.getByTestId('review-packet-read-first').first()).toBeVisible();
+    await expect(page.getByTestId('review-packet-roles').first()).toBeVisible();
 
     await expect(page.getByTestId('work-item-pr').first()).toHaveAttribute('href', /^https:\/\/forge\.local\//);
     await expect(page.getByTestId('checks-green').first()).toHaveText('green');

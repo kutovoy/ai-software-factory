@@ -43,12 +43,40 @@ governance:
         planApproval: human
         review: human
         merge: human
-id: fac_01M6VFJKR9N08X65GT5NNQQ548
+id: fac_01M88X9THZEJ8F0Q39EW7PWZFS
 mcp:
   discovery:
     enabled: true
     maxServers: 3
 mergePolicy: auto_on_green
+quality:
+  proof:
+    kinds:
+      - screenshot
+      - video
+      - html
+      - curl
+      - report
+    requireForUi: true
+  slopBudget:
+    high:
+      maxChangedFiles: 20
+      maxComplexityDelta: 20
+      maxDiffLines: 800
+      maxDuplicationDeltaPercent: 2
+      maxNewDependencies: 2
+    low:
+      maxChangedFiles: 10
+      maxComplexityDelta: 5
+      maxDiffLines: 250
+      maxDuplicationDeltaPercent: 0.5
+      maxNewDependencies: 8
+    medium:
+      maxChangedFiles: 15
+      maxComplexityDelta: 10
+      maxDiffLines: 500
+      maxDuplicationDeltaPercent: 1
+      maxNewDependencies: 10
 name: hello-nextjs
 repositories:
   - name: hello-nextjs

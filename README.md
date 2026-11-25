@@ -28,7 +28,8 @@ This project is that factory, built to be **self-hosted, inspectable and yours**
   `policy:<name>`. Full autonomy is possible, but enabling it requires a passing benchmark attestation — or an
   explicit, audited override. Autonomy is risk-tiered: low-risk loops may run dark; medium/high plans need a
   human, and high-risk changes (auth, billing, migrations, public APIs, security) always require human review
-  and ship decisions.
+  and ship decisions. Every change also carries a **slop budget** and a **review packet** with proof, blast
+  radius and comprehension estimates, so the factory cannot outrun the human review it needs.
 - **Model- and harness-agnostic.** Any OpenAI-compatible endpoint (LiteLLM, OpenAI, local), any harness behind one
   adapter contract (opencode today). Provider credentials never enter the sandbox.
 - **It measures and improves itself.** Scorers, judge calibration, benchmarks at pinned commits, then a
@@ -38,6 +39,14 @@ This project is that factory, built to be **self-hosted, inspectable and yours**
 
 Short, dated highlights of user-visible changes. Full detail lives in `docs/STATUS.md`.
 
+- **2026-11-25 — Slop budgets, proof artifacts and context packs.** Every work item now gets a
+  risk-tiered slop budget (diff lines, changed files, new dependencies, duplication/complexity delta) and a
+  deterministic context pack (ADRs, architecture constraints, test standards, prior failures). The review
+  packet becomes a decision surface: budget vs actual, blast radius, proof artifacts (screenshots/video/HTML/
+  curl/report), a read-first list, gate decisions, reviewer roles and comprehension estimates. A slop overage
+  stops an agent review gate or requires a human waiver. Mission plans carry `planDepth`/`expectedPain`/
+  `leverage` and visual plan artifacts. New `show-me` and `anti-slop` skills make visual alignment and
+  deterministic anti-slop checks part of the loop.
 - **2026-11-07 — Risk-tiered autonomy and review packets.** Missions now carry a `low`/`medium`/`high` risk
   tier with reasons; only low-risk plans can auto-approve under full autonomy, while medium/high plans always
   wait for a human. High-risk work items force human review and ship gates and never auto-merge. Validation

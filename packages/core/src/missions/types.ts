@@ -1,4 +1,5 @@
 import type { RiskTier } from '../governance/risk';
+import type { ExpectedPain, PlanDepth } from '../quality/types';
 import type { ValidationTier } from '../validation/types';
 import type { GateDecisionValue, WorkItemType } from '../work-items/types';
 
@@ -126,6 +127,8 @@ export interface MissionProductReview {
   problem: string;
   desiredBehavior: string[];
   mockups: string[];
+  /** Run-scoped visual artifacts (mockups/diagrams/HTML pages); optional for old plans. */
+  visualArtifacts?: string[];
 }
 
 export interface MissionArchitectureComponent {
@@ -211,6 +214,12 @@ export interface MissionPlan {
   architecture?: MissionArchitecture;
   programDesign?: MissionProgramDesign;
   verticalSlices?: MissionVerticalSlice[];
+  /** Planning depth (change `add-anti-slop-budgets-and-proof`); optional for old plans. */
+  planDepth?: PlanDepth;
+  /** How much review/attention the change is expected to need. */
+  expectedPain?: ExpectedPain;
+  /** The smallest change that unlocks the outcome (max 2000 chars). */
+  leverage?: string;
 }
 
 export interface Mission {

@@ -355,6 +355,15 @@ export async function FactoryWorkflow(
       ...(input.planRef ? { planRef: input.planRef } : {}),
       ...(input.architectureImpact ? { architectureImpact: input.architectureImpact } : {}),
       ...(input.openQuestions ? { openQuestions: input.openQuestions } : {}),
+      // Context pack + quality metadata (change `add-anti-slop-budgets-and-proof`).
+      ...(input.contextPack ? { contextPack: input.contextPack } : {}),
+      ...(input.contextPackRef !== undefined ? { contextPackRef: input.contextPackRef } : {}),
+      ...(input.quality ? { quality: input.quality } : {}),
+      ...(input.planDepth ? { planDepth: input.planDepth } : {}),
+      ...(input.expectedPain ? { expectedPain: input.expectedPain } : {}),
+      ...(input.leverage ? { leverage: input.leverage } : {}),
+      ...(input.highRiskPaths ? { highRiskPaths: input.highRiskPaths } : {}),
+      ...(input.slopBudget ? { slopBudget: input.slopBudget } : {}),
       ...(input.budget?.maxCostUsdPerStage !== undefined
         ? { maxCostUsd: input.budget.maxCostUsdPerStage }
         : input.budget?.maxCostUsdPerRun !== undefined

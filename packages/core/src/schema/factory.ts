@@ -15,6 +15,11 @@ import { stageDeclarationSchema } from './stage';
 import { AGENT_VERDICT_POLICIES } from '../gates/verdict';
 import { guardConfigSchema } from '../guard/types';
 import { DEFAULT_RISK_GOVERNANCE, RISK_TIERS, type RiskTierPolicy } from '../governance/risk';
+import {
+  DEFAULT_SLOP_BUDGETS,
+  PROOF_KINDS,
+  type SlopBudget,
+} from '../quality/types';
 import { validationConfigSchema } from '../validation/schema';
 import { newUlid } from '../work-items/id';
 
@@ -79,6 +84,51 @@ export const riskGovernanceSchema = z
   })
   .strict();
 
+/**
+ * One risk tier's slop caps (change `add-anti-slop-budgets-and-proof`). Every field is
+ * defaulted from the tier's shipped budget, so a partial tier inherits the rest.
+ */
+export function slopBudgetSchema(defaults: SlopBudget = DEFAULT_SLOP_BUDGETS.low) {
+  return z
+    .object({
+      maxDiffLines: z.number().int().min(0).max(100_000).default(defaults.maxDiffLines),
+      maxChangedFiles: z.number().int().min(0).max(10_000).default(defaults.maxChangedFiles),
+      maxNewDependencies: z.number().int().min(0).max(100).default(defaults.maxNewDependencies),
+      maxDuplicationDeltaPercent: z
+        .number()
+        .min(0)
+        .max(100)
+        .default(defaults.maxDuplicationDeltaPercent),
+      maxComplexityDelta: z.number().min(0).max(1000).default(defaults.maxComplexityDelta),
+    })
+    .strict();
+}
+
+/** Per-tier budget overrides; missing tiers and fields inherit the defaults. */
+export const slopBudgetConfigSchema = z
+  .object({
+    low: slopBudgetSchema(DEFAULT_SLOP_BUDGETS.low).default(DEFAULT_SLOP_BUDGETS.low),
+    medium: slopBudgetSchema(DEFAULT_SLOP_BUDGETS.medium).default(DEFAULT_SLOP_BUDGETS.medium),
+    high: slopBudgetSchema(DEFAULT_SLOP_BUDGETS.high).default(DEFAULT_SLOP_BUDGETS.high),
+  })
+  .strict();
+
+/** Proof requirements for UI/behavioral changes; off unless opted in. */
+export const qualityProofSchema = z
+  .object({
+    requireForUi: z.boolean().default(false),
+    kinds: z.array(z.enum(PROOF_KINDS)).default([...PROOF_KINDS]),
+  })
+  .strict();
+
+/** The optional `quality` block; absent means defaults everywhere. */
+export const qualityConfigSchema = z
+  .object({
+    slopBudget: slopBudgetConfigSchema.optional(),
+    proof: qualityProofSchema.optional(),
+  })
+  .strict();
+
 export const factorySchema = z
   .object({
     schemaVersion: z.literal(SCHEMA_VERSION),
@@ -134,6 +184,11 @@ export const factorySchema = z
     improvement: improvementSchema.optional(),
     /** Validation contract defaults (roadmap item 1); `enforce` is off unless opted in. */
     validation: validationConfigSchema.optional(),
+    /**
+     * Risk-tiered slop budgets and proof requirements (change
+     * `add-anti-slop-budgets-and-proof`). Optional: old factories keep the shipped defaults.
+     */
+    quality: qualityConfigSchema.optional(),
     /** Agent readiness (roadmap item 2); advisory unless `enforceAutonomy` is true. */
     readiness: z
       .object({

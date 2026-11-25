@@ -1,8 +1,9 @@
 # Software Factory Weaknesses and Quality Workstream
 
 **Status:** research + implementation record (2026-11-07). P0 is **implemented and archived** as OpenSpec
-`2026-11-07-harden-factory-quality` (ADR-052); the P1/P2 backlog below remains. The live checks are recorded
-in `docs/STATUS.md`.
+`2026-11-07-harden-factory-quality` (ADR-052); the anti-slop P0 (slop budgets, proof, context packs, packet v2)
+is implemented as `add-anti-slop-budgets-and-proof` (ADR-053). The P1/P2 backlog below remains. The live checks
+are recorded in `docs/STATUS.md`.
 
 **Purpose:** capture why “lights-off” software factories fail, separate the strong claims from the
 overstated ones, and turn the useful parts into a concrete P0 plan for this repository.

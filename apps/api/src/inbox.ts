@@ -1,13 +1,16 @@
 import {
+  isProofKind,
   mapGate,
   mapMission,
   mapWorkItem,
+  resolveSlopBudgets,
   type GateDecisionRecord,
   type GateDecisionRow,
   type MissionGate,
   type MissionRow,
   type MissionSummary,
   type ReviewPacket,
+  type SlopBudget,
   type WorkItemRow,
 } from '@factory/core';
 import { getSql, type RunRow } from '@factory/orchestration';
@@ -183,6 +186,30 @@ function finiteNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
+function nullableNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function recordOf(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+/** Resolves a persisted single-tier budget against the shipped defaults. */
+function slopBudgetOf(value: unknown, riskTier: ReviewPacket['riskTier']): SlopBudget {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return resolveSlopBudgets()[riskTier];
+  }
+  return resolveSlopBudgets({
+    slopBudget: { [riskTier]: value },
+  } as unknown as Parameters<typeof resolveSlopBudgets>[0])[riskTier];
+}
+
+function slopStatusOf(value: unknown): ReviewPacket['slopStatus'] {
+  return value === 'pass' || value === 'exceeded' || value === 'unknown' ? value : 'unknown';
+}
+
 /**
  * Defensive projection of a `review.packet` payload. The event is written by the orchestrator,
  * but an older or partially-written row must never crash the inbox: a payload without a valid
@@ -212,6 +239,49 @@ function reviewPacketOf(value: unknown): ReviewPacket | null {
       })
     : [];
 
+  // Review packet v2 (change `add-anti-slop-budgets-and-proof`): every new field is parsed
+  // defensively. A payload written before v2 has none of them, so the honest defaults are
+  // used — an unknown slop status, no proof, no decisions — never fabricated values.
+  const actual = recordOf(record.slopActual);
+  const blastRadius = recordOf(record.blastRadius);
+  const comprehension = recordOf(record.comprehension);
+  const proofArtifacts: ReviewPacket['proofArtifacts'] = Array.isArray(record.proofArtifacts)
+    ? record.proofArtifacts.flatMap((entry) => {
+        const item = recordOf(entry);
+        if (!isProofKind(item.kind) || typeof item.path !== 'string') return [];
+        return [
+          {
+            kind: item.kind,
+            path: item.path,
+            label: typeof item.label === 'string' ? item.label : '',
+            ...(typeof item.commit === 'string' ? { commit: item.commit } : {}),
+            ...(typeof item.hash === 'string' ? { hash: item.hash } : {}),
+          },
+        ];
+      })
+    : [];
+  const readFirst: ReviewPacket['readFirst'] = Array.isArray(record.readFirst)
+    ? record.readFirst.flatMap((entry) => {
+        const item = recordOf(entry);
+        if (typeof item.path !== 'string') return [];
+        return [{ path: item.path, why: typeof item.why === 'string' ? item.why : '' }];
+      })
+    : [];
+  const decisions: ReviewPacket['decisions'] = Array.isArray(record.decisions)
+    ? record.decisions.map((entry) => {
+        const item = recordOf(entry);
+        return {
+          at: typeof item.at === 'string' ? item.at : '',
+          actor: typeof item.actor === 'string' ? item.actor : '',
+          decision: typeof item.decision === 'string' ? item.decision : '',
+          reason: typeof item.reason === 'string' ? item.reason : '',
+          ...(typeof item.ref === 'string' ? { ref: item.ref } : {}),
+        };
+      })
+    : [];
+  const reviewerRoles = stringList(record.reviewerRoles);
+  const contextPackRef = typeof record.contextPackRef === 'string' ? record.contextPackRef : null;
+
   return {
     riskTier,
     intent: typeof record.intent === 'string' ? record.intent : '',
@@ -225,6 +295,33 @@ function reviewPacketOf(value: unknown): ReviewPacket | null {
     architectureImpact: stringList(record.architectureImpact),
     openQuestions: stringList(record.openQuestions),
     reviewerChecklist: stringList(record.reviewerChecklist),
+    slopBudget: slopBudgetOf(record.slopBudget, riskTier),
+    slopActual: {
+      changedFiles: finiteNumber(actual.changedFiles),
+      additions: finiteNumber(actual.additions),
+      deletions: finiteNumber(actual.deletions),
+      diffLines: finiteNumber(actual.diffLines),
+      newDependencies: finiteNumber(actual.newDependencies),
+      duplicationDeltaPercent: nullableNumber(actual.duplicationDeltaPercent),
+      complexityDelta: nullableNumber(actual.complexityDelta),
+    },
+    slopStatus: slopStatusOf(record.slopStatus),
+    blastRadius: {
+      paths: stringList(blastRadius.paths),
+      highRiskPaths: stringList(blastRadius.highRiskPaths),
+      publicApiChanges: finiteNumber(blastRadius.publicApiChanges),
+      schemaChanges: finiteNumber(blastRadius.schemaChanges),
+    },
+    proofArtifacts,
+    readFirst,
+    decisions,
+    reviewerRoles: reviewerRoles.length > 0 ? reviewerRoles : ['correctness'],
+    comprehension: {
+      estimatedReadMinutes: finiteNumber(comprehension.estimatedReadMinutes),
+      filesWithoutTests: finiteNumber(comprehension.filesWithoutTests),
+      modulesWithoutOwner: finiteNumber(comprehension.modulesWithoutOwner),
+    },
+    contextPackRef,
   };
 }
 

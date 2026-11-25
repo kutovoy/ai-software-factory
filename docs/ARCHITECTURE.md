@@ -196,7 +196,11 @@ Mission budget caps are admission guards on top of factory quotas. Validation ru
 repository (not the central factory checkout), and local runs honour an explicit `repo.url` so the validator
 sees the merged tree. Before a review gate, the orchestrator records a deterministic `review.packet` event
 (intent, plan reference, diff stats, assertion evidence, architecture impact, open questions and a checklist);
-it is a decision surface, not model prose. The MVP is sequential; parallel features/worktrees, mission
+it is a decision surface, not model prose. Packet v2 adds a risk-tiered slop budget vs actual, blast radius,
+proof artifacts (screenshot/video/HTML/curl/report), a read-first list, gate decisions, reviewer roles and
+comprehension estimates. Every work item also gets a deterministic context pack (relevant ADRs, architecture
+constraints, test standards, prior failures and relevant files) before implementation. A slop overage stops an
+agent review gate with `request_changes` or requires an explicit human waiver; proof is bound to the commit. The MVP is sequential; parallel features/worktrees, mission
 templates, cross-repo missions and mission-level canaries are follow-ups. See
 `openspec/specs/missions/spec.md`, ADR-050/051/052 and `docs/STATUS.md`.
 

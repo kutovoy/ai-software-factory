@@ -16,7 +16,11 @@ Terms used across specs, code and UI. Keep this aligned with `packages/core` typ
 | **Risk policy** | `governance.risk` in `factory.yaml`: the default tier, per-tier `planApproval`/`review`/`merge` rules and `highRiskPaths`. Absent means conservative defaults. |
 | **High-risk path** | A glob such as `auth/**` or `migrations/**` that escalates a change to `high` risk, forcing human plan, review and ship decisions. |
 | **Vertical slice** | A feature that delivers an end-to-end, testable behavior. An *enabler* is scaffolding that must state which later slice verifies it. |
-| **Review packet** | A compact deterministic summary of intent, plan, diff stats, validation evidence, architecture impact and open questions; high-risk work items use it as the human review surface. |
+| **Slop budget** | Risk-tiered caps on diff lines, changed files, new dependencies, duplication delta and complexity delta (`quality.slopBudget`). An overage stops an agent review gate or needs a human waiver. |
+| **Proof artifact** | A run-scoped screenshot, video, HTML explainer, curl transcript or test report bound to the commit; required for UI/behavioral claims. |
+| **Context pack** | A deterministic, bounded bundle of relevant ADRs, architecture constraints, test standards, prior failures and relevant files passed into a feature/stage prompt. |
+| **Review packet** | A compact deterministic decision surface: intent, plan, budget vs actual, blast radius, proof, read-first list, decisions, reviewer roles, comprehension and open questions; high-risk work items use it as the human review surface. |
+| **Plan depth** | `none`/`light`/`full` planning effort chosen from risk, expected pain and change size; avoids over-planning small changes while keeping full design for high-cost work. |
 | **Comprehension debt** | The gap between code shipped and code humans understand. It grows when review/reading is removed; planned as a metric and autonomy gate. |
 | **Checkpoint** | A small JSON snapshot of mission state (completed work, decisions, failed approaches, tests, blockers, budget) that lets the next feature start with fresh context. |
 | **Mission Control** | The factory-scoped console view of missions: plan approval, milestones/features, checkpoints, validation evidence, budget and pause/resume/cancel controls. |

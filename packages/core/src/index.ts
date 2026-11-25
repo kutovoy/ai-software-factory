@@ -13,6 +13,8 @@ export * from './schema/routing';
 export * from './routing/classify';
 export * from './governance/policy';
 export * from './governance/risk';
+export * from './quality/types';
+export * from './quality/slop';
 export * from './schema/packs';
 export * from './schema/stage';
 export * from './schema/improvement';

@@ -30,6 +30,7 @@ import {
   recordMissionCheckpoint,
   resolveAllGates,
   resolveModelRef,
+  resolveQualityConfig,
   resolveRiskGovernance,
   resolveStageConfigs,
   riskPolicyFor,
@@ -59,6 +60,7 @@ import {
   type WorkItemType,
 } from '@factory/core';
 import { loadConfig } from '../config';
+import { buildContextPack } from '../context-pack';
 import { getRun, getSql, insertRun } from '../db';
 import { getMissionPlanner } from '../models/mission-planner';
 import {
@@ -270,6 +272,14 @@ function featurePrompt(args: {
           : []),
       ]
     : [];
+  const planDepthLines = [
+    ...(plan.planDepth ? [`Plan depth: ${plan.planDepth}`] : []),
+    ...(plan.expectedPain ? [`Expected pain: ${plan.expectedPain}`] : []),
+    ...(plan.leverage ? [`Leverage: ${plan.leverage}`] : []),
+    ...((plan.productReview?.visualArtifacts ?? []).length > 0
+      ? [`Visual artifacts: ${(plan.productReview?.visualArtifacts ?? []).join('; ')}`]
+      : []),
+  ];
   const programDesign = plan.programDesign
     ? [
         `Program design modules: ${
@@ -301,6 +311,7 @@ function featurePrompt(args: {
     `Vertical slice: ${planFeature?.verticalSlice ?? feature.title} [${
       planFeature?.kind ?? 'slice'
     }]`,
+    ...planDepthLines,
     ...architecture,
     ...programDesign,
     '',
@@ -477,9 +488,14 @@ export async function planMissionActivity(args: {
   const loaded = loadDefinition(mission.factoryRoot);
   if (!loaded.definition) throw definitionFailure(mission.factory, loaded.errors);
   const riskGovernance = resolveRiskGovernance(loaded.definition.manifest.governance?.risk);
+  const quality = loaded.definition.manifest.quality;
 
   const planner = getMissionPlanner();
-  const plan = await planner.plan({ ...args, riskGovernance });
+  const plan = await planner.plan({
+    ...args,
+    riskGovernance,
+    ...(quality ? { quality } : {}),
+  });
   // The workflow may not import zod; validation stays here, at the activity boundary.
   const validation = validateMissionPlan(plan);
   if (!validation.plan) throw invalidPlan(validation.errors);
@@ -675,6 +691,12 @@ export async function createMissionFeatureWorkItemActivity(args: {
   const openQuestions = [...(plan.assumptions ?? [])];
   const riskReasons = [...(plan.riskReasons ?? [])];
 
+  // Quality metadata (change `add-anti-slop-budgets-and-proof`): resolved per-tier budget
+  // and the governance high-risk globs the packet matches against changed files.
+  const qualityConfig = resolveQualityConfig(loop.definition.manifest.quality);
+  const slopBudget = qualityConfig.slopBudget[riskTier];
+  const highRiskPaths = [...riskGovernance.highRiskPaths];
+
   const implementIndex = featureStageGraph.order.indexOf('implement');
   if (implementIndex < 0) {
     throw ApplicationFailure.create({
@@ -694,6 +716,26 @@ export async function createMissionFeatureWorkItemActivity(args: {
     harness,
   );
   const runner = override === 'fake' ? 'fake' : mapRunner(loop.definition.manifest.agentDefaults.runner);
+  const repo = validationRepo(loop.definition, runner);
+
+  // Deterministic context pack (task 4.1): ADRs, plan constraints, test standards, prior
+  // validation failures and relevant files. Built from local paths only; a URL repo gets
+  // no repo root, so the pack honestly omits ADRs/files instead of inventing them.
+  const repoRoot = 'path' in repo ? repo.path : undefined;
+  const priorFailures = checkpoints
+    .filter((checkpoint) => checkpoint.kind === 'validation.failed')
+    .slice(-3)
+    .map(compactCheckpoint);
+  const contextPack = buildContextPack({
+    factoryRoot: mission.factoryRoot,
+    ...(repoRoot ? { repoRoot } : {}),
+    factory: mission.factory,
+    title: `${mission.title}: ${feature.title}`,
+    prompt,
+    definitionCommit: mission.definitionCommit,
+    plan,
+    priorFailures,
+  });
 
   const autonomy = await getAutonomyState(sql, mission.factory);
   const gateResolution = resolveAllGates(loop.definition.manifest);
@@ -735,11 +777,14 @@ export async function createMissionFeatureWorkItemActivity(args: {
       goal: mission.goal,
       riskTier,
       riskReasons,
+      ...(plan.planDepth ? { planDepth: plan.planDepth } : {}),
+      ...(plan.expectedPain ? { expectedPain: plan.expectedPain } : {}),
+      ...(plan.leverage ? { leverage: plan.leverage } : {}),
     },
     // Mission features implement against the integrated forge repository, so the captured
     // patch applies to the same tree the PR targets. The central factory checkout is only
     // the definition source.
-    repo: validationRepo(loop.definition, runner),
+    repo,
     allowEmptyPatch: true,
     stageGraph: featureStageGraph,
     gates,
@@ -750,6 +795,14 @@ export async function createMissionFeatureWorkItemActivity(args: {
     planRef,
     architectureImpact,
     openQuestions,
+    contextPack: contextPack.markdown,
+    contextPackRef: contextPack.ref,
+    ...(loop.definition.manifest.quality ? { quality: loop.definition.manifest.quality } : {}),
+    ...(plan.planDepth ? { planDepth: plan.planDepth } : {}),
+    ...(plan.expectedPain ? { expectedPain: plan.expectedPain } : {}),
+    ...(plan.leverage ? { leverage: plan.leverage } : {}),
+    highRiskPaths,
+    slopBudget,
     autonomy: {
       enabled: autonomy?.enabled ?? false,
       paused: autonomy?.paused ?? false,

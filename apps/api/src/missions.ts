@@ -9,6 +9,7 @@ import {
   getMission,
   getMissionFeature,
   getPendingMissionGate,
+  isRiskTier,
   listMissionCheckpoints,
   listMissionEvents,
   listMissionFeatures,
@@ -25,6 +26,7 @@ import {
   missionRetryFeatureBodySchema,
   missionStatusSchema,
   newMissionId,
+  planDepthFor,
   persistMissionPlan,
   requestMissionCancel,
   setMissionFeatureStatus,
@@ -156,6 +158,15 @@ export interface ListMissionsFilters {
 
 const TERMINAL_MISSION_STATUSES = new Set(['done', 'failed', 'cancelled']);
 
+/** The first non-empty line of a goal; used for the derived `leverage` statement. */
+function firstNonEmptyLine(text: string): string {
+  const line = text
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .find((entry) => entry.length > 0);
+  return line ?? '';
+}
+
 function planIdentity(
   plan: unknown,
   identity: {
@@ -181,14 +192,34 @@ function planIdentity(
   // before creation, and the pinned commit must match the row it is stored on.
   const createdAt =
     typeof input.createdAt === 'string' ? input.createdAt : new Date().toISOString();
+  const goal = typeof input.goal === 'string' ? input.goal : identity.goal;
+
+  // Planning metadata (change `add-anti-slop-budgets-and-proof`): an API-supplied plan may
+  // omit `planDepth`/`expectedPain`/`leverage`; derive them deterministically from the risk
+  // tier and goal instead of leaving the UI to invent values. Supplied values always win.
+  const planRiskTier = isRiskTier(input.riskTier) ? input.riskTier : 'low';
+  const derivedLeverage = firstNonEmptyLine(goal);
+
   const candidate: Record<string, unknown> = {
     ...input,
     missionId: identity.missionId,
     factory: identity.factory,
     definitionCommit: identity.definitionCommit,
     title: typeof input.title === 'string' ? input.title : identity.title,
-    goal: typeof input.goal === 'string' ? input.goal : identity.goal,
+    goal,
     createdAt,
+    ...(input.planDepth === undefined
+      ? {
+          planDepth: planDepthFor({
+            riskTier: planRiskTier,
+            expectedPain: planRiskTier,
+            changeSize: goal.length,
+            reversible: true,
+          }),
+        }
+      : {}),
+    ...(input.expectedPain === undefined ? { expectedPain: planRiskTier } : {}),
+    ...(input.leverage === undefined && derivedLeverage ? { leverage: derivedLeverage } : {}),
     validationContract:
       contractObject && typeof contractObject === 'object'
         ? {

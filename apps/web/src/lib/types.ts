@@ -321,6 +321,11 @@ export interface WorkItemSummary {
   cancelRequestedAt?: string | null;
   cancelActor?: string | null;
   cancelReason?: string | null;
+  /**
+   * Creation snapshot when the API exposes it (`contextPackRef`, planning metadata). Optional:
+   * older APIs omit it, so the console must render nothing rather than assume fields.
+   */
+  input?: Record<string, unknown>;
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -335,11 +340,56 @@ export interface WorkItemEvent {
   createdAt: string | null;
 }
 
+export type ProofKindWire = 'screenshot' | 'video' | 'html' | 'curl' | 'report' | 'file';
+
+export interface ReviewPacketSlopBudgetWire {
+  maxDiffLines: number;
+  maxChangedFiles: number;
+  maxNewDependencies: number;
+  maxDuplicationDeltaPercent: number;
+  maxComplexityDelta: number;
+}
+
+export interface ReviewPacketSlopActualWire {
+  changedFiles: number;
+  additions: number;
+  deletions: number;
+  diffLines: number;
+  newDependencies: number;
+  duplicationDeltaPercent: number | null;
+  complexityDelta: number | null;
+}
+
+export interface ReviewPacketProofWire {
+  kind: ProofKindWire;
+  path: string;
+  label: string;
+  commit?: string;
+  hash?: string;
+}
+
+export interface ReviewPacketReadFirstWire {
+  path: string;
+  why: string;
+}
+
+export interface ReviewPacketDecisionWire {
+  at: string;
+  actor: string;
+  decision: string;
+  reason: string;
+  ref?: string;
+}
+
 /**
  * Deterministic review packet (`harden-factory-quality`), stored as a `review.packet`
  * work-item event. It is assembled from plan, evidence and diff data — not model prose — so a
  * high-risk human review gate has an auditable decision surface while the full diff stays
  * linked.
+ *
+ * Packet v2 (`add-anti-slop-budgets-and-proof`) adds budget vs actual, blast radius, proof
+ * artifacts, read-first, decisions, reviewer roles, comprehension and the context-pack ref.
+ * Every v2 field is optional here so a packet written before v2 still renders honestly.
  */
 export interface ReviewPacketWire {
   riskTier: RiskTierWire;
@@ -351,6 +401,25 @@ export interface ReviewPacketWire {
   architectureImpact: string[];
   openQuestions: string[];
   reviewerChecklist: string[];
+  slopBudget?: ReviewPacketSlopBudgetWire;
+  slopActual?: ReviewPacketSlopActualWire;
+  slopStatus?: 'pass' | 'exceeded' | 'unknown';
+  blastRadius?: {
+    paths: string[];
+    highRiskPaths: string[];
+    publicApiChanges: number;
+    schemaChanges: number;
+  };
+  proofArtifacts?: ReviewPacketProofWire[];
+  readFirst?: ReviewPacketReadFirstWire[];
+  decisions?: ReviewPacketDecisionWire[];
+  reviewerRoles?: string[];
+  comprehension?: {
+    estimatedReadMinutes: number;
+    filesWithoutTests: number;
+    modulesWithoutOwner: number;
+  };
+  contextPackRef?: string | null;
 }
 
 export interface GateDecisionVerdictWire {
@@ -1885,6 +1954,8 @@ export interface MissionProductReviewWire {
   problem: string;
   desiredBehavior: string[];
   mockups: string[];
+  /** Mockup/diagram artifacts (`show-me` output) referenced by the plan; optional. */
+  visualArtifacts?: string[];
 }
 
 export interface MissionArchitectureComponentWire {
@@ -2009,6 +2080,15 @@ export interface MissionPlanWire {
   architecture?: MissionArchitectureWire;
   programDesign?: MissionProgramDesignWire;
   verticalSlices?: MissionVerticalSliceWire[];
+  /**
+   * Planning depth metadata (`add-anti-slop-budgets-and-proof`): how much plan/artifact the
+   * loop right-sizes to. Absent on plans written before the change.
+   */
+  planDepth?: 'none' | 'light' | 'full';
+  /** How much review/attention the change is expected to need. */
+  expectedPain?: 'low' | 'medium' | 'high';
+  /** The smallest change that unlocks the outcome. */
+  leverage?: string;
 }
 
 /** A mission row plus the list projection counters. */

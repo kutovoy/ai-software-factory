@@ -264,6 +264,62 @@ describe('mission risk tiers and planning artifacts', () => {
   });
 });
 
+describe('mission plan depth and visual artifacts', () => {
+  it('keeps an old plan valid and leaves the new fields undefined', () => {
+    const result = validateMissionPlan(plan());
+    expect(result.errors).toEqual([]);
+    expect(result.plan?.planDepth).toBeUndefined();
+    expect(result.plan?.expectedPain).toBeUndefined();
+    expect(result.plan?.leverage).toBeUndefined();
+    expect(result.plan?.productReview).toBeUndefined();
+  });
+
+  it('accepts and preserves planDepth, expectedPain, leverage and visualArtifacts', () => {
+    const withMetadata = mediumRiskPlan();
+    withMetadata.planDepth = 'full';
+    withMetadata.expectedPain = 'high';
+    withMetadata.leverage = 'Reuse the existing billing module instead of a new service';
+    withMetadata.productReview!.visualArtifacts = ['runs/mis_1/artifacts/mockup.html'];
+
+    const result = validateMissionPlan(withMetadata);
+    expect(result.errors).toEqual([]);
+    expect(result.plan?.planDepth).toBe('full');
+    expect(result.plan?.expectedPain).toBe('high');
+    expect(result.plan?.leverage).toContain('billing module');
+    expect(result.plan?.productReview?.visualArtifacts).toEqual([
+      'runs/mis_1/artifacts/mockup.html',
+    ]);
+  });
+
+  it('accepts a light plan for a low-risk change', () => {
+    const light = plan();
+    light.planDepth = 'light';
+    light.expectedPain = 'low';
+    expect(validateMissionPlan(light).errors).toEqual([]);
+  });
+
+  it('rejects unknown planDepth/expectedPain values and oversized leverage', () => {
+    const badDepth = plan();
+    (badDepth as unknown as { planDepth: string }).planDepth = 'deep';
+    expect(validateMissionPlan(badDepth).errors.join(' ')).toContain('planDepth');
+
+    const badPain = plan();
+    (badPain as unknown as { expectedPain: string }).expectedPain = 'extreme';
+    expect(validateMissionPlan(badPain).errors.join(' ')).toContain('expectedPain');
+
+    const longLeverage = plan();
+    longLeverage.leverage = 'x'.repeat(2001);
+    expect(validateMissionPlan(longLeverage).errors.join(' ')).toContain('leverage');
+
+    const tooManyArtifacts = mediumRiskPlan();
+    tooManyArtifacts.productReview!.visualArtifacts = Array.from(
+      { length: 51 },
+      (_, index) => `artifact-${index}.png`,
+    );
+    expect(validateMissionPlan(tooManyArtifacts).errors.join(' ')).toContain('visualArtifacts');
+  });
+});
+
 describe('mission scheduling', () => {
   it('returns the first runnable feature in dependency order', () => {
     const valid = plan();

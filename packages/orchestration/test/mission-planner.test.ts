@@ -275,8 +275,7 @@ describe('deterministic mission planner', () => {
     ).toBe(true);
   });
 
-  test('getMissionPlanner respects the test hook', async () => {
-    const saved = {
+  test('getMissionPlanner respects the test hook', async () => {    const saved = {
       base: process.env.OPENAI_BASE_URL,
       key: process.env.OPENAI_API_KEY,
       model: process.env.OPENAI_MODEL,
@@ -309,5 +308,139 @@ describe('deterministic mission planner', () => {
         else process.env[name] = value;
       }
     }
+  });
+});
+
+describe('mission plan depth metadata', () => {
+  test('the deterministic planner sizes planDepth from the risk tier and goal size', async () => {
+    const low = await deterministicMissionPlanner.plan(INPUT);
+    expect(low.planDepth).toBe('light');
+    expect(low.expectedPain).toBe('low');
+    expect(low.leverage).toBe('Add a health endpoint');
+    expect(low.productReview?.visualArtifacts).toEqual([]);
+    expect(low.productReview?.mockups).toEqual([]);
+
+    const high = await deterministicMissionPlanner.plan({
+      ...INPUT,
+      title: 'Add authentication',
+      goal: 'Add authentication\nSupport login\nDocument it',
+    });
+    expect(high.planDepth).toBe('full');
+    expect(high.expectedPain).toBe('high');
+    expect(high.leverage).toBe('Add authentication');
+    expect(validateMissionPlan(high).errors).toEqual([]);
+  });
+
+  test('the OpenAI planner parses explicit plan depth fields and visual artifacts', async () => {
+    const raw = {
+      title: 'Refactor billing',
+      goal: 'Refactor billing',
+      riskTier: 'medium',
+      riskReasons: ['touches billing'],
+      planDepth: 'full',
+      expectedPain: 'high',
+      leverage: 'Move invoice rendering behind the billing service',
+      productReview: {
+        problem: 'Billing is tangled',
+        desiredBehavior: ['Billing renders through the service'],
+        mockups: [],
+        visualArtifacts: ['docs/mockups/billing-flow.html'],
+      },
+      validationContract: {
+        enforce: true,
+        assertions: [
+          {
+            id: 'A1',
+            title: 'Billing still works',
+            assertion: 'The billing flow renders',
+            tier: 'e2e',
+            required: true,
+            tool: 'agent-browser',
+            evidence: 'screenshot',
+          },
+        ],
+      },
+      milestones: [
+        {
+          title: 'Milestone',
+          description: 'One milestone',
+          features: [
+            {
+              title: 'Update billing page',
+              description: 'Update the billing page',
+              dependsOn: [],
+              acceptanceCheckIds: ['A1'],
+            },
+          ],
+        },
+      ],
+    };
+
+    const planner = createOpenAIMissionPlanner({
+      baseUrl: 'http://planner.invalid/v1',
+      apiKey: 'test',
+      model: 'test-model',
+      fetchImpl: (async () =>
+        new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(raw) } }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })) as unknown as typeof fetch,
+    });
+
+    const plan = await planner.plan(INPUT);
+    expect(validateMissionPlan(plan).errors).toEqual([]);
+    expect(plan.planDepth).toBe('full');
+    expect(plan.expectedPain).toBe('high');
+    expect(plan.leverage).toBe('Move invoice rendering behind the billing service');
+    expect(plan.productReview?.visualArtifacts).toEqual(['docs/mockups/billing-flow.html']);
+  });
+
+  test('the OpenAI planner derives plan depth when the model omits it', async () => {
+    const raw = {
+      title: 'Ship a health page',
+      goal: 'Ship it',
+      validationContract: {
+        enforce: true,
+        assertions: [
+          {
+            id: 'A1',
+            title: 'Health page',
+            assertion: 'The health page renders',
+            tier: 'e2e',
+            required: true,
+            tool: 'agent-browser',
+            evidence: 'screenshot',
+          },
+        ],
+      },
+      milestones: [
+        {
+          title: 'Milestone',
+          description: 'One milestone',
+          features: [
+            { title: 'Add page', description: 'Add the page', dependsOn: [], acceptanceCheckIds: ['A1'] },
+            { title: 'Link it', description: 'Link the page', dependsOn: [0], acceptanceCheckIds: ['A1'] },
+          ],
+        },
+      ],
+    };
+
+    const planner = createOpenAIMissionPlanner({
+      baseUrl: 'http://planner.invalid/v1',
+      apiKey: 'test',
+      model: 'test-model',
+      fetchImpl: (async () =>
+        new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(raw) } }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })) as unknown as typeof fetch,
+    });
+
+    const plan = await planner.plan(INPUT);
+    expect(validateMissionPlan(plan).errors).toEqual([]);
+    // Low risk, two features (~160 changed lines) → light planning.
+    expect(plan.planDepth).toBe('light');
+    expect(plan.expectedPain).toBe('low');
+    expect(plan.leverage).toBe('Add a health endpoint');
   });
 });

@@ -5,8 +5,11 @@ import {
   appendWorkItemEvent,
   assignCanaryVersion,
   buildValidationContract,
+  classifyRisk,
   compileStageGraph,
   createWorkItem as createWorkItemRow,
+  DEFAULT_RISK_GOVERNANCE,
+  DEFAULT_SLOP_BUDGETS,
   evaluateAutonomyRequest,
   foremanAgentName,
   getActiveCanaryRollout,
@@ -16,6 +19,7 @@ import {
   getPendingGate,
   getWorkItem,
   isRetryableWorkItemStatus,
+  isRiskTier,
   latestAutonomyEvent,
   latestWorkItemRetry,
   listGateDecisions,
@@ -27,11 +31,16 @@ import {
   mapWorkItem,
   modelSchema,
   newWorkItemId,
+  planDepthFor,
   recordGateDecision,
   requestWorkItemCancel,
   resolveAllGates,
+  resolveQualityConfig,
+  resolveRiskGovernance,
+  resolveSlopBudgets,
   retryWorkItem as retryWorkItemRow,
   resolveStageConfigs,
+  riskPolicyFor,
   scanReadiness,
   setAutonomyState,
   setWorkItemStatus,
@@ -39,12 +48,18 @@ import {
   validationContractSchema,
   type AgentDef,
   type AgentVerdict,
+  type ExpectedPain,
   type FactoryDefinition,
   type GateDecisionRecord,
   type GateDecisionRequest,
   type LoopStage,
   ModelNotAllowedError,
+  type PlanDepth,
+  type QualityConfig,
+  type RiskTier,
+  type RiskTierPolicy,
   type RoutingDef,
+  type SlopBudget,
   type ValidationContract,
   type ValidationProjection,
   type WorkItem,
@@ -54,11 +69,13 @@ import {
   WORK_ITEM_SOURCES,
 } from '@factory/core';
 import {
+  buildContextPack,
   cancelWorkItem,
   getSql,
   pauseWorkItemAutonomy,
   startFactoryWorkflow,
   submitGateDecision,
+  type ContextPack,
   type FactoryWorkflowInput,
   type FactoryWorkflowResume,
   type GateDecisionValue,
@@ -180,6 +197,8 @@ export interface WorkItemSummary {
   cancelRequestedAt: string | null;
   cancelActor: string | null;
   cancelReason: string | null;
+  /** Creation snapshot; exposed only on detail, never in the board projection. */
+  input?: Record<string, unknown>;
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -301,6 +320,114 @@ export interface CreatedWorkItem {
   workflow: { workflowId: string; temporalRunId: string } | null;
 }
 
+/* ------------------------------------------- quality / risk / context pack */
+
+/** The first non-empty line of a seed prompt; falls back to the whole string. */
+function firstPromptLine(text: string): string {
+  const line = text
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .find((entry) => entry.length > 0);
+  return line ?? text.trim();
+}
+
+function snapshotString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+function snapshotStringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+}
+
+function snapshotPlanDepth(value: unknown): PlanDepth | null {
+  return value === 'none' || value === 'light' || value === 'full' ? value : null;
+}
+
+function snapshotExpectedPain(value: unknown): ExpectedPain | null {
+  return value === 'low' || value === 'medium' || value === 'high' ? value : null;
+}
+
+/**
+ * Reads a persisted `slopBudget` (a single tier budget) defensively. Anything unknown falls
+ * back to the shipped tier defaults, so a snapshot written by an older API still yields a
+ * usable budget instead of throwing.
+ */
+function snapshotSlopBudget(value: unknown, riskTier: RiskTier): SlopBudget {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return DEFAULT_SLOP_BUDGETS[riskTier];
+  }
+  return resolveSlopBudgets({
+    slopBudget: { [riskTier]: value },
+  } as unknown as Parameters<typeof resolveSlopBudgets>[0])[riskTier];
+}
+
+/**
+ * Resolves the creation-time quality/risk/planning snapshot (change
+ * `add-anti-slop-budgets-and-proof`): risk tier + policy from governance, the tier slop
+ * budget from `quality`, plan depth and the deterministic context pack. Persisted with the
+ * item so a retry keeps the same right-sized loop.
+ */
+function resolveWorkItemQuality(args: {
+  manifest: FactoryDefinition['manifest'];
+  factoryRoot: string;
+  repoRoot: string | undefined;
+  factory: string;
+  title: string;
+  prompt: string;
+  definitionCommit: string;
+}): {
+  riskTier: RiskTier;
+  riskPolicy: RiskTierPolicy;
+  quality: QualityConfig;
+  slopBudget: SlopBudget;
+  highRiskPaths: string[];
+  planDepth: PlanDepth;
+  expectedPain: ExpectedPain;
+  leverage: string;
+  contextPack: ContextPack;
+} {
+  const riskGovernance = resolveRiskGovernance(args.manifest.governance?.risk);
+  const goal = args.prompt.trim() || args.title;
+  const classification = classifyRisk({ goal, governance: riskGovernance });
+  const riskTier = classification.tier;
+  const riskPolicy = riskPolicyFor(riskGovernance, riskTier);
+  const quality = resolveQualityConfig(args.manifest.quality);
+  const slopBudget = quality.slopBudget[riskTier];
+  // `resolveRiskGovernance` already falls back to the shipped globs (currently none).
+  const highRiskPaths =
+    riskGovernance.highRiskPaths.length > 0
+      ? riskGovernance.highRiskPaths
+      : DEFAULT_RISK_GOVERNANCE.highRiskPaths;
+  const planDepth = planDepthFor({
+    riskTier,
+    expectedPain: riskTier,
+    changeSize: goal.length,
+    reversible: true,
+  });
+  const contextPack = buildContextPack({
+    factoryRoot: args.factoryRoot,
+    ...(args.repoRoot ? { repoRoot: args.repoRoot } : {}),
+    factory: args.factory,
+    title: args.title,
+    prompt: goal,
+    definitionCommit: args.definitionCommit,
+  });
+
+  return {
+    riskTier,
+    riskPolicy,
+    quality,
+    slopBudget,
+    highRiskPaths,
+    planDepth,
+    expectedPain: riskTier,
+    leverage: firstPromptLine(goal),
+    contextPack,
+  };
+}
+
 export async function createWorkItemForApi(
   config: ApiConfig,
   /** Internal factory key resolved from the nested route's `:factoryId`. */
@@ -351,6 +478,19 @@ export async function createWorkItemForApi(
   const definitionVersion: WorkItemVersion = canary ? 'candidate' : 'stable';
   const manifest = compiled.definition.manifest;
   const orchestration = toOrchestrationConfig(config);
+
+  // Quality/risk/planning snapshot (change `add-anti-slop-budgets-and-proof`): the tier and
+  // its budget are resolved once at creation, the context pack is built deterministically
+  // from the checkout, and all of it is persisted so a retry keeps the same loop.
+  const qualitySnapshot = resolveWorkItemQuality({
+    manifest,
+    factoryRoot: dir,
+    repoRoot: config.repoRoot,
+    factory,
+    title: body.title,
+    prompt: body.prompt?.trim() || body.title,
+    definitionCommit: commit,
+  });
 
   // Validation contract (roadmap item 1): built deterministically from the factory's
   // optional block and the target repository, then persisted with the item so a retry
@@ -446,6 +586,16 @@ export async function createWorkItemForApi(
     ...(validationContract ? { validationContract } : {}),
     ...(manifest.budget ? { budget: manifest.budget } : {}),
     ...(manifest.governance ? { governance: manifest.governance } : {}),
+    riskTier: qualitySnapshot.riskTier,
+    riskPolicy: qualitySnapshot.riskPolicy,
+    contextPack: qualitySnapshot.contextPack.markdown,
+    contextPackRef: qualitySnapshot.contextPack.ref,
+    quality: qualitySnapshot.quality,
+    planDepth: qualitySnapshot.planDepth,
+    expectedPain: qualitySnapshot.expectedPain,
+    leverage: qualitySnapshot.leverage,
+    highRiskPaths: qualitySnapshot.highRiskPaths,
+    slopBudget: qualitySnapshot.slopBudget,
   };
 
   const item = await createWorkItemRow(sql, {
@@ -479,6 +629,31 @@ export async function createWorkItemForApi(
       runner: defaults.runner,
       // Persisted contract: the verify gate and the work-item page read it from here.
       ...(validationContract ? { validationContract } : {}),
+      // Quality/risk/planning snapshot reused verbatim by a retry.
+      riskTier: qualitySnapshot.riskTier,
+      riskPolicy: qualitySnapshot.riskPolicy,
+      highRiskPaths: qualitySnapshot.highRiskPaths,
+      slopBudget: qualitySnapshot.slopBudget,
+      quality: qualitySnapshot.quality,
+      planDepth: qualitySnapshot.planDepth,
+      expectedPain: qualitySnapshot.expectedPain,
+      leverage: qualitySnapshot.leverage,
+      contextPack: qualitySnapshot.contextPack.markdown,
+      contextPackRef: qualitySnapshot.contextPack.ref,
+    },
+  });
+
+  // The context pack is persisted with the item; record its provenance so the detail page
+  // can show which ADRs/constraints/test standards shaped the dispatch.
+  await appendWorkItemEvent(sql, {
+    workItemId,
+    type: 'context.pack',
+    stage: firstStage,
+    actor: 'api',
+    payload: {
+      ref: qualitySnapshot.contextPack.ref,
+      sources: qualitySnapshot.contextPack.sources,
+      definitionCommit: commit,
     },
   });
 
@@ -763,7 +938,9 @@ export async function getWorkItemDetail(
   ]);
 
   return {
-    workItem: summarize(item),
+    // The detail view needs the creation snapshot (context-pack ref, planning metadata);
+    // the board projection intentionally stays small.
+    workItem: { ...summarize(item), input: item.input },
     events,
     gates,
     pendingGate,
@@ -1351,6 +1528,49 @@ async function buildRetryInput(
 
   const manifest = compiled.definition.manifest;
   await assertFactoryBudget(factory, manifest);
+
+  // Quality/risk/planning snapshot (change `add-anti-slop-budgets-and-proof`): reuse what
+  // creation persisted; a snapshot written before the change derives honest defaults and a
+  // fresh context pack instead of failing.
+  const riskGovernance = resolveRiskGovernance(manifest.governance?.risk);
+  const snapshotPrompt =
+    typeof snapshot.prompt === 'string' && snapshot.prompt.trim() !== ''
+      ? snapshot.prompt
+      : item.title;
+  const riskTier = isRiskTier(snapshot.riskTier)
+    ? snapshot.riskTier
+    : classifyRisk({ goal: snapshotPrompt, governance: riskGovernance }).tier;
+  const riskPolicy = riskPolicyFor(riskGovernance, riskTier);
+  const quality = resolveQualityConfig(snapshot.quality ?? manifest.quality);
+  const slopBudget = snapshotSlopBudget(snapshot.slopBudget, riskTier);
+  const snapshotHighRiskPaths = snapshotStringList(snapshot.highRiskPaths);
+  const highRiskPaths =
+    snapshotHighRiskPaths.length > 0 ? snapshotHighRiskPaths : riskGovernance.highRiskPaths;
+  const expectedPain = snapshotExpectedPain(snapshot.expectedPain) ?? riskTier;
+  const planDepth =
+    snapshotPlanDepth(snapshot.planDepth) ??
+    planDepthFor({
+      riskTier,
+      expectedPain,
+      changeSize: snapshotPrompt.length,
+      reversible: true,
+    });
+  const leverage = snapshotString(snapshot.leverage) ?? firstPromptLine(snapshotPrompt);
+  const storedContextPack = snapshotString(snapshot.contextPack);
+  const rebuiltContextPack = storedContextPack
+    ? null
+    : buildContextPack({
+        factoryRoot: dir,
+        ...(config.repoRoot ? { repoRoot: config.repoRoot } : {}),
+        factory,
+        title: item.title,
+        prompt: snapshotPrompt,
+        definitionCommit: item.definitionCommit,
+      });
+  const contextPackMarkdown = storedContextPack ?? rebuiltContextPack?.markdown ?? null;
+  const contextPackRef =
+    snapshotString(snapshot.contextPackRef) ?? rebuiltContextPack?.ref ?? null;
+
   const orchestration = toOrchestrationConfig(config);
   const routing = (compiled.definition.resources.find(
     (resource) => resource.kind === 'routing',
@@ -1457,6 +1677,16 @@ async function buildRetryInput(
     ...(validationContract ? { validationContract } : {}),
     ...(manifest.budget ? { budget: manifest.budget } : {}),
     ...(manifest.governance ? { governance: manifest.governance } : {}),
+    riskTier,
+    riskPolicy,
+    ...(contextPackMarkdown ? { contextPack: contextPackMarkdown } : {}),
+    contextPackRef,
+    quality,
+    planDepth,
+    expectedPain,
+    leverage,
+    highRiskPaths,
+    slopBudget,
     attempt,
     resume,
   };

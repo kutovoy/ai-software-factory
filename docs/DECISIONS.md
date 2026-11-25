@@ -1128,3 +1128,28 @@ prose, so it is auditable. Human review for high risk reduces throughput by desi
 review-gate time, so verify evidence may arrive after the first packet; the raw diff and events remain the
 source of truth. Brownfield maintainability still needs a longitudinal benchmark (P1), not a single greenfield
 mission.
+
+## ADR-053 — Slop budgets, proof artifacts and context packs
+
+**Status:** accepted (2026-11-25, implemented in `add-anti-slop-budgets-and-proof`).
+**Context:** the review packet v1 made review auditable but still asked a human to reconstruct intent from a
+diff. Production is cheap, review and comprehension are constant-cost, and a large diff can pass every gate.
+The factory needed a deterministic way to cap change size, force proof for behavioral claims, give the agent
+the repo context a senior engineer would have, and make the packet a decision surface rather than a status card.
+**Decision:** (1) factories may declare `quality.slopBudget` with per-risk-tier caps for diff lines, changed
+files, new dependencies, duplication delta and complexity delta. Metrics come from the captured patch and
+validation evidence; an overage records `slop.measured`/`slop.budget_exceeded`, makes an agent review gate
+resolve `request_changes`, and requires an explicit human waiver on a human gate. (2) UI/behavioral changes
+require run-scoped proof artifacts (screenshot, video, HTML explainer, curl transcript or report) bound to the
+commit; missing required proof blocks verify. (3) every work item gets a deterministic, bounded context pack
+(relevant ADRs, architecture constraints, test standards, prior failures, relevant files) passed into the
+stage prompt. (4) the review packet carries budget vs actual, blast radius, proof, read-first ordering,
+decisions, reviewer roles and comprehension estimates; an optional `review.explainer` may carry model prose but
+never replaces deterministic facts. (5) mission plans carry `planDepth`/`expectedPain`/`leverage` and visual
+artifact references. (6) project-local `show-me` and `anti-slop` skills make visual alignment and deterministic
+anti-slop checks part of the loop.
+**Consequences:** small, low-risk changes stay cheap; large changes stop or need a human waiver. Reviewers get
+a smaller, evidence-backed surface and a reading order. Context packs reduce first-pass slop but must stay
+bounded and provenance-aware; a stale pack is shown as stale, never hidden. Proof artifacts must be run-scoped
+so a stale screenshot cannot approve a new commit. The factory still cannot buy verification: budgets and
+packets raise the floor, while repo-specific checks and human judgment remain the source of truth.

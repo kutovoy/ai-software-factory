@@ -172,6 +172,35 @@ describe('validation contract builder', () => {
     expect(checks[1].command).toBe('bun run quality');
   });
 
+  test('infers a maintainability check from anti-slop scripts', () => {
+    for (const script of ['anti-slop', 'lint:anti-slop', 'quality:anti-slop']) {
+      const root = tempDir('factory-validation-');
+      write(root, 'package.json', JSON.stringify({ scripts: { [script]: 'bun scripts/anti-slop.ts' } }));
+      write(root, 'bun.lock', '');
+
+      const checks = inferValidationChecks(root);
+      expect(checks.map((check) => check.id)).toEqual(['maintainability']);
+      expect(checks[0].tier).toBe('maintainability');
+      expect(checks[0].title).toBe('Maintainability');
+      expect(checks[0].command).toBe(`bun run ${script}`);
+      expect(checks[0].expected).toBe('exit code 0');
+    }
+  });
+
+  test('prefers an existing maintainability script over anti-slop', () => {
+    const root = tempDir('factory-validation-');
+    write(
+      root,
+      'package.json',
+      JSON.stringify({ scripts: { 'anti-slop': 'bun anti-slop', jscpd: 'jscpd src' } }),
+    );
+    write(root, 'bun.lock', '');
+
+    const checks = inferValidationChecks(root);
+    expect(checks.map((check) => check.id)).toEqual(['maintainability']);
+    expect(checks[0].command).toBe('bun run jscpd');
+  });
+
   test('does not invent quality checks without scripts', () => {
     const root = tempDir('factory-validation-');
     write(root, 'package.json', JSON.stringify({ scripts: { test: 'vitest run' } }));
@@ -270,6 +299,39 @@ describe('validation evidence parsing', () => {
     ]);
   });
 
+  test('parses optional proof artifacts and omits the key when absent', () => {
+    const withArtifacts = [
+      '```json',
+      '{"validation":[{"id":"ui","status":"pass","evidence":"page renders",',
+      '"artifacts":["runs/1/artifacts/home.png","   ","runs/1/artifacts/report.html"]}]}',
+      '```',
+    ].join('\n');
+    expect(parseValidationEvidence(withArtifacts)).toEqual([
+      {
+        checkId: 'ui',
+        status: 'pass',
+        source: 'agent',
+        detail: 'page renders',
+        artifacts: ['runs/1/artifacts/home.png', 'runs/1/artifacts/report.html'],
+      },
+    ]);
+
+    const withoutArtifacts =
+      '```json\n{"validation":[{"id":"test","status":"pass","artifacts":[]}]}\n```';
+    const [evidence] = parseValidationEvidence(withoutArtifacts);
+    expect(evidence).toEqual({ checkId: 'test', status: 'pass', source: 'agent' });
+    expect('artifacts' in evidence!).toBe(false);
+  });
+
+  test('caps parsed artifacts at 20 paths', () => {
+    const artifacts = Array.from({ length: 25 }, (_, index) => `runs/1/artifacts/${index}.png`);
+    const text = `\`\`\`json\n${JSON.stringify({
+      validation: [{ id: 'ui', status: 'pass', artifacts }],
+    })}\n\`\`\``;
+    const [evidence] = parseValidationEvidence(text);
+    expect(evidence?.artifacts).toHaveLength(20);
+  });
+
   test('schema mirrors optional thresholds and metrics', () => {
     const check = {
       id: 'maintainability',
@@ -294,6 +356,38 @@ describe('validation evidence parsing', () => {
     expect(
       validationEvidenceSchema.safeParse({ ...evidence, metrics: { bad: Number.POSITIVE_INFINITY } })
         .success,
+    ).toBe(false);
+  });
+
+  test('schema mirrors optional artifactKind and artifacts', () => {
+    const uiCheck = {
+      id: 'ui-renders',
+      title: 'UI renders',
+      tier: 'e2e',
+      required: true,
+      evidence: 'artifact',
+      artifactKind: 'screenshot',
+    };
+    expect(validationCheckSchema.safeParse(uiCheck).success).toBe(true);
+    expect(
+      validationCheckSchema.safeParse({ ...uiCheck, artifactKind: 'png' }).success,
+    ).toBe(false);
+
+    const evidence = {
+      checkId: 'ui-renders',
+      status: 'pass',
+      source: 'agent',
+      artifacts: ['runs/1/artifacts/home.png'],
+    };
+    expect(validationEvidenceSchema.safeParse(evidence).success).toBe(true);
+    expect(
+      validationEvidenceSchema.safeParse({ ...evidence, artifacts: [''] }).success,
+    ).toBe(false);
+    expect(
+      validationEvidenceSchema.safeParse({
+        ...evidence,
+        artifacts: Array.from({ length: 21 }, (_, index) => `${index}.png`),
+      }).success,
     ).toBe(false);
   });
 });

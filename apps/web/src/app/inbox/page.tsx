@@ -234,6 +234,26 @@ export default async function InboxPage() {
                                 {reviewPacket.assertions.length} · {passing} passing
                               </span>
                             </span>
+                            {reviewPacket.slopStatus ? (
+                              <span
+                                data-testid="inbox-gate-slop"
+                                data-slop-status={reviewPacket.slopStatus}
+                                className={
+                                  reviewPacket.slopStatus === 'exceeded'
+                                    ? 'text-red-700'
+                                    : undefined
+                                }
+                              >
+                                slop{' '}
+                                <span className="font-mono">{reviewPacket.slopStatus}</span>
+                              </span>
+                            ) : null}
+                            {(reviewPacket.proofArtifacts?.length ?? 0) > 0 ? (
+                              <span data-testid="inbox-gate-proof">
+                                proof{' '}
+                                <span className="font-mono">{reviewPacket.proofArtifacts?.length}</span>
+                              </span>
+                            ) : null}
                             {firstQuestion ? (
                               <span
                                 data-testid="inbox-gate-review-packet-question"

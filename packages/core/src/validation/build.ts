@@ -82,7 +82,16 @@ const QUALITY_SCRIPT_CHECKS: {
     id: 'maintainability',
     title: 'Maintainability',
     tier: 'maintainability',
-    scripts: ['maintainability', 'maintainability:check', 'quality', 'complexity', 'jscpd'],
+    scripts: [
+      'maintainability',
+      'maintainability:check',
+      'quality',
+      'complexity',
+      'jscpd',
+      'anti-slop',
+      'lint:anti-slop',
+      'quality:anti-slop',
+    ],
   },
 ];
 
